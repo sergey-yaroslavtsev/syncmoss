@@ -11,7 +11,7 @@ import platform
 from models import TI
 from models_positions import mod_pos
 from constants import number_of_baseline_parameters
-# NOTE: read_model import kept in subtract_model_from_spectrum to avoid circular import
+from model_io import read_model
 
 
 def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", points_match=True):

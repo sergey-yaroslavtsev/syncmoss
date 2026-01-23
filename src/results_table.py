@@ -34,9 +34,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtCore import Qt, QSize, QRect
+from PySide6.QtGui import QFont, QColor, QImage, QPainter
 from constants import numro, numco
+from support_math import calculate_intensity_percentage_error
 
 
 class ClickableResultButton(QPushButton):
@@ -716,9 +717,6 @@ class ResultsTable(QWidget):
         Returns:
             QImage: Rendered table image
         """
-        from PySide6.QtGui import QImage, QPainter
-        from PySide6.QtCore import QSize, QRect
-        
         # Find non-empty rows (rows where at least one cell has content)
         non_empty_rows = []
         for row in range(self.interactive_table.rowCount()):

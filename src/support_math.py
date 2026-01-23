@@ -8,6 +8,7 @@ This module provides utility functions for mathematical operations including:
 """
 
 import numpy as np
+import re
 
 
 def calculate_partial_derivative_numerical(func, x, param_index, h=1e-8):
@@ -96,7 +97,6 @@ def calculate_expression_error(expr_str, parameters, errors, covariance_matrix, 
         float: Error (standard deviation) of the expression result
     """
     # Extract parameter indices used in expression
-    import re
     param_indices = []
     for match in re.finditer(r'p\[(\d+)\]', expr_str):
         idx = int(match.group(1))

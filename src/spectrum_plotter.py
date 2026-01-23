@@ -4,6 +4,102 @@ import os
 import numpy as np
 from constants import numro, model_colors
 
+
+def calculate_baseline(p, x):
+    """
+    Calculate baseline from parameters and velocity array.
+    
+    Parameters:
+    - p: parameter array (first 8 are baseline parameters)
+    - x: velocity array
+    
+    Returns:
+    - baseline array
+    """
+    return np.array(
+        p[0] + p[3] * p[0]/100 * x + p[2] * p[0] / 10000 * (x - p[1])**2 + 
+        p[6] * p[4] / 10000 * (x - p[5])**2 + p[4] + p[7] * p[4]/100 * x,
+        dtype=float
+    )
+
+
+def calculate_z_order(FS):
+    """
+    Calculate z-order for subspectra based on their minimum values.
+    Lower spectra get lower z-order (drawn first).
+    
+    Parameters:
+    - FS: list of subspectra arrays
+    
+    Returns:
+    - z_order array
+    """
+    if len(FS) == 0:
+        return np.array([])
+    
+    v = np.array([len(FS)] * len(FS))
+    for i in range(len(FS)):
+        for k in range(len(FS)):
+            if min(FS[i]) < min(FS[k]):
+                v[i] -= 1
+    return v
+
+
+def plot_subspectra_with_positions(ax, x, y, FS, FS_pos, baseline, model_colors, z_order, color_offset=1, alpha=0.8):
+    """
+    Plot subspectra with fill and position markers.
+    
+    Parameters:
+    - ax: matplotlib axis
+    - x: velocity array
+    - y: experimental data (for position marker scaling)
+    - FS: list of subspectra
+    - FS_pos: list of position markers
+    - baseline: baseline array
+    - model_colors: color list
+    - z_order: z-order array
+    - color_offset: offset for color indexing (default: 1 to skip baseline)
+    - alpha: transparency for fill (default: 0.8)
+    
+    Returns:
+    - position_artists: list of position marker artists
+    """
+    position_artists = []
+    skip_step = 0
+    
+    for i in range(len(FS)):
+        # Get color
+        color_idx = color_offset + i
+        color = model_colors[color_idx] if color_idx < len(model_colors) else 'white'
+        
+        # Get z-order
+        z = z_order[i] if i < len(z_order) else i
+        
+        # Plot subspectrum with fill
+        ax.plot(x, FS[i], color=color, zorder=z)
+        ax.fill_between(x, baseline.astype(float), FS[i].astype(float), 
+                        facecolor=color, alpha=alpha, zorder=z)
+        
+        # Plot position markers if available
+        if FS_pos and len(FS_pos) > i and len(FS_pos[i][0]) > 0:
+            minpos = min(FS_pos[i][0])
+            maxpos = max(FS_pos[i][0])
+            H_step = (max(y) - min(y)) * 0.04
+            line_h = ax.plot([minpos, maxpos], 
+                   [max(y) + H_step*(1+(i-skip_step)*2), max(y) + H_step*(1+(i-skip_step)*2)], 
+                   color=color, zorder=z)
+            position_artists.extend(line_h)
+            for j in range(len(FS_pos[i][0])):
+                line_v = ax.plot([FS_pos[i][0][j], FS_pos[i][0][j]], 
+                       [max(y) + H_step*((i-skip_step)*2), max(y) + H_step*(1+(i-skip_step)*2)], 
+                       color=color, zorder=z)
+                position_artists.extend(line_v)
+        else:
+            skip_step += 1
+    
+    return position_artists
+
+
 def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="Velocity, mm/s", ylabel="Transmission, counts"):
     """
     Plot spectra on the given matplotlib figure.
@@ -35,18 +131,27 @@ def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="V
     biggest_idx = ranges.index(max(ranges))
     x_min, x_max = min(A_list[biggest_idx]), max(A_list[biggest_idx])
 
-    # Plot each spectrum - always plot in counts on main axis
+    # Plot each spectrum
     for i in range(num_spectra):
         A = A_list[i]
         B = B_list[i]
         color = colors[i]
 
-        # Always plot in counts (no normalization on main axis)
-        ax.plot(A, B, 'x', color=color, linestyle='None', markersize=5, label=os.path.basename(filenames[i]))
+        # For multi-spectra: normalize if backgrounds available
+        # For single spectrum: plot in counts
+        if num_spectra > 1 and backgrounds and len(backgrounds) > i and backgrounds[i] > 0:
+            # Multi-spectrum: plot normalized on main axis
+            B_normalized = B / backgrounds[i]
+            ax.plot(A, B_normalized, 'x', color=color, linestyle='None', markersize=5, label=os.path.basename(filenames[i]))
+        else:
+            # Single spectrum: plot in counts
+            ax.plot(A, B, 'x', color=color, linestyle='None', markersize=5, label=os.path.basename(filenames[i]))
 
     ax.set_xlabel(xlabel, color='white')
-    ax.set_ylabel(ylabel, color='white')  # Always "Transmission, counts"
+    
     if num_spectra == 1:
+        # Single spectrum: counts on left, normalized on right
+        ax.set_ylabel(ylabel, color='white')  # "Transmission, counts"
         ax.set_title(os.path.basename(filenames[0]), color='white')
         # Add right Y-axis with normalized values for single spectrum
         if backgrounds and len(backgrounds) > 0 and backgrounds[0] > 0:
@@ -55,6 +160,8 @@ def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="V
             ax2.set_ylabel('Normalized transmission', color='white')
             ax2.tick_params(axis='y', colors='white')
     else:
+        # Multi-spectrum: only normalized transmission (primary axis)
+        ax.set_ylabel('Normalized transmission', color='white')
         ax.set_title(f"Multiple spectra ({num_spectra})", color='white')
     ax.set_facecolor('black')
     ax.tick_params(colors='white')
@@ -267,7 +374,7 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     return all_position_artists
 
 
-def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, gridcolor='white'):
+def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white'):
     """
     Plot simultaneous fitting results with multiple spectra in separate subplots.
     Used after fitting with Nbaseline models.
@@ -285,14 +392,14 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     - chi2: chi-squared value
     - spectrum_files: list of spectrum file paths
     - dir_path: directory path for output files
+    - z_order: optional custom z-order array for subspectra (flattened across all spectra)
     - gridcolor: color for grid lines (default: 'white')
     
     Returns:
-    - svg_path: path to saved SVG file
-    - png_path: path to saved PNG file
+    - svg_path: path to saved SVG file (None if z_order provided - replot mode)
+    - png_path: path to saved PNG file (None if z_order provided - replot mode)
     - position_artists_list: list of position artists for each spectrum
     """
-    import os
     figure.clear()
     
     num_spectra = len(A_list)
@@ -300,8 +407,9 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     # Collect position artists from all spectra
     position_artists_list = []
     
-    # Track color offset for each spectrum (models from previous spectra)
+    # Track color offset and z-order offset for each spectrum
     color_offset = 1  # Start after baseline color
+    z_offset = 0  # Track position in flattened z_order array
     
     # Create subplots - one for each spectrum
     for spc_idx in range(num_spectra):
@@ -323,19 +431,18 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         ax.set_xlim(min(x), max(x))
         ax.grid(color=gridcolor, linestyle=(0, (1, 10)), linewidth=1)
         
-        # Calculate z-order for subspectra
+        # Calculate or use provided z-order for subspectra
+        position_artists = []
         if len(FS) > 0:
-            v = np.array([len(FS)] * len(FS))
-            for i in range(len(FS)):
-                for k in range(len(FS)):
-                    if min(FS[i]) < min(FS[k]):
-                        v[i] -= 1
+            baseline = calculate_baseline(p, x)
             
-            # Plot each subspectrum with fill
-            baseline = p[0] + p[3] * p[0]/100 * x + p[2] * p[0] / 10000 * (x - p[1])**2 + \
-                       p[6] * p[4] / 10000 * (x - p[5])**2 + p[4] + p[7] * p[4]/100 * x
+            # Calculate z-order if not provided
+            if z_order is None:
+                v = calculate_z_order(FS)
+            else:
+                # Use custom z-order from flattened array (ensure all are integers)
+                v = [int(z_order[z_offset + i]) if z_offset + i < len(z_order) else i for i in range(len(FS))]
             
-            position_artists = []  # Collect position artists for this spectrum
             skip_step = 0
             
             for i in range(len(FS)):
@@ -345,7 +452,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
                 
                 ax.plot(x, FS[i], color=color, zorder=v[i])
                 ax.fill_between(x, baseline.astype(float), FS[i].astype(float), 
-                              facecolor=color, alpha=0.5, zorder=v[i])
+                              facecolor=color, alpha=0.8, zorder=v[i])
                 
                 # Plot position markers if available
                 if len(FS_pos) > i and len(FS_pos[i][0]) > 0:
@@ -364,9 +471,9 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
                 else:
                     skip_step += 1
             
-            # Add this spectrum's position artists to the collection
             position_artists_list.append(position_artists)
         else:
+            v = []
             position_artists_list.append([])
         
         # Plot residual
@@ -374,9 +481,10 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         ax.plot(x, residual, color='lime')
         ax.plot(x, y - y + min(y) - max(y - spc), linestyle='--', color=gridcolor)
         
-        # Plot fit and data
-        ax.plot(x, spc, color='r', zorder=len(FS)+2 if FS else 2)
-        ax.plot(x, y, linestyle='None', marker='x', color='m', zorder=len(FS)+1 if FS else 1)
+        # Plot fit and data with higher z-order
+        max_z = int(max(v)) if len(v) > 0 else len(FS)
+        ax.plot(x, spc, color='r', zorder=max_z+2)
+        ax.plot(x, y, linestyle='None', marker='x', color='m', zorder=max_z+1)
         
         # Add spectrum filename at bottom
         if spc_idx < len(spectrum_files):
@@ -404,21 +512,21 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
                 ax2.set_ylabel('Normalized transmission', color='white')
             ax2.tick_params(axis='y', colors='white')
         
-        # Update color offset for next spectrum
-        # Add len(FS) for the subspectra, plus 1 for Nbaseline (except after last spectrum)
-        if spc_idx < num_spectra - 1:
-            color_offset += len(FS) + 1  # +1 for Nbaseline separator
-        else:
-            color_offset += len(FS)
+        # Update offsets for next spectrum
+        color_offset += len(FS) + (1 if spc_idx < num_spectra - 1 else 0)  # +1 for Nbaseline
+        z_offset += len(FS)
     
     figure.tight_layout()
     figure.canvas.draw()
     
-    # Save images
-    svg_path = os.path.join(dir_path, 'result.svg')
-    png_path = os.path.join(dir_path, 'result.png')
-    figure.savefig(svg_path, bbox_inches='tight', facecolor='black')
-    figure.savefig(png_path, bbox_inches='tight', facecolor='black', dpi=300)
+    # Save images only if not in replot mode (z_order was None initially)
+    svg_path = None
+    png_path = None
+    if z_order is None:  # Original plot, not replot
+        svg_path = os.path.join(dir_path, 'result.svg')
+        png_path = os.path.join(dir_path, 'result.png')
+        figure.savefig(svg_path, bbox_inches='tight', facecolor='black')
+        figure.savefig(png_path, bbox_inches='tight', facecolor='black', dpi=300)
     
     return svg_path, png_path, position_artists_list
 
@@ -597,7 +705,7 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
     return result_svg, result_png
 
 
-def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, gridcolor='gray'):
+def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray'):
     """
     Plot spectrum fitting results on the given figure and save to files.
     
@@ -613,58 +721,34 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
     - hi2: chi-squared value
     - filepath: path to spectrum file
     - dir_path: directory to save results
+    - z_order: optional custom z-order array (if None, calculated automatically)
     - gridcolor: color for grid lines
     
     Returns:
-    - result_svg: path to saved SVG file
-    - result_png: path to saved PNG file
+    - result_svg: path to saved SVG file (None if z_order provided - replot mode)
+    - result_png: path to saved PNG file (None if z_order provided - replot mode)
+    - position_artists: list of position marker artists
     """
     figure.clear()
     ax1 = figure.add_subplot(111)
     ax1.set_xlim(min(A), max(A))
     ax1.grid(color=gridcolor, linestyle=(0, (1, 10)), linewidth=1)
     
-    # Calculate baseline
-    baseline = np.array(p[0] + p[3] * p[0]/10**2 * A + p[2] * p[0] / 10**4 * (A - p[1])**2 + 
-                       p[6] * p[4] / 10**4 * (A - p[5]) ** 2 + p[4] + p[7] * p[4]/10**2 * A, dtype=float)
+    # Calculate baseline and z-order
+    baseline = calculate_baseline(p, A)
+    if z_order is None:
+        z_order = calculate_z_order(FS)
     
-    # Determine z-order for subspectra (based on minimum values)
-    v = np.array([len(FS)] * len(FS))
-    for i in range(len(FS)):
-        for k in range(len(FS)):
-            if min(FS[i]) < min(FS[k]):
-                v[i] -= 1
+    # Plot subspectra with position markers
+    position_artists = plot_subspectra_with_positions(
+        ax1, A, B, FS, FS_pos, baseline, model_colors, z_order, 
+        color_offset=1, alpha=0.8
+    )
     
-    # Plot each subspectrum with fill
-    skip_step = 0
-    position_artists = []  # Store position marker artists
-    for i in range(len(FS)):
-        color = model_colors[i + 1] if i + 1 < len(model_colors) else 'blue'  # +1 to skip baseline
-        ax1.plot(A, FS[i], color=color, zorder=v[i])
-        ax1.fill_between(A, baseline, FS[i].astype(float), facecolor=color, zorder=v[i], alpha=0.8)
-        
-        # Plot position markers if available
-        if FS_pos and len(FS_pos) > i and len(FS_pos[i][0]) > 0:
-            minpos = min(FS_pos[i][0])
-            maxpos = max(FS_pos[i][0])
-            H_step = (max(B) - min(B)) * 0.04
-            line_h = ax1.plot([minpos, maxpos], 
-                   [max(B) + H_step*(1+(i-skip_step)*2), max(B) + H_step*(1+(i-skip_step)*2)], 
-                   color=color, zorder=v[i])
-            position_artists.extend(line_h)
-            for j in range(len(FS_pos[i][0])):
-                line_v = ax1.plot([FS_pos[i][0][j], FS_pos[i][0][j]], 
-                       [max(B) + H_step*((i-skip_step)*2), max(B) + H_step*(1+(i-skip_step)*2)], 
-                       color=color, zorder=v[i])
-                position_artists.extend(line_v)
-        else:
-            skip_step += 1
-    
-    # Plot full fitted spectrum
-    ax1.plot(A, SPC_f, color='r', zorder=len(FS)+2)
-    
-    # Plot experimental data
-    ax1.plot(A, B, linestyle='None', marker='x', color='m', zorder=len(FS)+1)
+    # Plot fit and data with higher z-order
+    max_z = int(max(z_order)) if len(z_order) > 0 else len(FS)
+    ax1.plot(A, SPC_f, color='r', zorder=max_z+2)
+    ax1.plot(A, B, linestyle='None', marker='x', color='m', zorder=max_z+1)
     
     # Plot residuals
     residual_offset = min(B) - max(B - SPC_f)
@@ -690,16 +774,23 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
             ax2 = ax1.secondary_yaxis('right', functions=(lambda x: x / bg, lambda x: x * bg))
             ax2.set_ylabel('Normalized transmission')
     
-    # Save plots
-    result_svg = os.path.join(dir_path, 'result.svg')
-    figure.savefig(result_svg, bbox_inches='tight', dpi=300)
+    # Save plots only if not in replot mode (z_order was None initially)
+    result_svg = None
+    result_png = None
+    if z_order is None:  # Original plot, not replot
+        result_svg = os.path.join(dir_path, 'result.svg')
+        figure.savefig(result_svg, bbox_inches='tight', dpi=300)
+        
+        result_png = os.path.join(dir_path, 'result.png')
+        figure.savefig(result_png, bbox_inches='tight', dpi=300)
+        
+        print(f"[DEBUG] Saved fitting plots: {result_svg}, {result_png}")
     
-    result_png = os.path.join(dir_path, 'result.png')
-    figure.savefig(result_png, bbox_inches='tight', dpi=300)
-    
-    print(f"[DEBUG] Saved fitting plots: {result_svg}, {result_png}")
-    
-    # Update layout (but don't call draw here - will be done in main thread)
+    # Update layout
     figure.tight_layout()
     
     return result_svg, result_png, position_artists
+
+
+
+

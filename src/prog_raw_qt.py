@@ -88,6 +88,12 @@ import warnings
 import copy
 from multiprocessing.pool import ThreadPool
 import gc
+import traceback
+import fitting_io
+import io
+from PIL import Image
+from spectrum_plotter import plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result
+from spectrum_io import load_spectrum, calculate_backgrounds
 
 warnings.filterwarnings('ignore', '.*object is not callable.*', )
 
@@ -203,7 +209,6 @@ class InstrumentalThread(QThread):
             print(f"[DEBUG] InstrumentalThread completed successfully")
             self.finished.emit(result)
         except Exception as e:
-            import traceback
             error_msg = f"{e}\n{traceback.format_exc()}"
             print(f"[ERROR] InstrumentalThread failed: {error_msg}")
             self.error.emit(error_msg)
@@ -221,13 +226,11 @@ class FittingThread(QThread):
     
     def run(self):
         try:
-            import fitting_io
             print(f"[DEBUG] FittingThread started for: {self.spectrum_file}")
             result = fitting_io.fit_single_spectrum(self.main_window, self.spectrum_file, self.pool)
             print(f"[DEBUG] FittingThread completed successfully")
             self.finished.emit(result)
         except Exception as e:
-            import traceback
             error_msg = f"{e}\n{traceback.format_exc()}"
             print(f"[ERROR] FittingThread failed: {error_msg}")
             self.error.emit(error_msg)
@@ -249,8 +252,6 @@ class SequentialFittingThread(QThread):
     
     def run(self):
         """Simple loop through spectra, fitting each one"""
-        import fitting_io
-        
         total = len(self.spectrum_files)
         errors = []
         succeeded = 0
@@ -287,7 +288,6 @@ class SequentialFittingThread(QThread):
                     self.progress.emit(index, total, spectrum_file, 'failed')
                     
             except Exception as e:
-                import traceback
                 error_msg = f"{e}\n{traceback.format_exc()}"
                 errors.append((spectrum_file, error_msg))
                 self.progress.emit(index, total, spectrum_file, 'error')
@@ -1239,7 +1239,6 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.log.setPlainText(f"Error copying result: {e}")
             self.log.setStyleSheet("color: red;")
-            import traceback
             traceback.print_exc()
 
     def choose_calibration_file(self):
@@ -1701,8 +1700,8 @@ class PhysicsApp(QMainWindow):
                 self.save_path.setText(os.path.normpath(file_paths[0]))
             # Update baseline Ns based on new spectrum
             self.params_table.update_baseline_from_bg()
-            # Log will be updated by update_baseline_from_bg
-            # Optionally call show_pressed here, but user didn't specify
+            # Automatically show the selected spectrum(s)
+            self.show_pressed()
         else:
             self.log.setPlainText("Selection canceled")
             self.log.setStyleSheet("color: orange;")
@@ -1769,8 +1768,6 @@ class PhysicsApp(QMainWindow):
     def on_instrumental_finished(self, result):
         """Handle instrumental function completion"""
         try:
-            from spectrum_plotter import plot_instrumental_result
-            
             # Plot results on the figure
             gridcolor = getattr(self, 'gridcolor', 'gray')
             result_svg, result_png = plot_instrumental_result(
@@ -1799,7 +1796,6 @@ class PhysicsApp(QMainWindow):
                 self.GCMS = result['G']
                 self.GCMS_input.setText(str(self.GCMS))
         except Exception as e:
-            import traceback
             self.log.setPlainText(f"Error plotting instrumental results: {e}\n{traceback.format_exc()}")
             self.log.setStyleSheet("color: red;")
     
@@ -1874,27 +1870,130 @@ class PhysicsApp(QMainWindow):
 
     def replot_result(self, row_index):
         """
-        Replot results for a specific row when button is clicked.
+        Replot results with subspectra reordered to bring clicked component to top.
         
         Args:
             row_index: Index of the row (0 to numro*3-1)
         
-        TODO: Implement replotting logic based on original prog_raw.py replot_result method.
-        This should:
-        - Determine which component based on row (row_index // 3)
-        - Parse the row to determine which model component to highlight
-        - Adjust Z_order, Color_order arrays
-        - Replot the spectrum with highlighted component
-        - Update the figure canvas
+        The function moves the selected subspectrum to the highest z-order (on top),
+        allowing users to click buttons in any order to customize the display.
+        Works for both single and simultaneous fitting.
         """
-        # TODO: Implement
-        component_index = row_index // 3  # Which component (0, 1, 2, ...)
-        row_type = row_index % 3  # 0=name, 1=value, 2=error
-        
-        print(f"Replot requested for row {row_index}: component {component_index}, type {row_type}")
-        self.log.setPlainText(f"Replot component {component_index} - TODO: implement")
-        self.log.setStyleSheet("color: orange;")
+        try:
+            # Check if we have plot data
+            if not hasattr(self, 'last_plot_data') or self.last_plot_data is None:
+                self.log.setPlainText("No plot data available. Please fit spectrum first.")
+                self.log.setStyleSheet("color: orange;")
+                return
+            
+            component_index = row_index // 3  # Which component (0, 1, 2, ...)
+            
+            # Skip baseline (component 0) - it's not a subspectrum
+            if component_index == 0:
+                self.log.setPlainText("Cannot reorder baseline")
+                self.log.setStyleSheet("color: orange;")
+                return
+            
+            # Get model list to check for Nbaseline
+            model_list = self.params_table.get_model_list()
+            
+            # Skip Nbaseline models when counting subspectra
+            # Count how many non-baseline, non-Nbaseline models appear before this component
+            subspectrum_index = 0
+            for i in range(1, component_index):  # Start from 1 to skip baseline
+                if i < len(model_list) and model_list[i] != 'Nbaseline':
+                    subspectrum_index += 1
+            
+            # Check if clicked component is Nbaseline itself
+            if component_index < len(model_list) and model_list[component_index] == 'Nbaseline':
+                self.log.setPlainText("Cannot reorder Nbaseline")
+                self.log.setStyleSheet("color: orange;")
+                return
+            
+            # Handle simultaneous vs single fitting
+            if self.last_plot_data['is_simultaneous']:
+                # For simultaneous fitting, flatten all FS lists to get total subspectra count
+                FS_list = self.last_plot_data['FS_list']
+                total_subspectra = sum(len(FS) for FS in FS_list)
+                
+                if subspectrum_index >= total_subspectra:
+                    self.log.setPlainText(f"Invalid component index: {component_index}")
+                    self.log.setStyleSheet("color: red;")
+                    return
+                
+                # Initialize z_order if not set (flattened across all spectra)
+                if self.last_plot_data['z_order'] is None:
+                    z_order = []
+                    for FS in FS_list:
+                        if len(FS) > 0:
+                            v = np.array([len(FS)] * len(FS))
+                            for i in range(len(FS)):
+                                for k in range(len(FS)):
+                                    if min(FS[i]) < min(FS[k]):
+                                        v[i] -= 1
+                            z_order.extend(v.tolist())
+                    self.last_plot_data['z_order'] = np.array(z_order)
+            else:
+                # Single spectrum fitting
+                FS = self.last_plot_data['FS']
+                if subspectrum_index >= len(FS):
+                    self.log.setPlainText(f"Invalid component index: {component_index}")
+                    self.log.setStyleSheet("color: red;")
+                    return
+                
+                # Initialize z_order if not set
+                if self.last_plot_data['z_order'] is None:
+                    v = np.array([len(FS)] * len(FS))
+                    for i in range(len(FS)):
+                        for k in range(len(FS)):
+                            if min(FS[i]) < min(FS[k]):
+                                v[i] -= 1
+                    self.last_plot_data['z_order'] = v.copy()
+            
+            # Bring selected subspectrum to top by setting highest z-order
+            max_z = max(self.last_plot_data['z_order'])
+            self.last_plot_data['z_order'][subspectrum_index] = max_z + 1
+            
+            # Replot with custom z-order
+            self._replot_with_custom_order()
+            
+            model_name = self.params_table.get_model_list()[component_index] if component_index < len(self.params_table.get_model_list()) else f"Component {component_index}"
+            self.log.setPlainText(f"Brought '{model_name}' to top")
+            self.log.setStyleSheet("color: green;")
+            
+        except Exception as e:
+            traceback.print_exc()
+            self.log.setPlainText(f"Replot error: {e}")
+            self.log.setStyleSheet("color: red;")
 
+    def _replot_with_custom_order(self):
+        """
+        Replot the spectrum using stored data with custom z-order.
+        """
+        data = self.last_plot_data
+        
+        if data['is_simultaneous']:
+            # Simultaneous fitting - multiple spectra
+            _, _, position_artists_list = plot_simultaneous_fitting_result(
+                self.figure, data['A_list'], data['B_list'], data['SPC_f_list'],
+                data['FS_list'], data['FS_pos_list'], data['p'], data['begining_spc'],
+                data['model_colors'], data['chi2'], data['spectrum_files'],
+                self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor
+            )
+            self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
+        else:
+            # Single spectrum fitting - use plot_fitting_result with z_order parameter
+            _, _, position_artists = plot_fitting_result(
+                self.figure, data['A'], data['B'], data['SPC_f'], data['FS'],
+                data['FS_pos'], data['p'], data['model_colors'], data['chi2'],
+                data['filepath'], self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor
+            )
+            self.position_artists = position_artists if position_artists else []
+        
+        # Redraw canvas
+        self.canvas.draw()
+        self.toolbar.push_current()
+    
     def save_pressed(self):
         pass
 
@@ -1911,8 +2010,6 @@ class PhysicsApp(QMainWindow):
         Returns:
             tuple: (success: bool, error_message: str or None)
         """
-        from spectrum_io import load_spectrum
-        
         # Check file existence first
         for i, file_path in enumerate(spectrum_files):
             if not os.path.exists(file_path):
@@ -1980,7 +2077,6 @@ class PhysicsApp(QMainWindow):
                 return
             
             # Check for sequential fitting: no Nbaseline AND multiple spectra
-            import fitting_io
             fitting_mode = fitting_io.determine_fitting_mode(self, spectrum_files)
             
             if fitting_mode == 'sequential':
@@ -2014,7 +2110,6 @@ class PhysicsApp(QMainWindow):
             self.fitting_thread.start()
             
         except Exception as e:
-            import traceback
             error_msg = f"Fit error: {e}\n{traceback.format_exc()}"
             print(error_msg)
             self.log.setPlainText(f"Fit error: {e}")
@@ -2040,7 +2135,6 @@ class PhysicsApp(QMainWindow):
         self.log.setPlainText(f"Calculating backgrounds for {len(spectrum_files)} spectra...")
         self.log.setStyleSheet("color: cyan;")
         
-        from spectrum_io import calculate_backgrounds
         backgrounds = calculate_backgrounds(spectrum_files, self.calibration_path)
         
         print("calculated backgrounds:", backgrounds)
@@ -2091,7 +2185,6 @@ class PhysicsApp(QMainWindow):
             self._save_sequential_result_files(spectrum_file)
             
         except Exception as e:
-            import traceback
             print(f"Error handling fitted spectrum: {e}\n{traceback.format_exc()}")
     
     def _on_sequential_progress(self, index, total, spectrum_file, status):
@@ -2190,7 +2283,6 @@ class PhysicsApp(QMainWindow):
             print(f"[Sequential] Saved results for {spectrum_basename}")
             
         except Exception as e:
-            import traceback
             print(f"Error saving sequential result: {e}\n{traceback.format_exc()}")
     
     def plot_fitting_result(self, result):
@@ -2209,12 +2301,26 @@ class PhysicsApp(QMainWindow):
             
             if is_simultaneous:
                 # Simultaneous fitting - multiple spectra
-                from spectrum_plotter import plot_simultaneous_fitting_result
-                
                 gridcolor = getattr(self, 'gridcolor', 'gray')
                 
                 # Store FS_pos for toggle functionality (from first spectrum)
                 self.current_FS_pos = result.get('FS_pos_list', [[]])[0] if result.get('FS_pos_list') else []
+                
+                # Store data for replotting
+                self.last_plot_data = {
+                    'A_list': result['A_list'],
+                    'B_list': result['B_list'],
+                    'SPC_f_list': result['SPC_f_list'],
+                    'FS_list': result['FS_list'],
+                    'FS_pos_list': result['FS_pos_list'],
+                    'p': fitted_parameters,
+                    'begining_spc': result['begining_spc'],
+                    'model_colors': model_colors,
+                    'chi2': chi2,
+                    'spectrum_files': result['spectrum_files'],
+                    'is_simultaneous': True,
+                    'z_order': None
+                }
                 
                 # Store fitting data for graf.txt saving
                 self.last_fitting_data = {
@@ -2228,7 +2334,7 @@ class PhysicsApp(QMainWindow):
                     self.figure, result['A_list'], result['B_list'], result['SPC_f_list'], 
                     result['FS_list'], result['FS_pos_list'], fitted_parameters, 
                     result['begining_spc'], model_colors, chi2, result['spectrum_files'],
-                    self.dir_path, gridcolor
+                    self.dir_path, z_order=None, gridcolor=gridcolor
                 )
                 
                 # Store position artists (from all subplots)
@@ -2248,8 +2354,6 @@ class PhysicsApp(QMainWindow):
                 
             elif 'A' in result and 'B' in result and 'SPC_f' in result and 'FS' in result:
                 # Single spectrum fitting
-                from spectrum_plotter import plot_fitting_result
-                
                 gridcolor = getattr(self, 'gridcolor', 'gray')
                 FS_pos = result.get('FS_pos', [])
                 
@@ -2264,10 +2368,25 @@ class PhysicsApp(QMainWindow):
                     'FS': result['FS']
                 }
                 
+                # Store data for replotting with z-order changes
+                self.last_plot_data = {
+                    'A': result['A'],
+                    'B': result['B'],
+                    'SPC_f': result['SPC_f'],
+                    'FS': result['FS'],
+                    'FS_pos': FS_pos,
+                    'p': fitted_parameters,
+                    'model_colors': model_colors,
+                    'chi2': chi2,
+                    'filepath': result['spectrum_file'],
+                    'is_simultaneous': False,
+                    'z_order': None
+                }
+                
                 result_svg, result_png, position_artists = plot_fitting_result(
                     self.figure, result['A'], result['B'], result['SPC_f'], result['FS'],
                     FS_pos, fitted_parameters, model_colors, chi2, result['spectrum_file'], 
-                    self.dir_path, gridcolor
+                    self.dir_path, z_order=None, gridcolor=gridcolor
                 )
                 
                 # Store position artists and enable toggle button if positions exist
@@ -2289,7 +2408,6 @@ class PhysicsApp(QMainWindow):
                 self.log.setStyleSheet("color: green;")
                 
         except Exception as e:
-            import traceback
             print(f"Error plotting result: {e}\n{traceback.format_exc()}")
             self.log.setPlainText(f"Plot error: {e}")
             self.log.setStyleSheet("color: orange;")
@@ -2337,7 +2455,6 @@ class PhysicsApp(QMainWindow):
             self.plot_fitting_result(result)
             
         except Exception as e:
-            import traceback
             error_msg = f"Error processing fit results: {e}\n{traceback.format_exc()}"
             print(error_msg)
             self.log.setPlainText(f"Error processing fit results: {e}")
@@ -2472,7 +2589,6 @@ class PhysicsApp(QMainWindow):
             self.log.setStyleSheet("color: green;")
             
         except Exception as e:
-            import traceback
             print(f"Error saving results: {e}\n{traceback.format_exc()}")
             self.log.setPlainText(f"Error saving results: {e}")
             self.log.setStyleSheet("color: red;")
@@ -2609,10 +2725,6 @@ class PhysicsApp(QMainWindow):
     
     def _save_combo_image_from_qimage(self, plot_path, table_qimage, output_path):
         """Combine plot image file and table QImage and save"""
-        from PySide6.QtGui import QImage
-        from PIL import Image
-        import io
-        
         # Load plot image
         im1 = matplotlib.image.imread(plot_path)
         
