@@ -193,7 +193,7 @@ class ResultsTable(QWidget):
         tab_layout.addWidget(self.correlation_table)
         return tab_widget
     
-    def fill_table(self, parameters, model_list, model_colors, parameter_names, covariance_matrix, errors=None, fix=None):
+    def fill_table(self, parameters, model_list, model_colors, parameter_names, covariance_matrix, errors=None, fix=None, expression_texts=None):
         """
         Main function to fill the results table with fitting results.
         
@@ -205,6 +205,7 @@ class ResultsTable(QWidget):
             covariance_matrix: Covariance matrix from fitting (numpy array)
             errors: Array of parameter errors from fitting (optional)
             fix: Array of indices of fixed parameters (optional)
+            expression_texts: Dict {component_index: expression_text} for Distr/Corr/Expression models (optional)
         
         Workflow:
             1. Clear existing table
@@ -222,6 +223,9 @@ class ResultsTable(QWidget):
         self.current_parameter_names = parameter_names
         self.current_chi2 = 0.0  # Will be set separately by main window
         
+        # Store expression texts
+        self.expression_texts = expression_texts if expression_texts is not None else {}
+        
         # Store data for internal use
         self.fit_parameters = parameters
         self.model_list = model_list
@@ -237,18 +241,23 @@ class ResultsTable(QWidget):
         self.fill_model_column(model_list, model_colors)
         self.fill_parameter_names(parameter_names)
         self.fill_errors(errors)
+        self._apply_expression_spanning()
         self.display_correlation_matrix(covariance_matrix)
     
     def clear_table(self):
         """Clear all data from the results table."""
+        # Clear any column spanning first
+        self.interactive_table.clearSpans()
+        
         for row in range(self.num_rows):
             # Clear button text
             self.buttons[row].setText('')
             self.buttons[row].setStyleSheet('')
             
-            # Clear labels
+            # Clear labels - restore center alignment
             for col in range(len(self.labels[row])):
                 self.labels[row][col].setText('')
+                self.labels[row][col].setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Clear correlation matrix
         self.correlation_table.clear()
@@ -258,12 +267,10 @@ class ResultsTable(QWidget):
     def fill_values(self, parameters):
         """
         Fill parameter values into value rows (1, 4, 7, 10, ...).
+        For Distr/Corr/Expression models, the last parameter column shows the expression text.
         
         Args:
             parameters: Array of parameter values from fitting
-        
-        Note: This should follow the same structure as fill_parameter_names,
-        respecting component boundaries and parameter counts.
         """
         if parameters is None:
             return
@@ -283,13 +290,30 @@ class ResultsTable(QWidget):
             else:
                 num_params = 0
             
+            model_name = self.model_list[component] if component < len(self.model_list) else ''
+            
             # Fill values for this component
             for col in range(min(num_params, numco)):
                 if param_index < len(parameters):
-                    value = parameters[param_index]
-                    # Format the value appropriately (3 decimal places for display)
-                    formatted_value = f"{value:.3f}" if isinstance(value, (int, float)) else str(value)
-                    self.labels[value_row][col].setText(formatted_value)
+                    # Check if this is an expression column
+                    if model_name in ['Distr', 'Corr'] and col == num_params - 1:
+                        # Show expression text for Distr/Corr
+                        if component in self.expression_texts:
+                            self.labels[value_row][col].setText(self.expression_texts[component])
+                        else:
+                            self.labels[value_row][col].setText('')
+                    elif model_name == 'Expression' and col == num_params - 1:
+                        # For Expression: value row shows the calculated result
+                        calc_value, _ = self._evaluate_expression_with_error(component)
+                        if calc_value is not None:
+                            self.labels[value_row][col].setText(f"{calc_value:.3f}")
+                        else:
+                            self.labels[value_row][col].setText('eval error')
+                    else:
+                        value = parameters[param_index]
+                        # Format the value appropriately (3 decimal places for display)
+                        formatted_value = f"{value:.3f}" if isinstance(value, (int, float)) else str(value)
+                        self.labels[value_row][col].setText(formatted_value)
                     param_index += 1
     
     def fill_model_column(self, model_list, model_colors):
@@ -465,13 +489,24 @@ class ResultsTable(QWidget):
             if name_row >= self.num_rows:
                 break
             
+            model_name = self.model_list[component] if component < len(self.model_list) else ''
+            
             # Fill names starting from column 1
             for col, name in enumerate(names[:numco]):
-                self.labels[name_row][col].setText(str(name))
+                # For Expression: name row shows the expression text
+                if model_name == 'Expression' and col == len(names) - 1:
+                    if component in self.expression_texts:
+                        self.labels[name_row][col].setText(self.expression_texts[component])
+                    else:
+                        self.labels[name_row][col].setText(str(name))
+                else:
+                    self.labels[name_row][col].setText(str(name))
     
     def fill_errors(self, errors):
         """
         Fill parameter errors into error rows (2, 5, 8, 11, ...).
+        For Expression model: shows 'calculated_value ± propagated_error'.
+        For Distr/Corr expression column: shows empty.
         
         Args:
             errors: Array of parameter errors from fitting (returned by minimi_hi as 'er')
@@ -494,13 +529,28 @@ class ResultsTable(QWidget):
             else:
                 num_params = 0
             
+            model_name = self.model_list[component] if component < len(self.model_list) else ''
+            
             # Fill errors for this component
             for col in range(min(num_params, numco)):
                 if error_index < len(errors):
-                    error_value = errors[error_index]
-                    # Format with ± prefix (3 decimal places for display)
-                    formatted_error = f"±{error_value:.3f}" if isinstance(error_value, (int, float)) else str(error_value)
-                    self.labels[error_row][col].setText(formatted_error)
+                    if model_name in ['Distr', 'Corr', 'Expression'] and col == num_params - 1:
+                        # Expression column
+                        if model_name == 'Expression':
+                            # Show propagated error for the expression
+                            _, calc_error = self._evaluate_expression_with_error(component)
+                            if calc_error is not None:
+                                self.labels[error_row][col].setText(f"±{calc_error:.3f}")
+                            else:
+                                self.labels[error_row][col].setText('')
+                        else:
+                            # Distr/Corr expression column - no error
+                            self.labels[error_row][col].setText('')
+                    else:
+                        error_value = errors[error_index]
+                        # Format with ± prefix (3 decimal places for display)
+                        formatted_error = f"±{error_value:.3f}" if isinstance(error_value, (int, float)) else str(error_value)
+                        self.labels[error_row][col].setText(formatted_error)
                     error_index += 1
     
     def calculate_fraction_errors(self, correlation_matrix):
@@ -523,6 +573,117 @@ class ResultsTable(QWidget):
         fraction_errors = {}
         return fraction_errors
     
+    def _evaluate_expression_with_error(self, component):
+        """
+        Evaluate an Expression model's expression using fitted parameters and compute
+        propagated error using the covariance matrix.
+        
+        Args:
+            component: Component index in model_list
+            
+        Returns:
+            tuple: (calculated_value, propagated_error) or (None, None) on failure
+        """
+        if component not in self.expression_texts:
+            return None, None
+        
+        expr_text = self.expression_texts[component]
+        params = self.fit_parameters
+        errors = self.errors
+        cov = self.covariance_matrix
+        
+        if params is None:
+            return None, None
+        
+        # Evaluate expression
+        try:
+            namespace = {'p': params, 'np': np}
+            value = float(eval(expr_text, {"__builtins__": {}}, namespace))
+        except Exception:
+            return None, None
+        
+        if cov is None or errors is None:
+            return value, 0.0
+        
+        # Build mapping from full parameter index to covariance matrix index
+        # (only free parameters are in the covariance matrix)
+        full_to_cov = {}
+        cov_idx = 0
+        for i in range(len(errors)):
+            if not np.isnan(errors[i]):
+                full_to_cov[i] = cov_idx
+                cov_idx += 1
+        
+        # Compute partial derivatives via numerical differentiation
+        n_free = cov.shape[0]
+        partials = np.zeros(n_free)
+        delta = 1e-6
+        
+        for full_idx, c_idx in full_to_cov.items():
+            p_plus = params.copy()
+            p_minus = params.copy()
+            h = max(abs(params[full_idx]) * delta, delta)
+            p_plus[full_idx] += h
+            p_minus[full_idx] -= h
+            try:
+                f_plus = float(eval(expr_text, {"__builtins__": {}}, {'p': p_plus, 'np': np}))
+                f_minus = float(eval(expr_text, {"__builtins__": {}}, {'p': p_minus, 'np': np}))
+                partials[c_idx] = (f_plus - f_minus) / (2 * h)
+            except Exception:
+                partials[c_idx] = 0.0
+        
+        # Error propagation: var(f) = J^T * Cov * J
+        variance = partials @ cov @ partials
+        error = np.sqrt(max(variance, 0))
+        
+        return value, error
+
+    def _apply_expression_spanning(self):
+        """
+        Apply column spanning for Distr/Corr/Expression models in the results table.
+        The last meaningful parameter cell expands to span all remaining columns.
+        Uses QTableWidgetItem text instead of QLabel so text fills the full spanned area.
+        """
+        if not self.model_list:
+            return
+
+        # Map model names to their number of parameters
+        special_models = {
+            'Expression': 1,
+            'Corr': 2,
+            'Distr': 5,
+        }
+
+        for i, model_name in enumerate(self.model_list):
+            if model_name in special_models:
+                num_params = special_models[model_name]
+                # Table column of the last meaningful param (col 0 is buttons, params start at col 1)
+                last_col = num_params  # e.g. Expression: col 1, Corr: col 2, Distr: col 5
+                span_cols = self.num_cols - last_col  # how many columns to span
+
+                if span_cols > 1:
+                    name_row = i * 3
+                    value_row = i * 3 + 1
+                    error_row = i * 3 + 2
+
+                    # Apply span for all 3 rows (name, value, error)
+                    for table_row in [name_row, value_row, error_row]:
+                        if table_row < self.num_rows:
+                            self.interactive_table.setSpan(table_row, last_col, 1, span_cols)
+
+                    # Replace QLabel cell widgets with QTableWidgetItems for spanned cells
+                    # so the text naturally fills the full spanned width
+                    label_idx = num_params - 1  # index into self.labels[row]
+                    for table_row in [name_row, value_row, error_row]:
+                        if table_row < self.num_rows and label_idx < len(self.labels[table_row]):
+                            text = self.labels[table_row][label_idx].text()
+                            # Remove the QLabel widget and use a QTableWidgetItem instead
+                            self.interactive_table.removeCellWidget(table_row, last_col)
+                            item = QTableWidgetItem(text)
+                            item.setFont(QFont('Arial', 10))
+                            item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                            self.interactive_table.setItem(table_row, last_col, item)
+
     def display_correlation_matrix(self, covariance_matrix):
         """
         Display correlation matrix in the correlation tab.

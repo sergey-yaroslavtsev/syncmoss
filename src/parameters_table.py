@@ -370,6 +370,12 @@ class ParametersTable(QWidget):
                     top_layout = param_widget.layout().itemAt(0).layout()
                     name_label = top_layout.itemAt(0).widget()
                     name_label.row = r
+            # Append a new empty row at the end to keep table size stable
+            new_row_idx = len(self.row_widgets)
+            new_row_widget = self.create_model_row(new_row_idx)
+            self.row_widgets.append(new_row_widget)
+            self.params_layout.addWidget(new_row_widget)
+            self.row_params.append(0)
         elif model == 'Insert':
             if row >= len(self.row_widgets):
                 return
@@ -453,6 +459,11 @@ class ParametersTable(QWidget):
             # Update grey frames for Distr/Corr models
             if model in ['Distr', 'Corr']:
                 self.update_distr_corr_highlights()
+
+            # Apply expression expansion for Distr/Corr/Expression models
+            if model in ['Distr', 'Corr', 'Expression']:
+                last_col = self.row_params[row] - 1  # 0-based last meaningful column
+                self._apply_expression_expansion(row, last_col)
 
     def update_distr_corr_highlights(self):
         """Update grey frame highlights for parameters referenced by Distr/Corr models"""
@@ -771,9 +782,87 @@ class ParametersTable(QWidget):
 
         self.row_params[row] = len(names)
 
+    def _apply_expression_expansion(self, row, last_col):
+        """
+        For Distr/Corr/Expression models, expand the last meaningful parameter's
+        value_input to visually occupy the space of all subsequent columns.
+        Uses layout stretch factors instead of size policies to avoid breaking row height.
+        
+        Args:
+            row: Row index
+            last_col: 0-based index of the last meaningful parameter column
+        """
+        row_widget = self.row_widgets[row]
+        row_layout = row_widget.layout()
+
+        # Hide param_widgets after last_col
+        for col in range(last_col + 1, numco):
+            row_layout.itemAt(col + 1).widget().setVisible(False)
+
+        # Set stretch: only the expression column gets stretch=1
+        for col in range(numco):
+            row_layout.setStretch(col + 1, 1 if col == last_col else 0)
+
+        # Expand value_input in the expression column
+        param_widget = row_layout.itemAt(last_col + 1).widget()
+        value_input = param_widget.layout().itemAt(1).widget()
+        value_input.setMinimumWidth(80)
+        value_input.setMaximumWidth(16777215)
+
+        # Expand name_label so long names are fully visible
+        top_layout = param_widget.layout().itemAt(0).layout()
+        name_label = top_layout.itemAt(0).widget()
+        name_label.setMinimumWidth(50)
+        name_label.setMaximumWidth(16777215)
+
+        # Disable fix checkbox and use L2 icon (permanently fixed indicator)
+        fix_cb = top_layout.itemAt(1).widget()
+        fix_cb.setEnabled(False)
+        fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox_L2.png); }")
+
+        bounds_layout = param_widget.layout().itemAt(2).layout()
+        bounds_layout.itemAt(0).widget().setReadOnly(True)
+        bounds_layout.itemAt(1).widget().setReadOnly(True)
+
+    def _restore_normal_columns(self, row):
+        """
+        Restore normal column layout for a row (undo expression expansion).
+        """
+        if row >= len(self.row_widgets):
+            return
+        row_widget = self.row_widgets[row]
+        row_layout = row_widget.layout()
+        for col in range(numco):
+            param_widget = row_layout.itemAt(col + 1).widget()
+            # Show all param_widgets
+            param_widget.setVisible(True)
+            # Reset stretch
+            row_layout.setStretch(col + 1, 0)
+
+            # Restore value_input fixed width
+            value_input = param_widget.layout().itemAt(1).widget()
+            value_input.setFixedWidth(80)
+
+            # Restore name_label fixed width
+            top_layout = param_widget.layout().itemAt(0).layout()
+            name_label = top_layout.itemAt(0).widget()
+            name_label.setFixedWidth(50)
+
+            # Re-enable fix checkbox and restore normal style
+            fix_cb = top_layout.itemAt(1).widget()
+            fix_cb.setEnabled(True)
+            fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox.png); } QCheckBox::indicator:checked { image: url(CheckBox_L.png); }")
+
+            # Re-enable bounds
+            bounds_layout = param_widget.layout().itemAt(2).layout()
+            bounds_layout.itemAt(0).widget().setReadOnly(False)
+            bounds_layout.itemAt(1).widget().setReadOnly(False)
+
     def clear_row_params(self, row):
         if row >= len(self.row_widgets):
             return
+        # Restore normal column layout first (undo any expression expansion)
+        self._restore_normal_columns(row)
         row_widget = self.row_widgets[row]
         # Reset model button to "None"
         start_widget = row_widget.layout().itemAt(0).widget()
@@ -910,6 +999,37 @@ class ParametersTable(QWidget):
         
         return models
     
+    def get_expression_texts(self):
+        """
+        Get expression texts for Distr/Corr/Expression models.
+        
+        Returns:
+            dict: {component_index: expression_text} where component_index matches
+                  the index in get_model_list() output.
+        """
+        texts = {}
+        component_idx = 0  # 0 is baseline
+        for row_idx in range(1, len(self.row_widgets)):
+            row_widget = self.row_widgets[row_idx]
+            start_widget = row_widget.layout().itemAt(0).widget()
+            model_btn = start_widget.layout().itemAt(1).widget()
+            model_name = model_btn.text()
+            if model_name != 'None':
+                component_idx += 1
+                if model_name == 'Expression':
+                    param_widget = row_widget.layout().itemAt(1).widget()
+                    value_input = param_widget.layout().itemAt(1).widget()
+                    texts[component_idx] = value_input.text()
+                elif model_name == 'Distr':
+                    param_widget = row_widget.layout().itemAt(5).widget()
+                    value_input = param_widget.layout().itemAt(1).widget()
+                    texts[component_idx] = value_input.text()
+                elif model_name == 'Corr':
+                    param_widget = row_widget.layout().itemAt(2).widget()
+                    value_input = param_widget.layout().itemAt(1).widget()
+                    texts[component_idx] = value_input.text()
+        return texts
+
     def get_parameter_names(self):
         """
         Get list of parameter names for each component.

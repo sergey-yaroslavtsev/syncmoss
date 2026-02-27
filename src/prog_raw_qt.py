@@ -1280,6 +1280,16 @@ class PhysicsApp(QMainWindow):
                     top_layout = param_widget.layout().itemAt(0).layout()
                     fix_cb = top_layout.itemAt(1).widget()
                     
+                    # Check if this is an expression column for Distr/Corr/Expression
+                    if model_name in ['Distr', 'Corr', 'Expression'] and col == num_params - 1:
+                        # Preserve the expression text (already set by select_model/auto_fill_params)
+                        # Use stored expression_texts from results if available
+                        if hasattr(self.results_table, 'expression_texts') and model_idx in self.results_table.expression_texts:
+                            value_input.setText(self.results_table.expression_texts[model_idx])
+                        # Skip numeric value for expression placeholder
+                        param_index += 1
+                        continue
+                    
                     # Set parameter value
                     value = parameters[param_index]
                     value_input.setText(f"{value:.6g}")
@@ -2429,6 +2439,7 @@ class PhysicsApp(QMainWindow):
             model_list = self.params_table.get_model_list()
             model_colors = self.params_table.get_current_colors()
             parameter_names = self.params_table.get_parameter_names()
+            expression_texts = self.params_table.get_expression_texts()
             
             fitted_parameters = result['parameters']
             errors = result['errors']
@@ -2443,7 +2454,8 @@ class PhysicsApp(QMainWindow):
                 parameter_names,
                 covariance_matrix,
                 errors,
-                fix
+                fix,
+                expression_texts
             )
             self.results_table.current_chi2 = chi2
             
@@ -2707,6 +2719,7 @@ class PhysicsApp(QMainWindow):
             model_list = self.params_table.get_model_list()
             model_colors = self.params_table.get_current_colors()
             parameter_names = self.params_table.get_parameter_names()
+            expression_texts = self.params_table.get_expression_texts()
             
             # Extract results
             fitted_parameters = result['parameters']
@@ -2728,7 +2741,8 @@ class PhysicsApp(QMainWindow):
                 parameter_names,
                 covariance_matrix,
                 errors,
-                fix
+                fix,
+                expression_texts
             )
             
             # Store chi2 for saving
