@@ -1,0 +1,10 @@
+{
+    "name": "Light mode",
+    "figure_facecolor": "#e8e8e8",
+    "axes_facecolor": "#f5f5f5",
+    "axes_text_color": "black",
+    "gridcolor": "gray",
+    "legend_facecolor": "#f5f5f5",
+    "legend_edgecolor": "black",
+    "legend_textcolor": "black"
+}

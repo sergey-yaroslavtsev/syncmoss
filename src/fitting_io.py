@@ -590,7 +590,11 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'FS_pos_list': FS_pos_list,  # List of position lists
                 'model_separate': model_separate,  # Separated models
                 'begining_spc': begining_spc,  # Parameter indices
-                'spectrum_files': spectrum_files
+                'spectrum_files': spectrum_files,
+                'Distri': list(Distri_save),  # Distribution expressions (original)
+                'Cor': list(Cor_save),  # Correlation expressions (original)
+                'Distri_substituted': list(Distri),  # Distribution expressions (substituted)
+                'Cor_substituted': list(Cor),  # Correlation expressions (substituted)
             }
         
         else:
@@ -636,7 +640,11 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'SPC_f': func(A, p),  # Calculate fitted spectrum
                 'FS': FS,
                 'FS_pos': FS_pos,
-                'spectrum_file': spectrum_file
+                'spectrum_file': spectrum_file,
+                'Distri': list(Distri),  # Distribution expressions (original)
+                'Cor': list(Cor),  # Correlation expressions (original)
+                'Distri_substituted': list(Distri_t),  # Distribution expressions (substituted)
+                'Cor_substituted': list(Cor_t),  # Correlation expressions (substituted)
             }
     
     except Exception as e:

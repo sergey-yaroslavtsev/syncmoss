@@ -54,7 +54,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 
 
 class CustomNavigationToolbar(NavigationToolbar):
-    """Custom matplotlib toolbar with toggle button for model line positions."""
+    """Custom matplotlib toolbar with toggle button for model line positions and legend."""
     
     def __init__(self, canvas, parent):
         super().__init__(canvas, parent)
@@ -66,18 +66,32 @@ class CustomNavigationToolbar(NavigationToolbar):
         # Add toggle positions button
         self.toggle_positions_action = self.addAction('Toggle\nPositions', self.toggle_positions)
         self.toggle_positions_action.setCheckable(True)
-        self.toggle_positions_action.setChecked(True)  # Start as visible
+        self.toggle_positions_action.setChecked(True)  # Start as visible (positions default ON)
         self.toggle_positions_action.setToolTip('Show/Hide model line positions')
         self.toggle_positions_action.setEnabled(False)  # Disabled by default
+
+        # Add toggle legend button
+        self.toggle_legend_action = self.addAction('Toggle\nLegend', self.toggle_legend)
+        self.toggle_legend_action.setCheckable(True)
+        self.toggle_legend_action.setChecked(False)  # Start as hidden (legend default OFF)
+        self.toggle_legend_action.setToolTip('Show/Hide legend')
+        self.toggle_legend_action.setEnabled(False)  # Disabled by default
     
     def toggle_positions(self):
         """Toggle visibility of model line positions."""
         if hasattr(self.parent_window, 'toggle_position_markers'):
             show = self.toggle_positions_action.isChecked()
             self.parent_window.toggle_position_markers(show)
+    
+    def toggle_legend(self):
+        """Toggle visibility of legend."""
+        if hasattr(self.parent_window, 'toggle_legend_visibility'):
+            show = self.toggle_legend_action.isChecked()
+            self.parent_window.toggle_legend_visibility(show)
 import threading
 import queue
 import time
+import json
 from functools import partial
 import shutil
 import platform
@@ -91,8 +105,7 @@ import gc
 import traceback
 import fitting_io
 import io
-from PIL import Image
-from spectrum_plotter import plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result
+from spectrum_plotter import plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result, plot_distribution
 from spectrum_io import load_spectrum, calculate_backgrounds
 
 warnings.filterwarnings('ignore', '.*object is not callable.*', )
@@ -120,7 +133,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QProgressBar, QSpinBox, QDoubleSpinBox,
     QMenu, QSizePolicy
 )
-from PySide6.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator, QRegularExpressionValidator
+from PySide6.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator, QRegularExpressionValidator, QPalette, QShortcut, QKeySequence
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression
 import sys
 import os
@@ -670,11 +683,9 @@ class PhysicsApp(QMainWindow):
         self.dir_path = os.path.dirname(__file__)
         self.workfolder = None  # Start with no workfolder selected
         self.workfolder_check = 1
-        self.gridcolor = 'w'
         self.check_points_match = False
         self.newfilename = str('')
         self.newfilename2 = str('')
-        self.BGcolor = 'k'
         self.calibration_path = os.path.join(self.dir_path, "Calibration.dat")
         self.points_match = True
         self.path_list = []
@@ -682,6 +693,10 @@ class PhysicsApp(QMainWindow):
         self.sequence_fitting_type = 0  # 0 = initial, 1 = result
         self.x0 = 0.0
         self.MulCo = 0.0
+
+        # Detect OS dark/light mode and load matching theme
+        self._is_dark_mode = self._detect_os_dark_mode()
+        self._load_theme()  # Sets self.gridcolor, self.BGcolor, and self._theme
 
         # Model colors from constants
         # Need to extend the list to fill more lines in the table
@@ -708,7 +723,6 @@ class PhysicsApp(QMainWindow):
 
         self.loadmod_btn = QPushButton("Load\nmodel")
         self.loadmod_btn.setFont(QFont('Arial', 16))
-        self.loadmod_btn.setStyleSheet("background-color: rgb(127, 255, 255); color: black;")
         self.loadmod_btn.clicked.connect(self.loadmod_pressed)
 
         self.btncleanmodel = QPushButton("Clean\nmodel\n(2 clk)")
@@ -722,24 +736,20 @@ class PhysicsApp(QMainWindow):
 
         self.cal_cho_btn = QPushButton("Choose\ncalibration\nfile")
         self.cal_cho_btn.setFont(QFont('Arial', 16))
-        self.cal_cho_btn.setStyleSheet("background-color: rgb(63, 127, 127); color: white;")
         self.cal_cho_btn.clicked.connect(self.choose_calibration_file)
 
         # Calibration group
         cal_frame = QFrame()
-        cal_frame.setStyleSheet("QFrame { border: 2px solid gray; border-radius: 5px; }")
         cal_layout = QHBoxLayout(cal_frame)
         cal_layout.setContentsMargins(5, 5, 5, 5)
 
         self.cal_cho_title = QLabel("Velocity\ndown-up:")
         self.cal_cho_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cal_cho_title.setFont(QFont('Arial', 16))
-        self.cal_cho_title.setStyleSheet("color: red; background-color: transparent; border: none;")
 
         self.velocity_btn = QPushButton()
         self.velocity_btn.setFlat(True)
         self.velocity_btn.setIconSize(QSize(32, 32))
-        self.velocity_btn.setStyleSheet("QPushButton { border: none; }")
         self.velocity_btn.clicked.connect(self.toggle_velocity_direction)
         self.velocity_direction = False  # False for down-up, True for up-down
         self.update_velocity_label()  # Set initial state
@@ -749,12 +759,10 @@ class PhysicsApp(QMainWindow):
 
         self.cal_btn = QPushButton("Calibrate")
         self.cal_btn.setFont(QFont('Arial', 16))
-        self.cal_btn.setStyleSheet("background-color: rgb(127, 255, 255); color: black;")
         self.cal_btn.clicked.connect(self.calibration)
 
         self.vel_btn = QPushButton("RAW\nto\ndat")
         self.vel_btn.setFont(QFont('Arial', 16))
-        self.vel_btn.setStyleSheet("background-color: rgb(127, 255, 255); color: black;")
         self.vel_btn.clicked.connect(self.raw_to_dat)
 
         self.interrupt_btn = QPushButton('! INTERRUPT !')
@@ -762,14 +770,19 @@ class PhysicsApp(QMainWindow):
         self.interrupt_btn.setStyleSheet("background-color: red; color: white;")
         self.interrupt_btn.clicked.connect(self.interrupt)
 
-        top_controls.addWidget(self.loadmod_btn)
-        top_controls.addWidget(self.btncleanmodel)
-        # top_controls.addWidget(self.switch)  # NFS switch removed
-        top_controls.addWidget(self.cal_cho_btn)
-        top_controls.addWidget(cal_frame)
-        top_controls.addWidget(self.cal_btn)
-        top_controls.addWidget(self.vel_btn)
-        top_controls.addWidget(self.interrupt_btn)
+        self.theme_btn = QPushButton('Light mode')
+        self.theme_btn.setFont(QFont('Arial', 16))
+        self.theme_btn.clicked.connect(self.toggle_theme)
+
+        # Add all buttons to top controls
+        top_buttons = [self.loadmod_btn, self.btncleanmodel, self.cal_cho_btn,
+                       self.cal_btn, self.vel_btn, self.interrupt_btn, self.theme_btn]
+        for btn in top_buttons:
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            top_controls.addWidget(btn)
+        # cal_frame also needs expanding policy
+        cal_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        top_controls.insertWidget(3, cal_frame)  # Insert after cal_cho_btn
 
         left_layout.addLayout(top_controls)
 
@@ -777,7 +790,8 @@ class PhysicsApp(QMainWindow):
         self.params_table = ParametersTable(self)
         scroll_params = QScrollArea()
         scroll_params.setWidget(self.params_table)
-        scroll_params.setWidgetResizable(True)
+        scroll_params.setWidgetResizable(False)
+        scroll_params.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         left_layout.addWidget(scroll_params)
 
         # Bottom controls
@@ -785,7 +799,8 @@ class PhysicsApp(QMainWindow):
 
         self.play_btn = QPushButton("Fit\n(F5)")
         self.play_btn.setFont(QFont('Arial', 21))
-        self.play_btn.setStyleSheet("background-color: rgb(0, 191, 0); color: black;")
+        self.play_btn.setStyleSheet("background-color: rgb(0, 200, 0); color: black;")
+        self.play_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.play_btn.clicked.connect(self.fit_pressed)
 
         # Fit options
@@ -824,8 +839,10 @@ class PhysicsApp(QMainWindow):
         file_choose_layout = QHBoxLayout()
         self.btnchoose = QPushButton("Choose\nspectrum")
         self.btnchoose.setFont(QFont('Arial', 18))
+        self.btnchoose.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.btnchoose.clicked.connect(self.choose_file)
         self.process_path = QTextEdit("['Calibration.dat']")
+        self.process_path.setFont(QFont('Arial', 14))
         self.process_path.setMaximumHeight(100)  # Make it taller
         # Allow editing of file paths
         file_choose_layout.addWidget(self.btnchoose)
@@ -841,10 +858,12 @@ class PhysicsApp(QMainWindow):
         show_buttons = QHBoxLayout()
         self.show_btn = QPushButton("Show spectrum")
         self.show_btn.setFont(QFont('Arial', 18))
+        self.show_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.show_btn.clicked.connect(self.show_pressed)
 
         self.showM_btn = QPushButton("Show model")
         self.showM_btn.setFont(QFont('Arial', 18))
+        self.showM_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.showM_btn.clicked.connect(self.showM_pressed)
 
         show_buttons.addWidget(self.show_btn)
@@ -853,7 +872,7 @@ class PhysicsApp(QMainWindow):
         ins_layout = QHBoxLayout()
         self.ins_btn = QPushButton("Instrumental\nfunction")
         self.ins_btn.setFont(QFont('Arial', 16))
-        self.ins_btn.setStyleSheet("background-color: rgb(127, 127, 127); color: white;")
+        self.ins_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         # Create dropdown menu for INS button
         self.ins_menu = QMenu()
@@ -877,7 +896,7 @@ class PhysicsApp(QMainWindow):
 
         self.ins_btn2 = QPushButton("Refine\nInstr. func.\nESRF")
         self.ins_btn2.setFont(QFont('Arial', 15))
-        self.ins_btn2.setStyleSheet("background-color: rgb(127, 127, 127); color: white;")
+        self.ins_btn2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         # Create dropdown menu for INS refine button
         self.ins_menu2 = QMenu()
@@ -909,17 +928,20 @@ class PhysicsApp(QMainWindow):
         # Change spectrum dropdown button
         self.change_spectrum_btn = QPushButton("Change\nspectrum(a)")
         self.change_spectrum_btn.setFont(QFont('Arial', 16))
+        self.change_spectrum_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.change_spectrum_btn.clicked.connect(self.show_spectrum_options)
         
         # Choose workfolder button
         self.choose_workfolder_btn = QPushButton("Choose\nworkfolder")
         self.choose_workfolder_btn.setFont(QFont('Arial', 16))
+        self.choose_workfolder_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.choose_workfolder_btn.clicked.connect(self.choose_workfolder)
         
         # Sequence fitting button
         self.sequence_fitting_type = 0  # 0 = initial, 1 = result
         self.seq_fit_btn = QPushButton("Sequence Fitting\n(initial)")
         self.seq_fit_btn.setFont(QFont('Arial', 16))
+        self.seq_fit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.seq_fit_btn.clicked.connect(self.show_sequence_fitting_options)
         
         seq_fit_layout.addWidget(self.change_spectrum_btn)
@@ -932,23 +954,28 @@ class PhysicsApp(QMainWindow):
         save_layout = QHBoxLayout()
         self.save_btn = QPushButton("Save\nresult")
         self.save_btn.setFont(QFont('Arial', 18))
+        self.save_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         # self.save_btn.clicked.connect(self.save_pressed)
 
         self.saveas_btn = QPushButton("Save\nresult as")
         self.saveas_btn.setFont(QFont('Arial', 18))
+        self.saveas_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         # self.saveas_btn.clicked.connect(self.save_as_pressed)
 
         # Editable save path field
         self.save_path = QLineEdit("")
-        self.save_path.setFont(QFont('Arial', 18))
+        self.save_path.setFont(QFont('Arial', 14))
+        self.save_path.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.save_path.setPlaceholderText("Save path")
 
         self.save_model_btn = QPushButton("Save\nmodel")
         self.save_model_btn.setFont(QFont('Arial', 18))
+        self.save_model_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.save_model_btn.clicked.connect(self.save_model_pressed)
 
         self.save_model_as_btn = QPushButton("Save\nmodel as")
         self.save_model_as_btn.setFont(QFont('Arial', 18))
+        self.save_model_as_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.save_model_as_btn.clicked.connect(self.save_model_as_pressed)
 
         self.save_btn.clicked.connect(self.save_result_pressed)
@@ -995,10 +1022,6 @@ class PhysicsApp(QMainWindow):
 
         # Top controls for image
         image_controls = QHBoxLayout()
-        self.dark_light_mode = QPushButton('Light spc')
-        self.dark_light_mode.setFont(QFont('Arial', 18))
-        self.dark_light_mode.setStyleSheet("background-color: rgb(191, 191, 191);")
-        # self.dark_light_mode.clicked.connect(self.change_visual)
 
         title = QLabel("Result")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1007,9 +1030,9 @@ class PhysicsApp(QMainWindow):
 
         self.SP_DI = QPushButton('Distribution')
         self.SP_DI.setFont(QFont('Arial', 18))
-        # self.SP_DI.clicked.connect(self.change_image)
+        self.SP_DI.clicked.connect(self.toggle_distribution)
+        self._showing_distribution = False  # Track current view state
 
-        image_controls.addWidget(self.dark_light_mode)
         image_controls.addWidget(title, 1)
         image_controls.addWidget(self.SP_DI)
         top_layout.addLayout(image_controls)
@@ -1025,13 +1048,14 @@ class PhysicsApp(QMainWindow):
         # Log and take result
         log_layout = QHBoxLayout()
         self.log = QTextEdit()
-        self.log.setFont(QFont('Arial', 21))
+        self.log.setFont(QFont('Arial', 14))
         self.log.setMaximumHeight(100)
         self.log.setReadOnly(True)  # Status field, read-only
         self.log.setPlainText("Ready")  # Initial status
 
         self.take_result_btn = QPushButton('Take result as model (F8)')
         self.take_result_btn.setFont(QFont('Arial', 18))
+        self.take_result_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.take_result_btn.clicked.connect(self.take_result)
 
         log_layout.addWidget(self.log)
@@ -1047,14 +1071,24 @@ class PhysicsApp(QMainWindow):
         right_layout.addWidget(right_splitter)
 
         splitter.addWidget(self.right_panel)
-        splitter.setSizes([1000, 600])  # Left larger
+        self._main_splitter = splitter  # Store reference for resizeEvent
+        # Calculate ideal left panel width from actual params table size + scroll area overhead + layout margins
+        margins = left_layout.contentsMargins()
+        self._left_panel_ideal_width = self.params_table.sizeHint().width() + 25 + margins.left() + margins.right()
+        splitter.setSizes([self._left_panel_ideal_width, 500])
 
         # Load and plot default spectrum
         self.plot_default_spectrum()
 
+        # Apply initial theme (matplotlib + Qt color scheme)
+        self._force_color_scheme(self._is_dark_mode)
+        self._apply_theme()
+
         # Keyboard shortcuts
-        # self.play_btn.setShortcut("F5")
-        # etc.
+        QShortcut(QKeySequence(Qt.Key.Key_F5), self).activated.connect(self.fit_pressed)
+        QShortcut(QKeySequence(Qt.Key.Key_F8), self).activated.connect(self.take_result)
+        QShortcut(QKeySequence(Qt.Key.Key_Return), self).activated.connect(self.showM_pressed)
+        QShortcut(QKeySequence(Qt.Key.Key_Enter), self).activated.connect(self.showM_pressed)
 
     # Placeholder methods - to be implemented
     def plot_default_spectrum(self):
@@ -1064,7 +1098,8 @@ class PhysicsApp(QMainWindow):
             if A_list and B_list:
                 # Calculate background for calibration
                 backgrounds = calculate_backgrounds(["Calibration.dat"], self.calibration_path)
-                plot_spectrum(self.figure, A_list, B_list, ["Calibration.dat"], backgrounds=backgrounds)
+                plot_spectrum(self.figure, A_list, B_list, ["Calibration.dat"], backgrounds=backgrounds, theme=self._theme)
+                self._update_legend_toggle()
                 self.toolbar.push_current()  # Set current view as home
         except Exception as e:
             self.log.setPlainText(f"Could not load default spectrum: {e}")
@@ -1075,11 +1110,37 @@ class PhysicsApp(QMainWindow):
         for artist in self.position_artists:
             artist.set_visible(show)
         self.canvas.draw()
+
+    def toggle_legend_visibility(self, show):
+        """Toggle visibility of legend on all axes."""
+        for ax in self.figure.get_axes():
+            legend = ax.get_legend()
+            if legend:
+                legend.set_visible(show)
+        self.canvas.draw()
+
+    def _update_legend_toggle(self):
+        """Enable/disable the legend toggle button based on whether legends exist.
+        Resets to unchecked (hidden) for every new plot."""
+        has_legend = any(
+            ax.get_legend() is not None for ax in self.figure.get_axes()
+        )
+        self.toolbar.toggle_legend_action.setEnabled(has_legend)
+        self.toolbar.toggle_legend_action.setChecked(False)
     
     def on_figure_resize(self, event):
         """Reapply tight layout when the figure is resized"""
         self.figure.tight_layout()
         self.canvas.draw()
+
+    def resizeEvent(self, event):
+        """Keep left panel width matched to params table on resize/maximize"""
+        super().resizeEvent(event)
+        if hasattr(self, '_main_splitter') and hasattr(self, '_left_panel_ideal_width'):
+            total = self._main_splitter.width()
+            left_w = min(self._left_panel_ideal_width, int(total * 0.75))
+            right_w = total - left_w
+            self._main_splitter.setSizes([left_w, right_w])
 
     def on_scroll_zoom(self, event):
         """Zoom in/out on scroll, centered on mouse position"""
@@ -1408,7 +1469,8 @@ class PhysicsApp(QMainWindow):
         """Handle calibration completion"""
         try:
             # Plot calibration results
-            plot_calibration(self.figure, A, B, C, gridcolor=self.gridcolor)
+            plot_calibration(self.figure, A, B, C, gridcolor=self.gridcolor, theme=self._theme)
+            self._update_legend_toggle()
             self.canvas.draw()
             self.toolbar.push_current()  # Set current view as home
             
@@ -1456,6 +1518,11 @@ class PhysicsApp(QMainWindow):
     def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds):
         """Handle show model completion"""
         try:
+            # If we were showing a distribution, switch back to spectrum view
+            if self._showing_distribution:
+                self._showing_distribution = False
+                self.SP_DI.setText('Distribution')
+
             # Get current colors from table (fresh read to handle delete/insert)
             current_colors = self.params_table.get_current_colors()
             
@@ -1466,10 +1533,10 @@ class PhysicsApp(QMainWindow):
             if has_nbaseline:
                 # FS and FS_pos are already lists of lists (one list per spectrum section)
                 # p is already a list of parameter arrays (one per spectrum section)
-                position_artists = plot_model_with_nbaseline(self.figure, A, B, SPC_f, FS, FS_pos, p, model, current_colors, backgrounds, gridcolor=self.gridcolor)
+                position_artists = plot_model_with_nbaseline(self.figure, A, B, SPC_f, FS, FS_pos, p, model, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme)
             else:
                 # FS and FS_pos are simple lists, p is a single array
-                position_artists = plot_model(self.figure, A, B, SPC_f, FS, FS_pos, p, current_colors, backgrounds, gridcolor=self.gridcolor)
+                position_artists = plot_model(self.figure, A, B, SPC_f, FS, FS_pos, p, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme, model=model)
             
             # Store position artists and enable toggle button
             self.position_artists = position_artists if position_artists else []
@@ -1479,6 +1546,7 @@ class PhysicsApp(QMainWindow):
             else:
                 self.toolbar.toggle_positions_action.setEnabled(False)
             
+            self._update_legend_toggle()
             self.canvas.draw()
             self.toolbar.push_current()
             
@@ -1673,6 +1741,142 @@ class PhysicsApp(QMainWindow):
             self.log.setPlainText(f"Error during interrupt: {str(e)}")
             self.log.setStyleSheet("color: red;")
 
+    @staticmethod
+    def _detect_os_dark_mode():
+        """Detect whether the OS is currently in dark mode."""
+        app = QApplication.instance()
+        if app is None:
+            return True
+        try:
+            return app.styleHints().colorScheme() == Qt.ColorScheme.Dark
+        except AttributeError:
+            # Fallback for older Qt: check window background luminance
+            bg = app.palette().color(QPalette.ColorRole.Window)
+            return bg.lightness() < 128
+
+    def _force_color_scheme(self, dark):
+        """Force the Qt application to dark or light color scheme.
+
+        Uses QStyleHints.setColorScheme (Qt 6.8+) which makes every
+        QPalette-aware widget follow the requested scheme automatically,
+        without any setStyleSheet calls.
+        """
+        app = QApplication.instance()
+        if app is None:
+            return
+        scheme = Qt.ColorScheme.Dark if dark else Qt.ColorScheme.Light
+        try:
+            app.styleHints().setColorScheme(scheme)
+        except AttributeError:
+            pass  # Qt < 6.8 — native palette stays as-is
+
+    def _load_theme(self):
+        """Load matplotlib theme from JSON file based on current mode."""
+        theme_file = 'theme_dark.json' if self._is_dark_mode else 'theme_light.json'
+        theme_path = os.path.join(os.path.dirname(__file__), theme_file)
+        try:
+            with open(theme_path, 'r') as f:
+                self._theme = json.load(f)
+        except Exception:
+            # Fallback defaults (original dark mode)
+            self._theme = {
+                'name': 'Dark mode',
+                'figure_facecolor': 'black',
+                'axes_facecolor': 'black',
+                'axes_text_color': 'white',
+                'gridcolor': 'white',
+                'legend_facecolor': 'black',
+                'legend_edgecolor': 'white',
+                'legend_textcolor': 'white',
+            }
+        self.gridcolor = self._theme.get('gridcolor', 'white')
+        self.BGcolor = self._theme.get('figure_facecolor', 'black')
+
+    def _apply_theme(self):
+        """Apply the loaded theme to matplotlib figure.
+
+        Qt widgets follow the QPalette set by _force_color_scheme.
+        Only the matplotlib figure and the theme-toggle button text
+        are touched here.
+        """
+        t = self._theme
+
+        # Matplotlib figure background
+        self.figure.patch.set_facecolor(t['figure_facecolor'])
+
+        # Update theme button label (no setStyleSheet — palette handles colors)
+        self.theme_btn.setText('Light mode' if self._is_dark_mode else 'Dark mode')
+
+        # Style instrumental buttons with a color distinct from background
+        if self._is_dark_mode:
+            ins_style = "background-color: rgb(70, 70, 70); color: white;"
+        else:
+            ins_style = "background-color: rgb(200, 200, 200); color: black;"
+        self.ins_btn.setStyleSheet(ins_style)
+        self.ins_btn2.setStyleSheet(ins_style)
+
+        # Style the matplotlib navigation toolbar to match the mode
+        if self._is_dark_mode:
+            self.toolbar.setStyleSheet(
+                "QToolBar { background-color: #2d2d2d; border: none; }"
+                "QToolButton { background-color: #2d2d2d; color: white; border: none; padding: 2px; }"
+                "QToolButton:hover { background-color: #505050; }"
+                "QToolButton:checked { background-color: #606060; }"
+            )
+        else:
+            self.toolbar.setStyleSheet(
+                "QToolBar { background-color: #e8e8e8; border: none; }"
+                "QToolButton { background-color: #e8e8e8; color: black; border: none; padding: 2px; }"
+                "QToolButton:hover { background-color: #c0c0c0; }"
+                "QToolButton:checked { background-color: #b0b0b0; }"
+            )
+
+        # Force toolbar icons to refresh for the new palette
+        for text, tooltip_text, image_file, callback in self.toolbar.toolitems:
+            if text is not None and callback in self.toolbar._actions:
+                self.toolbar._actions[callback].setIcon(
+                    self.toolbar._icon(image_file + '.png'))
+
+        # Refresh existing matplotlib axes with theme colors
+        if self.figure.get_axes():
+            for ax in self.figure.get_axes():
+                ax.set_facecolor(t['axes_facecolor'])
+                ax.tick_params(colors=t['axes_text_color'])
+                ax.xaxis.label.set_color(t['axes_text_color'])
+                ax.yaxis.label.set_color(t['axes_text_color'])
+                if ax.get_title():
+                    ax.title.set_color('r')  # Keep chi2 title red
+                for spine in ax.spines.values():
+                    spine.set_edgecolor(t['axes_text_color'])
+                for line in ax.xaxis.get_gridlines():
+                    line.set_color(t['gridcolor'])
+                for line in ax.yaxis.get_gridlines():
+                    line.set_color(t['gridcolor'])
+                for line in ax.get_lines():
+                    if line.get_linestyle() == '--':
+                        line.set_color(t['gridcolor'])
+                for child_ax in ax.child_axes:
+                    child_ax.tick_params(colors=t['axes_text_color'])
+                    child_ax.yaxis.label.set_color(t['axes_text_color'])
+                    for spine in child_ax.spines.values():
+                        spine.set_edgecolor(t['axes_text_color'])
+                legend = ax.get_legend()
+                if legend:
+                    legend.get_frame().set_facecolor(t.get('legend_facecolor', t['axes_facecolor']))
+                    legend.get_frame().set_edgecolor(t.get('legend_edgecolor', t['axes_text_color']))
+                    for text in legend.get_texts():
+                        text.set_color(t.get('legend_textcolor', t['axes_text_color']))
+            self.canvas.draw()
+
+    def toggle_theme(self):
+        """Toggle between light and dark mode."""
+        self._is_dark_mode = not self._is_dark_mode
+        self._force_color_scheme(self._is_dark_mode)
+        self._load_theme()
+        self._apply_theme()
+        mode_name = self._theme.get('name', 'Dark mode' if self._is_dark_mode else 'Light mode')
+        self.log.setPlainText(f"Switched to {mode_name}")
+
     def play_pressed(self):
         pass
 
@@ -1772,7 +1976,8 @@ class PhysicsApp(QMainWindow):
             gridcolor = getattr(self, 'gridcolor', 'gray')
             result_svg, result_png = plot_instrumental_result(
                 self.figure, result['A'], result['B'], result['F'], result['F2'],
-                result['p'], result['hi2'], result['file'], self.dir_path, gridcolor
+                result['p'], result['hi2'], result['file'], self.dir_path, gridcolor,
+                theme=self._theme
             )
             
             # Update canvas the same way as showM_pressed does
@@ -1817,7 +2022,8 @@ class PhysicsApp(QMainWindow):
             A_list, B_list = load_spectrum(self, self.path_list, calibration_path=self.calibration_path)
             if A_list and B_list:              
                 self.backgrounds = calculate_backgrounds(self.path_list, self.calibration_path)
-                plot_spectrum(self.figure, A_list, B_list, self.path_list, self.backgrounds)
+                plot_spectrum(self.figure, A_list, B_list, self.path_list, self.backgrounds, theme=self._theme)
+                self._update_legend_toggle()
                 self.toolbar.push_current()  # Set current view as home
                 self.log.setPlainText(f"Spectra displayed ({len(A_list)})")
                 self.log.setStyleSheet("color: green;")
@@ -1894,19 +2100,22 @@ class PhysicsApp(QMainWindow):
                 self.log.setStyleSheet("color: orange;")
                 return
             
-            # Get model list to check for Nbaseline
+            # Get model list to check for special models
             model_list = self.params_table.get_model_list()
             
-            # Skip Nbaseline models when counting subspectra
-            # Count how many non-baseline, non-Nbaseline models appear before this component
+            # Special models that don't produce individual subspectra
+            non_subspectrum_models = {'Nbaseline', 'Distr', 'Corr', 'Expression', 'Variables'}
+            
+            # Skip special models when counting subspectra
+            # Count how many actual subspectra appear before this component
             subspectrum_index = 0
             for i in range(1, component_index):  # Start from 1 to skip baseline
-                if i < len(model_list) and model_list[i] != 'Nbaseline':
+                if i < len(model_list) and model_list[i] not in non_subspectrum_models:
                     subspectrum_index += 1
             
-            # Check if clicked component is Nbaseline itself
-            if component_index < len(model_list) and model_list[component_index] == 'Nbaseline':
-                self.log.setPlainText("Cannot reorder Nbaseline")
+            # Check if clicked component is a special model (no reordering)
+            if component_index < len(model_list) and model_list[component_index] in non_subspectrum_models:
+                self.log.setPlainText(f"Cannot reorder {model_list[component_index]}")
                 self.log.setStyleSheet("color: orange;")
                 return
             
@@ -1970,6 +2179,11 @@ class PhysicsApp(QMainWindow):
         """
         Replot the spectrum using stored data with custom z-order.
         """
+        # If we were showing a distribution, switch back to spectrum view
+        if self._showing_distribution:
+            self._showing_distribution = False
+            self.SP_DI.setText('Distribution')
+
         data = self.last_plot_data
         
         if data['is_simultaneous']:
@@ -1978,7 +2192,8 @@ class PhysicsApp(QMainWindow):
                 self.figure, data['A_list'], data['B_list'], data['SPC_f_list'],
                 data['FS_list'], data['FS_pos_list'], data['p'], data['begining_spc'],
                 data['model_colors'], data['chi2'], data['spectrum_files'],
-                self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor
+                self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
+                theme=self._theme, model=data.get('model')
             )
             self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         else:
@@ -1986,14 +2201,68 @@ class PhysicsApp(QMainWindow):
             _, _, position_artists = plot_fitting_result(
                 self.figure, data['A'], data['B'], data['SPC_f'], data['FS'],
                 data['FS_pos'], data['p'], data['model_colors'], data['chi2'],
-                data['filepath'], self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor
+                data['filepath'], self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
+                theme=self._theme, model=data.get('model')
             )
             self.position_artists = position_artists if position_artists else []
         
         # Redraw canvas
+        self._update_legend_toggle()
         self.canvas.draw()
         self.toolbar.push_current()
     
+    def toggle_distribution(self):
+        """Toggle between spectrum and distribution view."""
+        try:
+            if not hasattr(self, 'last_plot_data') or self.last_plot_data is None:
+                self.log.setPlainText("No plot data available. Please fit spectrum first.")
+                self.log.setStyleSheet("color: orange;")
+                return
+            
+            data = self.last_plot_data
+            model = data.get('model', [])
+            Distri = data.get('Distri', [])
+            Cor = data.get('Cor', [])
+            
+            if self._showing_distribution:
+                # Switch back to spectrum view
+                self._showing_distribution = False
+                self.SP_DI.setText('Distribution')
+                self._replot_with_custom_order()
+                self.log.setPlainText("Showing spectrum")
+                self.log.setStyleSheet("color: green;")
+            else:
+                # Switch to distribution view
+                if not Distri:
+                    self.log.setPlainText("No distribution in the model")
+                    self.log.setStyleSheet("color: orange;")
+                    return
+                
+                parameter_names = self.params_table.get_parameter_names()
+                gridcolor = getattr(self, 'gridcolor', 'gray')
+                
+                success = plot_distribution(
+                    self.figure, model, data['p'], Distri, Cor,
+                    parameter_names, gridcolor=gridcolor,
+                    model_colors=data.get('model_colors'), theme=self._theme
+                )
+                
+                if success:
+                    self._showing_distribution = True
+                    self.SP_DI.setText('Spectrum')
+                    self.canvas.draw()
+                    self.toolbar.push_current()
+                    self.log.setPlainText("Distributions and correlations")
+                    self.log.setStyleSheet("color: green;")
+                else:
+                    self.log.setPlainText("No distribution in the model")
+                    self.log.setStyleSheet("color: orange;")
+                    
+        except Exception as e:
+            traceback.print_exc()
+            self.log.setPlainText(f"Distribution error: {e}")
+            self.log.setStyleSheet("color: red;")
+
     def save_pressed(self):
         pass
 
@@ -2319,8 +2588,13 @@ class PhysicsApp(QMainWindow):
                     'chi2': chi2,
                     'spectrum_files': result['spectrum_files'],
                     'is_simultaneous': True,
-                    'z_order': None
+                    'z_order': None,
+                    'model': result.get('model', []),
+                    'Distri': result.get('Distri_substituted', []),
+                    'Cor': result.get('Cor_substituted', []),
                 }
+                self._showing_distribution = False
+                self.SP_DI.setText('Distribution')
                 
                 # Store fitting data for graf.txt saving
                 self.last_fitting_data = {
@@ -2334,7 +2608,8 @@ class PhysicsApp(QMainWindow):
                     self.figure, result['A_list'], result['B_list'], result['SPC_f_list'], 
                     result['FS_list'], result['FS_pos_list'], fitted_parameters, 
                     result['begining_spc'], model_colors, chi2, result['spectrum_files'],
-                    self.dir_path, z_order=None, gridcolor=gridcolor
+                    self.dir_path, z_order=None, gridcolor=gridcolor,
+                    theme=self._theme, model=result.get('model')
                 )
                 
                 # Store position artists (from all subplots)
@@ -2345,6 +2620,7 @@ class PhysicsApp(QMainWindow):
                 else:
                     self.toolbar.toggle_positions_action.setEnabled(False)
                 
+                self._update_legend_toggle()
                 # Update canvas
                 self.canvas.draw()
                 self.toolbar.push_current()
@@ -2380,13 +2656,19 @@ class PhysicsApp(QMainWindow):
                     'chi2': chi2,
                     'filepath': result['spectrum_file'],
                     'is_simultaneous': False,
-                    'z_order': None
+                    'z_order': None,
+                    'model': result.get('model', []),
+                    'Distri': result.get('Distri_substituted', []),
+                    'Cor': result.get('Cor_substituted', []),
                 }
+                self._showing_distribution = False
+                self.SP_DI.setText('Distribution')
                 
                 result_svg, result_png, position_artists = plot_fitting_result(
                     self.figure, result['A'], result['B'], result['SPC_f'], result['FS'],
                     FS_pos, fitted_parameters, model_colors, chi2, result['spectrum_file'], 
-                    self.dir_path, z_order=None, gridcolor=gridcolor
+                    self.dir_path, z_order=None, gridcolor=gridcolor,
+                    theme=self._theme, model=result.get('model')
                 )
                 
                 # Store position artists and enable toggle button if positions exist
@@ -2397,6 +2679,7 @@ class PhysicsApp(QMainWindow):
                 else:
                     self.toolbar.toggle_positions_action.setEnabled(False)
                 
+                self._update_legend_toggle()
                 # Update canvas
                 self.canvas.draw()
                 self.toolbar.push_current()
@@ -2753,21 +3036,28 @@ class PhysicsApp(QMainWindow):
         # Resize images to have the same width (maintain aspect ratio)
         target_width = max(im1.shape[1], im2.shape[1])
         
+        # Helper: resize a numpy RGBA image using QImage smooth scaling
+        def _qimage_resize(arr, new_w, new_h):
+            h, w, ch = arr.shape
+            qimg = QImage(arr.data, w, h, w * ch, QImage.Format.Format_RGBA8888)
+            qimg = qimg.scaled(new_w, new_h, Qt.AspectRatioMode.IgnoreAspectRatio,
+                               Qt.TransformationMode.SmoothTransformation)
+            qimg = qimg.convertToFormat(QImage.Format.Format_RGBA8888)
+            ptr = qimg.constBits()
+            ptr.setsize(new_h * new_w * 4)
+            return np.frombuffer(ptr, dtype=np.uint8).reshape((new_h, new_w, 4)).copy()
+        
         # Resize im1 if needed
         if im1.shape[1] != target_width:
             scale_factor = target_width / im1.shape[1]
             new_height = int(im1.shape[0] * scale_factor)
-            im1_pil = Image.fromarray(im1)
-            im1_pil = im1_pil.resize((target_width, new_height), Image.Resampling.LANCZOS)
-            im1 = np.array(im1_pil)
+            im1 = _qimage_resize(im1, target_width, new_height)
         
         # Resize im2 if needed
         if im2.shape[1] != target_width:
             scale_factor = target_width / im2.shape[1]
             new_height = int(im2.shape[0] * scale_factor)
-            im2_pil = Image.fromarray(im2)
-            im2_pil = im2_pil.resize((target_width, new_height), Image.Resampling.LANCZOS)
-            im2 = np.array(im2_pil)
+            im2 = _qimage_resize(im2, target_width, new_height)
         
         # Stack vertically
         combo_image = np.concatenate((im1, im2), axis=0)

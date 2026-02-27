@@ -47,7 +47,6 @@ class ClickableResultButton(QPushButton):
         super().__init__(text, parent)
         self.row_index = row_index
         self.setFont(QFont('Arial', 10))
-        self.setStyleSheet("background-color: black; color: white;")
         self.setMinimumHeight(20)
         self.setMaximumHeight(20)
         
@@ -137,7 +136,6 @@ class ResultsTable(QWidget):
         # Create table widget for interactive display
         self.interactive_table = QTableWidget(self.num_rows, self.num_cols)
         self.interactive_table.setFont(QFont('Arial', 14))
-        self.interactive_table.setStyleSheet("background-color: black; color: white;")
         self.interactive_table.horizontalHeader().setVisible(False)
         self.interactive_table.verticalHeader().setVisible(False)
         
@@ -166,7 +164,6 @@ class ResultsTable(QWidget):
                 label = QLabel('')
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 label.setFont(QFont('Arial', 10))
-                label.setStyleSheet("color: white;")
                 label.setTextFormat(Qt.TextFormat.RichText)  # Support markup
                 row_widgets.append(label)
                 self.interactive_table.setCellWidget(row, col, label)
@@ -190,7 +187,7 @@ class ResultsTable(QWidget):
         # Create table for correlation matrix
         self.correlation_table = QTableWidget()
         self.correlation_table.setFont(QFont('Arial', 10))
-        self.correlation_table.setStyleSheet("background-color: black; color: white;")
+        
         
         # Will be populated when correlation matrix is available
         tab_layout.addWidget(self.correlation_table)
@@ -247,7 +244,7 @@ class ResultsTable(QWidget):
         for row in range(self.num_rows):
             # Clear button text
             self.buttons[row].setText('')
-            self.buttons[row].setStyleSheet("background-color: black; color: white;")
+            self.buttons[row].setStyleSheet('')
             
             # Clear labels
             for col in range(len(self.labels[row])):
@@ -617,6 +614,7 @@ class ResultsTable(QWidget):
                 corner_item = QTableWidgetItem('')
                 corner_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 corner_item.setBackground(QColor(200, 200, 200))
+                corner_item.setForeground(QColor(255, 255, 255))
                 self.correlation_table.setItem(i, j, corner_item)
         
         # Set first row (model names as column headers)
@@ -632,6 +630,7 @@ class ResultsTable(QWidget):
             header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             header_item.setBackground(QColor(70, 70, 70))
+            header_item.setForeground(QColor(255, 255, 255))
             self.correlation_table.setItem(0, j + 2, header_item)
         
         # Set second row (parameter names as column headers)
@@ -640,6 +639,7 @@ class ResultsTable(QWidget):
             header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             header_item.setBackground(QColor(70, 70, 70))
+            header_item.setForeground(QColor(255, 255, 255))
             self.correlation_table.setItem(1, j + 2, header_item)
         
         # Set first column (model names as row headers)
@@ -655,6 +655,7 @@ class ResultsTable(QWidget):
             header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             header_item.setBackground(QColor(70, 70, 70))
+            header_item.setForeground(QColor(255, 255, 255))
             self.correlation_table.setItem(i + 2, 0, header_item)
         
         # Set second column (parameter names as row headers)
@@ -663,6 +664,7 @@ class ResultsTable(QWidget):
             header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             header_item.setBackground(QColor(70, 70, 70))
+            header_item.setForeground(QColor(255, 255, 255))
             self.correlation_table.setItem(i + 2, 1, header_item)
         
         # Fill matrix values (starting at row 2, col 2)

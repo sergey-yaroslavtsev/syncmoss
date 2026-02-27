@@ -1,0 +1,10 @@
+{
+    "name": "Dark mode",
+    "figure_facecolor": "black",
+    "axes_facecolor": "black",
+    "axes_text_color": "white",
+    "gridcolor": "white",
+    "legend_facecolor": "black",
+    "legend_edgecolor": "white",
+    "legend_textcolor": "white"
+}
