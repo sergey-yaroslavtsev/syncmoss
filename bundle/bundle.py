@@ -30,7 +30,7 @@ OUTPUT_DIR = os.path.join(DIST_DIR, "SYNCmoss")  # COLLECT name
 def run_pyinstaller():
     """Run PyInstaller using the .spec file."""
     print("=" * 60)
-    print("Running PyInstaller …")
+    print("Running PyInstaller...")
     print("=" * 60)
     cmd = [
         sys.executable, "-m", "PyInstaller",
@@ -46,7 +46,7 @@ def run_pyinstaller():
 def copy_resources():
     """Copy application resource files next to the .exe."""
     print("=" * 60)
-    print("Copying resources → ", OUTPUT_DIR)
+    print(f"Copying resources -> {OUTPUT_DIR}")
     print("=" * 60)
 
     # ── Folders to copy verbatim ────────────────────────────────
@@ -58,7 +58,7 @@ def copy_resources():
         if os.path.isdir(dst):
             shutil.rmtree(dst)
         shutil.copytree(src, dst)
-        print(f"  ✓ {os.path.relpath(dst, OUTPUT_DIR)}/")
+        print(f"  OK: {os.path.relpath(dst, OUTPUT_DIR)}/")
 
     # ── Individual files to copy to OUTPUT_DIR root ─────────────
     root_files = [
@@ -74,9 +74,9 @@ def copy_resources():
     for f in root_files:
         if os.path.isfile(f):
             shutil.copy2(f, OUTPUT_DIR)
-            print(f"  ✓ {os.path.basename(f)}")
+            print(f"  OK: {os.path.basename(f)}")
         else:
-            print(f"  ⚠ not found: {f}")
+            print(f"  WARNING: not found: {f}")
 
     # ── Remove stale copies from _internal/ (if any) ───────────
     internal = os.path.join(OUTPUT_DIR, "_internal")
@@ -84,13 +84,13 @@ def copy_resources():
         stale = os.path.join(internal, name)
         if os.path.isdir(stale):
             shutil.rmtree(stale)
-            print(f"  🗑 removed _internal/{name}/")
+            print(f"  REMOVED _internal/{name}/")
     for name in ("theme_dark.json", "theme_light.json", "Calibration.dat",
                  "COPYING.txt", "NOTICE.txt", "LICENSE"):
         stale = os.path.join(internal, name)
         if os.path.isfile(stale):
             os.remove(stale)
-            print(f"  🗑 removed _internal/{name}")
+            print(f"  REMOVED _internal/{name}")
 
     print()
 
@@ -125,15 +125,15 @@ def verify():
     for rel in required:
         full = os.path.join(OUTPUT_DIR, rel)
         if os.path.exists(full):
-            print(f"  ✓ {rel}")
+            print(f"  OK: {rel}")
         else:
-            print(f"  ✗ MISSING: {rel}")
+            print(f"  MISSING: {rel}")
             ok = False
 
     if ok:
-        print("\nAll checks passed ✓")
+        print("\nAll checks passed")
     else:
-        print("\nSome files are MISSING — build may be incomplete!")
+        print("\nSome files are MISSING - build may be incomplete!")
         sys.exit(1)
 
 

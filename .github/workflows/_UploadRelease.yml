@@ -10,7 +10,7 @@ jobs:
   upload_release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract version from main.py
         id: get_version
@@ -24,19 +24,19 @@ jobs:
               f.write(f"version={version}\n")
 
       - name: Download sdist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: sdist
           path: dist
 
       - name: Download all wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: wheels
           path: dist
 
       - name: Download Windows exe
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: windows-executable-pyinstaller
           path: windows-exe
