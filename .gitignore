@@ -128,6 +128,7 @@ dmypy.json
 .pyre/
 
 # Project specific
+.vscode/
 for tests/
 source_code/
 bundle/build/
