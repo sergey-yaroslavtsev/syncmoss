@@ -1,0 +1,30 @@
+name: _Windows (PyInstaller executable)
+
+on:
+  workflow_call:
+
+jobs:
+  windows_pyinstaller:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: python bundle/bundle.py
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable-pyinstaller
+          path: bundle/Windows/SYNCmoss/**
+          retention-days: 5

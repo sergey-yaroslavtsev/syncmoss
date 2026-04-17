@@ -1,0 +1,62 @@
+name: _Create Tag and Release
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from main.py
+        id: get_version
+        shell: python
+        run: |
+          import os, re
+          text = open('src/main.py').read()
+          m = re.search(r'__VERSION__\s*=\s*["\'](.+?)["\']', text)
+          version = m.group(1)
+          print(f"Version: {version}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={version}\n")
+
+      - name: Create Git tag via API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          API_URL="${{ github.api_url }}/repos/${{ github.repository }}/git/refs"
+          TAG_NAME="v${TAG_VERSION}"
+          REF_SHA="${{ github.sha }}"
+
+          echo "Creating tag ${TAG_NAME} for commit ${REF_SHA}..."
+
+          RESPONSE=$(curl -s -o response.json -w "%{http_code}" \
+            -L --request POST \
+            --url "${API_URL}" \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Content-Type: application/json" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --data "{
+              \"ref\": \"refs/tags/${TAG_NAME}\",
+              \"sha\": \"${REF_SHA}\"
+            }")
+
+          echo "Response status: $RESPONSE"
+          if [[ "$RESPONSE" -ne 201 ]]; then
+            echo "❌ GitHub API request failed with status code: $RESPONSE"
+            cat response.json
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.get_version.outputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

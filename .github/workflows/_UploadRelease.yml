@@ -1,0 +1,59 @@
+name: _Upload release
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  upload_release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from main.py
+        id: get_version
+        shell: python
+        run: |
+          import os, re
+          text = open('src/main.py').read()
+          m = re.search(r'__VERSION__\s*=\s*["\'](.+?)["\']', text)
+          version = m.group(1)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={version}\n")
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: Linux-sdist
+          path: dist
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: '*-wheels'
+          merge-multiple: true
+
+      - name: Download Windows exe
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-executable-pyinstaller
+          path: windows-exe
+
+      - name: Zip Windows exe
+        run: |
+          cd windows-exe
+          zip -r ../dist/SYNCmoss-Windows.zip .
+
+      - name: List files
+        run: ls -R dist
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.get_version.outputs.version }}"
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

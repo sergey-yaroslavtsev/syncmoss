@@ -1,32 +1,35 @@
 SYNCmoss - Third-Party Software Notices and Information
 =========================================================
 
-This software uses the following third-party libraries:
+This project is licensed under the MIT License. See LICENSE for details.
+It uses the following third-party libraries, each distributed under
+their own license terms.
 
-PySide6
--------
+PySide6 (Qt for Python)
+-----------------------
 Licensed under the GNU Lesser General Public License (LGPL) v3.0
 Copyright (C) The Qt Company Ltd.
 https://www.qt.io/licensing/
 
-LGPL COMPLIANCE NOTICE:
-PySide6 is dynamically linked to this software. This means:
-- You can use this software without your code becoming LGPL-licensed
-- You are free to replace the PySide6 library with a compatible version
-- The source code for PySide6 is available at:
-  https://code.qt.io/cgit/pyside/pyside-setup.git/
-- A copy of the LGPL v3.0 license can be found at:
-  https://www.gnu.org/licenses/lgpl-3.0.html
+LGPL v3.0 COMPLIANCE NOTICE:
+This software dynamically links to PySide6. Under the terms of the
+LGPL v3.0, you may:
+  - Use this MIT-licensed software without your own code becoming LGPL.
+  - Replace the PySide6 library with any compatible version.
+  - Obtain PySide6 source code at:
+    https://code.qt.io/cgit/pyside/pyside-setup.git/
+  - Read the full LGPL v3.0 license at:
+    https://www.gnu.org/licenses/lgpl-3.0.html
 
 NumPy
 -----
-Licensed under BSD 3-Clause License
+Licensed under the BSD 3-Clause License
 Copyright (c) 2005-2024, NumPy Developers
 https://numpy.org/doc/stable/license.html
 
 SciPy
 -----
-Licensed under BSD 3-Clause License
+Licensed under the BSD 3-Clause License
 Copyright (c) 2001-2024, SciPy Developers
 https://scipy.org/scipylib/license.html
 
@@ -35,3 +38,13 @@ Matplotlib
 Licensed under the Matplotlib License (BSD-compatible)
 Copyright (c) 2002-2024, Matplotlib Development Team
 https://matplotlib.org/stable/users/project/license.html
+
+PyInstaller (bundling only)
+---------------------------
+Licensed under the GPL 2.0 with a special bootloader exception that
+permits distributing non-GPL applications bundled with PyInstaller.
+Copyright (c) 2010-2024, PyInstaller Development Team
+https://pyinstaller.org/en/stable/license.html
+The bundled Windows executable is created with PyInstaller. The
+bootloader exception explicitly allows this use without requiring
+the application itself to be GPL-licensed.

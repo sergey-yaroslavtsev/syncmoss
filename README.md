@@ -12,7 +12,7 @@ Copyright (c) European Synchrotron Radiation Facility (ESRF)
 
 This software uses third-party libraries that are distributed under their own licenses:
 
-- **PySide6**: LGPL v3.0 (dynamically linked)
+- **PySide6**: LGPL v3.0 (dynamically linked — does not affect MIT licensing of this project)
 - **NumPy**: BSD 3-Clause License
 - **SciPy**: BSD 3-Clause License  
 - **Matplotlib**: Matplotlib License (BSD-compatible)

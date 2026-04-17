@@ -1,0 +1,67 @@
+name: _Check version
+
+on:
+  workflow_call:
+    inputs:
+      skipper:
+        type: string
+        required: false
+
+jobs:
+  check-version-exists:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.skipper != 'dry-run' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip requests
+
+      - name: Extract version from main.py
+        id: extract_version
+        shell: python
+        run: |
+          import os, re
+          text = open('src/main.py').read()
+          m = re.search(r'__VERSION__\s*=\s*["\'](.+?)["\']', text)
+          version = m.group(1)
+          print(f"Version: {version}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={version}\n")
+
+      - name: Check if git tag exists
+        run: |
+          TAG="v${{ steps.extract_version.outputs.version }}"
+          git fetch --tags
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "❌ Git tag '$TAG' already exists."
+            exit 1
+          else
+            echo "✅ Git tag '$TAG' does not exist."
+          fi
+
+      - name: Check if version exists on PyPI
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
+        shell: python
+        run: |
+          import requests
+          version = "${{ env.VERSION }}"
+          url = f"https://pypi.org/pypi/syncmoss/json"
+          resp = requests.get(url)
+          if resp.status_code == 200:
+              if version in resp.json().get("releases", {}):
+                  print(f"❌ Version {version} already exists on PyPI")
+                  exit(1)
+          print(f"✅ Version {version} is new and OK to publish")
+
+  skipper:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.skipper == 'dry-run' }}
+    steps:
+      - name: Pass
+        run: echo "Skipping version check because of dry-run"
