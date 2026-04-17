@@ -1,14 +1,28 @@
 import os
 import re
+import sys
 import numpy as np
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QCheckBox, QMenu
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QCheckBox, QMenu, QWidgetAction
 )
 from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
 from constants import numro, numco, model_colors, number_of_baseline_parameters
 from spectrum_io import calculate_backgrounds
 from model_io import mod_len_def
+
+# Absolute path to the icons directory.
+# Used to build absolute url() paths in Qt stylesheets so they work both
+# when running from source and when frozen by PyInstaller.
+if getattr(sys, 'frozen', False):
+    _BASE_DIR = os.path.dirname(sys.executable).replace('\\', '/')
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__)).replace('\\', '/')
+_ICONS_DIR = f"{_BASE_DIR}/icons"
+_CB = f"{_ICONS_DIR}/CheckBox.png"
+_CB_ = f"{_ICONS_DIR}/CheckBox_.png"
+_CBL = f"{_ICONS_DIR}/CheckBox_L.png"
+_CBL2 = f"{_ICONS_DIR}/CheckBox_L2.png"
 
 class ClickableLabel(QLabel):
     def __init__(self, text, row, col):
@@ -122,7 +136,7 @@ class ParametersTable(QWidget):
             name_label.setFixedWidth(50)
             fix_cb = QCheckBox()
             fix_cb.setFixedWidth(30)
-            fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox.png); } QCheckBox::indicator:checked { image: url(CheckBox_L.png); }")
+            fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CB}); }} QCheckBox::indicator:checked {{ image: url({_CBL}); }}")
             top_layout.addWidget(name_label)
             top_layout.addWidget(fix_cb)
             # Value input
@@ -221,10 +235,27 @@ class ParametersTable(QWidget):
         # Add menu to model_btn
         model_menu = QMenu(self)
         model_options = ['Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S', 'Hamilton_mc', 'Hamilton_pc', 'ASM', 'Be', 'KB_nano', 'Distr', 'Corr', 'Variables', 'Expression', 'Delete', 'Insert', 'Nbaseline']
+        # Background colors for menu item groups
+        _menu_colors = {
+            'Insert': '#cc4444', 'Delete': '#cc4444',
+            'Nbaseline': '#224477',
+            'Expression': '#5599cc', 'Variables': '#5599cc',
+            'Distr': '#774488', 'Corr': '#774488',
+            'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
+        }
         for option in model_options:
-            action = QAction(option, self)
-            action.triggered.connect(lambda checked, opt=option, btn=model_btn: self.select_model_by_button(opt, btn))
-            model_menu.addAction(action)
+            if option in _menu_colors:
+                wa = QWidgetAction(self)
+                lbl = QPushButton(option)
+                lbl.setStyleSheet(f"QPushButton {{ background-color: {_menu_colors[option]}; color: white; border: none; padding: 4px 20px; text-align: left; font: 12px Arial; }} QPushButton:hover {{ background-color: {_menu_colors[option]}; color: yellow; }}")
+                lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+                lbl.clicked.connect(lambda checked=False, opt=option, btn=model_btn, m=model_menu: (self.select_model_by_button(opt, btn), m.close()))
+                wa.setDefaultWidget(lbl)
+                model_menu.addAction(wa)
+            else:
+                action = QAction(option, self)
+                action.triggered.connect(lambda checked, opt=option, btn=model_btn: self.select_model_by_button(opt, btn))
+                model_menu.addAction(action)
         model_btn.setMenu(model_menu)
         fix_model_btn = QPushButton("fix model")
         fix_model_btn.setFont(QFont('Arial', 12))
@@ -249,7 +280,7 @@ class ParametersTable(QWidget):
             name_label.setFixedWidth(50)
             fix_cb = QCheckBox()
             fix_cb.setFixedWidth(30)
-            fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox.png); } QCheckBox::indicator:checked { image: url(CheckBox_L.png); }")
+            fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CB}); }} QCheckBox::indicator:checked {{ image: url({_CBL}); }}")
             top_layout.addWidget(name_label)
             top_layout.addWidget(fix_cb)
             # Value input
@@ -639,7 +670,7 @@ class ParametersTable(QWidget):
             # Based on Doublet, load from Be.txt or defaults
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'A', 'G2/G1']
             try:
-                be_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'Be.txt'), delimiter='\t')
+                be_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'parameters', 'Be.txt'), delimiter='\t')
                 values = [str(be_param[i]) for i in range(7)]
                 self.main_window.log.setPlainText("Be.txt loaded successfully.")
             except:
@@ -652,7 +683,7 @@ class ParametersTable(QWidget):
             # Based on Doublet, load from KB.txt
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'A', 'G2/G1']
             try:
-                kb_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'KB.txt'), delimiter='\t')
+                kb_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'parameters', 'KB.txt'), delimiter='\t')
                 values = [str(kb_param[i]) for i in range(7)]
                 self.main_window.log.setPlainText("KB.txt loaded successfully.")
             except:
@@ -754,7 +785,7 @@ class ParametersTable(QWidget):
                 fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
                 fix_cb.setChecked(True)
                 fix_cb.setEnabled(False)
-                fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox_L2.png); }")
+                fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
         elif model == 'ASM':
             i = len(names) - 2  # one before last 'Num'
             if i < numco:
@@ -762,7 +793,7 @@ class ParametersTable(QWidget):
                 fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
                 fix_cb.setChecked(True)
                 fix_cb.setEnabled(False)
-                fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox_L2.png); }")
+                fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
         elif model == 'Distr':
             for idx in [0, len(names)-2]:  # first 'par' and one before last 'Num'
                 if idx < numco:
@@ -770,7 +801,7 @@ class ParametersTable(QWidget):
                     fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
                     fix_cb.setChecked(True)
                     fix_cb.setEnabled(False)
-                    fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox_L2.png); }")
+                    fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
         elif model == 'Corr':
             i = 0  # first 'par'
             if i < numco:
@@ -778,7 +809,7 @@ class ParametersTable(QWidget):
                 fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
                 fix_cb.setChecked(True)
                 fix_cb.setEnabled(False)
-                fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox_L2.png); }")
+                fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
 
         self.row_params[row] = len(names)
 
@@ -818,7 +849,7 @@ class ParametersTable(QWidget):
         # Disable fix checkbox and use L2 icon (permanently fixed indicator)
         fix_cb = top_layout.itemAt(1).widget()
         fix_cb.setEnabled(False)
-        fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox_L2.png); }")
+        fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
 
         bounds_layout = param_widget.layout().itemAt(2).layout()
         bounds_layout.itemAt(0).widget().setReadOnly(True)
@@ -851,7 +882,7 @@ class ParametersTable(QWidget):
             # Re-enable fix checkbox and restore normal style
             fix_cb = top_layout.itemAt(1).widget()
             fix_cb.setEnabled(True)
-            fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox.png); } QCheckBox::indicator:checked { image: url(CheckBox_L.png); }")
+            fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CB}); }} QCheckBox::indicator:checked {{ image: url({_CBL}); }}")
 
             # Re-enable bounds
             bounds_layout = param_widget.layout().itemAt(2).layout()
@@ -881,7 +912,7 @@ class ParametersTable(QWidget):
             name_label.setText("")
             fix_cb.setChecked(False)
             fix_cb.setEnabled(True)
-            fix_cb.setStyleSheet("QCheckBox::indicator { width: 30px; height: 30px; image: url(CheckBox.png); } QCheckBox::indicator:checked { image: url(CheckBox_L.png); }")
+            fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CB}); }} QCheckBox::indicator:checked {{ image: url({_CBL}); }}")
             value_input.setText("")
             lower_input.setText("")
             upper_input.setText("")

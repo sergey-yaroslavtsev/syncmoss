@@ -417,8 +417,8 @@ class ResultsTable(QWidget):
             
             if model_name == 'Doublet':
                 try:
-                    be_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'Be.txt'), delimiter='\t')
-                    kb_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'KB.txt'), delimiter='\t')
+                    be_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'parameters', 'Be.txt'), delimiter='\t')
+                    kb_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'parameters', 'KB.txt'), delimiter='\t')
                     if self.fit_parameters[param_index:param_index+len(param_names)].tolist() == be_param.tolist() \
                         or self.fit_parameters[param_index:param_index+len(param_names)].tolist() == kb_param.tolist():
                             print("Impurity detected, skipping intensity calculation for Doublet impurity.")

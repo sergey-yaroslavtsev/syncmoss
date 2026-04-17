@@ -318,9 +318,9 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         elif VVV == 3:  # SMS method
             # Standard method with experimental INS
             if platform.system() == 'Windows':
-                realpath = str(app.dir_path) + str('\\\\INSexp.txt')
+                realpath = str(app.dir_path) + str('\\\\parameters\\\\INSexp.txt')
             else:
-                realpath = str(app.dir_path) + str('/INSexp.txt')
+                realpath = str(app.dir_path) + str('/parameters/INSexp.txt')
             
             if not os.path.exists(realpath):
                 return {

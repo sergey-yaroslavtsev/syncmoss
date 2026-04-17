@@ -523,7 +523,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
             model = ['Sextet', 'Sextet', 'Doublet']
 
             try:
-                Be_param = np.genfromtxt(str(dir_path) + str('\\\\Be.txt')*(platform.system() == 'Windows') + str('/Be.txt')*(platform.system() != 'Windows'), delimiter='\t', skip_footer=0)
+                Be_param = np.genfromtxt(str(dir_path) + str('\\\\parameters\\\\Be.txt')*(platform.system() == 'Windows') + str('/parameters/Be.txt')*(platform.system() != 'Windows'), delimiter='\t', skip_footer=0)
                 print('file was read')
             except:
                 Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 0.772, 1])

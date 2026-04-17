@@ -77,6 +77,11 @@ class CustomNavigationToolbar(NavigationToolbar):
         self.toggle_legend_action.setToolTip('Show/Hide legend')
         self.toggle_legend_action.setEnabled(False)  # Disabled by default
     
+    def home(self, *args):
+        """Reset view and reapply tight layout."""
+        super().home(*args)
+        self.canvas.draw_idle()
+
     def toggle_positions(self):
         """Toggle visibility of model line positions."""
         if hasattr(self.parent_window, 'toggle_position_markers'):
@@ -671,7 +676,11 @@ class PhysicsApp(QMainWindow):
         self.setMinimumSize(1270, 710)
 
         # Icon
-        icon_path = os.path.join(os.getcwd(), "icon_r.ico")
+        if getattr(sys, 'frozen', False):
+            icon_dir = os.path.dirname(sys.executable)
+        else:
+            icon_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(icon_dir, "icons", "icon_r.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else: 
@@ -680,7 +689,12 @@ class PhysicsApp(QMainWindow):
         # Initialize variables
         self.MulCoCMS = 0.28
         self.current_spectrum_background = None  
-        self.dir_path = os.path.dirname(__file__)
+        # When frozen by PyInstaller, __file__ is inside _internal/ but our
+        # resource files (icons/, parameters/, themes) are next to the .exe.
+        if getattr(sys, 'frozen', False):
+            self.dir_path = os.path.dirname(sys.executable)
+        else:
+            self.dir_path = os.path.dirname(os.path.abspath(__file__))
         self.workfolder = None  # Start with no workfolder selected
         self.workfolder_check = 1
         self.check_points_match = False
@@ -823,7 +837,7 @@ class PhysicsApp(QMainWindow):
 
         fit_par_layout = QHBoxLayout()
         g_label = QLabel("G")
-        self.GCMS_input = QLineEdit(str(np.genfromtxt(os.path.join(self.dir_path, 'GCMS.txt'), delimiter='\t')))
+        self.GCMS_input = QLineEdit(str(np.genfromtxt(os.path.join(self.dir_path, 'parameters', 'GCMS.txt'), delimiter='\t')))
         integral_label = QLabel("Integral")
         self.jn0_input = QLineEdit("32")
         fit_par_layout.addWidget(g_label)
@@ -1000,7 +1014,7 @@ class PhysicsApp(QMainWindow):
         top_layout = QVBoxLayout(top_widget)
 
         # Spectrum plot
-        self.figure = plt.Figure(figsize=(6, 4), dpi=100)
+        self.figure = plt.Figure(figsize=(6, 4), dpi=100, tight_layout=True)
         self.figure.patch.set_facecolor('black')
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setMinimumSize(400, 300)
@@ -1015,8 +1029,6 @@ class PhysicsApp(QMainWindow):
         plot_layout.addWidget(self.canvas)
         top_layout.addLayout(plot_layout)
 
-        # Connect to resize event to maintain tight layout
-        self.canvas.mpl_connect('resize_event', self.on_figure_resize)
         # Connect to scroll event for zoom
         self.canvas.mpl_connect('scroll_event', self.on_scroll_zoom)
 
@@ -1128,11 +1140,6 @@ class PhysicsApp(QMainWindow):
         self.toolbar.toggle_legend_action.setEnabled(has_legend)
         self.toolbar.toggle_legend_action.setChecked(False)
     
-    def on_figure_resize(self, event):
-        """Reapply tight layout when the figure is resized"""
-        self.figure.tight_layout()
-        self.canvas.draw()
-
     def resizeEvent(self, event):
         """Keep left panel width matched to params table on resize/maximize"""
         super().resizeEvent(event)
@@ -1203,10 +1210,10 @@ class PhysicsApp(QMainWindow):
         """Update the velocity label and button icon based on velocity direction"""
         if self.velocity_direction:
             self.cal_cho_title.setText("Velocity\nup-down:")
-            icon_path = os.path.join(self.dir_path, "UD.png")
+            icon_path = os.path.join(self.dir_path, "icons", "UD.png")
         else:
             self.cal_cho_title.setText("Velocity\ndown-up:")
-            icon_path = os.path.join(self.dir_path, "DU.png")
+            icon_path = os.path.join(self.dir_path, "icons", "DU.png")
         
         if os.path.exists(icon_path):
             self.velocity_btn.setIcon(QIcon(icon_path))
@@ -1418,10 +1425,10 @@ class PhysicsApp(QMainWindow):
                 GCMS = 0.1
             self.GCMS = GCMS
 
-            insint_path = os.path.join(self.dir_path, 'INSint.txt')
+            insint_path = os.path.join(self.dir_path, 'parameters', 'INSint.txt')
             self.MulCo, self.x0 = np.genfromtxt(insint_path, delimiter=' ', skip_footer=0)
             
-            ins_path = os.path.join(self.dir_path, 'INSexp.txt')
+            ins_path = os.path.join(self.dir_path, 'parameters', 'INSexp.txt')
             self.INS = np.genfromtxt(ins_path, delimiter=' ', skip_footer=0)
             
             print(f'Initialized: MulCo={self.MulCo}, x0={self.x0}')
@@ -1783,7 +1790,7 @@ class PhysicsApp(QMainWindow):
     def _load_theme(self):
         """Load matplotlib theme from JSON file based on current mode."""
         theme_file = 'theme_dark.json' if self._is_dark_mode else 'theme_light.json'
-        theme_path = os.path.join(os.path.dirname(__file__), theme_file)
+        theme_path = os.path.join(self.dir_path, theme_file)
         try:
             with open(theme_path, 'r') as f:
                 self._theme = json.load(f)
@@ -1912,8 +1919,6 @@ class PhysicsApp(QMainWindow):
                 self.save_path.setText(os.path.normpath(result_path))
             else:
                 self.save_path.setText(os.path.normpath(file_paths[0]))
-            # Update baseline Ns based on new spectrum
-            self.params_table.update_baseline_from_bg()
             # Automatically show the selected spectrum(s)
             self.show_pressed()
         else:
@@ -2037,13 +2042,16 @@ class PhysicsApp(QMainWindow):
                 self.toolbar.push_current()  # Set current view as home
                 self.log.setPlainText(f"Spectra displayed ({len(A_list)})")
                 self.log.setStyleSheet("color: green;")
+                # Update baseline Ns based on new spectrum
+                self.params_table.update_baseline_from_bg()
             else:
                 self.log.setPlainText("Could not load spectrum")
                 self.log.setStyleSheet("color: red;")
         except Exception as e:
             self.log.setPlainText(f"Error displaying spectrum: {e}")
             self.log.setStyleSheet("color: red;")
-
+        
+        
     # def showM_pressed(self):
     #     pass
 
