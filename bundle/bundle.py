@@ -98,7 +98,7 @@ def copy_resources():
 def verify():
     """Quick sanity check that critical files exist."""
     print("=" * 60)
-    print("Verifying …")
+    print("Verifying ...")
     print("=" * 60)
     required = [
         "SYNCmoss.exe",

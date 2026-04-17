@@ -31,6 +31,8 @@ dependencies = [
     "scipy",
     "matplotlib",
     "PySide6",
+    "numba",
+    "llvmlite",
 ]
 
 [project.urls]

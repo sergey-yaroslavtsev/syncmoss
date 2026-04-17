@@ -5,14 +5,19 @@ import os
 # ── Hidden imports ──────────────────────────────────────────────
 hiddenimports = collect_submodules('scipy')
 hiddenimports += collect_submodules('PySide6')
+# Ensure numba and llvmlite submodules are included in the frozen app
+hiddenimports += collect_submodules('numba')
+hiddenimports += collect_submodules('llvmlite')
 scipy_data = collect_data_files('scipy')
+# llvmlite carries native data/bitcode that should be collected
+llvmlite_data = collect_data_files('llvmlite')
 
 src_dir = os.path.abspath(os.path.join(SPECPATH, '..', 'src'))
 
 # Only Python library data (scipy, etc.) goes through PyInstaller.
 # Application resources (icons/, parameters/, themes, etc.) are copied
 # next to the .exe by bundle.py after the build.
-datas = scipy_data
+datas = scipy_data + llvmlite_data
 
 block_cipher = None
 
