@@ -6,4 +6,4 @@ numco = 15
 number_of_baseline_parameters = 8
 
 # Default color sequence for plotting models
-model_colors = ['blue', 'red', 'yellow', 'cyan', 'fuchsia', 'lime', 'darkorange', 'blueviolet', 'green', 'tomato', 'white', 'silver', 'lightgreen', 'pink']
+model_colors = ['red', 'blue', 'cyan', 'yellow', 'fuchsia', 'lime', 'darkorange', 'blueviolet', 'green', 'tomato', 'white', 'silver', 'lightgreen', 'pink']

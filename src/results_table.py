@@ -38,7 +38,25 @@ from PySide6.QtCore import Qt, QSize, QRect
 from PySide6.QtGui import QFont, QColor, QImage, QPainter
 from constants import numro, numco
 from support_math import calculate_intensity_percentage_error
+from numpy import (
+    # constants
+    pi, e,
 
+    # math basics
+    exp, log, log10, sqrt, abs, power,
+
+    # trig functions (core)
+    sin, cos, tan,
+    arcsin, arccos, arctan,
+    sinh, cosh, tanh,
+    arcsinh, arccosh, arctanh,
+
+    # utility math
+    floor, ceil, round, sign,
+
+    # aggregation
+    mean, std, var,
+)
 
 class ClickableResultButton(QPushButton):
     """Clickable button for result table rows that triggers replotting."""
@@ -596,8 +614,18 @@ class ResultsTable(QWidget):
             return None, None
         
         # Evaluate expression
+        _math_ns = {
+            'p': params, 'np': np,
+            'exp': np.exp, 'log': np.log, 'log10': np.log10, 'sqrt': np.sqrt,
+            'abs': np.abs, 'sin': np.sin, 'cos': np.cos, 'tan': np.tan,
+            'arcsin': np.arcsin, 'arccos': np.arccos, 'arctan': np.arctan,
+            'sinh': np.sinh, 'cosh': np.cosh, 'tanh': np.tanh,
+            'pi': np.pi, 'e': np.e, 'power': np.power,
+            'floor': np.floor, 'ceil': np.ceil, 'round': np.round,
+            'sum': np.sum, 'mean': np.mean, 'std': np.std,
+        }
         try:
-            namespace = {'p': params, 'np': np}
+            namespace = _math_ns
             value = float(eval(expr_text, {"__builtins__": {}}, namespace))
         except Exception:
             return None, None
@@ -626,8 +654,10 @@ class ResultsTable(QWidget):
             p_plus[full_idx] += h
             p_minus[full_idx] -= h
             try:
-                f_plus = float(eval(expr_text, {"__builtins__": {}}, {'p': p_plus, 'np': np}))
-                f_minus = float(eval(expr_text, {"__builtins__": {}}, {'p': p_minus, 'np': np}))
+                ns_plus = {**_math_ns, 'p': p_plus}
+                ns_minus = {**_math_ns, 'p': p_minus}
+                f_plus = float(eval(expr_text, {"__builtins__": {}}, ns_plus))
+                f_minus = float(eval(expr_text, {"__builtins__": {}}, ns_minus))
                 partials[c_idx] = (f_plus - f_minus) / (2 * h)
             except Exception:
                 partials[c_idx] = 0.0

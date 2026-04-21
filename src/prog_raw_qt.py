@@ -30,12 +30,31 @@ import os
 import re
 import os.path
 import numpy as np
-from numpy import *
-import builtins as bu
-def max(*args):
-    return bu.max(*args)
-def min(*args):
-    return bu.min(*args)
+# from numpy import *
+# import builtins as bu
+# def max(*args):
+#     return bu.max(*args)
+# def min(*args):
+#     return bu.min(*args)
+from numpy import (
+    # constants
+    pi, e,
+
+    # math basics
+    exp, log, log10, sqrt, abs, power,
+
+    # trig functions (core)
+    sin, cos, tan,
+    arcsin, arccos, arctan,
+    sinh, cosh, tanh,
+    arcsinh, arccosh, arctanh,
+
+    # utility math
+    floor, ceil, round, sign,
+
+    # aggregation
+    mean, std, var,
+)
 import minimi_lib as mi
 from models import TI
 from models_positions import mod_pos
@@ -1134,7 +1153,7 @@ class PhysicsApp(QMainWindow):
     def _update_legend_toggle(self):
         """Enable/disable the legend toggle button based on whether legends exist.
         Resets to unchecked (hidden) for every new plot."""
-        has_legend = bu.any(
+        has_legend = any(
             ax.get_legend() is not None for ax in self.figure.get_axes()
         )
         self.toolbar.toggle_legend_action.setEnabled(has_legend)
