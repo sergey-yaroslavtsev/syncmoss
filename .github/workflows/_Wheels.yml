@@ -9,31 +9,45 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
       - name: Install build tools
         run: python -m pip install --upgrade pip build
 
+      - name: Extract version from main.py
+        id: get_version
+        shell: python
+        run: |
+          import os, re
+          text = open('src/main.py').read()
+          m = re.search(r'__VERSION__\s*=\s*["\'](.+?)["\']', text)
+          version = m.group(1)
+          print(f"Version: {version}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={version}\n")
+
       # Pure-Python package: one wheel (py3-none-any) + sdist is enough
       - name: Build wheel and sdist
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
         run: python -m build --outdir dist
 
       - name: Show output files
         run: ls -lh dist
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheels
           path: dist/*.whl
           retention-days: 5
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sdist
           path: dist/*.tar.gz

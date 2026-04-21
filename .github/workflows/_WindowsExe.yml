@@ -7,9 +7,9 @@ jobs:
   windows_pyinstaller:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -23,7 +23,7 @@ jobs:
         run: python bundle/bundle.py
 
       - name: Upload Windows executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-executable-pyinstaller
           path: bundle/Windows/SYNCmoss/**
