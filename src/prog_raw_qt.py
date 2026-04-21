@@ -1134,7 +1134,7 @@ class PhysicsApp(QMainWindow):
     def _update_legend_toggle(self):
         """Enable/disable the legend toggle button based on whether legends exist.
         Resets to unchecked (hidden) for every new plot."""
-        has_legend = any(
+        has_legend = bu.any(
             ax.get_legend() is not None for ax in self.figure.get_axes()
         )
         self.toolbar.toggle_legend_action.setEnabled(has_legend)
