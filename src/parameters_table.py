@@ -182,7 +182,7 @@ class ParametersTable(QWidget):
             value_input.setText(str(initial_values[i]))
             validator_value = QRegularExpressionValidator(QRegularExpression(r'^(-?\d+(\.\d+)?|=\[\d+,-?\d+(\.\d+)?\])$'))
             value_input.setValidator(validator_value)
-            if i in [0,1,2,3,4,5,6,7]:
+            if i in [1,2,3,4,5,6,7]:
                 fix_cb.setChecked(True)
             if i == 0:
                 lower_input.setText("1")
@@ -407,6 +407,8 @@ class ParametersTable(QWidget):
             self.row_widgets.append(new_row_widget)
             self.params_layout.addWidget(new_row_widget)
             self.row_params.append(0)
+            # Refresh highlights after structural changes
+            self.update_distr_corr_highlights()
         elif model == 'Insert':
             if row >= len(self.row_widgets):
                 return
@@ -437,6 +439,8 @@ class ParametersTable(QWidget):
                     top_layout = param_widget.layout().itemAt(0).layout()
                     name_label = top_layout.itemAt(0).widget()
                     name_label.row = r
+            # Refresh highlights after structural changes
+            self.update_distr_corr_highlights()
         else:
             # Normal model selection
             row_widget = self.row_widgets[row]
@@ -487,9 +491,9 @@ class ParametersTable(QWidget):
                     lower_input.setReadOnly(True)
                     upper_input.setReadOnly(True)
             
-            # Update grey frames for Distr/Corr models
-            if model in ['Distr', 'Corr']:
-                self.update_distr_corr_highlights()
+            # Always refresh highlights; deleting/changing any model can affect
+            # Distr/Corr target parameter highlighting.
+            self.update_distr_corr_highlights()
 
             # Apply expression expansion for Distr/Corr/Expression models
             if model in ['Distr', 'Corr', 'Expression']:
@@ -560,6 +564,8 @@ class ParametersTable(QWidget):
                 value_input = param_widget.layout().itemAt(1).widget()
                 if name_label.text() != "":
                     value_input.setReadOnly(False)
+                    value_input.setStyleSheet("")
+                else:
                     value_input.setStyleSheet("")
 
     def update_references(self, start_index, delta):
@@ -909,10 +915,12 @@ class ParametersTable(QWidget):
             bounds_layout = param_widget.layout().itemAt(2).layout()
             lower_input = bounds_layout.itemAt(0).widget()
             upper_input = bounds_layout.itemAt(1).widget()
+            name_label.setStyleSheet("")
             name_label.setText("")
             fix_cb.setChecked(False)
             fix_cb.setEnabled(True)
             fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CB}); }} QCheckBox::indicator:checked {{ image: url({_CBL}); }}")
+            value_input.setStyleSheet("")
             value_input.setText("")
             lower_input.setText("")
             upper_input.setText("")

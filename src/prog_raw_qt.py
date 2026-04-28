@@ -1629,31 +1629,37 @@ class PhysicsApp(QMainWindow):
         Di = 0
         Co = 0
         V = number_of_baseline_parameters
+        passthrough_non_spectral = {
+            'Expression': 1,
+            'Variables': numco,
+        }
         
         for i in range(len(model)):
+            model_name = model[i]
+
+            # Plotting-only passthrough models: consume parameter slots, do not
+            # create subspectra. This does not change save/load model behavior.
+            if model_name in passthrough_non_spectral:
+                V += passthrough_non_spectral[model_name]
+                continue
+
             ps = np.array(p[0:number_of_baseline_parameters], dtype=float)
-            Psm.append([model[i]])
-            LenM = mod_len_def(model[i], include_special=False) + 1
-            
+            Psm.append([model_name])
+            LenM = mod_len_def(model_name, include_special=False) + 1
+
             for j in range(1, LenM):
                 ps = np.append(ps, p[V])
                 V += 1
             
             Ps.append(ps)
             
-            if model[i] == 'Expression':
-                del Ps[-1]
-                del Psm[-1]
-                V += 1
-                continue
-            
-            if model[i] == 'Distr':
+            if model_name == 'Distr':
                 del Ps[-1]
                 for j in range(1, 6):
                     Ps[-1] = np.append(Ps[-1], p[V])
                     V += 1
                 del Psm[-1]
-                Psm[-1].append(model[i])
+                Psm[-1].append(model_name)
                 
                 STR = Distri[Di] + str(' ')
                 # Evaluate p[] references in distribution expression
@@ -1676,13 +1682,13 @@ class PhysicsApp(QMainWindow):
                 Distri_t.append(STR)
                 Di += 1
             
-            if model[i] == 'Corr':
+            if model_name == 'Corr':
                 del Ps[-1]
                 for j in range(1, 3):
                     Ps[-1] = np.append(Ps[-1], p[V])
                     V += 1
                 del Psm[-1]
-                Psm[-1].append(model[i])
+                Psm[-1].append(model_name)
                 
                 STR = Cor[Co] + str(' ')
                 # Evaluate p[] references in correlation expression
@@ -2940,9 +2946,11 @@ class PhysicsApp(QMainWindow):
             # Fallback: use zeros
             baseline = np.zeros_like(A)
         
-        # Get model names (skip baseline which is first)
+        # Get model names for actually plotted subspectra only.
+        # Keep save output aligned with plotting filters.
         if hasattr(self.results_table, 'current_model_list') and len(self.results_table.current_model_list) > 1:
-            model_names = self.results_table.current_model_list[1:]  # Skip 'baseline'
+            excluded = {'baseline', 'Nbaseline', 'Distr', 'Corr', 'Expression', 'Variables'}
+            model_names = [m for m in self.results_table.current_model_list if m not in excluded]
         else:
             model_names = [f'Submodel{i+1}' for i in range(len(FS))]
         
@@ -3061,8 +3069,9 @@ class PhysicsApp(QMainWindow):
         
         # Get bytes and convert to numpy array
         ptr = table_qimage.constBits()
-        ptr.setsize(height * width * 4)
-        im2 = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))
+        nbytes = table_qimage.sizeInBytes()
+        # PySide6 (current/newer) returns a buffer/memoryview here.
+        im2 = np.frombuffer(ptr, dtype=np.uint8, count=nbytes).reshape((height, width, 4)).copy()
         
         # Convert im1 to uint8 if it's float
         if im1.dtype == np.float32 or im1.dtype == np.float64:
@@ -3085,8 +3094,8 @@ class PhysicsApp(QMainWindow):
                                Qt.TransformationMode.SmoothTransformation)
             qimg = qimg.convertToFormat(QImage.Format.Format_RGBA8888)
             ptr = qimg.constBits()
-            ptr.setsize(new_h * new_w * 4)
-            return np.frombuffer(ptr, dtype=np.uint8).reshape((new_h, new_w, 4)).copy()
+            nbytes = qimg.sizeInBytes()
+            return np.frombuffer(ptr, dtype=np.uint8, count=nbytes).reshape((new_h, new_w, 4)).copy()
         
         # Resize im1 if needed
         if im1.shape[1] != target_width:

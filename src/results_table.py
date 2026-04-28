@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView
 )
-from PySide6.QtCore import Qt, QSize, QRect
+from PySide6.QtCore import Qt, QSize, QRect, QPoint
 from PySide6.QtGui import QFont, QColor, QImage, QPainter
 from constants import numro, numco
 from support_math import calculate_intensity_percentage_error
@@ -983,26 +983,29 @@ class ResultsTable(QWidget):
         
         # Render table to image using QPainter
         painter = QPainter(image)
-        
+
         # Temporarily adjust table size to show all content
         old_min_size = self.interactive_table.minimumSize()
         old_max_size = self.interactive_table.maximumSize()
         old_size = self.interactive_table.size()
-        
-        self.interactive_table.setFixedSize(total_width, total_height)
-        
-        # Render the table widget to the painter
-        self.interactive_table.render(painter)
-        
-        # Restore original size constraints
-        self.interactive_table.setMinimumSize(old_min_size)
-        self.interactive_table.setMaximumSize(old_max_size)
-        self.interactive_table.resize(old_size)
-        
-        # Restore hidden rows
-        for row in hidden_rows:
-            self.interactive_table.setRowHidden(row, False)
-        
-        painter.end()
+
+        try:
+            self.interactive_table.setFixedSize(total_width, total_height)
+
+            # PySide6 expects targetOffset when using QPainter overload.
+            self.interactive_table.render(painter, QPoint(0, 0))
+        finally:
+            # Always restore original widget state
+            self.interactive_table.setMinimumSize(old_min_size)
+            self.interactive_table.setMaximumSize(old_max_size)
+            self.interactive_table.resize(old_size)
+
+            # Restore hidden rows
+            for row in hidden_rows:
+                self.interactive_table.setRowHidden(row, False)
+
+            # Ensure painting is finished even on exceptions
+            if painter.isActive():
+                painter.end()
         
         return image

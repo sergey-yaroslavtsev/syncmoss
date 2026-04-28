@@ -2,7 +2,7 @@ import sys
 import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
 from prog_raw_qt import PhysicsApp
-__VERSION__ = "0.1.3"
+__VERSION__ = "0.1.4"
 
 if __name__ == "__main__":
     mp.freeze_support()

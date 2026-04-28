@@ -133,3 +133,10 @@ for tests/
 source_code/
 bundle/build/
 bundle/Windows/
+
+# fitting results
+
+src/*.mdl
+src/*.png
+src/*.svg
+

@@ -119,40 +119,43 @@ def create_subspectra(app, model, Distri, Cor, p):
     Cor_t = []
     Di = 0
     Co = 0
+    passthrough_non_spectral = {
+        'Expression': 1,
+        'Variables': numco,
+    }
     
     V = 0
     for i in range(0, len(model)):
+        model_name = model[i]
+
+        # Plotting-only passthrough models: consume parameter slots, do not
+        # create subspectra. This does not change save/load model behavior.
+        if model_name in passthrough_non_spectral:
+            V += passthrough_non_spectral[model_name]
+            continue
+
         # Create parameter array for this model (starts with baseline)
         ps = np.array([p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]])
-        Psm.append([model[i]])
+        Psm.append([model_name])
         
         # Add model-specific parameters
-        if model[i] != 'Distr' and model[i] != 'Corr' and model[i] != 'Nbaseline' and model[i] != 'Expression':
+        if model_name != 'Distr' and model_name != 'Corr' and model_name != 'Nbaseline':
             for j in range(0, mod_len_def(model[i])):
                 ps = np.append(ps, p[number_of_baseline_parameters + V])
                 V += 1
         
         # Append to list
         Ps.append(ps)
-
-        # Expression keeps one parameter slot in the full vector but does not
-        # contribute a spectral component. Skip it to keep following model
-        # parameters aligned for plotting/subspectra.
-        if model[i] == 'Expression':
-            del Ps[-1]
-            del Psm[-1]
-            V += 1
-            continue
         
         # Handle special cases that modify previous subspectra
-        if model[i] == 'Distr':
+        if model_name == 'Distr':
             # Delete the just-added entry and append params to previous one
             del Ps[-1]
             for j in range(0, 5):  # 5 parameters including expression placeholder
                 Ps[-1] = np.append(Ps[-1], p[number_of_baseline_parameters + V])
                 V += 1
             del Psm[-1]
-            Psm[-1].append(model[i])
+            Psm[-1].append(model_name)
             
             # Substitute parameter values into distribution expression
             STR = Distri[Di] + str(' ')
@@ -172,14 +175,14 @@ def create_subspectra(app, model, Distri, Cor, p):
             Distri_t.append(STR)
             Di += 1
         
-        if model[i] == 'Corr':
+        if model_name == 'Corr':
             # Delete the just-added entry and append params to previous one
             del Ps[-1]
             for j in range(1, 3):  # 2 parameters
                 Ps[-1] = np.append(Ps[-1], p[number_of_baseline_parameters + V])
                 V += 1
             del Psm[-1]
-            Psm[-1].append(model[i])
+            Psm[-1].append(model_name)
             
             # Substitute parameter values into correlation expression
             STR = Cor[Co] + str(' ')
