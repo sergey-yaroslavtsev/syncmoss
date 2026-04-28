@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 import gc
-from constants import numro, model_colors, number_of_baseline_parameters
-from model_io import mod_len_def
+from src.constants import numro, model_colors, number_of_baseline_parameters
+from src.model_io import mod_len_def
 
 # Default theme (original dark mode colors)
 _DEFAULT_THEME = {

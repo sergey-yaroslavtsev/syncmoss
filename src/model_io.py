@@ -8,7 +8,7 @@ import numpy as np
 import re
 import platform
 from PySide6.QtWidgets import QFileDialog, QMessageBox
-from constants import numco, numro, number_of_baseline_parameters
+from src.constants import numco, numro, number_of_baseline_parameters
 
 
 def mod_len_def(mod, include_special=True):

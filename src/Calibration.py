@@ -27,14 +27,14 @@ SOFTWARE.
 """
 
 import numpy as np
-import minimi_lib as mi
-import models as m5
+import src.minimi_lib as mi
+import src.models as m5
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import platform
 import re
 import time
-from constants import number_of_baseline_parameters
+from src.constants import number_of_baseline_parameters
 MulCoCMS = 0.28
 
 def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1):

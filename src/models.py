@@ -35,7 +35,7 @@ def max(*args):
 def min(*args):
     return bu.min(*args)
 # import dual_v3 as dn
-import minimi_lib as mi
+import src.minimi_lib as mi
 import os
 import platform
 import time
@@ -43,7 +43,7 @@ from numba import njit, prange
 import scipy
 import scipy.linalg
 dummy = scipy.linalg.eig(np.array([[1,0], [0,1]])) #required to build exe
-from constants import number_of_baseline_parameters
+from src.constants import number_of_baseline_parameters
 from numpy.linalg import eig
 from numpy import linalg as LA
 # from numpy.linalg import inv

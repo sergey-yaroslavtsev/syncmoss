@@ -7,11 +7,11 @@ import numpy as np
 import platform
 import os
 from functools import partial
-import models as m5
-import minimi_lib as mi
-from constants import number_of_baseline_parameters, numco
-from model_io import mod_len_def as mod_len_def_full
-from models_positions import mod_pos
+import src.models as m5
+import src.minimi_lib as mi
+from src.constants import number_of_baseline_parameters, numco
+from src.model_io import mod_len_def as mod_len_def_full
+from src.models_positions import mod_pos
 import builtins as bu
 
 
@@ -229,8 +229,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
     """
     try:
         # Import spectrum reading function
-        from spectrum_io import load_spectrum
-        from model_io import read_model as read_model_full
+        from src.spectrum_io import load_spectrum
+        from src.model_io import read_model as read_model_full
         
         # Read model configuration using the full read_model function
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model_full(app)

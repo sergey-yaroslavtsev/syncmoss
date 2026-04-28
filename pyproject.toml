@@ -40,7 +40,7 @@ Homepage = "https://github.com/sergey-yaroslavtsev/syncmoss"
 Repository = "https://github.com/sergey-yaroslavtsev/syncmoss"
 
 [project.gui-scripts]
-syncmoss = "syncmoss.main:main"
+syncmoss = "src.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

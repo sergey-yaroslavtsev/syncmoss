@@ -7,9 +7,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
-from constants import numro, numco, model_colors, number_of_baseline_parameters
-from spectrum_io import calculate_backgrounds
-from model_io import mod_len_def
+from src.constants import numro, numco, model_colors, number_of_baseline_parameters
+from src.spectrum_io import calculate_backgrounds
+from src.model_io import mod_len_def
 
 # Absolute path to the icons directory.
 # Used to build absolute url() paths in Qt stylesheets so they work both

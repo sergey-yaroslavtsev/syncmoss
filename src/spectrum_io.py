@@ -8,10 +8,10 @@ import numpy as np
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 import re
 import platform
-from models import TI
-from models_positions import mod_pos
-from constants import number_of_baseline_parameters
-from model_io import read_model
+from src.models import TI
+from src.models_positions import mod_pos
+from src.constants import number_of_baseline_parameters
+from src.model_io import read_model
 
 
 def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", points_match=True):
@@ -353,7 +353,7 @@ def subtract_model_from_spectrum(main_window):
         B = B_list[0]
 
         # Read current model and parameters
-        from model_io import read_model
+        from src.model_io import read_model
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(main_window)
 
         if len(model) == 0:

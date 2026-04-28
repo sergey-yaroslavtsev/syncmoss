@@ -5,12 +5,12 @@ Handles the calculation, fitting, and refinement of instrumental functions.
 import os
 import time
 import numpy as np
-from constants import number_of_baseline_parameters
-import models as m5
-import minimi_lib as mi
-from spectrum_io import load_spectrum
-from model_io import read_model, mod_len_def
-from spectrum_plotter import plot_instrumental_result
+from src.constants import number_of_baseline_parameters
+import src.models as m5
+import src.minimi_lib as mi
+from src.spectrum_io import load_spectrum
+from src.model_io import read_model, mod_len_def
+from src.spectrum_plotter import plot_instrumental_result
 
 
 

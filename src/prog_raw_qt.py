@@ -55,13 +55,13 @@ from numpy import (
     # aggregation
     mean, std, var,
 )
-import minimi_lib as mi
-from models import TI
-from models_positions import mod_pos
-from Calibration import Calibration
+import src.minimi_lib as mi
+from src.models import TI
+from src.models_positions import mod_pos
+from src.Calibration import Calibration
 import multiprocessing as mp
 # import dual_v3 as dn
-import Instrumental as ins
+import src.Instrumental as ins
 import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
@@ -127,10 +127,10 @@ import copy
 from multiprocessing.pool import ThreadPool
 import gc
 import traceback
-import fitting_io
+import src.fitting_io as fitting_io
 import io
-from spectrum_plotter import plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result, plot_distribution
-from spectrum_io import load_spectrum, calculate_backgrounds
+from src.spectrum_plotter import plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result, plot_distribution
+from src.spectrum_io import load_spectrum, calculate_backgrounds
 
 warnings.filterwarnings('ignore', '.*object is not callable.*', )
 
@@ -147,7 +147,7 @@ image = None
 initial = 0
 
 # Constants
-from constants import numro, numco, model_colors, number_of_baseline_parameters
+from src.constants import numro, numco, model_colors, number_of_baseline_parameters
 
 # PySide6 imports
 from PySide6.QtWidgets import (
@@ -162,12 +162,12 @@ from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegular
 import sys
 import os
 
-from parameters_table import ParametersTable
-from results_table import ResultsTable
-from model_io import load_model, read_model, save_model, save_model_as, mod_len_def
-from spectrum_io import load_spectrum, sum_all_spectra, subtract_model_from_spectrum, half_points, calculate_backgrounds
-from spectrum_plotter import plot_calibration, plot_model, plot_model_with_nbaseline, plot_spectrum
-from instrumental_io import instrumental
+from src.parameters_table import ParametersTable
+from src.results_table import ResultsTable
+from src.model_io import load_model, read_model, save_model, save_model_as, mod_len_def
+from src.spectrum_io import load_spectrum, sum_all_spectra, subtract_model_from_spectrum, half_points, calculate_backgrounds
+from src.spectrum_plotter import plot_calibration, plot_model, plot_model_with_nbaseline, plot_spectrum
+from src.instrumental_io import instrumental
 import traceback
 import ast
 

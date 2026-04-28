@@ -1,10 +1,10 @@
 import sys
 import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
-from prog_raw_qt import PhysicsApp
-__VERSION__ = "0.1.4"
+from src.prog_raw_qt import PhysicsApp
+__VERSION__ = "0.1.5"
 
-if __name__ == "__main__":
+def main():
     mp.freeze_support()
     # Create global pool once at startup (reused throughout application)
     # Use same logic as original: all cores if <=4, else cores-1
@@ -15,4 +15,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = PhysicsApp(pool=pool)
     window.show()
-    sys.exit(app.exec())
+    return app.exec()
+
+if __name__ == "__main__":
+    sys.exit(main())

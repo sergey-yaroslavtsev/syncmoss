@@ -33,7 +33,7 @@ import builtins as bu
 def max(*args):
     return bu.max(*args)
 # import dual_v3 as dn
-import minimi_lib as mi
+import src.minimi_lib as mi
 import os
 import platform
 import time
@@ -43,7 +43,7 @@ from numpy.linalg import eig
 from numpy import linalg as LA
 # from numpy.linalg import inv
 from numpy import abs
-from constants import number_of_baseline_parameters
+from src.constants import number_of_baseline_parameters
 # import matplotlib.pyplot as plt
 
 G = 4.7 * 10 ** -9  # natural width in eV*10**-9 # 4.7 value from Ralf Rohlsberger
