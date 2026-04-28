@@ -97,7 +97,7 @@ def instrumental(app, ref, mode=0, pool=None):
             print('Here is initial guess for INS: ', p0)
             CMS_ch = 1
         elif app.SMS_fit.isChecked():
-            insexp_path = os.path.join(app.dir_path, 'INSexp.txt')
+            insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
             INS = np.genfromtxt(insexp_path, delimiter=' ', skip_footer=0)
             p0 = np.copy(INS)
             n = int(len(INS)/3)
@@ -217,7 +217,7 @@ def instrumental(app, ref, mode=0, pool=None):
             p = np.concatenate((p, np.array([0, 0, 0, 0, 0, 0, 0])))
         
         try:
-            be_path = os.path.join(app.dir_path, 'Be.txt')
+            be_path = os.path.join(app.dir_path, 'parameters', 'Be.txt')
             Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
             print('Be file was read')
         except:
@@ -258,7 +258,7 @@ def instrumental(app, ref, mode=0, pool=None):
             p = np.concatenate((p, np.array([0, 0, 0, bg_tmp*0.4, 0, 0, 0])))
         
         try:
-            be_path = os.path.join(app.dir_path, 'Be.txt')
+            be_path = os.path.join(app.dir_path, 'parameters', 'Be.txt')
             Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
             print('Be file was read')
         except:
@@ -428,16 +428,16 @@ def instrumental(app, ref, mode=0, pool=None):
     INSp = p[mod_p_len:]
     
     if CMS_ch == 0:
-        insexp_path = os.path.join(app.dir_path, 'INSexp.txt')
+        insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
     else:
-        insexp_path = os.path.join(app.dir_path, 'GCMS.txt')
+        insexp_path = os.path.join(app.dir_path, 'parameters', 'GCMS.txt')
     
     if CMS_ch == 0:
         with open(insexp_path, "w") as f:
             for i in range(0, len(INSp)):
                 f.write(str(INSp[i]) + ' ')
         
-        insint_path = os.path.join(app.dir_path, 'INSint.txt')
+        insint_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
         with open(insint_path, "w") as f:
             f.write(str(MulCo) + ' ')
             f.write(str(x0) + ' ')
@@ -461,5 +461,5 @@ def instrumental(app, ref, mode=0, pool=None):
         'B': B,
         'F': F,
         'F2': F2,
-        'file': file
+        'file': os.path.basename(file)
     }

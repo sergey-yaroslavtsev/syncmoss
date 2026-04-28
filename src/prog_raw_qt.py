@@ -693,6 +693,7 @@ class PhysicsApp(QMainWindow):
         self.setWindowTitle('SYNCMoss ESRF ID14')
         self.setGeometry(50, 50, 1600, 900)
         self.setMinimumSize(1270, 710)
+        self.inprogress = False  # Flag to indicate if a process is running
 
         # Icon
         if getattr(sys, 'frozen', False):
@@ -1460,6 +1461,9 @@ class PhysicsApp(QMainWindow):
 
     def calibration(self):
         """Perform calibration on RAW spectrum files"""
+        if self.inprogress == True:
+            return
+        self.inprogress = True
         if not self.path_list:
             self.log.setPlainText("No spectrum selected for calibration")
             self.log.setStyleSheet("color: orange;")
@@ -1519,17 +1523,24 @@ class PhysicsApp(QMainWindow):
             self.log.setPlainText(f"Error processing calibration results: {e}")
             self.log.setStyleSheet("color: red;")
         finally:
+            self.inprogress = False
             self.cal_btn.setEnabled(True)
+            
     
     def on_calibration_error(self, error_msg):
         """Handle calibration error"""
         self.log.setPlainText(f"Calibration error: {error_msg}")
         self.log.setStyleSheet("color: red;")
+        self.inprogress = False
         self.cal_btn.setEnabled(True)
     
     def showM_pressed(self):
         """Show model with spectrum and subspectra (non-blocking)"""
         # Parse the current content of process_path
+        if self.inprogress == True:
+            return
+        self.inprogress = True
+        
         self.path_list = self.parse_process_path()
         
         # Check if spectrum is loaded
@@ -1592,11 +1603,14 @@ class PhysicsApp(QMainWindow):
             traceback.print_exc()
             self.log.setPlainText(f"Error plotting model: {e}")
             self.log.setStyleSheet("color: red;")
+        finally:
+            self.inprogress = False
     
     def on_show_model_error(self, error_msg):
         """Handle show model error"""
         self.log.setPlainText(f"Error showing model: {error_msg}")
         self.log.setStyleSheet("color: red;")
+        self.inprogress = False
     
     def on_raw_to_dat_finished(self, success_msg):
         """Handle raw to dat conversion completion"""
@@ -1782,6 +1796,8 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.log.setPlainText(f"Error during interrupt: {str(e)}")
             self.log.setStyleSheet("color: red;")
+        finally:
+            self.inprogress = False
 
     @staticmethod
     def _detect_os_dark_mode():
@@ -1919,8 +1935,6 @@ class PhysicsApp(QMainWindow):
         mode_name = self._theme.get('name', 'Dark mode' if self._is_dark_mode else 'Light mode')
         self.log.setPlainText(f"Switched to {mode_name}")
 
-    def play_pressed(self):
-        pass
 
     def choose_file(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -1958,6 +1972,9 @@ class PhysicsApp(QMainWindow):
             ref: 0 for Find, 1 for Refine
             mode: 0 for single line, 1 for model, 2 for pure a-Fe
         """
+        if self.inprogress == True:
+            return
+        self.inprogress = True
         # Ensure parameters are initialized
         if not self.initialize_parameters():
                 return
@@ -2043,14 +2060,21 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.log.setPlainText(f"Error plotting instrumental results: {e}\n{traceback.format_exc()}")
             self.log.setStyleSheet("color: red;")
+        finally:
+            self.inprogress = False
     
     def on_instrumental_error(self, error_msg):
         """Handle instrumental function error"""
         self.log.setPlainText(f"Instrumental function error: {error_msg}")
         self.log.setStyleSheet("color: red;")
+        self.inprogress = False
 
     def show_pressed(self):
         """Load and display the selected spectrum(s)"""
+        if self.inprogress == True:
+            return
+        self.inprogress = True
+        
         # Parse the current content of process_path
         self.path_list = self.parse_process_path()
         
@@ -2075,6 +2099,8 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.log.setPlainText(f"Error displaying spectrum: {e}")
             self.log.setStyleSheet("color: red;")
+        finally:
+            self.inprogress = False
         
         
     # def showM_pressed(self):
@@ -2306,12 +2332,7 @@ class PhysicsApp(QMainWindow):
             self.log.setPlainText(f"Distribution error: {e}")
             self.log.setStyleSheet("color: red;")
 
-    def save_pressed(self):
-        pass
 
-    def save_as_pressed(self):
-        pass
-    
     def validate_spectrum_files(self, spectrum_files):
         """
         Validate that all spectrum files exist and can be loaded.
@@ -2366,6 +2387,10 @@ class PhysicsApp(QMainWindow):
         4. Start fitting in background thread
         5. Update results table and plot when finished
         """
+        if self.inprogress == True:
+            return
+        self.inprogress = True
+
         self.log.setPlainText("Starting fit...")
         self.log.setStyleSheet("color: cyan;")
         
@@ -2426,6 +2451,7 @@ class PhysicsApp(QMainWindow):
             print(error_msg)
             self.log.setPlainText(f"Fit error: {e}")
             self.log.setStyleSheet("color: red;")
+            self.inprogress = False
     
     def start_sequential_fitting(self, spectrum_files):
         """
@@ -2789,11 +2815,14 @@ class PhysicsApp(QMainWindow):
             print(error_msg)
             self.log.setPlainText(f"Error processing fit results: {e}")
             self.log.setStyleSheet("color: red;")
+        finally:
+            self.inprogress = False
     
     def on_fitting_error(self, error_msg):
         """Handle fitting error"""
         self.log.setPlainText(f"Fitting error: {error_msg}")
         self.log.setStyleSheet("color: red;")
+        self.inprogress = False
     def save_result_pressed(self):
         """Save fitting results to file"""
         # Check if we have results to save
