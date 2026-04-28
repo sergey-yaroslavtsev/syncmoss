@@ -1643,9 +1643,9 @@ class PhysicsApp(QMainWindow):
             
             if model[i] == 'Expression':
                 del Ps[-1]
-                ps = np.append(ps, 1.0)
-                Ps.append(ps)
+                del Psm[-1]
                 V += 1
+                continue
             
             if model[i] == 'Distr':
                 del Ps[-1]

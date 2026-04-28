@@ -127,13 +127,22 @@ def create_subspectra(app, model, Distri, Cor, p):
         Psm.append([model[i]])
         
         # Add model-specific parameters
-        if model[i] != 'Distr' and model[i] != 'Corr' and model[i] != 'Nbaseline' and model[i] != 'Expr':
+        if model[i] != 'Distr' and model[i] != 'Corr' and model[i] != 'Nbaseline' and model[i] != 'Expression':
             for j in range(0, mod_len_def(model[i])):
                 ps = np.append(ps, p[number_of_baseline_parameters + V])
                 V += 1
         
         # Append to list
         Ps.append(ps)
+
+        # Expression keeps one parameter slot in the full vector but does not
+        # contribute a spectral component. Skip it to keep following model
+        # parameters aligned for plotting/subspectra.
+        if model[i] == 'Expression':
+            del Ps[-1]
+            del Psm[-1]
+            V += 1
+            continue
         
         # Handle special cases that modify previous subspectra
         if model[i] == 'Distr':

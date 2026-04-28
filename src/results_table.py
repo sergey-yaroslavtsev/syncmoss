@@ -268,14 +268,34 @@ class ResultsTable(QWidget):
         self.interactive_table.clearSpans()
         
         for row in range(self.num_rows):
+            
+            # insert swapper from QTableWidgetItem(text) to QLabel(text) for all cells to reset any spanned cells back to normal
+
             # Clear button text
             self.buttons[row].setText('')
             self.buttons[row].setStyleSheet('')
             
-            # Clear labels - restore center alignment
+            # Clear labels - restore center alignment.
+            # Some cells may have been temporarily converted to QTableWidgetItem
+            # for column spanning; restore QLabel widgets in-place.
             for col in range(len(self.labels[row])):
-                self.labels[row][col].setText('')
-                self.labels[row][col].setAlignment(Qt.AlignmentFlag.AlignCenter)
+                table_col = col + 1  # labels are stored for columns 1..num_cols-1
+
+                # If an item was inserted in this cell (spanning mode), remove it.
+                if self.interactive_table.item(row, table_col) is not None:
+                    self.interactive_table.takeItem(row, table_col)
+
+                label = self.interactive_table.cellWidget(row, table_col)
+                if not isinstance(label, QLabel):
+                    label = QLabel('')
+                    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    label.setFont(QFont('Arial', 10))
+                    label.setTextFormat(Qt.TextFormat.RichText)
+                    self.interactive_table.setCellWidget(row, table_col, label)
+
+                label.setText('')
+                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.labels[row][col] = label
         
         # Clear correlation matrix
         self.correlation_table.clear()
