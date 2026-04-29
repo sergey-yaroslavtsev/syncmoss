@@ -53,6 +53,7 @@ def copy_resources():
     folder_pairs = [
         (os.path.join(SRC_DIR, "icons"),      os.path.join(OUTPUT_DIR, "icons")),
         (os.path.join(SRC_DIR, "parameters"), os.path.join(OUTPUT_DIR, "parameters")),
+        (os.path.join(SRC_DIR, "Library"), os.path.join(OUTPUT_DIR, "Library")),
     ]
     for src, dst in folder_pairs:
         if os.path.isdir(dst):

@@ -60,8 +60,6 @@ from src.models import TI
 from src.models_positions import mod_pos
 from src.Calibration import Calibration
 import multiprocessing as mp
-# import dual_v3 as dn
-import src.Instrumental as ins
 import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
@@ -155,7 +153,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QTextEdit, QCheckBox, QComboBox, QTableWidget,
     QTableWidgetItem, QScrollArea, QGridLayout, QSplitter, QFrame, QGroupBox,
     QFileDialog, QMessageBox, QProgressBar, QSpinBox, QDoubleSpinBox,
-    QMenu, QSizePolicy
+    QMenu, QSizePolicy, QDialog, QDialogButtonBox
 )
 from PySide6.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator, QRegularExpressionValidator, QPalette, QShortcut, QKeySequence
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression
@@ -164,10 +162,12 @@ import os
 
 from src.parameters_table import ParametersTable
 from src.results_table import ResultsTable
-from src.model_io import load_model, read_model, save_model, save_model_as, mod_len_def
+from src.model_io import load_model, read_model, save_model, save_model_as, save_model_to_library, mod_len_def, load_model_from_path
 from src.spectrum_io import load_spectrum, sum_all_spectra, subtract_model_from_spectrum, half_points, calculate_backgrounds
-from src.spectrum_plotter import plot_calibration, plot_model, plot_model_with_nbaseline, plot_spectrum
+from src.spectrum_plotter import plot_calibration, plot_model, plot_model_with_nbaseline, plot_spectrum, plot_model_without_spectrum
 from src.instrumental_io import instrumental
+from src.Hamiltonian_helper import HamiltonianHelperWidget
+from src.Library_io import export_library, import_library
 import traceback
 import ast
 
@@ -357,11 +357,12 @@ class ShowModelThread(QThread):
         try:
             # Read model from parameter table
             model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(self.main_window)
+            no_spectrum_mode = len(self.path_list) == 0
             
             # Validate Nbaseline count matches number of spectra
             num_nbaseline = model.count('Nbaseline')
             num_spectra = len(self.path_list)
-            if num_nbaseline > 0:
+            if not no_spectrum_mode and num_nbaseline > 0:
                 if num_nbaseline != num_spectra - 1:
                     self.error.emit(f"Error: Found {num_nbaseline} Nbaseline model(s) but have {num_spectra} spectrum/spectra. "
                                   f"Need exactly {num_spectra - 1} Nbaseline(s) for {num_spectra} spectra (or 0 for single spectrum).")
@@ -387,9 +388,28 @@ class ShowModelThread(QThread):
             num_nbaseline = model.count('Nbaseline')
             
             # Calculate backgrounds for dual y-axis support
-            backgrounds = calculate_backgrounds(self.path_list, self.main_window.calibration_path)
+            backgrounds = calculate_backgrounds(self.path_list, self.main_window.calibration_path) if not no_spectrum_mode else []
             
-            if num_nbaseline > 0:
+            if no_spectrum_mode:
+                if num_nbaseline > 0:
+                    # Synthetic mode with Nbaseline sections
+                    model_sections = []
+                    start_idx = 0
+                    for i, m in enumerate(model):
+                        if m == 'Nbaseline':
+                            model_sections.append(model[start_idx:i])
+                            start_idx = i + 1
+                    model_sections.append(model[start_idx:])
+
+                    synthetic_grid = np.linspace(-15.0, 15.0, 4096)
+                    A_list = [synthetic_grid.copy() for _ in range(len(model_sections))]
+                    A = A_list
+                    B = None
+                else:
+                    # Single-spectrum synthetic mode
+                    A = np.linspace(-15.0, 15.0, 4096)
+                    B = None
+            elif num_nbaseline > 0:
                 # Multiple spectra case - handle each spectrum section separately
                 # Load all spectra separately (don't concatenate yet)
                 A_list = []
@@ -402,14 +422,14 @@ class ShowModelThread(QThread):
                         return
                     A_list.append(A_temp[0])
                     B_list.append(B_temp[0])
-                
+
                 # Concatenate for main model calculation
                 A_combined = A_list[0]
                 B_combined = B_list[0]
                 for i in range(1, len(A_list)):
                     A_combined = np.concatenate((A_combined, A_list[i]))
                     B_combined = np.concatenate((B_combined, B_list[i]))
-                
+
                 A = A_combined
                 B = B_combined
             else:
@@ -419,7 +439,7 @@ class ShowModelThread(QThread):
                 if not A_list or not B_list:
                     self.error.emit("Could not load spectrum")
                     return
-                
+
                 A = A_list[0]
                 B = B_list[0]
             
@@ -535,13 +555,17 @@ class ShowModelThread(QThread):
                     FS_all.append(FS)
                     FS_pos_all.append(FS_pos)
                 
-                # Concatenate fitted spectrum sections
-                SPC_f = SPC_f_sections[0]
-                for i in range(1, len(SPC_f_sections)):
-                    SPC_f = np.concatenate((SPC_f, SPC_f_sections[i]))
-                
-                # Emit with lists of subspectra for each section
-                self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds)
+                if no_spectrum_mode:
+                    # Keep sectioned arrays for dedicated model-only plotting
+                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds)
+                else:
+                    # Concatenate fitted spectrum sections
+                    SPC_f = SPC_f_sections[0]
+                    for i in range(1, len(SPC_f_sections)):
+                        SPC_f = np.concatenate((SPC_f, SPC_f_sections[i]))
+
+                    # Emit with lists of subspectra for each section
+                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds)
             else:
                 # Single spectrum case
                 # Calculate full spectrum
@@ -808,9 +832,23 @@ class PhysicsApp(QMainWindow):
         self.theme_btn.setFont(QFont('Arial', 16))
         self.theme_btn.clicked.connect(self.toggle_theme)
 
+        self.supp_btn = QPushButton('Supp')
+        self.supp_btn.setFont(QFont('Arial', 16))
+        self.supp_menu = QMenu(self)
+        ham_guess_action = QAction("Find initial guess for Hamiltonian", self)
+        ham_guess_action.triggered.connect(self.open_hamiltonian_helper)
+        export_lib_action = QAction("Export Library", self)
+        export_lib_action.triggered.connect(self.export_library_pressed)
+        import_lib_action = QAction("Import Library", self)
+        import_lib_action.triggered.connect(self.import_library_pressed)
+        self.supp_menu.addAction(ham_guess_action)
+        self.supp_menu.addAction(export_lib_action)
+        self.supp_menu.addAction(import_lib_action)
+        self.supp_btn.setMenu(self.supp_menu)
+
         # Add all buttons to top controls
         top_buttons = [self.loadmod_btn, self.btncleanmodel, self.cal_cho_btn,
-                       self.cal_btn, self.vel_btn, self.interrupt_btn, self.theme_btn]
+                   self.cal_btn, self.vel_btn, self.interrupt_btn, self.theme_btn, self.supp_btn]
         for btn in top_buttons:
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             top_controls.addWidget(btn)
@@ -1012,6 +1050,11 @@ class PhysicsApp(QMainWindow):
         self.save_model_as_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.save_model_as_btn.clicked.connect(self.save_model_as_pressed)
 
+        self.save_to_library_btn = QPushButton("Save to\nlibrary")
+        self.save_to_library_btn.setFont(QFont('Arial', 18))
+        self.save_to_library_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.save_to_library_btn.clicked.connect(self.save_to_library_pressed)
+
         self.save_btn.clicked.connect(self.save_result_pressed)
         self.saveas_btn.clicked.connect(self.save_result_as_pressed)
         
@@ -1020,6 +1063,7 @@ class PhysicsApp(QMainWindow):
         save_layout.addWidget(self.save_path, 1)  # Stretch to fill space
         save_layout.addWidget(self.save_model_btn)
         save_layout.addWidget(self.save_model_as_btn)
+        save_layout.addWidget(self.save_to_library_btn)
 
         left_layout.addLayout(save_layout)
 
@@ -1210,12 +1254,6 @@ class PhysicsApp(QMainWindow):
         elif changed_checkbox == self.SMS_fit:  # SMS unchecked
             self.MS_fit.setChecked(True)  # Check MS
 
-    def insert_row(self, row):
-        # Simplified: just clear the current row and shift or something
-        # For now, just clear
-        self.params_table.clear_row_params(row)
-        # TODO: Actually insert a new row in the grid
-
     def loadmod_pressed(self):
         load_model(self)
 
@@ -1225,6 +1263,84 @@ class PhysicsApp(QMainWindow):
     def save_model_as_pressed(self):
         save_model_as(self)
         pass
+
+    def save_to_library_pressed(self):
+        """Ask for title/comment and save model into internal Library folder."""
+        try:
+            model, *_ = read_model(self)
+            if 'Nbaseline' in model:
+                self.log.setPlainText("Model with 'Nbaseline' could not be saved to library")
+                self.log.setStyleSheet("color: orange;")
+                return
+        except Exception as e:
+            self.log.setPlainText(f"Could not validate model before saving: {e}")
+            self.log.setStyleSheet("color: red;")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Save to library")
+        dialog.setModal(True)
+        layout = QVBoxLayout(dialog)
+
+        title_label = QLabel("Title:")
+        title_input = QLineEdit(dialog)
+        title_input.setPlaceholderText("Model name")
+
+        comment_label = QLabel("Comment:")
+        comment_input = QTextEdit(dialog)
+        comment_input.setPlaceholderText("Optional comment")
+        comment_input.setMaximumHeight(120)
+
+        layout.addWidget(title_label)
+        layout.addWidget(title_input)
+        layout.addWidget(comment_label)
+        layout.addWidget(comment_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.log.setPlainText("Saving to library canceled")
+            self.log.setStyleSheet("color: orange;")
+            return
+
+        title = title_input.text().strip()
+        comment = comment_input.toPlainText().strip()
+        save_model_to_library(self, title, comment if comment else None)
+
+    def export_library_pressed(self):
+        """Export internal Library folder to a selected destination."""
+        destination = QFileDialog.getExistingDirectory(self, "Select destination folder", self.workfolder or self.dir_path)
+        if not destination:
+            self.log.setPlainText("Export Library canceled")
+            self.log.setStyleSheet("color: orange;")
+            return
+        try:
+            library_dir = os.path.join(self.dir_path, 'Library')
+            target = export_library(library_dir, destination)
+            self.log.setPlainText(f"Library exported to: {target}")
+            self.log.setStyleSheet("color: green;")
+        except Exception as e:
+            self.log.setPlainText(f"Export Library failed: {e}")
+            self.log.setStyleSheet("color: red;")
+
+    def import_library_pressed(self):
+        """Import .mdl files from selected folder into internal Library folder."""
+        source = QFileDialog.getExistingDirectory(self, "Select source folder", self.workfolder or self.dir_path)
+        if not source:
+            self.log.setPlainText("Import Library canceled")
+            self.log.setStyleSheet("color: orange;")
+            return
+        try:
+            library_dir = os.path.join(self.dir_path, 'Library')
+            copied = import_library(source, library_dir)
+            self.log.setPlainText(f"Imported {copied} .mdl file(s) into Library")
+            self.log.setStyleSheet("color: green;")
+        except Exception as e:
+            self.log.setPlainText(f"Import Library failed: {e}")
+            self.log.setStyleSheet("color: red;")
 
     def update_velocity_label(self):
         """Update the velocity label and button icon based on velocity direction"""
@@ -1543,18 +1659,15 @@ class PhysicsApp(QMainWindow):
         
         self.path_list = self.parse_process_path()
         
-        # Check if spectrum is loaded
-        if not self.path_list:
-            self.log.setPlainText("No spectrum selected. Please choose a spectrum first.")
-            self.log.setStyleSheet("color: orange;")
-            return
-        
         # Initialize
         if not self.initialize_parameters():
             return
         
         # Start model calculation in a separate thread
-        self.log.setPlainText("Calculating model...")
+        if not self.path_list:
+            self.log.setPlainText("Calculating model on synthetic grid (-15..15 mm/s, 4096 points)...")
+        else:
+            self.log.setPlainText("Calculating model...")
         self.log.setStyleSheet("color: blue;")
         
         self.show_model_thread = ShowModelThread(self, self.path_list, self.pool)
@@ -1576,8 +1689,14 @@ class PhysicsApp(QMainWindow):
             # Store FS_pos for toggle functionality
             self.current_FS_pos = FS_pos
             
-            # Plot model - use different function for Nbaseline case
-            if has_nbaseline:
+            # Plot model - use different function for synthetic/no-spectrum case
+            if B is None:
+                position_artists = plot_model_without_spectrum(
+                    self.figure, A, SPC_f, FS, FS_pos, p, current_colors,
+                    gridcolor=self.gridcolor, theme=self._theme, model=model,
+                    has_nbaseline=has_nbaseline
+                )
+            elif has_nbaseline:
                 # FS and FS_pos are already lists of lists (one list per spectrum section)
                 # p is already a list of parameter arrays (one per spectrum section)
                 position_artists = plot_model_with_nbaseline(self.figure, A, B, SPC_f, FS, FS_pos, p, model, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme)
@@ -1935,6 +2054,13 @@ class PhysicsApp(QMainWindow):
         mode_name = self._theme.get('name', 'Dark mode' if self._is_dark_mode else 'Light mode')
         self.log.setPlainText(f"Switched to {mode_name}")
 
+    def open_hamiltonian_helper(self):
+        """Open placeholder support widget for Hamiltonian initial guess."""
+        self.log.setPlainText("Not yet implemented: Hamiltonian helper coming in future update")
+        self.log.setStyleSheet("color: orange;")
+        # self._ham_helper_window = HamiltonianHelperWidget(self)
+        # self._ham_helper_window.exec()
+
 
     def choose_file(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -1977,7 +2103,8 @@ class PhysicsApp(QMainWindow):
         self.inprogress = True
         # Ensure parameters are initialized
         if not self.initialize_parameters():
-                return
+            self.inprogress = False    
+            return
         
         # Validation - check if model is defined for mode == 1
         if mode == 1:
@@ -1997,22 +2124,26 @@ class PhysicsApp(QMainWindow):
             if not has_model:
                 self.log.setPlainText("Specify model to restore instrumental function")
                 self.log.setStyleSheet("color: red;")
+                self.inprogress = False
                 return
         
         if (self.MS_fit.isChecked() and mode == 0):
             self.log.setPlainText("This will not work...")
             self.log.setStyleSheet("color: red;")
+            self.inprogress = False
             return
         
         if not self.path_list or len(self.path_list) == 0:
             self.log.setPlainText("No spectrum loaded")
             self.log.setStyleSheet("color: red;")
+            self.inprogress = False
             return
         
         file = os.path.abspath(self.path_list[0])
         if not os.path.exists(file):
             self.log.setPlainText("Spectrum file does not exist")
             self.log.setStyleSheet("color: red;")
+            self.inprogress = False
             return
         
 
@@ -2081,6 +2212,7 @@ class PhysicsApp(QMainWindow):
         if not self.path_list:
             self.log.setPlainText("No spectrum selected")
             self.log.setStyleSheet("color: orange;")
+            self.inprogress = False
             return
         try:
             A_list, B_list = load_spectrum(self, self.path_list, calibration_path=self.calibration_path)
@@ -2404,6 +2536,7 @@ class PhysicsApp(QMainWindow):
             if not spectrum_files:
                 self.log.setPlainText("No spectrum file loaded. Please load a file first.")
                 self.log.setStyleSheet("color: orange;")
+                self.inprogress = False
                 return
             
             # Validate all spectrum files can be loaded
@@ -2411,6 +2544,7 @@ class PhysicsApp(QMainWindow):
             if not valid:
                 self.log.setPlainText(f"Spectrum validation failed: {error_msg}")
                 self.log.setStyleSheet("color: red;")
+                self.inprogress = False
                 return
             
             # Check for sequential fitting: no Nbaseline AND multiple spectra
@@ -2573,6 +2707,7 @@ class PhysicsApp(QMainWindow):
                 f"Errors:\n{error_summary}"
             )
             self.log.setStyleSheet("color: orange;")
+        self.inprogress = False
     
     def _save_sequential_result_files(self, spectrum_file):
         """Save result files for one spectrum (file I/O only, called from main thread)"""

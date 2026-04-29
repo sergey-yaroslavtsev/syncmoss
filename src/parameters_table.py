@@ -3,13 +3,14 @@ import re
 import sys
 import numpy as np
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QCheckBox, QMenu, QWidgetAction
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QCheckBox, QMenu, QWidgetAction,
+    QDialog, QListWidget, QDialogButtonBox, QMessageBox
 )
 from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
 from src.constants import numro, numco, model_colors, number_of_baseline_parameters
 from src.spectrum_io import calculate_backgrounds
-from src.model_io import mod_len_def
+from src.model_io import mod_len_def, load_model_from_path
 
 # Absolute path to the icons directory.
 # Used to build absolute url() paths in Qt stylesheets so they work both
@@ -73,6 +74,11 @@ class ParametersTable(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self.copied_model_name = str("None")
+        self.copied_values = []
+        self.copied_fixes = []
+        self.table_of_fix = [[False] * numco for _ in range(numro)]
+        self.row_fix_locked = [False] * numro
         self.row_params = [number_of_baseline_parameters] + [0] * (numro - 1)  # baseline has baseline parameters
         self.row_widgets = []
         self.params_layout = QVBoxLayout(self)
@@ -137,6 +143,7 @@ class ParametersTable(QWidget):
             fix_cb = QCheckBox()
             fix_cb.setFixedWidth(30)
             fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CB}); }} QCheckBox::indicator:checked {{ image: url({_CBL}); }}")
+            fix_cb.stateChanged.connect(self.on_fix_checkbox_changed)
             top_layout.addWidget(name_label)
             top_layout.addWidget(fix_cb)
             # Value input
@@ -234,11 +241,12 @@ class ParametersTable(QWidget):
         model_btn.setFont(QFont('Arial', 12))
         # Add menu to model_btn
         model_menu = QMenu(self)
-        model_options = ['Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S', 'Hamilton_mc', 'Hamilton_pc', 'ASM', 'Be', 'KB_nano', 'Distr', 'Corr', 'Variables', 'Expression', 'Delete', 'Insert', 'Nbaseline']
+        model_options = ['Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S', 'Hamilton_mc', 'Hamilton_pc', 'ASM', 'Be', 'KB_nano', 'Distr', 'Corr', 'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline', 'Copy', 'Paste']
         # Background colors for menu item groups
         _menu_colors = {
             'Insert': '#cc4444', 'Delete': '#cc4444',
             'Nbaseline': '#224477',
+            'Library': "#319B00",
             'Expression': '#5599cc', 'Variables': '#5599cc',
             'Distr': '#774488', 'Corr': '#774488',
             'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
@@ -259,6 +267,7 @@ class ParametersTable(QWidget):
         model_btn.setMenu(model_menu)
         fix_model_btn = QPushButton("fix model")
         fix_model_btn.setFont(QFont('Arial', 12))
+        fix_model_btn.clicked.connect(lambda checked=False, btn=fix_model_btn: self.toggle_fix_model_by_button(btn))
         start_layout.addWidget(color_btn)
         start_layout.addWidget(model_btn)
         start_layout.addWidget(fix_model_btn)
@@ -281,6 +290,7 @@ class ParametersTable(QWidget):
             fix_cb = QCheckBox()
             fix_cb.setFixedWidth(30)
             fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CB}); }} QCheckBox::indicator:checked {{ image: url({_CBL}); }}")
+            fix_cb.stateChanged.connect(self.on_fix_checkbox_changed)
             top_layout.addWidget(name_label)
             top_layout.addWidget(fix_cb)
             # Value input
@@ -331,6 +341,15 @@ class ParametersTable(QWidget):
         for r, rw in enumerate(self.row_widgets):
             start = rw.layout().itemAt(0).widget()
             if start.layout().itemAt(1).widget() == btn:
+                if opt == 'Library':
+                    self._open_library_model_dialog(r)
+                    return
+                if opt == 'Copy':
+                    self.copy_model_to_memory(r)
+                    return
+                if opt == 'Paste':
+                    self.paste_model_from_memory(r)
+                    return
                 # Validate Corr can only be selected if previous model is Distr
                 if opt == 'Corr' and r > 0:
                     prev_row_widget = self.row_widgets[r-1]
@@ -343,6 +362,170 @@ class ParametersTable(QWidget):
                         return
                 self.select_model(r, opt)
                 return
+
+    def _open_library_model_dialog(self, insert_row):
+        """Open internal Library list and load selected model file."""
+        library_dir = os.path.join(self.main_window.dir_path, 'Library')
+        if not os.path.isdir(library_dir):
+            self.main_window.log.setPlainText(f"Library folder not found: {library_dir}")
+            self.main_window.log.setStyleSheet("color: red;")
+            return
+
+        model_files = sorted([
+            f for f in os.listdir(library_dir)
+            if os.path.isfile(os.path.join(library_dir, f))
+        ])
+        if not model_files:
+            self.main_window.log.setPlainText("Library folder is empty")
+            self.main_window.log.setStyleSheet("color: orange;")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Library")
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+
+        list_widget = QListWidget(dialog)
+        list_widget.addItems(model_files)
+        list_widget.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        list_widget.setCurrentRow(0)
+        layout.addWidget(list_widget)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            current_item = list_widget.currentItem()
+            if current_item is None:
+                QMessageBox.warning(self, "Library", "Please select a model file.")
+                return
+            selected_file = os.path.join(library_dir, current_item.text())
+            load_model_from_path(self.main_window, selected_file, insert_row=insert_row)
+
+    def _get_row_fix_states(self, row):
+        states = []
+        if row >= len(self.row_widgets):
+            return states
+        row_widget = self.row_widgets[row]
+        for col in range(numco):
+            param_widget = row_widget.layout().itemAt(col + 1).widget()
+            fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+            states.append(fix_cb.isChecked())
+        return states
+
+    def _set_row_fix_states(self, row, states):
+        if row >= len(self.row_widgets):
+            return
+        row_widget = self.row_widgets[row]
+        for col in range(numco):
+            param_widget = row_widget.layout().itemAt(col + 1).widget()
+            fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+            target = states[col] if col < len(states) else False
+            fix_cb.setChecked(bool(target))
+
+    def _set_fix_model_button_state(self, row, is_unfix):
+        if row >= len(self.row_widgets):
+            return
+        row_widget = self.row_widgets[row]
+        start_widget = row_widget.layout().itemAt(0).widget()
+        fix_model_btn = start_widget.layout().itemAt(2).widget()
+        if is_unfix:
+            fix_model_btn.setText('unfix model')
+            fix_model_btn.setStyleSheet("background-color: #E6D86A; color: black;")
+        else:
+            fix_model_btn.setText('fix model')
+            fix_model_btn.setStyleSheet("")
+
+    def on_fix_checkbox_changed(self, state):
+        _ = state
+        sender_cb = self.sender()
+        if sender_cb is None:
+            return
+
+        for row, row_widget in enumerate(self.row_widgets):
+            if row >= len(self.row_fix_locked) or not self.row_fix_locked[row]:
+                continue
+            for col in range(numco):
+                param_widget = row_widget.layout().itemAt(col + 1).widget()
+                fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+                if fix_cb is sender_cb:
+                    if not fix_cb.isChecked():
+                        self.row_fix_locked[row] = False
+                        self._set_fix_model_button_state(row, False)
+                    return
+
+    def toggle_fix_model_by_button(self, btn):
+        for row, rw in enumerate(self.row_widgets):
+            start = rw.layout().itemAt(0).widget()
+            if start.layout().itemAt(2).widget() == btn:
+                if row >= len(self.row_fix_locked):
+                    self.row_fix_locked.extend([False] * (row - len(self.row_fix_locked) + 1))
+                if row >= len(self.table_of_fix):
+                    self.table_of_fix.extend([[False] * numco for _ in range(row - len(self.table_of_fix) + 1)])
+
+                if not self.row_fix_locked[row]:
+                    self.table_of_fix[row] = self._get_row_fix_states(row)
+                    self.row_fix_locked[row] = True
+                    self._set_fix_model_button_state(row, True)
+                    self._set_row_fix_states(row, [True] * numco)
+                else:
+                    self._set_row_fix_states(row, self.table_of_fix[row])
+                    self.row_fix_locked[row] = False
+                    self._set_fix_model_button_state(row, False)
+                return
+
+    def copy_model_to_memory(self, row):
+        if row >= len(self.row_widgets):
+            return
+        row_widget = self.row_widgets[row]
+        start_widget = row_widget.layout().itemAt(0).widget()
+        model_btn = start_widget.layout().itemAt(1).widget()
+        model_name = model_btn.text().strip() if model_btn.text() else str("None")
+
+        values = []
+        fixes = []
+        n_params = self.row_params[row] if row < len(self.row_params) else 0
+        for col in range(min(n_params, numco)):
+            param_widget = row_widget.layout().itemAt(col + 1).widget()
+            value_input = param_widget.layout().itemAt(1).widget()
+            fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+            values.append(value_input.text())
+            fixes.append(fix_cb.isChecked())
+
+        self.copied_model_name = model_name if model_name else str("None")
+        self.copied_values = values
+        self.copied_fixes = fixes
+        self.main_window.log.setPlainText(f"Copied model from row {row}: {self.copied_model_name}")
+        self.main_window.log.setStyleSheet("color: green;")
+
+    def paste_model_from_memory(self, row):
+        if self.copied_model_name == str("None"):
+            self.main_window.log.setPlainText("Nothing is in the memory")
+            self.main_window.log.setStyleSheet("color: orange;")
+            return
+
+        self.select_model(row, self.copied_model_name)
+        if row >= len(self.row_widgets):
+            return
+
+        row_widget = self.row_widgets[row]
+        n_params = self.row_params[row] if row < len(self.row_params) else 0
+        limit = min(n_params, len(self.copied_values), numco)
+        for col in range(limit):
+            param_widget = row_widget.layout().itemAt(col + 1).widget()
+            value_input = param_widget.layout().itemAt(1).widget()
+            fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+            value_input.setText(self.copied_values[col])
+            if col < len(self.copied_fixes):
+                fix_cb.setChecked(bool(self.copied_fixes[col]))
+
+        if row < len(self.row_fix_locked) and self.row_fix_locked[row]:
+            self._set_row_fix_states(row, [True] * numco)
+
+        self.main_window.log.setPlainText(f"Pasted model to row {row}: {self.copied_model_name}")
+        self.main_window.log.setStyleSheet("color: green;")
 
     def select_color(self, row, color):
         if row >= len(self.row_widgets):
@@ -378,11 +561,17 @@ class ParametersTable(QWidget):
     def select_model(self, row, model):
         if row >= len(self.row_widgets):
             return
+        if row > 0 and row < len(self.row_fix_locked):
+            self.row_fix_locked[row] = False
+            self._set_fix_model_button_state(row, False)
         if model == 'Delete':
             if row == 0:
                 return  # can't delete baseline
             deleted_start = sum(self.row_params[:row])
             deleted_count = self.row_params[row]
+            # Keep color list aligned with table rows
+            if hasattr(self.main_window, 'model_colors') and row < len(self.main_window.model_colors):
+                self.main_window.model_colors.pop(row)
             # Clear the row
             self.clear_row_params(row)
             # Remove from layout and list
@@ -391,6 +580,10 @@ class ParametersTable(QWidget):
             row_widget.deleteLater()
             # Remove from row_params
             self.row_params.pop(row)
+            if row < len(self.table_of_fix):
+                self.table_of_fix.pop(row)
+            if row < len(self.row_fix_locked):
+                self.row_fix_locked.pop(row)
             # Update references
             self.update_references(deleted_start, -deleted_count)
             # Update row numbers for subsequent rows
@@ -407,12 +600,22 @@ class ParametersTable(QWidget):
             self.row_widgets.append(new_row_widget)
             self.params_layout.addWidget(new_row_widget)
             self.row_params.append(0)
+            self.table_of_fix.append([False] * numco)
+            self.row_fix_locked.append(False)
+            self._set_fix_model_button_state(new_row_idx, False)
+            if hasattr(self.main_window, 'model_colors'):
+                fallback = model_colors[(new_row_idx - 1) % len(model_colors)] if new_row_idx > 0 else model_colors[0]
+                self.main_window.model_colors.append(fallback)
             # Refresh highlights after structural changes
             self.update_distr_corr_highlights()
         elif model == 'Insert':
             if row >= len(self.row_widgets):
                 return
             inserted_start = sum(self.row_params[:row])
+            # Insert color aligned with "next" row color (after insertion).
+            if hasattr(self.main_window, 'model_colors'):
+                copied_color = self.main_window.model_colors[row]
+                self.main_window.model_colors.insert(row, copied_color)
             # Create new empty row
             new_row_widget = self.create_model_row(row)
             # Insert into list and layout
@@ -420,6 +623,8 @@ class ParametersTable(QWidget):
             self.params_layout.insertWidget(row, new_row_widget)
             # Insert 0 in row_params
             self.row_params.insert(row, 0)
+            self.table_of_fix.insert(row, [False] * numco)
+            self.row_fix_locked.insert(row, False)
             # Update references (no change yet)
             self.update_references(inserted_start, 0)
             # Set the model button to "insert" with red background and param boxes to light red
@@ -429,8 +634,9 @@ class ParametersTable(QWidget):
             start_widget = row_widget.layout().itemAt(0).widget()
             model_btn = start_widget.layout().itemAt(1).widget()
             model_btn.setText('insert')
-            # Preselect color to red
-            self.select_color(row, 'red')
+            # Keep color equal to the next row's color
+            if hasattr(self.main_window, 'model_colors') and row < len(self.main_window.model_colors):
+                self.select_color(row, self.main_window.model_colors[row])
             # Update row numbers for subsequent rows
             for r in range(row+1, len(self.row_widgets)):
                 row_widget = self.row_widgets[r]
@@ -499,6 +705,9 @@ class ParametersTable(QWidget):
             if model in ['Distr', 'Corr', 'Expression']:
                 last_col = self.row_params[row] - 1  # 0-based last meaningful column
                 self._apply_expression_expansion(row, last_col)
+
+            if row < len(self.row_fix_locked) and self.row_fix_locked[row]:
+                self._set_row_fix_states(row, [True] * numco)
 
     def update_distr_corr_highlights(self):
         """Update grey frame highlights for parameters referenced by Distr/Corr models"""

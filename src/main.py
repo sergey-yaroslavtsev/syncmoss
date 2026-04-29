@@ -1,8 +1,8 @@
 import sys
 import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
-from src.prog_raw_qt import PhysicsApp
-__VERSION__ = "0.1.5"
+from src.syncmoss_main import PhysicsApp
+__VERSION__ = "0.1.6"
 
 def main():
     mp.freeze_support()

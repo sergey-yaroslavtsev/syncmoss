@@ -56,15 +56,69 @@ def load_model(main_window):
         main_window.log.setPlainText("Selection was canceled")
         return
 
+    _load_model_from_path_impl(main_window, file_path)
+
+
+def load_model_from_path(main_window, file_path, insert_row=None):
+    """
+    Load a model from a known file path and apply it to the parameters table.
+
+    Args:
+        main_window: The main PhysicsApp window instance
+        file_path: Absolute path to a model file
+    """
+    if not file_path:
+        main_window.log.setPlainText("Selection was canceled")
+        main_window.log.setStyleSheet("color: orange;")
+        return
+    _load_model_from_path_impl(main_window, file_path, insert_row=insert_row)
+
+
+def _last_parameter_index_before_row(params_table, row):
+    """Return global parameter index of the last parameter before row."""
+    row = max(0, min(row, len(params_table.row_params)))
+    for rr in range(row - 1, -1, -1):
+        if params_table.row_params[rr] > 0:
+            return int(sum(params_table.row_params[:rr + 1]) - 1)
+    return -1
+
+
+def _remap_reference_text(text, z_value):
+    """Remap references for appended library models.
+
+    Rules:
+    - '=[X,Y]' -> '=[Z+X-number_of_baseline_parameters+1,Y]'
+    - 'p[X]'   -> 'p[Z+X-number_of_baseline_parameters+1]'
+    """
+    if not isinstance(text, str) or not text:
+        return text
+
+    def repl_ref(m):
+        x = int(m.group(1))
+        y = m.group(2)
+        new_x = z_value + x - number_of_baseline_parameters + 1
+        return f"=[{new_x},{y}]"
+
+    def repl_p(m):
+        x = int(m.group(1))
+        new_x = z_value + x - number_of_baseline_parameters + 1
+        return f"p[{new_x}]"
+
+    out = re.sub(r"=\[(\d+)\s*,\s*([^\]]+)\]", repl_ref, text)
+    out = re.sub(r"p\[(\d+)\]", repl_p, out)
+    return out
+
+
+def _load_model_from_path_impl(main_window, file_path, insert_row=None):
     try:
-        # Read the model file
+        # Read the model file, skipping comments and empty lines
         with open(file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
+            lines = [line.rstrip('\n') for line in file if line.strip() and not line.lstrip().startswith('#')]
 
         # Parse the model data
-        M_list = []
-        for line in lines:
-            M_list.append(line.strip().split('\t'))
+        M_list = [line.split('\t') for line in lines]
+        if not M_list:
+            raise ValueError("Model file is empty")
 
         # Check if second line is colors (backward compatibility)
         loaded_colors = []
@@ -90,6 +144,73 @@ def load_model(main_window):
                 line.insert(0, '')
                 line.insert(0, '')
             counter += 1
+
+        if insert_row is not None:
+            insert_row = int(insert_row)
+            insert_row = max(1, min(insert_row, len(main_window.params_table.row_widgets) - 1))
+
+            # Build source model list without baseline (first entry)
+            source_models = M_list[0][1:] if len(M_list[0]) > 1 else []
+            param_start_idx = 2 if has_colors else 1
+
+            # Reference remap anchor from existing destination table
+            z_value = _last_parameter_index_before_row(main_window.params_table, insert_row)
+
+            # Keep only rows that are actual models to be appended
+            active_src_indices = [
+                idx for idx, mod in enumerate(source_models)
+                if mod.strip() and mod.strip() not in ['None', 'baseline']
+            ]
+
+            # Insert from end so repeated inserts at same row preserve order
+            for src_idx in reversed(active_src_indices):
+                model_name = source_models[src_idx].strip()
+                # Insert blank row then select model
+                main_window.params_table.select_model(insert_row, 'Insert')
+                main_window.params_table.select_model(insert_row, model_name)
+
+            # Fill inserted rows in final order using ONE fixed Z anchor.
+            # This avoids iterative drift from repeated row insert/update cycles.
+            for j, src_idx in enumerate(active_src_indices):
+                dst_row = insert_row + j
+
+                # Load row parameter data corresponding to this source model row
+                row_data_idx = param_start_idx + src_idx + 1  # +1 skips baseline parameter row
+                if row_data_idx >= len(M_list):
+                    continue
+
+                row_data = M_list[row_data_idx]
+                num_params = len(row_data) // 5
+                dst_row_widget = main_window.params_table.row_widgets[dst_row]
+
+                for i in range(min(num_params, numco)):
+                    base_idx = i * 5
+                    if base_idx + 4 >= len(row_data):
+                        break
+
+                    value = _remap_reference_text(row_data[base_idx], z_value)
+                    lower = _remap_reference_text(row_data[base_idx + 1], z_value)
+                    upper = _remap_reference_text(row_data[base_idx + 2], z_value)
+                    fix_str = row_data[base_idx + 4]
+
+                    if i + 1 < dst_row_widget.layout().count():
+                        param_widget = dst_row_widget.layout().itemAt(i + 1).widget()
+                        value_input = param_widget.layout().itemAt(1).widget()
+                        value_input.setText(value)
+
+                        bounds_layout = param_widget.layout().itemAt(2).layout()
+                        lower_input = bounds_layout.itemAt(0).widget()
+                        upper_input = bounds_layout.itemAt(1).widget()
+                        lower_input.setText(lower)
+                        upper_input.setText(upper)
+
+                        top_layout = param_widget.layout().itemAt(0).layout()
+                        fix_cb = top_layout.itemAt(1).widget()
+                        fix_cb.setChecked(str(fix_str).lower() == 'true')
+
+            main_window.log.setPlainText("Library submodel appended successfully")
+            main_window.log.setStyleSheet("color: green;")
+            return
 
         # Clear existing models by setting them to None (instead of deleting to preserve color order)
         for i in range(1, len(main_window.params_table.row_widgets)):  # Skip baseline
@@ -221,7 +342,7 @@ def load_model(main_window):
         main_window.log.setStyleSheet("color: red;")
 
 
-def _save_model_to_file(main_window, file_path):
+def _save_model_to_file(main_window, file_path, comment=None):
     """
     Internal function to save the model data to a file.
 
@@ -231,6 +352,10 @@ def _save_model_to_file(main_window, file_path):
     """
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
+            if comment is not None and str(comment).strip() != '':
+                for line in str(comment).splitlines():
+                    f.write(f"# {line}\n")
+
             # Write model names (first row)
             model_names = []
             for row_widget in main_window.params_table.row_widgets:
@@ -345,6 +470,41 @@ def save_model_as(main_window):
         file_path += '.mdl'
 
     _save_model_to_file(main_window, file_path)
+
+
+def save_model_to_library(main_window, title, comment=None):
+    """Save current model to internal Library folder with optional comment."""
+    model, *_ = read_model(main_window)
+    if 'Nbaseline' in model:
+        main_window.log.setPlainText("Model with 'Nbaseline' could not be saved to library")
+        main_window.log.setStyleSheet("color: orange;")
+        return False
+
+    title = (title or '').strip()
+    if not title:
+        main_window.log.setPlainText("Library title is empty")
+        main_window.log.setStyleSheet("color: orange;")
+        return False
+
+    library_dir = os.path.join(main_window.dir_path, 'Library')
+    os.makedirs(library_dir, exist_ok=True)
+    file_path = os.path.join(library_dir, f"{title}.mdl")
+
+    if os.path.exists(file_path):
+        reply = QMessageBox.question(
+            main_window,
+            'File exists',
+            f'File {file_path} already exists. Overwrite?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.No:
+            main_window.log.setPlainText("Saving to library canceled")
+            main_window.log.setStyleSheet("color: orange;")
+            return False
+
+    _save_model_to_file(main_window, file_path, comment=comment)
+    return True
 
 
 def read_model(main_window):

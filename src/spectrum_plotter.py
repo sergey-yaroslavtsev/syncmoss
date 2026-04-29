@@ -751,6 +751,104 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
     return position_artists if 'position_artists' in locals() else []
 
 
+def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, gridcolor='white', theme=None, model=None, has_nbaseline=False):
+    """Plot only model curves (no experimental spectrum), with optional Nbaseline sections."""
+    tc = _tc(theme)
+    figure.clear()
+    figure.patch.set_facecolor(tc['figure_facecolor'])
+
+    if has_nbaseline:
+        # Build per-section colors and names (skip non-subspectrum rows)
+        section_colors = []
+        section_names = []
+        current_colors = []
+        current_names = []
+        if model is not None:
+            ci = 1  # baseline color at index 0
+            for mod in model:
+                if mod == 'Nbaseline':
+                    section_colors.append(current_colors)
+                    section_names.append(current_names)
+                    current_colors = []
+                    current_names = []
+                    ci += 1
+                else:
+                    if mod not in _NON_SUBSPECTRUM_MODELS:
+                        current_colors.append(model_colors[ci] if ci < len(model_colors) else 'white')
+                        current_names.append(mod)
+                    ci += 1
+            section_colors.append(current_colors)
+            section_names.append(current_names)
+
+        num_sections = len(A)
+        all_position_artists = []
+
+        for spc_idx in range(num_sections):
+            ax = figure.add_subplot(1, num_sections, spc_idx + 1)
+            x = A[spc_idx]
+            spc = SPC_f[spc_idx]
+            p_section = p[spc_idx] if spc_idx < len(p) else p[0]
+            fs_section = FS[spc_idx] if spc_idx < len(FS) else []
+            fs_pos_section = FS_pos[spc_idx] if spc_idx < len(FS_pos) else []
+
+            ax.set_xlim(min(x), max(x))
+            ax.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=1)
+
+            position_artists = []
+            if len(fs_section) > 0:
+                baseline = calculate_baseline(p_section, x)
+                z = calculate_z_order(fs_section)
+                sc = section_colors[spc_idx] if model is not None and spc_idx < len(section_colors) else []
+                sn = section_names[spc_idx] if model is not None and spc_idx < len(section_names) else None
+                position_artists = plot_subspectra_with_positions(
+                    ax, x, spc, fs_section, fs_pos_section, baseline, sc, z,
+                    color_offset=0, alpha=0.8, subspectra_names=sn
+                )
+
+            max_z = int(max(calculate_z_order(fs_section))) if len(fs_section) > 0 else 0
+            ax.plot(x, spc, color='r', zorder=max_z + 2, label='Model')
+            ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
+            ax.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
+            if spc_idx == 0:
+                ax.set_ylabel('Transmission, counts', color=tc['axes_text_color'])
+            _style_axis(ax, tc)
+            legend = ax.legend(loc='lower left', fontsize='small', facecolor=tc['legend_facecolor'], edgecolor=tc['legend_edgecolor'], labelcolor=tc['legend_textcolor'])
+            legend.set_visible(False)
+
+            all_position_artists.extend(position_artists)
+
+        figure.tight_layout()
+        figure.canvas.draw()
+        return all_position_artists
+
+    # Single-spectrum model-only plot
+    ax = figure.add_subplot(111)
+    ax.set_xlim(min(A), max(A))
+    ax.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=1)
+
+    sub_colors = _subspectra_colors(model_colors, model)
+    sub_names = _subspectra_names(model)
+    baseline = calculate_baseline(p, A)
+    z = calculate_z_order(FS)
+    position_artists = plot_subspectra_with_positions(
+        ax, A, SPC_f, FS, FS_pos, baseline, sub_colors, z,
+        color_offset=0, alpha=0.8, subspectra_names=sub_names
+    )
+
+    max_z = int(max(z)) if len(z) > 0 else 0
+    ax.plot(A, SPC_f, color='r', zorder=max_z + 2, label='Model')
+    ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
+    ax.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
+    ax.set_ylabel('Transmission, counts', color=tc['axes_text_color'])
+    _style_axis(ax, tc)
+    legend = ax.legend(loc='lower left', fontsize='small', facecolor=tc['legend_facecolor'], edgecolor=tc['legend_edgecolor'], labelcolor=tc['legend_textcolor'])
+    legend.set_visible(False)
+
+    figure.tight_layout()
+    figure.canvas.draw()
+    return position_artists
+
+
 def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gridcolor='gray', theme=None):
     """
     Plot instrumental function fitting results on the given figure and save to files.
