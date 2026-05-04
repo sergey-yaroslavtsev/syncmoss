@@ -36,8 +36,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, QRect, QPoint
 from PySide6.QtGui import QFont, QColor, QImage, QPainter
-from src.constants import numro, numco
-from src.support_math import calculate_intensity_percentage_error
+from syncmoss.constants import numro, numco
+from syncmoss.support_math import calculate_intensity_percentage_error
 from numpy import (
     # constants
     pi, e,
@@ -423,7 +423,7 @@ class ResultsTable(QWidget):
         Returns:
             tuple: (intensities, intensity_errors) - arrays of percentages, one per model
         """
-        from src.support_math import calculate_intensity_percentage_error
+        from syncmoss.support_math import calculate_intensity_percentage_error
         
         if not hasattr(self, 'fit_parameters') or not hasattr(self, 'parameter_names'):
             return np.array([]), np.array([])

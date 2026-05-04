@@ -40,14 +40,17 @@ Homepage = "https://github.com/sergey-yaroslavtsev/syncmoss"
 Repository = "https://github.com/sergey-yaroslavtsev/syncmoss"
 
 [project.gui-scripts]
-syncmoss = "src.main:main"
+syncmoss = "syncmoss.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["syncmoss*"]
 
 [tool.setuptools.package-dir]
-syncmoss = "src"
+syncmoss = "syncmoss"
+
+[tool.setuptools.dynamic]
+version = { attr = "syncmoss.main.__VERSION__" }
 
 [tool.setuptools.package-data]
 syncmoss = [

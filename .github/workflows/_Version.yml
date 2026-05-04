@@ -26,7 +26,7 @@ jobs:
         shell: python
         run: |
           import os, re
-          text = open('src/main.py').read()
+          text = open('syncmoss/main.py').read()
           m = re.search(r'__VERSION__\s*=\s*["\'](.+?)["\']', text)
           version = m.group(1)
           print(f"Version: {version}")

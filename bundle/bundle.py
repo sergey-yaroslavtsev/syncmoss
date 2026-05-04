@@ -20,7 +20,7 @@ import sys
 # ── Paths ───────────────────────────────────────────────────────
 BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BUNDLE_DIR)
-SRC_DIR = os.path.join(ROOT_DIR, "src")
+syncmoss_DIR = os.path.join(ROOT_DIR, "syncmoss")
 SPEC_FILE = os.path.join(BUNDLE_DIR, "Windows.spec")
 DIST_DIR = os.path.join(BUNDLE_DIR, "Windows")
 BUILD_DIR = os.path.join(BUNDLE_DIR, "build", "Windows")
@@ -51,9 +51,9 @@ def copy_resources():
 
     # ── Folders to copy verbatim ────────────────────────────────
     folder_pairs = [
-        (os.path.join(SRC_DIR, "icons"),      os.path.join(OUTPUT_DIR, "icons")),
-        (os.path.join(SRC_DIR, "parameters"), os.path.join(OUTPUT_DIR, "parameters")),
-        (os.path.join(SRC_DIR, "Library"), os.path.join(OUTPUT_DIR, "Library")),
+        (os.path.join(syncmoss_DIR, "icons"),      os.path.join(OUTPUT_DIR, "icons")),
+        (os.path.join(syncmoss_DIR, "parameters"), os.path.join(OUTPUT_DIR, "parameters")),
+        (os.path.join(syncmoss_DIR, "Library"), os.path.join(OUTPUT_DIR, "Library")),
     ]
     for src, dst in folder_pairs:
         if os.path.isdir(dst):
@@ -63,10 +63,10 @@ def copy_resources():
 
     # ── Individual files to copy to OUTPUT_DIR root ─────────────
     root_files = [
-        # from src/
-        os.path.join(SRC_DIR, "theme_dark.json"),
-        os.path.join(SRC_DIR, "theme_light.json"),
-        os.path.join(SRC_DIR, "Calibration.dat"),
+        # from syncmoss/
+        os.path.join(syncmoss_DIR, "theme_dark.json"),
+        os.path.join(syncmoss_DIR, "theme_light.json"),
+        os.path.join(syncmoss_DIR, "Calibration.dat"),
         # from repo root
         os.path.join(ROOT_DIR, "COPYING.txt"),
         os.path.join(ROOT_DIR, "NOTICE.txt"),

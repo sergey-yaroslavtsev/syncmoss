@@ -136,7 +136,6 @@ bundle/Windows/
 
 # fitting results
 
-src/*.mdl
-src/*.png
-src/*.svg
-
+syncmoss/*.mdl
+syncmoss/*.png
+syncmoss/*.svg

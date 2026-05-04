@@ -8,7 +8,7 @@ on:
     branches:
       - main
     paths:
-      - "src/main.py"
+      - "syncmoss/main.py"
   workflow_dispatch:
     inputs:
       mode:
@@ -34,11 +34,11 @@ jobs:
       - name: Get version from file
         id: check-change
         run: |
-          version=$(grep -Po '^__VERSION__ = ["'\'']\K[^"'\'']+' src/main.py)
+          version=$(grep -Po '^__VERSION__ = ["'\'']\K[^"'\'']+' syncmoss/main.py)
           echo "Found version: $version"
           echo "version=$version" >> $GITHUB_OUTPUT
 
-          changed=$(git diff HEAD^ HEAD -- src/main.py | grep '__VERSION__' || true)
+          changed=$(git diff HEAD^ HEAD -- syncmoss/main.py | grep '__VERSION__' || true)
 
           if [[ "${{ github.event_name }}" != "workflow_dispatch" && -n "$changed" ]]; then
             echo "Version changed"

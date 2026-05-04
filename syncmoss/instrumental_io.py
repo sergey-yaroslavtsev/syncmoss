@@ -5,12 +5,12 @@ Handles the calculation, fitting, and refinement of instrumental functions.
 import os
 import time
 import numpy as np
-from src.constants import number_of_baseline_parameters
-import src.models as m5
-import src.minimi_lib as mi
-from src.spectrum_io import load_spectrum
-from src.model_io import read_model, mod_len_def
-from src.spectrum_plotter import plot_instrumental_result
+from syncmoss.constants import number_of_baseline_parameters
+import syncmoss.models as m5
+import syncmoss.minimi_lib as mi
+from syncmoss.spectrum_io import load_spectrum
+from syncmoss.model_io import read_model, mod_len_def
+from syncmoss.spectrum_plotter import plot_instrumental_result
 
 
 

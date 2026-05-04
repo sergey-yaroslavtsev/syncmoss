@@ -12,7 +12,7 @@ scipy_data = collect_data_files('scipy')
 # llvmlite carries native data/bitcode that should be collected
 llvmlite_data = collect_data_files('llvmlite')
 
-src_dir = os.path.abspath(os.path.join(SPECPATH, '..', 'src'))
+syncmoss_dir = os.path.abspath(os.path.join(SPECPATH, '..', 'syncmoss'))
 
 # Only Python library data (scipy, etc.) goes through PyInstaller.
 # Application resources (icons/, parameters/, themes, etc.) are copied
@@ -22,8 +22,8 @@ datas = scipy_data + llvmlite_data
 block_cipher = None
 
 a = Analysis(
-    [os.path.join(src_dir, 'main.py')],
-    pathex=[src_dir],
+    [os.path.join(syncmoss_dir, 'main.py')],
+    pathex=[syncmoss_dir],
     hooksconfig={
         'matplotlib': {
             'backends': 'all',
@@ -53,7 +53,7 @@ exe_gui = EXE(
     strip=False,
     upx=True,
     console=False,
-    icon=os.path.join(src_dir, 'icons', 'icon_r.ico'),
+    icon=os.path.join(syncmoss_dir, 'icons', 'icon_r.ico'),
 )
 
 # ── Console/debug exe ──────────────────────────────────────────
@@ -68,7 +68,7 @@ exe_console = EXE(
     strip=False,
     upx=True,
     console=True,
-    icon=os.path.join(src_dir, 'icons', 'icon_r.ico'),
+    icon=os.path.join(syncmoss_dir, 'icons', 'icon_r.ico'),
 )
 
 coll = COLLECT(
