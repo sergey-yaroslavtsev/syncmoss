@@ -4,13 +4,15 @@ import sys
 import numpy as np
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QCheckBox, QMenu, QWidgetAction,
-    QDialog, QListWidget, QDialogButtonBox, QMessageBox
+    QDialog, QListWidget, QDialogButtonBox, QMessageBox, QGridLayout, QComboBox,
+    QSpinBox, QTableWidget, QTableWidgetItem
 )
 from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
 from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters
 from syncmoss.spectrum_io import calculate_backgrounds
-from syncmoss.model_io import mod_len_def, load_model_from_path
+from syncmoss.model_io import mod_len_def
+from syncmoss.Library_window import open_library_model_dialog
 
 # Absolute path to the icons directory.
 # Used to build absolute url() paths in Qt stylesheets so they work both
@@ -24,6 +26,13 @@ _CB = f"{_ICONS_DIR}/CheckBox.png"
 _CB_ = f"{_ICONS_DIR}/CheckBox_.png"
 _CBL = f"{_ICONS_DIR}/CheckBox_L.png"
 _CBL2 = f"{_ICONS_DIR}/CheckBox_L2.png"
+
+MODEL_OPTIONS = [
+    'Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S',
+    'Hamilton_mc', 'Hamilton_pc', 'ASM', 'Be', 'KB_nano', 'Distr', 'Corr',
+    'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline',
+    'Copy', 'Paste'
+]
 
 class ClickableLabel(QLabel):
     def __init__(self, text, row, col):
@@ -241,7 +250,7 @@ class ParametersTable(QWidget):
         model_btn.setFont(QFont('Arial', 12))
         # Add menu to model_btn
         model_menu = QMenu(self)
-        model_options = ['Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S', 'Hamilton_mc', 'Hamilton_pc', 'ASM', 'Be', 'KB_nano', 'Distr', 'Corr', 'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline', 'Copy', 'Paste']
+        model_options = MODEL_OPTIONS
         # Background colors for menu item groups
         _menu_colors = {
             'Insert': '#cc4444', 'Delete': '#cc4444',
@@ -364,45 +373,7 @@ class ParametersTable(QWidget):
                 return
 
     def _open_library_model_dialog(self, insert_row):
-        """Open internal Library list and load selected model file."""
-        library_dir = os.path.join(self.main_window.dir_path, 'Library')
-        if not os.path.isdir(library_dir):
-            self.main_window.log.setPlainText(f"Library folder not found: {library_dir}")
-            self.main_window.log.setStyleSheet("color: red;")
-            return
-
-        model_files = sorted([
-            f for f in os.listdir(library_dir)
-            if os.path.isfile(os.path.join(library_dir, f))
-        ])
-        if not model_files:
-            self.main_window.log.setPlainText("Library folder is empty")
-            self.main_window.log.setStyleSheet("color: orange;")
-            return
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Library")
-        dialog.setMinimumWidth(420)
-        layout = QVBoxLayout(dialog)
-
-        list_widget = QListWidget(dialog)
-        list_widget.addItems(model_files)
-        list_widget.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        list_widget.setCurrentRow(0)
-        layout.addWidget(list_widget)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dialog)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            current_item = list_widget.currentItem()
-            if current_item is None:
-                QMessageBox.warning(self, "Library", "Please select a model file.")
-                return
-            selected_file = os.path.join(library_dir, current_item.text())
-            load_model_from_path(self.main_window, selected_file, insert_row=insert_row)
+        open_library_model_dialog(self.main_window, self, insert_row, model_options=MODEL_OPTIONS)
 
     def _get_row_fix_states(self, row):
         states = []

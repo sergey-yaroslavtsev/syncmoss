@@ -1,4 +1,9 @@
-# Some average values for test
+#@Chemical composition Fe3O4
+#@Temperature (K) 300
+#@Pressure (GPa) 0.00001
+#@External field (T) 0
+#@DOI 
+#@Comment Some average values for test
 baseline	Sextet	Sextet	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None	None
 red	red	blue	cyan	yellow	fuchsia	lime	darkorange	blueviolet	green	tomato	white	silver	lightgreen	pink	red	blue	cyan	yellow	fuchsia	lime	darkorange	blueviolet	green	tomato	white	silver	lightgreen	pink	red	blue	cyan	yellow	fuchsia	lime	darkorange	blueviolet	green	tomato	white	silver	lightgreen	pink	red	blue	cyan	yellow	fuchsia	lime	darkorange	green
 10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False

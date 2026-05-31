@@ -9,6 +9,7 @@ import re
 import platform
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from syncmoss.constants import numco, numro, number_of_baseline_parameters
+from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
 
 
 def mod_len_def(mod, include_special=True):
@@ -342,7 +343,7 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
         main_window.log.setStyleSheet("color: red;")
 
 
-def _save_model_to_file(main_window, file_path, comment=None):
+def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
     """
     Internal function to save the model data to a file.
 
@@ -352,9 +353,17 @@ def _save_model_to_file(main_window, file_path, comment=None):
     """
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
+            if isinstance(metadata, dict):
+                metadata_to_write = dict(LIBRARY_METADATA_DEFAULTS)
+                for k in LIBRARY_METADATA_FIELDS:
+                    if k in metadata:
+                        metadata_to_write[k] = str(metadata[k]).strip()
+                for key in LIBRARY_METADATA_FIELDS:
+                    f.write(f"#@{key} {metadata_to_write[key]}\n")
+
             if comment is not None and str(comment).strip() != '':
                 for line in str(comment).splitlines():
-                    f.write(f"# {line}\n")
+                    f.write(f"#@Comment {line}\n")
 
             # Write model names (first row)
             model_names = []
@@ -472,7 +481,7 @@ def save_model_as(main_window):
     _save_model_to_file(main_window, file_path)
 
 
-def save_model_to_library(main_window, title, comment=None):
+def save_model_to_library(main_window, title, comment=None, metadata=None, notify_rename=False):
     """Save current model to internal Library folder with optional comment."""
     model, *_ = read_model(main_window)
     if 'Nbaseline' in model:
@@ -488,22 +497,25 @@ def save_model_to_library(main_window, title, comment=None):
 
     library_dir = os.path.join(main_window.dir_path, 'Library')
     os.makedirs(library_dir, exist_ok=True)
-    file_path = os.path.join(library_dir, f"{title}.mdl")
+    final_title, version_idx = compute_versioned_title_if_needed(library_dir, title)
+    file_path = os.path.join(library_dir, f"{final_title}.mdl")
 
-    if os.path.exists(file_path):
-        reply = QMessageBox.question(
-            main_window,
-            'File exists',
-            f'File {file_path} already exists. Overwrite?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.No:
+    if notify_rename and version_idx is not None:
+        msg = QMessageBox(main_window)
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setWindowTitle('Library title exists')
+        msg.setText(f"Such title already exists. It will become ({version_idx}).")
+        msg.setInformativeText("Are you sure you want to add the same sample to the library?")
+        add_btn = msg.addButton('add', QMessageBox.ButtonRole.AcceptRole)
+        skip_btn = msg.addButton('do not add', QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(skip_btn)
+        msg.exec()
+        if msg.clickedButton() is not add_btn:
             main_window.log.setPlainText("Saving to library canceled")
             main_window.log.setStyleSheet("color: orange;")
             return False
 
-    _save_model_to_file(main_window, file_path, comment=comment)
+    _save_model_to_file(main_window, file_path, comment=comment, metadata=metadata)
     return True
 
 

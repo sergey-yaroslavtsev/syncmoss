@@ -162,12 +162,13 @@ import os
 
 from syncmoss.parameters_table import ParametersTable
 from syncmoss.results_table import ResultsTable
-from syncmoss.model_io import load_model, read_model, save_model, save_model_as, save_model_to_library, mod_len_def, load_model_from_path
+from syncmoss.model_io import load_model, read_model, save_model, save_model_as, mod_len_def, load_model_from_path
 from syncmoss.spectrum_io import load_spectrum, sum_all_spectra, subtract_model_from_spectrum, half_points, calculate_backgrounds
 from syncmoss.spectrum_plotter import plot_calibration, plot_model, plot_model_with_nbaseline, plot_spectrum, plot_model_without_spectrum
 from syncmoss.instrumental_io import instrumental
 from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
 from syncmoss.Library_io import export_library, import_library
+from syncmoss.Library_window import save_to_library_via_dialog
 import traceback
 import ast
 
@@ -1265,50 +1266,7 @@ class PhysicsApp(QMainWindow):
         pass
 
     def save_to_library_pressed(self):
-        """Ask for title/comment and save model into internal Library folder."""
-        try:
-            model, *_ = read_model(self)
-            if 'Nbaseline' in model:
-                self.log.setPlainText("Model with 'Nbaseline' could not be saved to library")
-                self.log.setStyleSheet("color: orange;")
-                return
-        except Exception as e:
-            self.log.setPlainText(f"Could not validate model before saving: {e}")
-            self.log.setStyleSheet("color: red;")
-            return
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Save to library")
-        dialog.setModal(True)
-        layout = QVBoxLayout(dialog)
-
-        title_label = QLabel("Title:")
-        title_input = QLineEdit(dialog)
-        title_input.setPlaceholderText("Model name")
-
-        comment_label = QLabel("Comment:")
-        comment_input = QTextEdit(dialog)
-        comment_input.setPlaceholderText("Optional comment")
-        comment_input.setMaximumHeight(120)
-
-        layout.addWidget(title_label)
-        layout.addWidget(title_input)
-        layout.addWidget(comment_label)
-        layout.addWidget(comment_input)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dialog)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            self.log.setPlainText("Saving to library canceled")
-            self.log.setStyleSheet("color: orange;")
-            return
-
-        title = title_input.text().strip()
-        comment = comment_input.toPlainText().strip()
-        save_model_to_library(self, title, comment if comment else None)
+        save_to_library_via_dialog(self)
 
     def export_library_pressed(self):
         """Export internal Library folder to a selected destination."""
@@ -1335,9 +1293,38 @@ class PhysicsApp(QMainWindow):
             return
         try:
             library_dir = os.path.join(self.dir_path, 'Library')
-            copied = import_library(source, library_dir)
-            self.log.setPlainText(f"Imported {copied} .mdl file(s) into Library")
+            result = import_library(source, library_dir)
+            if isinstance(result, dict):
+                copied = int(result.get('copied', 0))
+                skipped_identical = int(result.get('skipped_identical', 0))
+                renamed = list(result.get('renamed', []))
+            else:
+                # Backward compatibility fallback
+                copied = int(result)
+                skipped_identical = 0
+                renamed = []
+
+            self.log.setPlainText(
+                f"Imported {copied} .mdl file(s) into Library"
+                + (f" (skipped identical: {skipped_identical})" if skipped_identical else "")
+            )
             self.log.setStyleSheet("color: green;")
+
+            if copied == 0:
+                QMessageBox.information(
+                    self,
+                    "Import Library",
+                    "Nothing was added: all imported models already exist in Library."
+                )
+
+            if renamed:
+                lines = [f"{old} -> {new}" for old, new in renamed]
+                QMessageBox.information(
+                    self,
+                    "Library versions created",
+                    "Some imported models matched existing titles and were saved as new versions:\n\n"
+                    + "\n".join(lines)
+                )
         except Exception as e:
             self.log.setPlainText(f"Import Library failed: {e}")
             self.log.setStyleSheet("color: red;")
