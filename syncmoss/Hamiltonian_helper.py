@@ -15,7 +15,7 @@ class HamiltonianHelperWidget(QDialog):
 	def __init__(self, parent=None):
 		super().__init__(parent)
 		self.setModal(True)
-		self.setWindowTitle('comming soon')
+		self.setWindowTitle('coming soon')
 		self.resize(1100, 650)
 
 		root_layout = QHBoxLayout(self)

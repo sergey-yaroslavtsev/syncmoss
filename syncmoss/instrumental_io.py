@@ -13,6 +13,148 @@ from syncmoss.model_io import read_model, mod_len_def
 from syncmoss.spectrum_plotter import plot_instrumental_result
 
 
+# Built-in defaults used by "Reset to default values" in Instrumental function menu.
+DEFAULT_INSEXP_TEXT = (
+    "0.16472623639571624 0.11257879642037069 0.7019583961622452 "
+    "0.08985576770449756 -0.05913725754557238 0.42733862867647215 "
+    "-0.5403075049599122 0.012656364797966438 0.5697684674481738 "
+)
+DEFAULT_INSINT_TEXT = "2.448293819453453 0.03380920627191801 "
+
+DAT_INS_EXP_PREFIX = '#@INSexp'
+DAT_INS_INT_PREFIX = '#@INSint'
+
+
+def _parse_float_sequence(text):
+    """Parse whitespace/comma separated float values from string."""
+    if text is None:
+        return np.array([], dtype=float)
+    cleaned = str(text).replace(',', ' ').strip()
+    if not cleaned:
+        return np.array([], dtype=float)
+    values = []
+    for token in cleaned.split():
+        values.append(float(token))
+    return np.array(values, dtype=float)
+
+
+def parse_dat_instrumental_metadata(file_path):
+    """Read #@INSexp / #@INSint metadata from a .dat file header."""
+    result = {
+        'INS': None,
+        'MulCo': None,
+        'x0': None,
+        'has_insexp': False,
+        'has_insint': False,
+    }
+
+    if not file_path or not os.path.exists(file_path):
+        return result
+
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for _ in range(40):
+                line = f.readline()
+                if not line:
+                    break
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                if stripped.startswith(DAT_INS_EXP_PREFIX):
+                    payload = stripped[len(DAT_INS_EXP_PREFIX):].strip()
+                    parsed = _parse_float_sequence(payload)
+                    if parsed.size > 0:
+                        result['INS'] = parsed
+                        result['has_insexp'] = True
+                    continue
+
+                if stripped.startswith(DAT_INS_INT_PREFIX):
+                    payload = stripped[len(DAT_INS_INT_PREFIX):].strip()
+                    parsed = _parse_float_sequence(payload)
+                    if parsed.size >= 2:
+                        result['MulCo'] = float(parsed[0])
+                        result['x0'] = float(parsed[1])
+                        result['has_insint'] = True
+                    continue
+
+                if not stripped.startswith('#') and not stripped.startswith('<'):
+                    break
+    except Exception as e:
+        print(f"[Instrumental function] Could not read DAT metadata from {file_path}: {e}")
+
+    return result
+
+
+def get_sms_instrumental_from_global_files(app):
+    """Read SMS instrumental function from global INSexp/INSint files."""
+    insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
+    insint_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+
+    INS = np.genfromtxt(insexp_path, delimiter=' ', skip_footer=0)
+    MulCo, x0 = np.genfromtxt(insint_path, delimiter=' ', skip_footer=0)
+    return np.array(INS, dtype=float), float(MulCo), float(x0)
+
+
+def resolve_sms_instrumental_for_file(app, spectrum_file, use_dat_metadata=True):
+    """
+    Resolve SMS instrumental parameters for a spectrum.
+
+    Returns:
+        INS, MulCo, x0, note
+    """
+    INS_global, MulCo_global, x0_global = get_sms_instrumental_from_global_files(app)
+
+    if not use_dat_metadata:
+        return INS_global, MulCo_global, x0_global, "Using global INSexp/INSint files (.dat metadata use is disabled)."
+
+    if not spectrum_file or not str(spectrum_file).lower().endswith('.dat'):
+        return INS_global, MulCo_global, x0_global, "Using global INSexp/INSint files (input is not a .dat file)."
+
+    meta = parse_dat_instrumental_metadata(spectrum_file)
+    if meta['INS'] is not None and meta['MulCo'] is not None and meta['x0'] is not None:
+        return meta['INS'], meta['MulCo'], meta['x0'], f"Using instrumental function from .dat file: {os.path.basename(spectrum_file)}"
+
+    missing = []
+    if meta['INS'] is None:
+        missing.append('#@INSexp')
+    if meta['MulCo'] is None or meta['x0'] is None:
+        missing.append('#@INSint')
+    missing_txt = ', '.join(missing) if missing else 'metadata'
+
+    return (
+        INS_global,
+        MulCo_global,
+        x0_global,
+        f".dat instrumental metadata not found ({missing_txt}) in {os.path.basename(spectrum_file)}. Fallback to global INSexp/INSint files.",
+    )
+
+
+def reset_instrumental_defaults(app):
+    """Restore default values for INSexp.txt and INSint.txt."""
+    try:
+        insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
+        insint_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+        os.makedirs(os.path.dirname(insexp_path), exist_ok=True)
+
+        with open(insexp_path, 'w', encoding='utf-8') as f:
+            f.write(DEFAULT_INSEXP_TEXT)
+
+        with open(insint_path, 'w', encoding='utf-8') as f:
+            f.write(DEFAULT_INSINT_TEXT)
+
+        app.log.setPlainText("Instrumental defaults restored (INSexp.txt, INSint.txt)")
+        app.log.setStyleSheet("color: green;")
+
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(app, "Instrumental function", "Default instrumental values were restored.")
+        return True
+    except Exception as e:
+        app.log.setPlainText(f"Failed to restore instrumental defaults: {e}")
+        app.log.setStyleSheet("color: red;")
+        return False
+
+
 
 
 def instrumental(app, ref, mode=0, pool=None):
@@ -97,8 +239,9 @@ def instrumental(app, ref, mode=0, pool=None):
             print('Here is initial guess for INS: ', p0)
             CMS_ch = 1
         elif app.SMS_fit.isChecked():
-            insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
-            INS = np.genfromtxt(insexp_path, delimiter=' ', skip_footer=0)
+            use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
+            INS, MulCo, x0, note = resolve_sms_instrumental_for_file(app, file, use_dat_metadata=use_dat_metadata)
+            print(f"[Instrumental function] {note}")
             p0 = np.copy(INS)
             n = int(len(INS)/3)
             print('Instrumental procedure start with', ref, mode, n)

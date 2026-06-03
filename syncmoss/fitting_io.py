@@ -4,7 +4,6 @@ Handles spectrum fitting using minimization algorithms from minimi_lib.
 """
 
 import numpy as np
-import platform
 import os
 from functools import partial
 import syncmoss.models as m5
@@ -12,6 +11,7 @@ import syncmoss.minimi_lib as mi
 from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def as mod_len_def_full
 from syncmoss.models_positions import mod_pos
+from syncmoss.instrumental_io import resolve_sms_instrumental_for_file
 import builtins as bu
 
 
@@ -228,6 +228,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             - 'is_simultaneous': bool (True if Nbaseline fitting)
     """
     try:
+        instrumental_note = ''
+
         # Import spectrum reading function
         from syncmoss.spectrum_io import load_spectrum
         from syncmoss.model_io import read_model as read_model_full
@@ -328,21 +330,20 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 return m5.TI(x, p, model, JN, pool, 0.0, MulCo_val, INS, Distri, Cor, Met=1, Norm=Norm)
         
         elif VVV == 3:  # SMS method
-            # Standard method with experimental INS
-            if platform.system() == 'Windows':
-                realpath = str(app.dir_path) + str('\\\\parameters\\\\INSexp.txt')
+            # SMS method: optionally read INS metadata from .dat, otherwise fallback to global files
+            if is_simultaneous:
+                selected_files = app.parse_process_path()
+                spectrum_for_ins = selected_files[0] if selected_files else spectrum_file
             else:
-                realpath = str(app.dir_path) + str('/parameters/INSexp.txt')
-            
-            if not os.path.exists(realpath):
-                return {
-                    'success': False,
-                    'message': f'Instrumental function file not found: {realpath}'
-                }
-            
-            INS = np.genfromtxt(realpath, delimiter=' ', skip_footer=0)
-            x0_val = app.x0
-            MulCo_val = app.MulCo
+                spectrum_for_ins = spectrum_file
+
+            use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
+            INS, MulCo_val, x0_val, instrumental_note = resolve_sms_instrumental_for_file(
+                app,
+                spectrum_for_ins,
+                use_dat_metadata=use_dat_metadata,
+            )
+            print(f"[Fitting] {instrumental_note}")
             
             # Calculate normalization integral
             pNorm = np.array([float(0)] * number_of_baseline_parameters)
@@ -607,6 +608,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'Cor': list(Cor_save),  # Correlation expressions (original)
                 'Distri_substituted': list(Distri),  # Distribution expressions (substituted)
                 'Cor_substituted': list(Cor),  # Correlation expressions (substituted)
+                'instrumental_note': instrumental_note,
             }
         
         else:
@@ -657,6 +659,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'Cor': list(Cor),  # Correlation expressions (original)
                 'Distri_substituted': list(Distri_t),  # Distribution expressions (substituted)
                 'Cor_substituted': list(Cor_t),  # Correlation expressions (substituted)
+                'instrumental_note': instrumental_note,
             }
     
     except Exception as e:

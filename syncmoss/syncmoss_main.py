@@ -165,7 +165,12 @@ from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import load_model, read_model, save_model, save_model_as, mod_len_def, load_model_from_path
 from syncmoss.spectrum_io import load_spectrum, sum_all_spectra, subtract_model_from_spectrum, half_points, calculate_backgrounds
 from syncmoss.spectrum_plotter import plot_calibration, plot_model, plot_model_with_nbaseline, plot_spectrum, plot_model_without_spectrum
-from syncmoss.instrumental_io import instrumental
+from syncmoss.instrumental_io import (
+    instrumental,
+    reset_instrumental_defaults,
+    get_sms_instrumental_from_global_files,
+    resolve_sms_instrumental_for_file,
+)
 from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
 from syncmoss.Library_io import export_library, import_library
 from syncmoss.Library_window import save_to_library_via_dialog
@@ -345,7 +350,7 @@ class SequentialFittingThread(QThread):
 
 class ShowModelThread(QThread):
     """Thread for running show model calculation without blocking the UI"""
-    finished = Signal(object, object, object, object, object, object, object, object, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds
+    finished = Signal(object, object, object, object, object, object, object, object, object, str)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note
     error = Signal(str)
     
     def __init__(self, main_window, path_list, pool):
@@ -464,17 +469,30 @@ class ShowModelThread(QThread):
                     'Norm': Norm
                 }
             else:  # SMS (experimental_method == 3)
-                INS = self.main_window.INS
+                # Resolve SMS instrumental parameters: prefer .dat metadata when enabled
+                # Choose representative spectrum file for metadata lookup
+                rep_file = None
+                try:
+                    if not no_spectrum_mode:
+                        rep_file = os.path.abspath(self.path_list[0])
+                except Exception:
+                    rep_file = None
+
+                use_dat_metadata = bool(getattr(self.main_window, 'use_dat_instrumental_metadata', True))
+                INS, MulCo_val, x0_val, instrumental_note = resolve_sms_instrumental_for_file(self.main_window, rep_file, use_dat_metadata=use_dat_metadata)
                 pNorm = np.array([float(0)] * number_of_baseline_parameters)
                 pNorm[0] = 1
-                Norm = TI(np.array([float(1000)]), pNorm, [], JN, pool, self.main_window.x0, self.main_window.MulCo, INS, [0], [0])[0]
+                Norm = TI(np.array([float(1000)]), pNorm, [], JN, pool, x0_val, MulCo_val, INS, [0], [0])[0]
                 method_params = {
-                    'x0': self.main_window.x0,
-                    'MulCo': self.main_window.MulCo,
+                    'x0': x0_val,
+                    'MulCo': MulCo_val,
                     'INS': INS,
                     'Met': 0,
                     'Norm': Norm
                 }
+            # ensure instrumental_note exists for MS branch as well
+            if experimental_method == 1:
+                instrumental_note = ''
             
             if num_nbaseline > 0:
                 # Multiple spectra case - calculate subspectra for each section separately
@@ -558,7 +576,7 @@ class ShowModelThread(QThread):
                 
                 if no_spectrum_mode:
                     # Keep sectioned arrays for dedicated model-only plotting
-                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds)
+                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note)
                 else:
                     # Concatenate fitted spectrum sections
                     SPC_f = SPC_f_sections[0]
@@ -566,7 +584,7 @@ class ShowModelThread(QThread):
                         SPC_f = np.concatenate((SPC_f, SPC_f_sections[i]))
 
                     # Emit with lists of subspectra for each section
-                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds)
+                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note)
             else:
                 # Single spectrum case
                 # Calculate full spectrum
@@ -610,7 +628,7 @@ class ShowModelThread(QThread):
                         FS_pos.append(mod_pos(Ps_filtered[i], Psm_filtered[i], method_params['INS']))
                 
                 # Emit with single list of subspectra
-                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds)
+                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note)
             
         except Exception as e:
             traceback.print_exc()
@@ -631,6 +649,20 @@ class RawToDatThread(QThread):
     
     def run(self):
         try:
+            use_sms_metadata = bool(getattr(self.main_window, 'SMS_fit', None) and self.main_window.SMS_fit.isChecked())
+            sms_metadata_warning = None
+            ins_line = None
+            insint_line = None
+
+            if use_sms_metadata:
+                try:
+                    INS, MulCo, x0 = get_sms_instrumental_from_global_files(self.main_window)
+                    INS = np.atleast_1d(INS)
+                    ins_line = '#@INSexp ' + ' '.join(str(float(v)) for v in INS)
+                    insint_line = f'#@INSint {float(MulCo)} {float(x0)}'
+                except Exception as e:
+                    sms_metadata_warning = f"Could not embed #@INSexp/#@INSint metadata: {e}. Conversion continued without metadata."
+
             # Determine output paths based on single/multiple files and save_path
             is_single_file = len(self.file_paths) == 1
             raw_files = [fp for fp in self.file_paths if os.path.splitext(fp)[1].lower() in ['.mca', '.cmca', '.ws5', '.w98', '.moe', '.m1', '.mcs']]
@@ -685,6 +717,12 @@ class RawToDatThread(QThread):
                         output_path = output_paths[i] if i < len(output_paths) else os.path.join(output_dir, f"{os.path.splitext(os.path.basename(raw_file))[0]}.dat")
                         
                         with open(output_path, 'w') as f:
+                            if use_sms_metadata:
+                                f.write('# Converted by SYNCMoss\n')
+                                if ins_line is not None:
+                                    f.write(ins_line + '\n')
+                                if insint_line is not None:
+                                    f.write(insint_line + '\n')
                             for j in range(len(A)):
                                 f.write(f"{A[j]}\t{B[j]}\n")
                             f.write('\n')  # Empty line at end as in original
@@ -699,10 +737,11 @@ class RawToDatThread(QThread):
             
             # Report results
             if converted_count > 0:
+                warning_suffix = f"\n{sms_metadata_warning}" if sms_metadata_warning else ''
                 if error_count == 0:
-                    self.finished.emit(f"Successfully converted {converted_count} RAW file(s) to .dat format")
+                    self.finished.emit(f"Successfully converted {converted_count} RAW file(s) to .dat format{warning_suffix}")
                 else:
-                    self.finished.emit(f"Converted {converted_count} file(s), {error_count} failed")
+                    self.finished.emit(f"Converted {converted_count} file(s), {error_count} failed{warning_suffix}")
             else:
                 self.error.emit("No RAW files were successfully converted")
                 
@@ -750,6 +789,7 @@ class PhysicsApp(QMainWindow):
         self.path_list = []
         self.backgrounds = []  # List to store calculated backgrounds
         self.sequence_fitting_type = 0  # 0 = initial, 1 = result
+        self.use_dat_instrumental_metadata = True
         self.x0 = 0.0
         self.MulCo = 0.0
 
@@ -884,7 +924,7 @@ class PhysicsApp(QMainWindow):
         self.SMS_fit.setChecked(True)
         self.APS_fit = QCheckBox("APS")
         self.APS_fit.setEnabled(False)
-        self.APS_fit.setToolTip("Coming soon")
+        self.APS_fit.setToolTip("It will become available soon once APS stabilizes this technique and makes it available to users.")
         
         # Connect MS and SMS to be mutually exclusive
         self.MS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.MS_fit))
@@ -955,9 +995,18 @@ class PhysicsApp(QMainWindow):
         find_aFe.triggered.connect(lambda: self.instrumental_pressed(0, 2))
         find_model = QAction("Find\nInstr. func.\nmodel", self)
         find_model.triggered.connect(lambda: self.instrumental_pressed(0, 1))
+        self.toggle_dat_ins_action = QAction(self)
+        self._update_use_dat_instrumental_action_text()
+        self.toggle_dat_ins_action.triggered.connect(self.toggle_use_dat_instrumental)
+        reset_defaults = QAction("Reset to\ndefault values", self)
+        reset_defaults.triggered.connect(lambda: reset_instrumental_defaults(self))
         self.ins_menu.addAction(find_single)
         self.ins_menu.addAction(find_aFe)
         self.ins_menu.addAction(find_model)
+        self.ins_menu.addSeparator()
+        self.ins_menu.addAction(self.toggle_dat_ins_action)
+        self.ins_menu.addSeparator()
+        self.ins_menu.addAction(reset_defaults)
         self.ins_btn.setMenu(self.ins_menu)
 
         ins_num_layout = QVBoxLayout()
@@ -1254,6 +1303,23 @@ class PhysicsApp(QMainWindow):
             self.MS_fit.setChecked(False)  # Uncheck MS
         elif changed_checkbox == self.SMS_fit:  # SMS unchecked
             self.MS_fit.setChecked(True)  # Check MS
+
+    def _update_use_dat_instrumental_action_text(self):
+        if not hasattr(self, 'toggle_dat_ins_action'):
+            return
+        if self.use_dat_instrumental_metadata:
+            self.toggle_dat_ins_action.setText("do not use instrumental function from .dat file (now it is used)")
+        else:
+            self.toggle_dat_ins_action.setText("use instrumental function from .dat file (now it is not used)")
+
+    def toggle_use_dat_instrumental(self):
+        self.use_dat_instrumental_metadata = not self.use_dat_instrumental_metadata
+        self._update_use_dat_instrumental_action_text()
+        if self.use_dat_instrumental_metadata:
+            self.log.setPlainText("Using instrumental function from .dat file is now enabled (SMS).")
+        else:
+            self.log.setPlainText("Using instrumental function from .dat file is now disabled (SMS).")
+        self.log.setStyleSheet("color: blue;")
 
     def loadmod_pressed(self):
         load_model(self)
@@ -1662,7 +1728,7 @@ class PhysicsApp(QMainWindow):
         self.show_model_thread.error.connect(self.on_show_model_error)
         self.show_model_thread.start()
     
-    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds):
+    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note=''):
         """Handle show model completion"""
         try:
             # If we were showing a distribution, switch back to spectrum view
@@ -1703,7 +1769,8 @@ class PhysicsApp(QMainWindow):
             self.canvas.draw()
             self.toolbar.push_current()
             
-            self.log.setPlainText("Model displayed successfully")
+            note_suffix = f"\n{instrumental_note}" if instrumental_note else ""
+            self.log.setPlainText("Model displayed successfully" + note_suffix)
             self.log.setStyleSheet("color: green;")
         except Exception as e:
             traceback.print_exc()
@@ -2143,7 +2210,7 @@ class PhysicsApp(QMainWindow):
         self.instrumental_thread.finished.connect(self.on_instrumental_finished)
         self.instrumental_thread.error.connect(self.on_instrumental_error)
         self.instrumental_thread.start()
-    
+
     def on_instrumental_finished(self, result):
         """Handle instrumental function completion"""
         try:
@@ -2760,6 +2827,8 @@ class PhysicsApp(QMainWindow):
             fitted_parameters = result['parameters']
             chi2 = result['chi2']
             is_simultaneous = result.get('is_simultaneous', False)
+            instrumental_note = str(result.get('instrumental_note', '') or '').strip()
+            note_suffix = f"\n{instrumental_note}" if instrumental_note else ""
             
             if is_simultaneous:
                 # Simultaneous fitting - multiple spectra
@@ -2818,7 +2887,7 @@ class PhysicsApp(QMainWindow):
                 self.canvas.draw()
                 self.toolbar.push_current()
                 
-                self.log.setPlainText(f"Simultaneous fit completed! χ² = {chi2:.3f}")
+                self.log.setPlainText(f"Simultaneous fit completed! χ² = {chi2:.3f}{note_suffix}")
                 self.log.setStyleSheet("color: green;")
                 
             elif 'A' in result and 'B' in result and 'SPC_f' in result and 'FS' in result:
@@ -2877,10 +2946,10 @@ class PhysicsApp(QMainWindow):
                 self.canvas.draw()
                 self.toolbar.push_current()
                 
-                self.log.setPlainText(f"Fit completed! χ² = {chi2:.3f}")
+                self.log.setPlainText(f"Fit completed! χ² = {chi2:.3f}{note_suffix}")
                 self.log.setStyleSheet("color: green;")
             else:
-                self.log.setPlainText(f"Fit completed! χ² = {chi2:.3f} (no plot data)")
+                self.log.setPlainText(f"Fit completed! χ² = {chi2:.3f} (no plot data){note_suffix}")
                 self.log.setStyleSheet("color: green;")
                 
         except Exception as e:
