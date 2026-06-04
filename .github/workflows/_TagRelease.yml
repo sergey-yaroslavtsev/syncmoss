@@ -24,6 +24,28 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"version={version}\n")
 
+      - name: Download macOS universal2 build
+        uses: actions/download-artifact@v6
+        with:
+          name: macos-universal2
+          path: dist
+
+      - name: Prepare release notes
+        run: |
+          if [ -f dist/SYNCmoss-macOS-universal2-signed.dmg ]; then
+            cat > release_notes.md << 'EOF'
+            Automated SYNCmoss release.
+            EOF
+          else
+            cat > release_notes.md << 'EOF'
+            Automated SYNCmoss release.
+
+            ⚠️ macOS artifact in this release is unsigned (not notarized).
+            If macOS blocks launch, run:
+            sudo xattr -cr "/Applications/SYNCmoss.app"
+            EOF
+          fi
+
       - name: Create Git tag via API
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,5 +80,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ steps.get_version.outputs.version }}"
+          body_path: release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

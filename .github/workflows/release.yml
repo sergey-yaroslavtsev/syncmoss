@@ -69,12 +69,24 @@ jobs:
     needs: run-build-upload
     uses: ./.github/workflows/_WindowsExe.yml
 
+  trigger-macos-pyinstaller:
+    needs: run-build-upload
+    uses: ./.github/workflows/_MacOS.yml
+    secrets:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+      APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+      APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APPLICATION_SPECIFIC_PASSWORD }}
+
   tag-release:
     if: github.event.inputs.mode != 'dry-run'
     permissions:
       contents: write
     needs:
       - trigger-windows-pyinstaller
+      - trigger-macos-pyinstaller
     uses: ./.github/workflows/_TagRelease.yml
 
   upload-release:

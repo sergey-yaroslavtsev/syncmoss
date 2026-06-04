@@ -1,0 +1,192 @@
+name: _macOS (PyInstaller universal2 app)
+
+on:
+  workflow_call:
+    secrets:
+      APPLE_ID:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64:
+        required: false
+      APPLE_KEYCHAIN_PASSWORD:
+        required: false
+      APPLE_APPLICATION_SPECIFIC_PASSWORD:
+        required: false
+
+jobs:
+  macos_arm64_app:
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11"
+      CFLAGS: "-mmacosx-version-min=11"
+      LDFLAGS: "-mmacosx-version-min=11"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: wheels
+          path: wheels
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+          pip install pyinstaller
+          pip install wheels/*.whl
+
+      - name: Build arm64 app
+        run: python bundle/macos_bundle.py --dist-dir bundle/MacOS/arm64 --work-dir bundle/build/MacOS/arm64
+
+      - name: Upload arm64 app artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: macos-arm64-app
+          path: bundle/MacOS/arm64/SYNCmoss/SYNCmoss.app
+          retention-days: 5
+
+  macos_x86_64_app:
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11"
+      CFLAGS: "-mmacosx-version-min=11"
+      LDFLAGS: "-mmacosx-version-min=11"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Rosetta
+        run: sudo softwareupdate --install-rosetta --agree-to-license
+
+      - name: Create x86_64 Python environment
+        run: |
+          python -m venv venv-x86_64
+          lipo venv-x86_64/bin/python -remove arm64 -output venv-x86_64/bin/python_x86
+          mv venv-x86_64/bin/python_x86 venv-x86_64/bin/python
+          chmod +x venv-x86_64/bin/python
+          file venv-x86_64/bin/python
+
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: wheels
+          path: wheels
+
+      - name: Install dependencies (x86_64)
+        run: |
+          source venv-x86_64/bin/activate
+          arch -x86_64 python -m pip install --upgrade pip setuptools wheel
+          arch -x86_64 pip install -r requirements.txt
+          arch -x86_64 pip install pyinstaller
+          arch -x86_64 pip install wheels/*.whl
+
+      - name: Build x86_64 app
+        run: |
+          source venv-x86_64/bin/activate
+          arch -x86_64 python bundle/macos_bundle.py --dist-dir bundle/MacOS/x86_64 --work-dir bundle/build/MacOS/x86_64
+
+      - name: Upload x86_64 app artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: macos-x86_64-app
+          path: bundle/MacOS/x86_64/SYNCmoss/SYNCmoss.app
+          retention-days: 5
+
+  macos_universal2:
+    runs-on: macos-latest
+    needs:
+      - macos_arm64_app
+      - macos_x86_64_app
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+      CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+      APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APPLICATION_SPECIFIC_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download arm64 app
+        uses: actions/download-artifact@v6
+        with:
+          name: macos-arm64-app
+          path: dist/arm64
+
+      - name: Download x86_64 app
+        uses: actions/download-artifact@v6
+        with:
+          name: macos-x86_64-app
+          path: dist/x86_64
+
+      - name: Merge into universal2 app
+        run: |
+          set -euo pipefail
+          ARM_APP="$(find dist/arm64 -type d -name 'SYNCmoss.app' | head -n 1)"
+          X86_APP="$(find dist/x86_64 -type d -name 'SYNCmoss.app' | head -n 1)"
+
+          mkdir -p dist/universal2
+          cp -R "$ARM_APP" dist/universal2/
+          UNI_APP="dist/universal2/SYNCmoss.app"
+
+          while IFS= read -r -d '' arm_file; do
+            rel="${arm_file#$ARM_APP/}"
+            x86_file="$X86_APP/$rel"
+            out_file="$UNI_APP/$rel"
+
+            if [ ! -f "$x86_file" ]; then
+              continue
+            fi
+
+            if file "$arm_file" | grep -q 'Mach-O'; then
+              if lipo -info "$arm_file" | grep -q 'Non-fat'; then
+                lipo -create "$arm_file" "$x86_file" -output "$out_file"
+              fi
+            fi
+          done < <(find "$ARM_APP" -type f -print0)
+
+      - name: Package universal2 app (zip)
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/universal2/SYNCmoss.app dist/SYNCmoss-macOS-universal2.zip
+
+      - name: Sign + notarize (optional)
+        if: env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.CERTIFICATE_BASE64 != '' && env.CERTIFICATE_PASSWORD != '' && env.KEYCHAIN_PASSWORD != '' && env.APPLICATION_SPECIFIC_PASSWORD != ''
+        run: |
+          set -euo pipefail
+          echo "$CERTIFICATE_BASE64" | base64 --decode > cert.p12
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security import cert.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | head -n 1 | sed -E 's/.*"([^"]+)"/\1/')
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" dist/universal2/SYNCmoss.app
+          codesign --verify --deep --strict --verbose=2 dist/universal2/SYNCmoss.app
+
+          hdiutil create -volname SYNCmoss -srcfolder dist/universal2/SYNCmoss.app -ov -format UDZO dist/SYNCmoss-macOS-universal2-signed.dmg
+          xcrun notarytool submit dist/SYNCmoss-macOS-universal2-signed.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLICATION_SPECIFIC_PASSWORD" --wait
+          xcrun stapler staple dist/SYNCmoss-macOS-universal2-signed.dmg
+
+      - name: Upload universal2 macOS artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: macos-universal2
+          path: |
+            dist/SYNCmoss-macOS-universal2.zip
+            dist/SYNCmoss-macOS-universal2-signed.dmg
+          if-no-files-found: ignore
+          retention-days: 5

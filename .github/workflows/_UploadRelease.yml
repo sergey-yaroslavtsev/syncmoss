@@ -46,6 +46,21 @@ jobs:
           cd windows-exe
           zip -r ../dist/SYNCmoss-Windows.zip .
 
+      - name: Download macOS universal2 build
+        uses: actions/download-artifact@v6
+        with:
+          name: macos-universal2
+          path: dist
+
+      - name: Keep only one macOS release variant
+        run: |
+          if [ -f dist/SYNCmoss-macOS-universal2-signed.dmg ]; then
+            echo "Signed macOS build found: keeping only signed DMG for release upload"
+            rm -f dist/SYNCmoss-macOS-universal2.zip
+          else
+            echo "Signed macOS build not found: keeping unsigned ZIP"
+          fi
+
       - name: List files
         run: ls -R dist
 
