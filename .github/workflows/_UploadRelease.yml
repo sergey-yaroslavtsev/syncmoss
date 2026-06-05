@@ -56,9 +56,9 @@ jobs:
         run: |
           if [ -f dist/SYNCmoss-macOS-universal2-signed.dmg ]; then
             echo "Signed macOS build found: keeping only signed DMG for release upload"
-            rm -f dist/SYNCmoss-macOS-universal2.zip
+            rm -f dist/SYNCmoss-macOS-universal2.dmg
           else
-            echo "Signed macOS build not found: keeping unsigned ZIP"
+            echo "Signed macOS build not found: keeping unsigned DMG"
           fi
 
       - name: List files

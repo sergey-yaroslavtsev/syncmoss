@@ -11,12 +11,15 @@ Related article:
 Yaroslavtsev S., J. Synchrotron Rad., 2023	
 doi.org/10.1107/S1600577523001686
 
-## To run on Windows
+## To run on Windows and MacOS
 
 go to releases:
 https://github.com/sergey-yaroslavtsev/syncmoss/releases
 
 download Windows related archieve, extract it, and run `.exe`
+
+MacOS is not well tested. 
+download MacOS related `.dmg`, install it, (pay attention to the comment in release)
 
 ## To run on Linux
 
@@ -44,14 +47,18 @@ syncmoss
 * Many-state superparamagnetic relaxation model
 * Anharmonic spin modulation (ASM) model
 * MDGD model (instead of xVBF https://doi.org/10.1016/j.nimb.2025.165669)
-* Multi-dimensional distributions with correlations
+* Multi-dimensional distributions with correlations (not reconstruction but functional)
 * Expressions (which could be linked to parameters)
 * Online (along with experiment) fitting
 * Parallel calculations of full-transmission integral
 
+New features:
+* Library with import/export - create your own and share it with others
+* Interactive spectrum image
+
 ## Author
 
-Yaroslavtsev Sergey (ESRF ID14)
+Yaroslavtsev Sergey (ESRF | ADA and ID14)
 
 ## License
 

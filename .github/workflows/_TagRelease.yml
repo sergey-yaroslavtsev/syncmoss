@@ -40,7 +40,7 @@ jobs:
             cat > release_notes.md << 'EOF'
             Automated SYNCmoss release.
 
-            ⚠️ macOS artifact in this release is unsigned (not notarized).
+            ⚠️ macOS DMG in this release is unsigned (not notarized).
             If macOS blocks launch, run:
             sudo xattr -cr "/Applications/SYNCmoss.app"
             EOF

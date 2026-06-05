@@ -8,11 +8,13 @@ hiddenimports += collect_submodules('PySide6')
 # Ensure numba and llvmlite submodules are included in the frozen app
 hiddenimports += collect_submodules('numba')
 hiddenimports += collect_submodules('llvmlite')
+hiddenimports += ['syncmoss_test']
 scipy_data = collect_data_files('scipy')
 # llvmlite carries native data/bitcode that should be collected
 llvmlite_data = collect_data_files('llvmlite')
 
 syncmoss_dir = os.path.abspath(os.path.join(SPECPATH, '..', 'syncmoss'))
+project_dir  = os.path.abspath(os.path.join(SPECPATH, '..'))
 
 # Only Python library data (scipy, etc.) goes through PyInstaller.
 # Application resources (icons/, parameters/, themes, etc.) are copied
@@ -23,7 +25,7 @@ block_cipher = None
 
 a = Analysis(
     [os.path.join(syncmoss_dir, 'main.py')],
-    pathex=[syncmoss_dir],
+    pathex=[syncmoss_dir, project_dir],
     hooksconfig={
         'matplotlib': {
             'backends': 'all',

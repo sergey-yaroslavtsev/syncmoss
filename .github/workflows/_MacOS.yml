@@ -165,6 +165,15 @@ jobs:
           ARM_APP="$(find dist/arm64 -type d -name 'SYNCmoss.app' | head -n 1)"
           X86_APP="$(find dist/x86_64 -type d -name 'SYNCmoss.app' | head -n 1)"
 
+          # actions/download-artifact may sometimes restore the app without the
+          # outer *.app directory, leaving Contents/ directly in target folder.
+          if [ -z "$ARM_APP" ] && [ -d dist/arm64/Contents ]; then
+            ARM_APP="dist/arm64"
+          fi
+          if [ -z "$X86_APP" ] && [ -d dist/x86_64/Contents ]; then
+            X86_APP="dist/x86_64"
+          fi
+
           if [ -z "$ARM_APP" ] || [ -z "$X86_APP" ]; then
             echo "Could not locate arm64/x86_64 apps after artifact download"
             find dist -maxdepth 6 -print
@@ -172,7 +181,12 @@ jobs:
           fi
 
           mkdir -p dist/universal2
-          cp -R "$ARM_APP" dist/universal2/
+          if [ "$(basename "$ARM_APP")" = "SYNCmoss.app" ]; then
+            cp -R "$ARM_APP" dist/universal2/
+          else
+            mkdir -p dist/universal2/SYNCmoss.app
+            cp -R "$ARM_APP/Contents" dist/universal2/SYNCmoss.app/
+          fi
           UNI_APP="dist/universal2/SYNCmoss.app"
 
           echo "Merging executables in Contents/MacOS..."
@@ -194,7 +208,7 @@ jobs:
           done
 
           get_archs() {
-            echo "$1" | grep -oE 'arm64|x86_64' | sort | tr '\n' ' '
+            echo "$1" | grep -oE 'arm64|x86_64' | sort | tr '\n' ' ' || true
           }
 
           contains_all_archs() {
@@ -271,9 +285,12 @@ jobs:
 
           echo "Universal2 app built at $UNI_APP"
 
-      - name: Package universal2 app (zip)
+      - name: Run smoke test on universal2 app
+        run: dist/universal2/SYNCmoss.app/Contents/MacOS/SYNCmoss --test
+
+      - name: Create unsigned universal2 DMG
         run: |
-          ditto -c -k --sequesterRsrc --keepParent dist/universal2/SYNCmoss.app dist/SYNCmoss-macOS-universal2.zip
+          hdiutil create -volname SYNCmoss -srcfolder dist/universal2/SYNCmoss.app -ov -format UDZO dist/SYNCmoss-macOS-universal2.dmg
 
       - name: Sign + notarize (optional)
         if: env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.CERTIFICATE_BASE64 != '' && env.CERTIFICATE_PASSWORD != '' && env.KEYCHAIN_PASSWORD != '' && env.APPLICATION_SPECIFIC_PASSWORD != ''
@@ -301,7 +318,7 @@ jobs:
         with:
           name: macos-universal2
           path: |
-            dist/SYNCmoss-macOS-universal2.zip
+            dist/SYNCmoss-macOS-universal2.dmg
             dist/SYNCmoss-macOS-universal2-signed.dmg
           if-no-files-found: ignore
           retention-days: 5

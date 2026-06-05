@@ -29,6 +29,9 @@ jobs:
       - name: Build with PyInstaller
         run: python bundle/bundle.py
 
+      - name: Run smoke test on frozen executable
+        run: bundle\Windows\SYNCmoss\SYNCmoss_console.exe --test
+
       - name: Upload Windows executable
         uses: actions/upload-artifact@v5
         with:
