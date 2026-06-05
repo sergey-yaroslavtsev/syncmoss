@@ -38,6 +38,19 @@ from syncmoss.constants import number_of_baseline_parameters
 MulCoCMS = 0.28
 
 def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1):
+    """Fit the velocity calibration of a standard absorber spectrum.
+
+    Loads the calibration spectrum ``Cal_file`` from ``dir_path``, fits it with the
+    selected drive model (``VVV == 1`` -> sinusoidal, otherwise linear) and returns
+    the calibration result. ``INS`` / ``JN`` / ``x0`` / ``MulCo`` configure the
+    instrumental function and transmission integral; ``pool`` is the shared
+    multiprocessing pool.
+
+    Used by syncmoss_main.py (CalibrationThread) to build the channel->velocity scale.
+
+    Returns:
+        tuple ``(A, B, C)`` - the calibration arrays consumed by the caller.
+    """
     print('VVV = ', VVV)
     if VVV == 1:
         Li_Lo = 1
@@ -437,8 +450,13 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
         p = mi.minimi_hi(func, x, id[0], p0, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+3, number_of_baseline_parameters+4, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10]), MI=3, MI2=5)[0] # int(15*(VVV==3)+1)  int(11*(VVV==3)+1)
         # print(p)
         sex0 = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123, -5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
-        if Vel_start == 1:
-            sex0[::-1]
+        # No reversal is needed here even for Vel_start == 1: the velocity
+        # direction is already encoded in the calibrated axis `x` (built from the
+        # block-1 sex0, which IS reversed for Vel_start == 1). Below, each
+        # reference velocity sex0[k] is paired with the channel ps0x[k] located by
+        # argmin on that oriented axis, so the pairing is correct in either
+        # direction. (A vestigial `if Vel_start == 1: sex0[::-1]` lived here; it
+        # was a no-op, and actually reversing sex0 would break this pairing.)
         ps0x = np.array([float(0)]*12)
         V = number_of_baseline_parameters
         x1 = x[:int(len(x)/2)]

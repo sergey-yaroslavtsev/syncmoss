@@ -97,9 +97,15 @@ class ResultsTable(QWidget):
         self.num_rows = numro * 3
         self.num_cols = numco + 1  # +1 for model column
         
-        # Storage for correlation matrix and fitting results
+        # Storage for correlation matrix and fitting results.
+        # These are (re)assigned in fill_table(); initialised here so methods
+        # that may run before the first fit can rely on direct attribute access
+        # instead of hasattr() guards.
         self.correlation_matrix = None
         self.fit_parameters = None
+        self.parameter_names = []
+        self.covariance_matrix = None
+        self.errors = None
         self.model_list = []
         self.model_colors = []
         
@@ -423,9 +429,7 @@ class ResultsTable(QWidget):
         Returns:
             tuple: (intensities, intensity_errors) - arrays of percentages, one per model
         """
-        from syncmoss.support_math import calculate_intensity_percentage_error
-        
-        if not hasattr(self, 'fit_parameters') or not hasattr(self, 'parameter_names'):
+        if self.fit_parameters is None or not self.parameter_names:
             return np.array([]), np.array([])
         
         # Group models by spectrum (separated by Nbaseline)
@@ -490,9 +494,9 @@ class ResultsTable(QWidget):
             t_indices = [param_idx for _, param_idx in group]
             
             # Calculate intensities with proper error propagation
-            if hasattr(self, 'covariance_matrix') and self.covariance_matrix is not None:
+            if self.covariance_matrix is not None:
                 # Identify fixed parameters (where er is nan)
-                errors = self.errors if hasattr(self, 'errors') and self.errors is not None else np.zeros_like(self.fit_parameters)
+                errors = self.errors if self.errors is not None else np.zeros_like(self.fit_parameters)
                 fixed_params = [i for i in range(len(errors)) if np.isnan(errors[i])]
                 
                 intensities, intensity_errors = calculate_intensity_percentage_error(
@@ -634,7 +638,7 @@ class ResultsTable(QWidget):
             return None, None
         
         # Evaluate expression
-        _math_ns = {
+        math_namespace = {
             'p': params, 'np': np,
             'exp': np.exp, 'log': np.log, 'log10': np.log10, 'sqrt': np.sqrt,
             'abs': np.abs, 'sin': np.sin, 'cos': np.cos, 'tan': np.tan,
@@ -645,8 +649,7 @@ class ResultsTable(QWidget):
             'sum': np.sum, 'mean': np.mean, 'std': np.std,
         }
         try:
-            namespace = _math_ns
-            value = float(eval(expr_text, {"__builtins__": {}}, namespace))
+            value = float(eval(expr_text, {"__builtins__": {}}, math_namespace))
         except Exception:
             return None, None
         
@@ -674,10 +677,10 @@ class ResultsTable(QWidget):
             p_plus[full_idx] += h
             p_minus[full_idx] -= h
             try:
-                ns_plus = {**_math_ns, 'p': p_plus}
-                ns_minus = {**_math_ns, 'p': p_minus}
-                f_plus = float(eval(expr_text, {"__builtins__": {}}, ns_plus))
-                f_minus = float(eval(expr_text, {"__builtins__": {}}, ns_minus))
+                namespace_plus = {**math_namespace, 'p': p_plus}
+                namespace_minus = {**math_namespace, 'p': p_minus}
+                f_plus = float(eval(expr_text, {"__builtins__": {}}, namespace_plus))
+                f_minus = float(eval(expr_text, {"__builtins__": {}}, namespace_minus))
                 partials[c_idx] = (f_plus - f_minus) / (2 * h)
             except Exception:
                 partials[c_idx] = 0.0
@@ -781,7 +784,7 @@ class ResultsTable(QWidget):
         model_labels = []
         param_index = 0
         
-        if hasattr(self, 'parameter_names') and len(self.parameter_names) > 0 and hasattr(self, 'errors') and self.errors is not None:
+        if len(self.parameter_names) > 0 and self.errors is not None:
             # Baseline is always the first component
             baseline_names = self.parameter_names[0]
             for i, param_name in enumerate(baseline_names):
@@ -807,9 +810,9 @@ class ResultsTable(QWidget):
         # Verify we have the right number of labels
         if len(param_labels) != n_params:
             print(f"Warning: Expected {n_params} parameter labels but got {len(param_labels)}")
-            print(f"  parameter_names available: {hasattr(self, 'parameter_names')}")
-            print(f"  errors available: {hasattr(self, 'errors')}")
-            if hasattr(self, 'errors') and self.errors is not None:
+            print(f"  parameter_names available: {len(self.parameter_names) > 0}")
+            print(f"  errors available: {self.errors is not None}")
+            if self.errors is not None:
                 print(f"  errors length: {len(self.errors)}, non-NaN count: {np.sum(~np.isnan(self.errors))}")
             # Fallback
             param_labels = [f'p{i}' for i in range(n_params)]

@@ -1,3 +1,10 @@
+"""
+Hamiltonian helper dialog.
+
+A PySide6 dialog (``HamiltonianHelperWidget``) used from the Support menu to help
+the user find an initial guess for the full-Hamiltonian model: an editable matrix
+table on the left and a matplotlib preview on the right.
+"""
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas

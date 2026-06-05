@@ -695,13 +695,13 @@ class ParametersTable(QWidget):
             if model_name in ['Distr', 'Corr']:
                 # Find the last non-Distr/non-Corr model before this row
                 target_row = None
-                for k in range(row - 1, -1, -1):
-                    prev_row_widget = self.row_widgets[k]
+                for search_row in range(row - 1, -1, -1):
+                    prev_row_widget = self.row_widgets[search_row]
                     prev_start = prev_row_widget.layout().itemAt(0).widget()
                     prev_model_btn = prev_start.layout().itemAt(1).widget()
                     prev_model = prev_model_btn.text()
                     if prev_model not in ['Distr', 'Corr']:
-                        target_row = k
+                        target_row = search_row
                         break
                 
                 if target_row is not None:

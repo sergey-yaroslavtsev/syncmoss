@@ -25,17 +25,33 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 """
-import signal
+# ---------------------------------------------------------------------------
+# Standard library
+# ---------------------------------------------------------------------------
 import os
 import re
-import os.path
+import sys
+import gc
+import io
+import json
+import time
+import copy
+import base64
+import shutil
+import queue
+import platform
+import threading
+import warnings
+import traceback
+import ast
+from functools import partial
+import multiprocessing as mp
+from multiprocessing.pool import ThreadPool
+
+# ---------------------------------------------------------------------------
+# Third-party
+# ---------------------------------------------------------------------------
 import numpy as np
-# from numpy import *
-# import builtins as bu
-# def max(*args):
-#     return bu.max(*args)
-# def min(*args):
-#     return bu.min(*args)
 from numpy import (
     # constants
     pi, e,
@@ -55,19 +71,60 @@ from numpy import (
     # aggregation
     mean, std, var,
 )
-import syncmoss.minimi_lib as mi
-from syncmoss.models import TI
-from syncmoss.models_positions import mod_pos
-from syncmoss.Calibration import Calibration
-import multiprocessing as mp
 import matplotlib
-matplotlib.use('QtAgg')
+matplotlib.use('QtAgg')  # select the Qt backend before importing pyplot
 import matplotlib.pyplot as plt
 import matplotlib.transforms
 import matplotlib.image
 from matplotlib import colors
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QLineEdit, QTextEdit, QCheckBox, QComboBox, QTableWidget,
+    QTableWidgetItem, QScrollArea, QGridLayout, QSplitter, QFrame, QGroupBox,
+    QFileDialog, QMessageBox, QProgressBar, QSpinBox, QDoubleSpinBox,
+    QMenu, QSizePolicy, QDialog, QDialogButtonBox
+)
+from PySide6.QtGui import (
+    QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator,
+    QRegularExpressionValidator, QPalette, QShortcut, QKeySequence
+)
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression
+
+# ---------------------------------------------------------------------------
+# Local package
+# ---------------------------------------------------------------------------
+import syncmoss.minimi_lib as mi
+import syncmoss.fitting_io as fitting_io
+from syncmoss.models import TI
+from syncmoss.models_positions import mod_pos
+from syncmoss.Calibration import Calibration
+from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters
+from syncmoss.parameters_table import ParametersTable
+from syncmoss.results_table import ResultsTable
+from syncmoss.model_io import (
+    load_model, read_model, save_model, save_model_as, mod_len_def, load_model_from_path,
+)
+from syncmoss.spectrum_io import (
+    load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
+    half_points, calculate_backgrounds,
+)
+from syncmoss.spectrum_plotter import (
+    plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
+    plot_distribution, plot_calibration, plot_model, plot_model_with_nbaseline,
+    plot_spectrum, plot_model_without_spectrum,
+)
+from syncmoss.instrumental_io import (
+    instrumental,
+    reset_instrumental_defaults,
+    get_sms_instrumental_from_global_files,
+    resolve_sms_instrumental_for_file,
+)
+from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
+from syncmoss.Library_io import export_library, import_library
+from syncmoss.Library_window import save_to_library_via_dialog
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -110,28 +167,14 @@ class CustomNavigationToolbar(NavigationToolbar):
         if hasattr(self.parent_window, 'toggle_legend_visibility'):
             show = self.toggle_legend_action.isChecked()
             self.parent_window.toggle_legend_visibility(show)
-import threading
-import queue
-import time
-import json
-from functools import partial
-import shutil
-import platform
-# import asyncio
-# import psutil
-import base64
-import warnings
-import copy
-from multiprocessing.pool import ThreadPool
-import gc
-import traceback
-import syncmoss.fitting_io as fitting_io
-import io
-from syncmoss.spectrum_plotter import plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result, plot_distribution
-from syncmoss.spectrum_io import load_spectrum, calculate_backgrounds
 
+
+# ---------------------------------------------------------------------------
+# Module-level configuration
+# ---------------------------------------------------------------------------
 warnings.filterwarnings('ignore', '.*object is not callable.*', )
 
+# Dark plot styling shared by every matplotlib figure created by the app.
 plt.rcParams['axes.facecolor'] = '(0, 0, 0)'
 plt.rcParams['figure.facecolor'] = '(0, 0, 0)'
 plt.rcParams['axes.labelcolor'] = 'w'
@@ -139,62 +182,17 @@ plt.rcParams['axes.edgecolor'] = 'w'
 plt.rcParams['xtick.color'] = 'w'
 plt.rcParams['ytick.color'] = 'w'
 
-path = None
-params = None
-image = None
-initial = 0
-
-# Constants
-from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters
-
-# PySide6 imports
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QTextEdit, QCheckBox, QComboBox, QTableWidget,
-    QTableWidgetItem, QScrollArea, QGridLayout, QSplitter, QFrame, QGroupBox,
-    QFileDialog, QMessageBox, QProgressBar, QSpinBox, QDoubleSpinBox,
-    QMenu, QSizePolicy, QDialog, QDialogButtonBox
-)
-from PySide6.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator, QRegularExpressionValidator, QPalette, QShortcut, QKeySequence
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression
-import sys
-import os
-
-from syncmoss.parameters_table import ParametersTable
-from syncmoss.results_table import ResultsTable
-from syncmoss.model_io import load_model, read_model, save_model, save_model_as, mod_len_def, load_model_from_path
-from syncmoss.spectrum_io import load_spectrum, sum_all_spectra, subtract_model_from_spectrum, half_points, calculate_backgrounds
-from syncmoss.spectrum_plotter import plot_calibration, plot_model, plot_model_with_nbaseline, plot_spectrum, plot_model_without_spectrum
-from syncmoss.instrumental_io import (
-    instrumental,
-    reset_instrumental_defaults,
-    get_sms_instrumental_from_global_files,
-    resolve_sms_instrumental_for_file,
-)
-from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
-from syncmoss.Library_io import export_library, import_library
-from syncmoss.Library_window import save_to_library_via_dialog
-import traceback
-import ast
-
 MulCoCMS = 0.28
 
+# Optional Tango (beamline control) integration is disabled by default.
+# To enable, install PyTango and provide get_data()/tango_uri below.
 check_tango = False
-# from Pytango import DeviceProxy
+# from PyTango import DeviceProxy
 # def get_data(tango_uri):
 #     proxy = DeviceProxy(tango_uri)
 #     return proxy.data
-# tango_uri = 'moesa:20000/id14/Can556/6a2' # could be different
+# tango_uri = 'moesa:20000/id14/Can556/6a2'  # could be different
 # check_tango = True
-
-warnings.filterwarnings('ignore', '.*object is not callable.*', )
-
-# plt.rcParams['axes.facecolor'] = '(0, 0, 0)'
-# plt.rcParams['figure.facecolor'] = '(0, 0, 0)'
-# plt.rcParams['axes.labelcolor'] = 'w'
-# plt.rcParams['axes.edgecolor'] = 'w'
-# plt.rcParams['xtick.color'] = 'w'
-# plt.rcParams['ytick.color'] = 'w'
 
 class CalibrationThread(QThread):
     """Thread for running calibration without blocking the UI"""
@@ -651,15 +649,15 @@ class RawToDatThread(QThread):
         try:
             use_sms_metadata = bool(getattr(self.main_window, 'SMS_fit', None) and self.main_window.SMS_fit.isChecked())
             sms_metadata_warning = None
-            ins_line = None
-            insint_line = None
+            instrumental_exp_line = None
+            instrumental_int_line = None
 
             if use_sms_metadata:
                 try:
                     INS, MulCo, x0 = get_sms_instrumental_from_global_files(self.main_window)
                     INS = np.atleast_1d(INS)
-                    ins_line = '#@INSexp ' + ' '.join(str(float(v)) for v in INS)
-                    insint_line = f'#@INSint {float(MulCo)} {float(x0)}'
+                    instrumental_exp_line = '#@INSexp ' + ' '.join(str(float(v)) for v in INS)
+                    instrumental_int_line = f'#@INSint {float(MulCo)} {float(x0)}'
                 except Exception as e:
                     sms_metadata_warning = f"Could not embed #@INSexp/#@INSint metadata: {e}. Conversion continued without metadata."
 
@@ -719,10 +717,10 @@ class RawToDatThread(QThread):
                         with open(output_path, 'w') as f:
                             if use_sms_metadata:
                                 f.write('# Converted by SYNCMoss\n')
-                                if ins_line is not None:
-                                    f.write(ins_line + '\n')
-                                if insint_line is not None:
-                                    f.write(insint_line + '\n')
+                                if instrumental_exp_line is not None:
+                                    f.write(instrumental_exp_line + '\n')
+                                if instrumental_int_line is not None:
+                                    f.write(instrumental_int_line + '\n')
                             for j in range(len(A)):
                                 f.write(f"{A[j]}\t{B[j]}\n")
                             f.write('\n')  # Empty line at end as in original
@@ -754,6 +752,18 @@ class PhysicsApp(QMainWindow):
     def __init__(self, pool=None):
         super().__init__()
         self.pool = pool  # Store reference to global pool
+
+        # Attributes that are assigned lazily (only after the first full layout,
+        # plot or fit). They are initialised here so that Qt event handlers which
+        # can fire during construction (e.g. resizeEvent, triggered by
+        # setGeometry below) and methods that may run before the first user
+        # action can use plain attribute access instead of hasattr() guards.
+        self._main_splitter = None
+        self._left_panel_ideal_width = None
+        self.toggle_dat_ins_action = None
+        self.last_plot_data = None
+        self.last_fitting_data = None
+
         self.setWindowTitle('SYNCMoss ESRF ID14')
         self.setGeometry(50, 50, 1600, 900)
         self.setMinimumSize(1270, 710)
@@ -982,13 +992,13 @@ class PhysicsApp(QMainWindow):
         show_buttons.addWidget(self.show_btn)
         show_buttons.addWidget(self.showM_btn)
 
-        ins_layout = QHBoxLayout()
-        self.ins_btn = QPushButton("Instrumental\nfunction")
-        self.ins_btn.setFont(QFont('Arial', 16))
-        self.ins_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        instrumental_layout = QHBoxLayout()
+        self.instrumental_btn = QPushButton("Instrumental\nfunction")
+        self.instrumental_btn.setFont(QFont('Arial', 16))
+        self.instrumental_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         # Create dropdown menu for INS button
-        self.ins_menu = QMenu()
+        self.instrumental_menu = QMenu()
         find_single = QAction("Find\nInstr. func.\n single line", self)
         find_single.triggered.connect(lambda: self.instrumental_pressed(0, 0))
         find_aFe = QAction("Find\nInstr. func.\n pure a-Fe", self)
@@ -1000,45 +1010,45 @@ class PhysicsApp(QMainWindow):
         self.toggle_dat_ins_action.triggered.connect(self.toggle_use_dat_instrumental)
         reset_defaults = QAction("Reset to\ndefault values", self)
         reset_defaults.triggered.connect(lambda: reset_instrumental_defaults(self))
-        self.ins_menu.addAction(find_single)
-        self.ins_menu.addAction(find_aFe)
-        self.ins_menu.addAction(find_model)
-        self.ins_menu.addSeparator()
-        self.ins_menu.addAction(self.toggle_dat_ins_action)
-        self.ins_menu.addSeparator()
-        self.ins_menu.addAction(reset_defaults)
-        self.ins_btn.setMenu(self.ins_menu)
+        self.instrumental_menu.addAction(find_single)
+        self.instrumental_menu.addAction(find_aFe)
+        self.instrumental_menu.addAction(find_model)
+        self.instrumental_menu.addSeparator()
+        self.instrumental_menu.addAction(self.toggle_dat_ins_action)
+        self.instrumental_menu.addSeparator()
+        self.instrumental_menu.addAction(reset_defaults)
+        self.instrumental_btn.setMenu(self.instrumental_menu)
 
-        ins_num_layout = QVBoxLayout()
-        ins_num_label = QLabel("№ of lines")
-        ins_num_label.setFont(QFont('Arial', 18))
-        self.ins_number = QLineEdit("3")
-        ins_num_layout.addWidget(ins_num_label)
-        ins_num_layout.addWidget(self.ins_number)
+        instrumental_num_layout = QVBoxLayout()
+        instrumental_num_label = QLabel("№ of lines")
+        instrumental_num_label.setFont(QFont('Arial', 18))
+        self.instrumental_number = QLineEdit("3")
+        instrumental_num_layout.addWidget(instrumental_num_label)
+        instrumental_num_layout.addWidget(self.instrumental_number)
 
-        self.ins_btn2 = QPushButton("Refine\nInstr. func.\nESRF")
-        self.ins_btn2.setFont(QFont('Arial', 15))
-        self.ins_btn2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.instrumental_btn2 = QPushButton("Refine\nInstr. func.\nESRF")
+        self.instrumental_btn2.setFont(QFont('Arial', 15))
+        self.instrumental_btn2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         # Create dropdown menu for INS refine button
-        self.ins_menu2 = QMenu()
+        self.instrumental_menu2 = QMenu()
         refine_single = QAction("Refine\nInstr. func.\n single line", self)
         refine_single.triggered.connect(lambda: self.instrumental_pressed(1, 0))
         refine_aFe = QAction("Refine\nInstr. func.\n pure a-Fe", self)
         refine_aFe.triggered.connect(lambda: self.instrumental_pressed(1, 2))
         refine_model = QAction("Refine\nInstr. func.\nmodel", self)
         refine_model.triggered.connect(lambda: self.instrumental_pressed(1, 1))
-        self.ins_menu2.addAction(refine_single)
-        self.ins_menu2.addAction(refine_aFe)
-        self.ins_menu2.addAction(refine_model)
-        self.ins_btn2.setMenu(self.ins_menu2)
+        self.instrumental_menu2.addAction(refine_single)
+        self.instrumental_menu2.addAction(refine_aFe)
+        self.instrumental_menu2.addAction(refine_model)
+        self.instrumental_btn2.setMenu(self.instrumental_menu2)
 
-        ins_layout.addWidget(self.ins_btn)
-        ins_layout.addLayout(ins_num_layout)
-        ins_layout.addWidget(self.ins_btn2)
+        instrumental_layout.addWidget(self.instrumental_btn)
+        instrumental_layout.addLayout(instrumental_num_layout)
+        instrumental_layout.addWidget(self.instrumental_btn2)
 
         show_layout.addLayout(show_buttons)
-        show_layout.addLayout(ins_layout)
+        show_layout.addLayout(instrumental_layout)
 
         bottom_layout.addLayout(show_layout)
 
@@ -1257,7 +1267,7 @@ class PhysicsApp(QMainWindow):
     def resizeEvent(self, event):
         """Keep left panel width matched to params table on resize/maximize"""
         super().resizeEvent(event)
-        if hasattr(self, '_main_splitter') and hasattr(self, '_left_panel_ideal_width'):
+        if self._main_splitter is not None and self._left_panel_ideal_width is not None:
             total = self._main_splitter.width()
             left_w = min(self._left_panel_ideal_width, int(total * 0.75))
             right_w = total - left_w
@@ -1305,7 +1315,7 @@ class PhysicsApp(QMainWindow):
             self.MS_fit.setChecked(True)  # Check MS
 
     def _update_use_dat_instrumental_action_text(self):
-        if not hasattr(self, 'toggle_dat_ins_action'):
+        if self.toggle_dat_ins_action is None:
             return
         if self.use_dat_instrumental_metadata:
             self.toggle_dat_ins_action.setText("do not use instrumental function from .dat file (now it is used)")
@@ -1614,11 +1624,11 @@ class PhysicsApp(QMainWindow):
                 GCMS = 0.1
             self.GCMS = GCMS
 
-            insint_path = os.path.join(self.dir_path, 'parameters', 'INSint.txt')
-            self.MulCo, self.x0 = np.genfromtxt(insint_path, delimiter=' ', skip_footer=0)
+            instrumental_int_path = os.path.join(self.dir_path, 'parameters', 'INSint.txt')
+            self.MulCo, self.x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)
             
-            ins_path = os.path.join(self.dir_path, 'parameters', 'INSexp.txt')
-            self.INS = np.genfromtxt(ins_path, delimiter=' ', skip_footer=0)
+            instrumental_exp_path = os.path.join(self.dir_path, 'parameters', 'INSexp.txt')
+            self.INS = np.genfromtxt(instrumental_exp_path, delimiter=' ', skip_footer=0)
             
             print(f'Initialized: MulCo={self.MulCo}, x0={self.x0}')
 
@@ -2040,11 +2050,11 @@ class PhysicsApp(QMainWindow):
 
         # Style instrumental buttons with a color distinct from background
         if self._is_dark_mode:
-            ins_style = "background-color: rgb(70, 70, 70); color: white;"
+            instrumental_style = "background-color: rgb(70, 70, 70); color: white;"
         else:
-            ins_style = "background-color: rgb(200, 200, 200); color: black;"
-        self.ins_btn.setStyleSheet(ins_style)
-        self.ins_btn2.setStyleSheet(ins_style)
+            instrumental_style = "background-color: rgb(200, 200, 200); color: black;"
+        self.instrumental_btn.setStyleSheet(instrumental_style)
+        self.instrumental_btn2.setStyleSheet(instrumental_style)
 
         # Style the matplotlib navigation toolbar to match the mode
         if self._is_dark_mode:
@@ -2164,7 +2174,7 @@ class PhysicsApp(QMainWindow):
         if mode == 1:
             # Check if there's at least one model component (row 1 or above)
             has_model = False
-            if hasattr(self, 'params_table') and len(self.params_table.row_widgets) > 1:
+            if len(self.params_table.row_widgets) > 1:
                 # Check if any row beyond baseline (row 0) has a model defined
                 for row in range(1, len(self.params_table.row_widgets)):
                     row_widget = self.params_table.row_widgets[row]
@@ -2215,7 +2225,7 @@ class PhysicsApp(QMainWindow):
         """Handle instrumental function completion"""
         try:
             # Plot results on the figure
-            gridcolor = getattr(self, 'gridcolor', 'gray')
+            gridcolor = self.gridcolor
             result_svg, result_png = plot_instrumental_result(
                 self.figure, result['A'], result['B'], result['F'], result['F2'],
                 result['p'], result['hi2'], result['file'], self.dir_path, gridcolor,
@@ -2342,7 +2352,7 @@ class PhysicsApp(QMainWindow):
         """
         try:
             # Check if we have plot data
-            if not hasattr(self, 'last_plot_data') or self.last_plot_data is None:
+            if self.last_plot_data is None:
                 self.log.setPlainText("No plot data available. Please fit spectrum first.")
                 self.log.setStyleSheet("color: orange;")
                 return
@@ -2469,7 +2479,7 @@ class PhysicsApp(QMainWindow):
     def toggle_distribution(self):
         """Toggle between spectrum and distribution view."""
         try:
-            if not hasattr(self, 'last_plot_data') or self.last_plot_data is None:
+            if self.last_plot_data is None:
                 self.log.setPlainText("No plot data available. Please fit spectrum first.")
                 self.log.setStyleSheet("color: orange;")
                 return
@@ -2494,7 +2504,7 @@ class PhysicsApp(QMainWindow):
                     return
                 
                 parameter_names = self.params_table.get_parameter_names()
-                gridcolor = getattr(self, 'gridcolor', 'gray')
+                gridcolor = self.gridcolor
                 
                 success = plot_distribution(
                     self.figure, model, data['p'], Distri, Cor,
@@ -2793,7 +2803,7 @@ class PhysicsApp(QMainWindow):
             
             # 2. Save graph data
             result_txt_dst = base_path + '_graf.txt'
-            if hasattr(self, 'last_fitting_data') and self.last_fitting_data:
+            if self.last_fitting_data:
                 self._save_graf_file(result_txt_dst, self.last_fitting_data)
             
             # 3. Save combo image
@@ -2832,7 +2842,7 @@ class PhysicsApp(QMainWindow):
             
             if is_simultaneous:
                 # Simultaneous fitting - multiple spectra
-                gridcolor = getattr(self, 'gridcolor', 'gray')
+                gridcolor = self.gridcolor
                 
                 # Store FS_pos for toggle functionality (from first spectrum)
                 self.current_FS_pos = result.get('FS_pos_list', [[]])[0] if result.get('FS_pos_list') else []
@@ -2892,7 +2902,7 @@ class PhysicsApp(QMainWindow):
                 
             elif 'A' in result and 'B' in result and 'SPC_f' in result and 'FS' in result:
                 # Single spectrum fitting
-                gridcolor = getattr(self, 'gridcolor', 'gray')
+                gridcolor = self.gridcolor
                 FS_pos = result.get('FS_pos', [])
                 
                 # Store FS_pos for toggle functionality
@@ -3112,7 +3122,7 @@ class PhysicsApp(QMainWindow):
             
             # 2. Save result graph data from fitting arrays
             result_txt_dst = base_path + '_graf.txt'
-            if hasattr(self, 'last_fitting_data') and self.last_fitting_data:
+            if self.last_fitting_data:
                 self._save_graf_file(result_txt_dst, self.last_fitting_data)
             
             # 3. Save combo image (spectrum + table)

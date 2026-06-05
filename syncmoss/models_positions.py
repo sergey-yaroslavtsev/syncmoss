@@ -931,7 +931,16 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
 
 
 def mod_pos(p, model, INS, Met=0):
+    """Compute sub-spectrum line positions/intensities for a fitted model.
 
+    Given the flat parameter array ``p`` and the component list ``model`` (and the
+    instrumental parameters ``INS``), returns the per-component line positions and
+    intensities produced by ``pos_ac``. Handles multi-spectrum models split by
+    ``Nbaseline``.
+
+    Used outside this module by fitting_io.py, spectrum_io.py and syncmoss_main.py
+    to draw the line-position markers and component decomposition on the plot.
+    """
     if model.count('Nbaseline') == 0:
         positions = pos_ac(p, model, INS, Met)
     else:

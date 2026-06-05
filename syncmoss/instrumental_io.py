@@ -5,6 +5,7 @@ Handles the calculation, fitting, and refinement of instrumental functions.
 import os
 import time
 import numpy as np
+from PySide6.QtWidgets import QMessageBox
 from syncmoss.constants import number_of_baseline_parameters
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
@@ -89,10 +90,10 @@ def parse_dat_instrumental_metadata(file_path):
 def get_sms_instrumental_from_global_files(app):
     """Read SMS instrumental function from global INSexp/INSint files."""
     insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
-    insint_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+    instrumental_int_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
 
     INS = np.genfromtxt(insexp_path, delimiter=' ', skip_footer=0)
-    MulCo, x0 = np.genfromtxt(insint_path, delimiter=' ', skip_footer=0)
+    MulCo, x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)
     return np.array(INS, dtype=float), float(MulCo), float(x0)
 
 
@@ -134,19 +135,18 @@ def reset_instrumental_defaults(app):
     """Restore default values for INSexp.txt and INSint.txt."""
     try:
         insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
-        insint_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+        instrumental_int_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
         os.makedirs(os.path.dirname(insexp_path), exist_ok=True)
 
         with open(insexp_path, 'w', encoding='utf-8') as f:
             f.write(DEFAULT_INSEXP_TEXT)
 
-        with open(insint_path, 'w', encoding='utf-8') as f:
+        with open(instrumental_int_path, 'w', encoding='utf-8') as f:
             f.write(DEFAULT_INSINT_TEXT)
 
         app.log.setPlainText("Instrumental defaults restored (INSexp.txt, INSint.txt)")
         app.log.setStyleSheet("color: green;")
 
-        from PySide6.QtWidgets import QMessageBox
         QMessageBox.information(app, "Instrumental function", "Default instrumental values were restored.")
         return True
     except Exception as e:
@@ -188,7 +188,7 @@ def instrumental(app, ref, mode=0, pool=None):
     if ref == 0:
         x0 = -0.01
         MulCo = 2.2
-        n = int(app.ins_number.text())
+        n = int(app.instrumental_number.text())
         print('Instrumental procedure start with', ref, mode, n)
         p0 = np.array([])
         
@@ -580,8 +580,8 @@ def instrumental(app, ref, mode=0, pool=None):
             for i in range(0, len(INSp)):
                 f.write(str(INSp[i]) + ' ')
         
-        insint_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
-        with open(insint_path, "w") as f:
+        instrumental_int_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+        with open(instrumental_int_path, "w") as f:
             f.write(str(MulCo) + ' ')
             f.write(str(x0) + ' ')
     else:

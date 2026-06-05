@@ -196,6 +196,21 @@ def norm3(X):
 def minimi_hi(Nn, x_exp, y_exp, p0, fix=np.array([], dtype=int), confu=np.array([[-1], [-1], [0]], dtype=float),
               bounds=np.array([[], []], dtype=float), Expr=[], NExpr=np.array([], dtype=int), MI=10, MI2=20, nu0=2.618, tau0=0.001, eps=10 ** -10,
               fixCH=0):  # MI - maximum iterations, NE - number of not Gaussian's parameters
+    """Levenberg-Marquardt least-squares fit of model ``Nn(x_exp, p)`` to ``y_exp``.
+
+    This is the core optimiser of SYNCmoss. On top of the plain LM step it supports
+    fixed parameters (``fix``), linear parameter coupling (``confu``), box ``bounds``
+    and linked expressions (``Expr`` evaluated into the ``NExpr`` indices). ``MI`` /
+    ``MI2`` cap the outer/inner iterations; ``eps`` is the convergence tolerance.
+
+    Used outside this module by Calibration.py, fitting_io.py, instrumental_io.py and
+    models.py — every fitting and calibration operation goes through this function.
+
+    Returns:
+        tuple ``(p, er, hi2, VVV)`` - fitted parameters, their 1-sigma errors
+        (``nan`` for fixed/inactive parameters), the reduced chi-square, and the
+        parameter covariance matrix.
+    """
 
     # print(PSS)
     # print(Expr)

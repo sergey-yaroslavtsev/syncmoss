@@ -1,3 +1,10 @@
+"""
+I/O helpers for the model Library.
+
+Parses metadata-annotated ``.mdl`` model files, normalises their contents for
+deduplication, resolves version-numbered titles on name collisions, and provides
+the import/export routines used by the Library window and ``model_io``.
+"""
 import os
 import re
 import shutil

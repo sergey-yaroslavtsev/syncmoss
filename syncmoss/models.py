@@ -1427,6 +1427,19 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
 
 
 def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1):  # num - number of Gausians # PS - spc, p - InsFun
+    """Compute the Mossbauer transmission spectrum (full transmission integral).
+
+    Integrates the per-energy model ``TImod`` over the source line shape using
+    ``pool`` (multiprocessing) and adds the polynomial baseline. ``model`` is the
+    list of component names, ``p`` the flat parameter array, ``JN`` the number of
+    integration samples and ``INS`` the instrumental-function parameters.
+
+    Core physics entry point: used outside this module by Calibration.py,
+    fitting_io.py and syncmoss_main.py to simulate and fit every spectrum.
+
+    Returns:
+        numpy.ndarray: model intensity sampled at the experimental points ``x_exp``.
+    """
     # INS = np.genfromtxt(realpath, delimiter=' ', skip_footer=0)
     E = np.linspace(-1 + (10 ** -2)*(Met == 1 or Met ==2) + 10**-3, 1 - (10 ** -2)*(Met == 1 or Met ==2) - 10**-3, JN)
 

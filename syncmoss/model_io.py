@@ -15,7 +15,10 @@ from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAUL
 def mod_len_def(mod, include_special=True):
     """
     Calculate the number of parameters for a given model type.
-    
+
+    Heavily used across the package (fitting_io, instrumental_io, parameters_table,
+    spectrum_plotter, syncmoss_main) to walk the flat parameter array model by model.
+
     Args:
         mod: Model name string
         include_special: If True, includes Distr/Corr/Expression parameters.
@@ -522,10 +525,14 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
 def read_model(main_window):
     """
     Read model parameters from the parameters table.
-    
+
+    Central GUI->fit bridge: used by fitting_io, instrumental_io, spectrum_io,
+    Library_window and syncmoss_main to turn the on-screen table into the flat
+    parameter array, constraints and expression lists the solver expects.
+
     Args:
         main_window: The main PhysicsApp window instance
-        
+
     Returns:
         tuple: (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN)
             - model: list of model names
@@ -560,10 +567,10 @@ def read_model(main_window):
         
         if param_text.startswith('=[') and param_text.endswith(']'):
             # Constraint format: =[index,multiplier]
-            b = param_text[2:-1].split(',')
+            constraint_parts = param_text[2:-1].split(',')
             con1 = np.append(con1, len(p))
-            con2 = np.append(con2, float(b[0]))
-            con3 = np.append(con3, float(b[1]))
+            con2 = np.append(con2, float(constraint_parts[0]))
+            con3 = np.append(con3, float(constraint_parts[1]))
             p = np.append(p, 1)
         else:
             p = np.append(p, float(param_text) if param_text else 0.0)
@@ -580,10 +587,10 @@ def read_model(main_window):
         if model_name != 'None' and model_name != 'baseline':
             model.append(model_name)
             
-        LenM = mod_len_def(model_name, include_special=False) + 1
+        model_param_count = mod_len_def(model_name, include_special=False) + 1
         
         # Read parameters for this model
-        for j in range(1, min(LenM, numco + 1)):
+        for j in range(1, min(model_param_count, numco + 1)):
             # Access parameter widget: layout().itemAt(j) gives the j-th param widget (j=1 to numco)
             if j < row_widget.layout().count():
                 param_widget = row_widget.layout().itemAt(j).widget()
@@ -593,10 +600,10 @@ def read_model(main_window):
                 
                 if param_text.startswith('=[') and param_text.endswith(']'):
                     # Constraint
-                    b = param_text[2:-1].split(',')
+                    constraint_parts = param_text[2:-1].split(',')
                     con1 = np.append(con1, len(p))
-                    con2 = np.append(con2, float(b[0]))
-                    con3 = np.append(con3, float(b[1]))
+                    con2 = np.append(con2, float(constraint_parts[0]))
+                    con3 = np.append(con3, float(constraint_parts[1]))
                     p = np.append(p, 1)
                 else:
                     p = np.append(p, float(param_text) if param_text else 0.0)
@@ -620,10 +627,10 @@ def read_model(main_window):
                     param_text = value_input.text()
                     
                     if param_text.startswith('=[') and param_text.endswith(']'):
-                        b = param_text[2:-1].split(',')
+                        constraint_parts = param_text[2:-1].split(',')
                         con1 = np.append(con1, len(p))
-                        con2 = np.append(con2, float(b[0]))
-                        con3 = np.append(con3, float(b[1]))
+                        con2 = np.append(con2, float(constraint_parts[0]))
+                        con3 = np.append(con3, float(constraint_parts[1]))
                         p = np.append(p, 1)
                     else:
                         p = np.append(p, float(param_text) if param_text else 0.0)
@@ -647,10 +654,10 @@ def read_model(main_window):
                 param_text = value_input.text()
                 
                 if param_text.startswith('=[') and param_text.endswith(']'):
-                    b = param_text[2:-1].split(',')
+                    constraint_parts = param_text[2:-1].split(',')
                     con1 = np.append(con1, len(p))
-                    con2 = np.append(con2, float(b[0]))
-                    con3 = np.append(con3, float(b[1]))
+                    con2 = np.append(con2, float(constraint_parts[0]))
+                    con3 = np.append(con3, float(constraint_parts[1]))
                     p = np.append(p, 1)
                 else:
                     p = np.append(p, float(param_text) if param_text else 0.0)

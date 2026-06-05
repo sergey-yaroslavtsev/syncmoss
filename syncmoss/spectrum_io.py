@@ -18,6 +18,10 @@ def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", p
     """
     Load spectrum file(s).
 
+    Central data-loading routine: used by fitting_io, instrumental_io and
+    syncmoss_main. Reads the raw data, applies the velocity calibration and
+    (optionally) matches the experimental point grid.
+
     Args:
         main_window: The main PhysicsApp window instance
         file_paths: String path or list of string paths to spectrum files
@@ -353,7 +357,6 @@ def subtract_model_from_spectrum(main_window):
         B = B_list[0]
 
         # Read current model and parameters
-        from syncmoss.model_io import read_model
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(main_window)
 
         if len(model) == 0:
@@ -636,6 +639,9 @@ def half_multiple_spectra(main_window):
 def calculate_backgrounds(paths, calibration_path="Calibration.dat"):
     """
     Calculate background levels for a list of spectrum files.
+
+    Used by parameters_table and syncmoss_main to normalise spectra for plotting
+    and for the Nbaseline (simultaneous) parameter calculation.
 
     Args:
         paths: List of file paths to spectrum files

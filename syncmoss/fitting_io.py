@@ -3,16 +3,18 @@ Fitting module for Mössbauer spectroscopy data analysis.
 Handles spectrum fitting using minimization algorithms from minimi_lib.
 """
 
-import numpy as np
 import os
+import traceback
 from functools import partial
+import builtins as bu
+import numpy as np
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
 from syncmoss.constants import number_of_baseline_parameters, numco
-from syncmoss.model_io import mod_len_def as mod_len_def_full
+from syncmoss.model_io import mod_len_def as mod_len_def_full, read_model as read_model_full
 from syncmoss.models_positions import mod_pos
+from syncmoss.spectrum_io import load_spectrum
 from syncmoss.instrumental_io import resolve_sms_instrumental_for_file
-import builtins as bu
 
 
 
@@ -230,10 +232,6 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
     try:
         instrumental_note = ''
 
-        # Import spectrum reading function
-        from syncmoss.spectrum_io import load_spectrum
-        from syncmoss.model_io import read_model as read_model_full
-        
         # Read model configuration using the full read_model function
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model_full(app)
 
@@ -663,7 +661,6 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             }
     
     except Exception as e:
-        import traceback
         return {
             'success': False,
             'message': f'Fitting failed: {str(e)}\n{traceback.format_exc()}'

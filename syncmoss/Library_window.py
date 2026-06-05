@@ -1,3 +1,10 @@
+"""
+Library dialog windows.
+
+Builds the PySide6 dialogs for saving the current model to the Library (with
+metadata) and for browsing/filtering existing library models, then inserting a
+chosen model into the parameters table.
+"""
 import os
 import re
 
