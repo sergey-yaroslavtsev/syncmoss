@@ -286,7 +286,10 @@ jobs:
           echo "Universal2 app built at $UNI_APP"
 
       - name: Run smoke test on universal2 app
-        run: dist/universal2/SYNCmoss.app/Contents/MacOS/SYNCmoss --test
+        run: |
+          xattr -cr dist/universal2/SYNCmoss.app
+          chmod +x dist/universal2/SYNCmoss.app/Contents/MacOS/SYNCmoss
+          dist/universal2/SYNCmoss.app/Contents/MacOS/SYNCmoss --test
 
       - name: Create unsigned universal2 DMG
         run: |

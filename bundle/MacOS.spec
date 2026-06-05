@@ -13,6 +13,7 @@ scipy_data = collect_data_files('scipy')
 llvmlite_data = collect_data_files('llvmlite')
 
 syncmoss_dir = os.path.abspath(os.path.join(SPECPATH, '..', 'syncmoss'))
+project_dir  = os.path.abspath(os.path.join(SPECPATH, '..'))
 
 datas = scipy_data + llvmlite_data
 
@@ -20,7 +21,7 @@ block_cipher = None
 
 a = Analysis(
     [os.path.join(syncmoss_dir, 'main.py')],
-    pathex=[syncmoss_dir],
+    pathex=[project_dir],
     hooksconfig={
         'matplotlib': {
             'backends': 'all',
