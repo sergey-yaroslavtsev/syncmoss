@@ -33,17 +33,15 @@ jobs:
       - name: Prepare release notes
         run: |
           if [ -f dist/SYNCmoss-macOS-universal2-signed.dmg ]; then
-            cat > release_notes.md << 'EOF'
-            Automated SYNCmoss release.
-            EOF
+            printf 'Automated SYNCmoss release.\n' > release_notes.md
           else
-            cat > release_notes.md << 'EOF'
-            Automated SYNCmoss release.
-
-            ⚠️ macOS DMG in this release is unsigned (not notarized).
-            If macOS blocks launch, run:
-            sudo xattr -cr "/Applications/SYNCmoss.app"
-            EOF
+            printf '%s\n' \
+              'Automated SYNCmoss release.' \
+              '' \
+              '⚠️ macOS DMG in this release is unsigned (not notarized).' \
+              'If macOS blocks launch, run:' \
+              'sudo xattr -cr "/Applications/SYNCmoss.app"' \
+              > release_notes.md
           fi
 
       - name: Create Git tag via API

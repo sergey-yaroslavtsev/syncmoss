@@ -65,12 +65,18 @@ jobs:
     needs: version-check
     uses: ./.github/workflows/_Wheels.yml
 
-  trigger-windows-pyinstaller:
+  # Run the pytest suite on Linux/Windows/macOS (installed wheel) in parallel,
+  # after the wheels are built but before any bundling/freezing.
+  tests:
     needs: run-build-upload
+    uses: ./.github/workflows/_Tests.yml
+
+  trigger-windows-pyinstaller:
+    needs: tests
     uses: ./.github/workflows/_WindowsExe.yml
 
   trigger-macos-pyinstaller:
-    needs: run-build-upload
+    needs: tests
     uses: ./.github/workflows/_MacOS.yml
     secrets:
       APPLE_ID: ${{ secrets.APPLE_ID }}
