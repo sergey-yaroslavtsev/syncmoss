@@ -7,6 +7,7 @@ Usage examples:
 """
 
 import argparse
+import glob
 import os
 import shutil
 import subprocess
@@ -83,6 +84,24 @@ def copy_resources(app_dir: str):
     print()
 
 
+def find_app_dir(dist_dir: str) -> str:
+    """Find SYNCmoss.app in common PyInstaller output layouts."""
+    candidates = [
+        os.path.join(dist_dir, "SYNCmoss", "SYNCmoss.app"),
+        os.path.join(dist_dir, "SYNCmoss.app"),
+    ]
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+
+    matches = glob.glob(os.path.join(dist_dir, "**", "SYNCmoss.app"), recursive=True)
+    for match in matches:
+        if os.path.isdir(match):
+            return match
+
+    raise FileNotFoundError(f"Could not find SYNCmoss.app under dist directory: {dist_dir}")
+
+
 def verify(app_dir: str):
     print("=" * 60)
     print("Verifying ...")
@@ -122,10 +141,10 @@ def main():
 
     dist_dir = abs_path(args.dist_dir)
     work_dir = abs_path(args.work_dir)
-    app_dir = os.path.join(dist_dir, "SYNCmoss", "SYNCmoss.app")
-
     if not args.skip:
         run_pyinstaller(dist_dir=dist_dir, work_dir=work_dir)
+
+    app_dir = find_app_dir(dist_dir)
 
     copy_resources(app_dir=app_dir)
     verify(app_dir=app_dir)
