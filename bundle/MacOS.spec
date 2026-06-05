@@ -7,13 +7,12 @@ hiddenimports = collect_submodules('scipy')
 hiddenimports += collect_submodules('PySide6')
 hiddenimports += collect_submodules('numba')
 hiddenimports += collect_submodules('llvmlite')
-hiddenimports += ['syncmoss_test']
+hiddenimports += ['syncmoss.syncmoss_test']
 
 scipy_data = collect_data_files('scipy')
 llvmlite_data = collect_data_files('llvmlite')
 
 syncmoss_dir = os.path.abspath(os.path.join(SPECPATH, '..', 'syncmoss'))
-project_dir  = os.path.abspath(os.path.join(SPECPATH, '..'))
 
 datas = scipy_data + llvmlite_data
 
@@ -21,7 +20,7 @@ block_cipher = None
 
 a = Analysis(
     [os.path.join(syncmoss_dir, 'main.py')],
-    pathex=[syncmoss_dir, project_dir],
+    pathex=[syncmoss_dir],
     hooksconfig={
         'matplotlib': {
             'backends': 'all',

@@ -9,7 +9,7 @@ def main():
 
     if '--test' in sys.argv:
         sys.argv.remove('--test')
-        import syncmoss_test
+        from syncmoss import syncmoss_test
         return syncmoss_test.main()
 
     # Create global pool once at startup (reused throughout application)
