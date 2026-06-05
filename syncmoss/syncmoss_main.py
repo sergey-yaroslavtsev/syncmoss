@@ -2990,7 +2990,7 @@ class PhysicsApp(QMainWindow):
             is_simultaneous = result.get('is_simultaneous', False)
             
             print(f"[Fit] Fitting successful!")
-            print(f"[Fit] χ² = {chi2:.3f}")
+            print(f"[Fit] chi^2 = {chi2:.3f}")
             print(f"[Fit] Simultaneous: {is_simultaneous}")
             
             # Update results table
