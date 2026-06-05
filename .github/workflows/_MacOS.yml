@@ -46,11 +46,25 @@ jobs:
       - name: Build arm64 app
         run: python bundle/macos_bundle.py --dist-dir bundle/MacOS/arm64 --work-dir bundle/build/MacOS/arm64
 
+      - name: Normalize arm64 app location
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find bundle/MacOS/arm64 -type d -name 'SYNCmoss.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "SYNCmoss.app not found in arm64 build output"
+            find bundle/MacOS/arm64 -maxdepth 5 -print
+            exit 1
+          fi
+          mkdir -p bundle/MacOS/arm64/artifact
+          rm -rf bundle/MacOS/arm64/artifact/SYNCmoss.app
+          cp -R "$APP_PATH" bundle/MacOS/arm64/artifact/SYNCmoss.app
+
       - name: Upload arm64 app artifact
         uses: actions/upload-artifact@v5
         with:
           name: macos-arm64-app
-          path: bundle/MacOS/arm64/SYNCmoss/SYNCmoss.app
+          path: bundle/MacOS/arm64/artifact/SYNCmoss.app
+          if-no-files-found: error
           retention-days: 5
 
   macos_x86_64_app:
@@ -97,11 +111,25 @@ jobs:
           source venv-x86_64/bin/activate
           arch -x86_64 python bundle/macos_bundle.py --dist-dir bundle/MacOS/x86_64 --work-dir bundle/build/MacOS/x86_64
 
+      - name: Normalize x86_64 app location
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find bundle/MacOS/x86_64 -type d -name 'SYNCmoss.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "SYNCmoss.app not found in x86_64 build output"
+            find bundle/MacOS/x86_64 -maxdepth 5 -print
+            exit 1
+          fi
+          mkdir -p bundle/MacOS/x86_64/artifact
+          rm -rf bundle/MacOS/x86_64/artifact/SYNCmoss.app
+          cp -R "$APP_PATH" bundle/MacOS/x86_64/artifact/SYNCmoss.app
+
       - name: Upload x86_64 app artifact
         uses: actions/upload-artifact@v5
         with:
           name: macos-x86_64-app
-          path: bundle/MacOS/x86_64/SYNCmoss/SYNCmoss.app
+          path: bundle/MacOS/x86_64/artifact/SYNCmoss.app
+          if-no-files-found: error
           retention-days: 5
 
   macos_universal2:
@@ -137,25 +165,111 @@ jobs:
           ARM_APP="$(find dist/arm64 -type d -name 'SYNCmoss.app' | head -n 1)"
           X86_APP="$(find dist/x86_64 -type d -name 'SYNCmoss.app' | head -n 1)"
 
+          if [ -z "$ARM_APP" ] || [ -z "$X86_APP" ]; then
+            echo "Could not locate arm64/x86_64 apps after artifact download"
+            find dist -maxdepth 6 -print
+            exit 1
+          fi
+
           mkdir -p dist/universal2
           cp -R "$ARM_APP" dist/universal2/
           UNI_APP="dist/universal2/SYNCmoss.app"
 
-          while IFS= read -r -d '' arm_file; do
-            rel="${arm_file#$ARM_APP/}"
-            x86_file="$X86_APP/$rel"
-            out_file="$UNI_APP/$rel"
+          echo "Merging executables in Contents/MacOS..."
+          for exe in "$ARM_APP/Contents/MacOS/"*; do
+            if [ ! -f "$exe" ]; then
+              continue
+            fi
+            exe_name=$(basename "$exe")
+            x86_exe="$X86_APP/Contents/MacOS/$exe_name"
+            out_exe="$UNI_APP/Contents/MacOS/$exe_name"
 
-            if [ ! -f "$x86_file" ]; then
+            if [ ! -f "$x86_exe" ]; then
               continue
             fi
 
-            if file "$arm_file" | grep -q 'Mach-O'; then
-              if lipo -info "$arm_file" | grep -q 'Non-fat'; then
-                lipo -create "$arm_file" "$x86_file" -output "$out_file"
-              fi
+            if file "$exe" | grep -q 'Mach-O'; then
+              lipo -create "$exe" "$x86_exe" -output "$out_exe"
             fi
-          done < <(find "$ARM_APP" -type f -print0)
+          done
+
+          get_archs() {
+            echo "$1" | grep -oE 'arm64|x86_64' | sort | tr '\n' ' '
+          }
+
+          contains_all_archs() {
+            local container=($1)
+            local contained=($2)
+
+            for arch in "${contained[@]}"; do
+              local found=0
+              for c in "${container[@]}"; do
+                if [ "$arch" = "$c" ]; then
+                  found=1
+                  break
+                fi
+              done
+              if [ $found -eq 0 ]; then
+                return 1
+              fi
+            done
+            return 0
+          }
+
+          echo "Merging Mach-O files in Frameworks and Resources..."
+          for section in Frameworks Resources; do
+            section_dir="$ARM_APP/Contents/$section"
+            if [ ! -d "$section_dir" ]; then
+              continue
+            fi
+
+            find "$section_dir" -type f | while read -r arm_file; do
+              if ! file "$arm_file" | grep -q 'Mach-O'; then
+                continue
+              fi
+
+              rel_path="${arm_file#$ARM_APP/}"
+              x86_file="$X86_APP/$rel_path"
+              out_file="$UNI_APP/$rel_path"
+
+              if [ ! -f "$x86_file" ]; then
+                continue
+              fi
+
+              arch_arm64=$(lipo -info "$arm_file" 2>&1 || true)
+              arch_x86_64=$(lipo -info "$x86_file" 2>&1 || true)
+
+              archs_arm64=$(get_archs "$arch_arm64")
+              archs_x86_64=$(get_archs "$arch_x86_64")
+
+              is_arm64_universal2=false
+              is_x86_64_universal2=false
+
+              if [[ "$archs_arm64" == *"arm64"* && "$archs_arm64" == *"x86_64"* ]]; then
+                is_arm64_universal2=true
+              fi
+
+              if [[ "$archs_x86_64" == *"arm64"* && "$archs_x86_64" == *"x86_64"* ]]; then
+                is_x86_64_universal2=true
+              fi
+
+              if [ "$is_arm64_universal2" = true ] && [ "$is_x86_64_universal2" = false ]; then
+                cp "$arm_file" "$out_file"
+              elif [ "$is_x86_64_universal2" = true ] && [ "$is_arm64_universal2" = false ]; then
+                cp "$x86_file" "$out_file"
+              else
+                if contains_all_archs "$archs_arm64" "$archs_x86_64" && contains_all_archs "$archs_x86_64" "$archs_arm64"; then
+                  if [ "$is_arm64_universal2" = false ]; then
+                    cp "$x86_file" "$out_file"
+                  fi
+                else
+                  lipo -create "$arm_file" "$x86_file" -output "$out_file"
+                fi
+              fi
+            done
+          done
+
+          echo "Universal2 app built at $UNI_APP"
 
       - name: Package universal2 app (zip)
         run: |
