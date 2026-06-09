@@ -62,11 +62,6 @@ _EXPECTED_MODEL_COLORS = ['red', 'cyan', 'cyan', 'yellow']
 # get_model_list() reports a Be model as a "Doublet" (it is a Doublet preset).
 _EXPECTED_MODEL_LIST = ['baseline', 'Sextet', 'Doublet', 'Nbaseline', 'Sextet']
 
-# Parameter files the instrumental refinement rewrites in <dir_path>/parameters/.
-# They are snapshotted before the run and restored afterwards so the test never
-# leaves the tracked data files modified.
-_PROTECTED_PARAM_FILES = ('INSexp.txt', 'INSint.txt', 'GCMS.txt')
-
 
 def _parse_bg_color(stylesheet: str):
     """Extract the ``background-color`` value from a Qt stylesheet string."""
@@ -87,30 +82,6 @@ def _use_temp_calibration(window) -> None:
         dst = os.path.join(tmp_dir, "Calibration.dat")
         shutil.copy2(src, dst)
         window.calibration_path = dst
-
-
-def _snapshot_param_files(window) -> dict:
-    """Read the protected parameter files so they can be restored after the run."""
-    snapshot = {}
-    params_dir = os.path.join(window.dir_path, 'parameters')
-    for name in _PROTECTED_PARAM_FILES:
-        path = os.path.join(params_dir, name)
-        snapshot[path] = None
-        if os.path.exists(path):
-            with open(path, 'rb') as fh:
-                snapshot[path] = fh.read()
-    return snapshot
-
-
-def _restore_param_files(snapshot: dict) -> None:
-    """Restore (or remove) the protected parameter files from a snapshot."""
-    for path, content in snapshot.items():
-        if content is None:
-            if os.path.exists(path):
-                os.remove(path)
-        else:
-            with open(path, 'wb') as fh:
-                fh.write(content)
 
 
 class _TestRunner:
@@ -304,7 +275,6 @@ def run_gui_smoke() -> int:
 
     app = QApplication.instance() or QApplication(sys.argv)
     window = PhysicsApp(pool=pool)
-    snapshot = _snapshot_param_files(window)
     _use_temp_calibration(window)
     window.show()
 
@@ -316,7 +286,6 @@ def run_gui_smoke() -> int:
     finally:
         pool.close()
         pool.join()
-        _restore_param_files(snapshot)
 
     return 1 if runner.errors else 0
 
@@ -334,7 +303,6 @@ def test_gui_open_and_fit(qapp, tmp_path):
     """
     pool = ThreadPool(processes=2)
     window = PhysicsApp(pool=pool)
-    snapshot = _snapshot_param_files(window)
     # Operate on a temp copy so the fit never rewrites the tracked Calibration.dat.
     if os.path.exists(window.calibration_path):
         tmp_copy = os.path.join(str(tmp_path), "Calibration.dat")
@@ -358,7 +326,6 @@ def test_gui_open_and_fit(qapp, tmp_path):
         window.close()
         pool.close()
         pool.join()
-        _restore_param_files(snapshot)
 
 
 if __name__ == "__main__":

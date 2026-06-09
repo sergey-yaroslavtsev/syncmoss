@@ -881,7 +881,7 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
     ax1.plot(A, F2 - F + hires_offset, color='cyan')
     
     # Add file path annotation
-    ax1.text(0, -0.1, os.path.abspath(filepath), horizontalalignment='left', 
+    ax1.text(0, -0.1, os.path.basename(filepath), horizontalalignment='left', 
             verticalalignment='center', color='m', transform=ax1.transAxes)
     
     # Add chi-squared title
