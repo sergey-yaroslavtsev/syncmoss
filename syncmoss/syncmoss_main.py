@@ -929,7 +929,7 @@ class PhysicsApp(QMainWindow):
         # Fit options
         fit_group = QVBoxLayout()
         fit_way_layout = QHBoxLayout()
-        self.MS_fit = QCheckBox("MS")
+        self.MS_fit = QCheckBox("CMS")
         self.SMS_fit = QCheckBox("SMS")
         self.SMS_fit.setChecked(True)
         self.APS_fit = QCheckBox("APS")

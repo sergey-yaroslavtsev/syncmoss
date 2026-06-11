@@ -139,3 +139,13 @@ bundle/Windows/
 syncmoss/*.mdl
 syncmoss/*.png
 syncmoss/*.svg
+
+# Deprecated original minimiser, kept locally for reference / equivalence checks
+# (the active implementation is now the optimized minimi_lib.py).
+syncmoss/minimi_lib_old.py
+
+# minimi_lib optimization: local-only test tooling and notes (depend on the
+# git-ignored minimi_lib_old.py; kept out of the tracked repo).
+verify_minimi.py
+bench_coldstart.py
+minimi_optimization_notes.txt
