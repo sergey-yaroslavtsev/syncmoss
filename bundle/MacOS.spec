@@ -24,6 +24,16 @@ hiddenimports += ['syncmoss_test']
 
 # llvmlite carries native data/bitcode that must be collected.
 llvmlite_data = collect_data_files('llvmlite')
+# On macOS, missing platform input context plugins can lead to non-editable
+# QLineEdit/QTable widgets in frozen apps. Bundle these explicitly.
+qt_plugin_data = collect_data_files(
+    'PySide6',
+    includes=[
+        'Qt/plugins/platforms/*',
+        'Qt/plugins/platforminputcontexts/*',
+        'Qt/plugins/styles/*',
+    ],
+)
 
 syncmoss_dir = os.path.abspath(os.path.join(SPECPATH, '..', 'syncmoss'))
 project_dir  = os.path.abspath(os.path.join(SPECPATH, '..'))
@@ -31,7 +41,7 @@ tests_dir    = os.path.abspath(os.path.join(SPECPATH, '..', 'tests'))
 
 # Application resources (icons/, parameters/, themes, etc.) are copied into the
 # app bundle by macos_bundle.py after the build.
-datas = llvmlite_data
+datas = llvmlite_data + qt_plugin_data
 
 # Unused-Qt Python module excludes (belt-and-suspenders, since PySide6 is no
 # longer force-collected). The CI "--test" smoke run guards against over-excluding.
@@ -96,9 +106,9 @@ exe_gui = EXE(
     name='SYNCmoss',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
+    strip=False,
     upx=False,
-    console=True,
+    console=False,
 )
 
 coll = COLLECT(
@@ -106,7 +116,7 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=True,
+    strip=False,
     upx=False,
     upx_exclude=[],
     name='SYNCmoss',
