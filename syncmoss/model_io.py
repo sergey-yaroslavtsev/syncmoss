@@ -368,19 +368,28 @@ def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
                 for line in str(comment).splitlines():
                     f.write(f"#@Comment {line}\n")
 
-            # Write model names (first row)
-            model_names = []
-            for row_widget in main_window.params_table.row_widgets:
+            # Determine which rows to write: always keep baseline (row 0),
+            # drop empty model rows (model name 'None') so the saved file stays clean.
+            # Empty rows carry no parameters, so dropping them keeps the parameter
+            # references (=[X,Y] / p[X]) intact for loading.
+            kept_rows = []
+            for row_idx, row_widget in enumerate(main_window.params_table.row_widgets):
                 model_btn = row_widget.layout().itemAt(0).widget().layout().itemAt(1).widget()
-                model_names.append(model_btn.text())
+                if row_idx == 0 or model_btn.text() != 'None':
+                    kept_rows.append((row_idx, row_widget, model_btn.text()))
+
+            # Write model names (first row)
+            model_names = [name for _, _, name in kept_rows]
             f.write('\t'.join(model_names) + '\n')
 
             # Write colors (second row)
-            colors = main_window.model_colors[:len(model_names)]
+            colors = [main_window.model_colors[row_idx]
+                      if row_idx < len(main_window.model_colors) else ''
+                      for row_idx, _, _ in kept_rows]
             f.write('\t'.join(colors) + '\n')
 
-            # Write parameter data for each row
-            for row_idx, row_widget in enumerate(main_window.params_table.row_widgets):
+            # Write parameter data for each kept row
+            for row_idx, row_widget, _ in kept_rows:
                 row_data = []
                 for param_idx in range(1, row_widget.layout().count()):
                     param_widget = row_widget.layout().itemAt(param_idx).widget()
@@ -671,5 +680,50 @@ def read_model(main_window):
             else:
                 cor_text = ''
             Cor.append(cor_text)
-    
+
     return (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN)
+
+
+def validate_user_expressions(main_window):
+    """Try to evaluate every user-typed Expression/Distr/Corr text.
+
+    Called before a fit or show-model starts, so a meaningless expression is
+    rejected up front instead of crashing mid-procedure. Each expression is
+    evaluated in the same namespace the real computation uses: Expression via
+    minimi_lib._eval_expr (bare numpy names + the parameter array ``p``),
+    Distr/Corr in the models-module namespace with the distribution axis ``X``
+    and ``p`` available (mimicking ``eval(...) + 0*X`` in models.TImod).
+
+    Returns:
+        list of problem dicts ``{'kind', 'occurrence', 'row', 'text', 'error'}``;
+        empty when everything evaluates. ``row`` is the parameters-table row of
+        the offending field (None if it could not be located).
+    """
+    import syncmoss.minimi_lib as mi
+    import syncmoss.models as m5
+
+    model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(main_window)
+    X = np.linspace(-1.0, 1.0, 8)
+    rows = main_window.params_table.get_expression_rows()
+    problems = []
+
+    def _check(kind, occurrence, text, evaluator):
+        try:
+            if not str(text).strip():
+                raise ValueError("expression is empty")
+            value = evaluator(str(text))
+            np.asarray(value, dtype=float)
+        except Exception as e:
+            kind_rows = rows.get(kind, [])
+            row = kind_rows[occurrence] if occurrence < len(kind_rows) else None
+            problems.append({'kind': kind, 'occurrence': occurrence, 'row': row,
+                             'text': text, 'error': e})
+
+    for k, text in enumerate(Expr):
+        _check('Expression', k, text, lambda s: float(mi._eval_expr(s, p)))
+    for k, text in enumerate(Distri):
+        _check('Distr', k, text, lambda s: eval(s, vars(m5), {'X': X, 'p': p}) + 0 * X)
+    for k, text in enumerate(Cor):
+        _check('Corr', k, text, lambda s: eval(s, vars(m5), {'X': X, 'p': p}) + 0 * X)
+
+    return problems

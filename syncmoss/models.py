@@ -1441,7 +1441,15 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         numpy.ndarray: model intensity sampled at the experimental points ``x_exp``.
     """
     # INS = np.genfromtxt(realpath, delimiter=' ', skip_footer=0)
-    E = np.linspace(-1 + (10 ** -2)*(Met == 1 or Met ==2) + 10**-3, 1 - (10 ** -2)*(Met == 1 or Met ==2) - 10**-3, JN)
+    # Per-section instrumental parameters: for an Nbaseline model, x0, MulCo, INS,
+    # Met and Norm may each be a list/tuple/array with one entry per section, so a
+    # CMS spectrum and an SMS spectrum can be computed together (each section then
+    # gets its own source-line grid E, since E depends on Met). A list ``Met`` is
+    # the unambiguous signal for this mode (Met is otherwise always a scalar int);
+    # passing scalars reproduces the original single-method behaviour exactly.
+    per_section = isinstance(Met, (list, tuple, np.ndarray))
+    Met_repr = Met[0] if per_section else Met
+    E = np.linspace(-1 + (10 ** -2)*(Met_repr == 1 or Met_repr ==2) + 10**-3, 1 - (10 ** -2)*(Met_repr == 1 or Met_repr ==2) - 10**-3, JN)
 
     D = (E[1] - E[0])
     if model.count('Nbaseline') == 0:
@@ -1480,15 +1488,24 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         model_separate.append(model[startM:])
 
         for i in range(0, model.count('Nbaseline')+1):
+            # Instrumental parameters (and the matching source-line grid) for this
+            # section: per-section values when lists were passed, else the shared
+            # scalars — in which case E/D keep the values computed above.
+            if per_section:
+                x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0[i], MulCo[i], INS[i], Met[i], Norm[i]
+                E = np.linspace(-1 + (10 ** -2)*(Met_i == 1 or Met_i ==2) + 10**-3, 1 - (10 ** -2)*(Met_i == 1 or Met_i ==2) - 10**-3, JN)
+                D = (E[1] - E[0])
+            else:
+                x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0, MulCo, INS, Met, Norm
             N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
             N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
             V = V + number_of_baseline_parameters
-            H = pool.starmap(TImod, [(x_separate[i], p, model_separate[i], Ex, x0, MulCo, INS, Distri, Cor, Met, -2, [], Di, Co, V) for Ex in E])
+            H = pool.starmap(TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, -2, [], Di, Co, V) for Ex in E])
             # Di = H[0][1]
             # Co = H[0][2]
             # V = H[0][3]
             H = np.array(H, dtype=object).sum(axis=0)
-            H = H * N0 / Norm * D + N1
+            H = H * N0 / Norm_i * D + N1
             Hc = np.concatenate((Hc, H))
 
             for j in range(MV, len(model)):

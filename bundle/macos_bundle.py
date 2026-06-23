@@ -69,7 +69,6 @@ def copy_resources(app_dir: str):
     root_files = [
         os.path.join(SYNCMOSS_DIR, "theme_dark.json"),
         os.path.join(SYNCMOSS_DIR, "theme_light.json"),
-        os.path.join(SYNCMOSS_DIR, "Calibration.dat"),
         os.path.join(ROOT_DIR, "COPYING.txt"),
         os.path.join(ROOT_DIR, "NOTICE.txt"),
         os.path.join(ROOT_DIR, "LICENSE"),
@@ -113,6 +112,7 @@ def verify(app_dir: str):
         "Contents/MacOS/icons/CheckBox.png",
         "Contents/MacOS/parameters/Be.txt",
         "Contents/MacOS/parameters/KB.txt",
+        "Contents/MacOS/parameters/Calibration.dat",
         "Contents/MacOS/theme_dark.json",
         "Contents/MacOS/theme_light.json",
     ]

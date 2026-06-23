@@ -14,7 +14,11 @@ from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def as mod_len_def_full, read_model as read_model_full
 from syncmoss.models_positions import mod_pos
 from syncmoss.spectrum_io import load_spectrum
-from syncmoss.instrumental_io import resolve_sms_instrumental_for_file
+from syncmoss.instrumental_io import (
+    resolve_instrumental_for_file,
+    compute_norm,
+    same_method_params,
+)
 
 
 
@@ -296,62 +300,95 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             print(f"[Fitting] X range: {A[0]:.2f} to {A[-1]:.2f}")
             print(f"[Fitting] Y range: {B.min():.2f} to {B.max():.2f}")
         
-        # Determine fitting method
-        if app.MS_fit.isChecked():
-            VVV = 1  # MS method
-            experimental_method = 1
-        elif app.SMS_fit.isChecked():
-            VVV = 3  # SMS method
-            experimental_method = 3
-        else:
+        # A method checkbox must be selected (it is the fallback when a spectrum
+        # carries no .dat instrumental metadata)
+        if not app.MS_fit.isChecked() and not app.SMS_fit.isChecked():
             return {
                 'success': False,
                 'message': 'No fitting method selected (MS or SMS)'
             }
-        
-        # Get instrumental function parameters
-        JN = int(app.JN0)
-        
-        if VVV == 1:  # MS method
-            # CMS method with MulCoCMS
-            INS = float(app.L0.text())
-            x0_val = 0.0
-            MulCo_val = app.MulCoCMS
-            
-            # Calculate normalization integral
-            pNorm = np.array([float(0)] * number_of_baseline_parameters)
-            pNorm[0] = 1
-            Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, 0.0, MulCo_val, INS, [0], [0], Met=1)[0]
-            print('Normalization integral equal to', Norm)
-            
-            def func(x, p):
-                return m5.TI(x, p, model, JN, pool, 0.0, MulCo_val, INS, Distri, Cor, Met=1, Norm=Norm)
-        
-        elif VVV == 3:  # SMS method
-            # SMS method: optionally read INS metadata from .dat, otherwise fallback to global files
-            if is_simultaneous:
-                selected_files = app.parse_process_path()
-                spectrum_for_ins = selected_files[0] if selected_files else spectrum_file
-            else:
-                spectrum_for_ins = spectrum_file
 
-            use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
-            INS, MulCo_val, x0_val, instrumental_note = resolve_sms_instrumental_for_file(
-                app,
-                spectrum_for_ins,
-                use_dat_metadata=use_dat_metadata,
-            )
-            print(f"[Fitting] {instrumental_note}")
-            
-            # Calculate normalization integral
-            pNorm = np.array([float(0)] * number_of_baseline_parameters)
-            pNorm[0] = 1
-            Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, x0_val, MulCo_val, INS, [0], [0])[0]
-            print('Normalization integral equal to', Norm)
-            
+        # Resolve instrumental parameters per spectrum. Each spectrum may be CMS
+        # or SMS depending on its own .dat metadata (#@GCMS vs #@INSexp/#@INSint)
+        # when the "use instrumental function from .dat file" option is enabled;
+        # otherwise the UI-selected method with the internal values is used.
+        JN = int(app.JN0)
+        use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
+        files_for_ins = list(spectrum_files) if is_simultaneous else [spectrum_file]
+
+        method_params_list = []
+        for ins_file in files_for_ins:
+            mp_i = resolve_instrumental_for_file(app, ins_file, use_dat_metadata=use_dat_metadata)
+            mp_i['Norm'] = compute_norm(pool, JN, mp_i)
+            print('Normalization integral equal to', mp_i['Norm'])
+            method_params_list.append(mp_i)
+        mp0 = method_params_list[0]
+
+        note_lines = [mp_i['note'] for mp_i in method_params_list]
+        if len({mp_i['method'] for mp_i in method_params_list}) > 1:
+            note_lines.insert(0, "Mixed-method simultaneous fit: CMS and SMS spectra are fitted together.")
+        instrumental_note = '\n'.join(note_lines)
+        print(f"[Fitting] {instrumental_note}")
+
+        if is_simultaneous:
+            # Split model at Nbaseline boundaries
+            model_separate = []
+            startM = 0
+            for i in range(len(model)):
+                if model[i] == 'Nbaseline':
+                    model_separate.append(model[startM:i])
+                    startM = i + 1
+            model_separate.append(model[startM:])
+
+            # Calculate parameter indices for each spectrum
+            begining_spc = [0]
+            start_cont_par = number_of_baseline_parameters
+            param_names_full = app.params_table.get_parameter_names()
+            for i in range(1, len(param_names_full)):
+                param_names = param_names_full[i]
+                if len(param_names) > 0 and param_names[0] == 'Ns':  # Start of new spectrum
+                    begining_spc.append(start_cont_par)
+                for j in range(len(param_names)):
+                    if param_names[j] != '':
+                        start_cont_par += 1
+
+            print(f"[Fitting] Simultaneous - model_separate: {model_separate}")
+            print(f"[Fitting] Simultaneous - begining_spc: {begining_spc}")
+
+            # Per-section slices of the Distri/Cor expression lists (used after the
+            # fit to rebuild each section's sub-spectra for plotting)
+            distr_bounds = np.cumsum([0] + [ms.count('Distr') for ms in model_separate])
+            corr_bounds = np.cumsum([0] + [ms.count('Corr') for ms in model_separate])
+
+            def section_parameters(p_full, idx):
+                if idx < len(begining_spc) - 1:
+                    return p_full[begining_spc[idx]:begining_spc[idx + 1]]
+                return p_full[begining_spc[idx]:]
+
+        uniform_method = all(same_method_params(mp0, mp_i) for mp_i in method_params_list[1:])
+
+        if not is_simultaneous or uniform_method:
+            # Uniform instrumental settings: a single TI call over the whole model
+            # (TI splits Nbaseline sections internally) — the original code path.
             def func(x, p):
-                return m5.TI(x, p, model, JN, pool, x0_val, MulCo_val, INS, Distri, Cor, Norm=Norm)
-        
+                return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
+                             Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'])
+        else:
+            # Dedicated per-section instrumental parameters (e.g. mixing CMS and
+            # SMS): TI receives one value per section as lists. The full model and
+            # full p are still passed, so cross-spectrum links and Distr/Cor p[i]
+            # references resolve exactly as in the uniform path — no per-section
+            # bookkeeping leaks into this module.
+            x0_list = [mp_i['x0'] for mp_i in method_params_list]
+            mulco_list = [mp_i['MulCo'] for mp_i in method_params_list]
+            ins_list = [mp_i['INS'] for mp_i in method_params_list]
+            met_list = [mp_i['Met'] for mp_i in method_params_list]
+            norm_list = [mp_i['Norm'] for mp_i in method_params_list]
+
+            def func(x, p):
+                return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
+                             Distri, Cor, Met=met_list, Norm=norm_list)
+
         # Set up bounds and fixed parameters
         # For now, use unbounded optimization
         bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
@@ -480,56 +517,28 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         SPC_f = func(A, p)
         
         # For simultaneous fitting, we need to separate results for each spectrum
+        # (model_separate and begining_spc were computed before the minimization)
         if is_simultaneous:
-            # Separate model and parameters for each spectrum
-            model_separate = []
-            startM = 0
-            for i in range(len(model)):
-                if model[i] == 'Nbaseline':
-                    model_separate.append(model[startM:i])
-                    startM = i + 1
-            model_separate.append(model[startM:])
-            
-            # Calculate parameter indices for each spectrum
-            begining_spc = [0]
-            start_cont_par = number_of_baseline_parameters
-            param_names_full = app.params_table.get_parameter_names()
-            for i in range(1, len(param_names_full)):
-                param_names = param_names_full[i]
-                if len(param_names) > 0 and param_names[0] == 'Ns':  # Start of new spectrum
-                    begining_spc.append(start_cont_par)
-                for j in range(len(param_names)):
-                    if param_names[j] != '':
-                        start_cont_par += 1
-            
-            print(f"[Fitting] Simultaneous - model_separate: {model_separate}")
-            print(f"[Fitting] Simultaneous - begining_spc: {begining_spc}")
-            
             # Substitute Distri and Cor parameter values ONCE using full model and full p
             # This ensures constrained parameters are correctly substituted
             Distri_substituted = np.copy(Distri)
             Cor_substituted = np.copy(Cor)
             if len(Distri) > 0 or len(Cor) > 0:
                 _, _, Distri_substituted, Cor_substituted, _, _ = create_subspectra(app, model, Distri, Cor, p)
-            
-            # Calculate fitted spectrum for each section separately
-            # Use model_separate (without Nbaseline) and parameter subset for each
+
+            # Calculate fitted spectrum for each section separately, each with the
+            # instrumental parameters resolved for that section's spectrum
             SPC_f_list = []
             for NumSpc in range(number_of_spectra):
-                # Get parameters for this spectrum
-                if NumSpc < len(begining_spc) - 1:
-                    p_separate = p[begining_spc[NumSpc]:begining_spc[NumSpc + 1]]
-                else:
-                    p_separate = p[begining_spc[NumSpc]:]
-                
-                # Calculate spectrum using model_separate and p_separate
-                # Use pre-substituted Distri and Cor
-                model_for_spectrum = model_separate[NumSpc]
-                if VVV == 1:  # MS method
-                    SPC_f_separate = m5.TI(A_list[NumSpc], p_separate, model_for_spectrum, JN, pool, 0.0, MulCo_val, INS, Distri_substituted, Cor_substituted, Met=1, Norm=Norm)
-                elif VVV == 3:  # SMS method
-                    SPC_f_separate = m5.TI(A_list[NumSpc], p_separate, model_for_spectrum, JN, pool, x0_val, MulCo_val, INS, Distri_substituted, Cor_substituted, Norm=Norm)
-                
+                p_separate = section_parameters(p, NumSpc)
+                mp_i = method_params_list[NumSpc]
+                d_slice = list(Distri_substituted[distr_bounds[NumSpc]:distr_bounds[NumSpc + 1]])
+                c_slice = list(Cor_substituted[corr_bounds[NumSpc]:corr_bounds[NumSpc + 1]])
+                SPC_f_separate = m5.TI(A_list[NumSpc], p_separate, model_separate[NumSpc], JN, pool,
+                                       mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
+                                       d_slice if len(d_slice) > 0 else [0],
+                                       c_slice if len(c_slice) > 0 else [0],
+                                       Met=mp_i['Met'], Norm=mp_i['Norm'])
                 SPC_f_list.append(SPC_f_separate)
             
             # Now calculate subspectra for plotting
@@ -547,15 +556,12 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             Cor_work = np.copy(Cor)
             
             for NumSpc in range(number_of_spectra):
-                # Get parameters for this spectrum
-                if NumSpc < len(begining_spc) - 1:
-                    p_separate = p[begining_spc[NumSpc]:begining_spc[NumSpc + 1]]
-                else:
-                    p_separate = p[begining_spc[NumSpc]:]
-                
+                p_separate = section_parameters(p, NumSpc)
+                mp_i = method_params_list[NumSpc]
+
                 # Calculate subspectra
                 Ps, Psm, Distri_t, Cor_t, Di, Co = create_subspectra(app, model_separate[NumSpc], Distri_work, Cor_work, p_separate)
-                
+
                 FS = []
                 FS_pos = []
                 for i in range(len(Ps)):
@@ -563,16 +569,13 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                     DiSt = sum([Psm[j].count('Distr') for j in range(i)])
                     CoEn = CoSt + Psm[i].count('Corr')
                     DiEn = DiSt + Psm[i].count('Distr')
-                    
-                    if VVV == 1:  # MS method
-                        subspectrum = m5.TI(A_list[NumSpc], Ps[i], Psm[i], JN, pool, 0.0, MulCo_val, INS, 
-                                           Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn], Met=1, Norm=Norm)
-                        positions = mod_pos(Ps[i], Psm[i], INS, Met=1)
-                    elif VVV == 3:  # SMS method
-                        subspectrum = m5.TI(A_list[NumSpc], Ps[i], Psm[i], JN, pool, x0_val, MulCo_val, INS,
-                                           Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn], Norm=Norm)
-                        positions = mod_pos(Ps[i], Psm[i], INS)
-                    
+
+                    subspectrum = m5.TI(A_list[NumSpc], Ps[i], Psm[i], JN, pool,
+                                        mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
+                                        Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn],
+                                        Met=mp_i['Met'], Norm=mp_i['Norm'])
+                    positions = mod_pos(Ps[i], Psm[i], mp_i['INS'], Met=mp_i['Met'])
+
                     FS.append(subspectrum)
                     FS_pos.append(positions)
                 
@@ -623,16 +626,12 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 CoEn = CoSt + Psm[i].count('Corr')
                 DiEn = DiSt + Psm[i].count('Distr')
                 print(Ps[i], Psm[i])
-                if VVV == 1:  # MS method
-                    subspectrum = m5.TI(A, Ps[i], Psm[i], JN, pool, 0.0, MulCo_val, INS, 
-                                       Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn], Met=1, Norm=Norm)
-                    # Calculate positions for this subspectrum
-                    positions = mod_pos(Ps[i], Psm[i], INS, Met=1)
-                elif VVV == 3:  # SMS method
-                    subspectrum = m5.TI(A, Ps[i], Psm[i], JN, pool, x0_val, MulCo_val, INS,
-                                       Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn], Norm=Norm)
-                    # Calculate positions for this subspectrum
-                    positions = mod_pos(Ps[i], Psm[i], INS)
+                subspectrum = m5.TI(A, Ps[i], Psm[i], JN, pool,
+                                    mp0['x0'], mp0['MulCo'], mp0['INS'],
+                                    Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn],
+                                    Met=mp0['Met'], Norm=mp0['Norm'])
+                # Calculate positions for this subspectrum
+                positions = mod_pos(Ps[i], Psm[i], mp0['INS'], Met=mp0['Met'])
                 FS.append(subspectrum)
                 FS_pos.append(positions)
             

@@ -91,7 +91,7 @@ from PySide6.QtGui import (
     QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator,
     QRegularExpressionValidator, QPalette, QShortcut, QKeySequence
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression, QStandardPaths, QCoreApplication
 
 # ---------------------------------------------------------------------------
 # Local package
@@ -106,6 +106,7 @@ from syncmoss.parameters_table import ParametersTable
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def, load_model_from_path,
+    validate_user_expressions,
 )
 from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
@@ -119,8 +120,10 @@ from syncmoss.spectrum_plotter import (
 from syncmoss.instrumental_io import (
     instrumental,
     reset_instrumental_defaults,
-    get_sms_instrumental_from_global_files,
-    resolve_sms_instrumental_for_file,
+    resolve_instrumental_for_file,
+    analyze_instrumental_methods,
+    build_dat_metadata_lines,
+    compute_norm,
 )
 from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
 from syncmoss.Library_io import export_library, import_library
@@ -193,6 +196,41 @@ check_tango = False
 #     return proxy.data
 # tango_uri = 'moesa:20000/id14/Can556/6a2'  # could be different
 # check_tango = True
+
+def _resolve_params_dir(base_dir):
+    """Return the directory that holds the parameter files, Calibration.dat and
+    the generated calibr.png.
+
+    Normally this is the bundled ``parameters/`` folder shipped next to the app.
+    A *frozen macOS* ``.app`` is code-signed / launched from a read-only mount, so
+    that folder is not reliably writable; redirect to a per-user writable location
+    (``QStandardPaths.AppDataLocation`` -> ``~/Library/Application Support/SYNCmoss``)
+    and seed it from the bundled originals. If any required file is missing there,
+    ALL bundled files are (re-)copied, overwriting existing ones.
+
+    Windows and source checkouts keep using the in-place ``parameters/`` folder.
+    """
+    bundled = os.path.join(base_dir, 'parameters')
+    if not (getattr(sys, 'frozen', False) and sys.platform == 'darwin'):
+        return bundled
+
+    QCoreApplication.setApplicationName('SYNCmoss')  # deterministic AppData path
+    target = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+    if not target:
+        target = os.path.expanduser('~/Library/Application Support/SYNCmoss')
+    os.makedirs(target, exist_ok=True)
+
+    required = os.listdir(bundled) if os.path.isdir(bundled) else []
+    if not all(os.path.exists(os.path.join(target, name)) for name in required):
+        for name in required:
+            src = os.path.join(bundled, name)
+            dst = os.path.join(target, name)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dst)
+    return target
+
 
 class CalibrationThread(QThread):
     """Thread for running calibration without blocking the UI"""
@@ -449,49 +487,38 @@ class ShowModelThread(QThread):
             
             # Get experimental method parameters
             JN = int(self.main_window.jn0_input.text())
-            experimental_method = 1 if self.main_window.MS_fit.isChecked() else 3
-            
-            pool = self.pool
-            
-            # Setup parameters based on experimental method
-            if experimental_method == 1:  # MS
-                INS = float(self.main_window.GCMS_input.text())
-                pNorm = np.array([float(0)] * number_of_baseline_parameters)
-                pNorm[0] = 1
-                Norm = TI(np.array([float(1000)]), pNorm, [], JN, pool, 0, self.MulCoCMS, INS, [0], [0], Met=1)[0]
-                method_params = {
-                    'x0': 0.0,
-                    'MulCo': self.MulCoCMS,
-                    'INS': INS,
-                    'Met': 1,
-                    'Norm': Norm
-                }
-            else:  # SMS (experimental_method == 3)
-                # Resolve SMS instrumental parameters: prefer .dat metadata when enabled
-                # Choose representative spectrum file for metadata lookup
-                rep_file = None
-                try:
-                    if not no_spectrum_mode:
-                        rep_file = os.path.abspath(self.path_list[0])
-                except Exception:
-                    rep_file = None
 
-                use_dat_metadata = bool(getattr(self.main_window, 'use_dat_instrumental_metadata', True))
-                INS, MulCo_val, x0_val, instrumental_note = resolve_sms_instrumental_for_file(self.main_window, rep_file, use_dat_metadata=use_dat_metadata)
-                pNorm = np.array([float(0)] * number_of_baseline_parameters)
-                pNorm[0] = 1
-                Norm = TI(np.array([float(1000)]), pNorm, [], JN, pool, x0_val, MulCo_val, INS, [0], [0])[0]
-                method_params = {
-                    'x0': x0_val,
-                    'MulCo': MulCo_val,
-                    'INS': INS,
-                    'Met': 0,
-                    'Norm': Norm
-                }
-            # ensure instrumental_note exists for MS branch as well
-            if experimental_method == 1:
-                instrumental_note = ''
-            
+            pool = self.pool
+
+            # Resolve instrumental parameters per spectrum section. Each section
+            # may be CMS or SMS, depending on its own .dat metadata (when the
+            # "use instrumental function from .dat file" option is enabled) or on
+            # the UI-selected method with the internal values otherwise.
+            num_sections = num_nbaseline + 1
+            if no_spectrum_mode:
+                section_files = [None] * num_sections
+            else:
+                section_files = []
+                for i in range(num_sections):
+                    try:
+                        section_files.append(os.path.abspath(self.path_list[i]))
+                    except Exception:
+                        section_files.append(None)
+
+            use_dat_metadata = bool(getattr(self.main_window, 'use_dat_instrumental_metadata', True))
+            method_params_list = []
+            for section_file in section_files:
+                mp_section = resolve_instrumental_for_file(self.main_window, section_file, use_dat_metadata=use_dat_metadata)
+                mp_section['Norm'] = compute_norm(pool, JN, mp_section)
+                method_params_list.append(mp_section)
+
+            note_lines = [mp_section['note'] for mp_section in method_params_list]
+            if len({mp_section['method'] for mp_section in method_params_list}) > 1:
+                note_lines.insert(0, "Mixed-method model: CMS and SMS spectra are calculated together.")
+            instrumental_note = '\n'.join(note_lines)
+            print(f"[Show model] {instrumental_note}")
+            method_params = method_params_list[0]
+
             if num_nbaseline > 0:
                 # Multiple spectra case - calculate subspectra for each section separately
                 # Split model at Nbaseline boundaries
@@ -524,51 +551,51 @@ class ShowModelThread(QThread):
                 p_all = []
                 
                 for spc_idx in range(len(model_sections)):
+                    # Instrumental parameters resolved for this section's spectrum
+                    mp_section = method_params_list[spc_idx] if spc_idx < len(method_params_list) else method_params_list[0]
+
                     # Get parameters for this section
                     if spc_idx < len(begining_spc) - 1:
                         p_section = p[begining_spc[spc_idx]:begining_spc[spc_idx + 1]]
                     else:
                         p_section = p[begining_spc[spc_idx]:]
                     p_all.append(p_section)
-                    
+
                     # Get spectrum section
                     A_section = A_list[spc_idx]
-                    
+
                     # Calculate fitted spectrum for this section
-                    SPC_f_section = TI(A_section, p_section, model_sections[spc_idx], JN, pool, 
-                                         method_params['x0'], method_params['MulCo'], 
-                                         method_params['INS'], Distri, Cor, 
-                                         Met=method_params['Met'], Norm=method_params['Norm'])
+                    SPC_f_section = TI(A_section, p_section, model_sections[spc_idx], JN, pool,
+                                         mp_section['x0'], mp_section['MulCo'],
+                                         mp_section['INS'], Distri, Cor,
+                                         Met=mp_section['Met'], Norm=mp_section['Norm'])
                     SPC_f_sections.append(SPC_f_section)
-                    
+
                     # Create subspectra for this section
                     Ps, Psm, Distri_t, Cor_t = self.main_window.create_subspectra(model_sections[spc_idx], Distri, Cor, p_section, number_of_baseline_parameters)[:4]
-                    
+
                     # Calculate each subspectrum for this section
                     FS = []
                     FS_pos = []
                     CoEn = 0
                     DiEn = 0
-                    
+
                     for i in range(len(Ps)):
                         CoSt = CoEn
                         DiSt = DiEn
                         CoEn += Psm[i].count('Corr')
                         DiEn += Psm[i].count('Distr')
-                        
+
                         distri_slice = Distri_t[DiSt:DiEn] if DiEn > DiSt else [0]
                         cor_slice = Cor_t[CoSt:CoEn] if CoEn > CoSt else [0]
-                        
-                        FS_i = TI(A_section, Ps[i], Psm[i], JN, pool, method_params['x0'], method_params['MulCo'], 
-                                   method_params['INS'], distri_slice, cor_slice, 
-                                   Met=method_params['Met'], Norm=method_params['Norm'])
+
+                        FS_i = TI(A_section, Ps[i], Psm[i], JN, pool, mp_section['x0'], mp_section['MulCo'],
+                                   mp_section['INS'], distri_slice, cor_slice,
+                                   Met=mp_section['Met'], Norm=mp_section['Norm'])
                         FS.append(FS_i)
-                        
-                        if experimental_method == 1:
-                            FS_pos.append(mod_pos(Ps[i], Psm[i], method_params['INS'], Met=1))
-                        else:
-                            FS_pos.append(mod_pos(Ps[i], Psm[i], method_params['INS']))
-                    
+
+                        FS_pos.append(mod_pos(Ps[i], Psm[i], mp_section['INS'], Met=mp_section['Met']))
+
                     FS_all.append(FS)
                     FS_pos_all.append(FS_pos)
                 
@@ -615,15 +642,12 @@ class ShowModelThread(QThread):
                     distri_slice = Distri_t[DiSt:DiEn] if DiEn > DiSt else [0]
                     cor_slice = Cor_t[CoSt:CoEn] if CoEn > CoSt else [0]
                     
-                    FS_i = TI(A, Ps_filtered[i], Psm_filtered[i], JN, pool, method_params['x0'], method_params['MulCo'], 
-                               method_params['INS'], distri_slice, cor_slice, 
+                    FS_i = TI(A, Ps_filtered[i], Psm_filtered[i], JN, pool, method_params['x0'], method_params['MulCo'],
+                               method_params['INS'], distri_slice, cor_slice,
                                Met=method_params['Met'], Norm=method_params['Norm'])
                     FS.append(FS_i)
-                    
-                    if experimental_method == 1:
-                        FS_pos.append(mod_pos(Ps_filtered[i], Psm_filtered[i], method_params['INS'], Met=1))
-                    else:
-                        FS_pos.append(mod_pos(Ps_filtered[i], Psm_filtered[i], method_params['INS']))
+
+                    FS_pos.append(mod_pos(Ps_filtered[i], Psm_filtered[i], method_params['INS'], Met=method_params['Met']))
                 
                 # Emit with single list of subspectra
                 self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note)
@@ -647,19 +671,14 @@ class RawToDatThread(QThread):
     
     def run(self):
         try:
-            use_sms_metadata = bool(getattr(self.main_window, 'SMS_fit', None) and self.main_window.SMS_fit.isChecked())
-            sms_metadata_warning = None
-            instrumental_exp_line = None
-            instrumental_int_line = None
+            metadata_lines = []
+            metadata_method = None
+            metadata_warning = None
 
-            if use_sms_metadata:
-                try:
-                    INS, MulCo, x0 = get_sms_instrumental_from_global_files(self.main_window)
-                    INS = np.atleast_1d(INS)
-                    instrumental_exp_line = '#@INSexp ' + ' '.join(str(float(v)) for v in INS)
-                    instrumental_int_line = f'#@INSint {float(MulCo)} {float(x0)}'
-                except Exception as e:
-                    sms_metadata_warning = f"Could not embed #@INSexp/#@INSint metadata: {e}. Conversion continued without metadata."
+            try:
+                metadata_lines, metadata_method = build_dat_metadata_lines(self.main_window)
+            except Exception as e:
+                metadata_warning = f"Could not embed instrumental metadata: {e}. Conversion continued without metadata."
 
             # Determine output paths based on single/multiple files and save_path
             is_single_file = len(self.file_paths) == 1
@@ -715,12 +734,10 @@ class RawToDatThread(QThread):
                         output_path = output_paths[i] if i < len(output_paths) else os.path.join(output_dir, f"{os.path.splitext(os.path.basename(raw_file))[0]}.dat")
                         
                         with open(output_path, 'w') as f:
-                            if use_sms_metadata:
+                            if metadata_lines:
                                 f.write('# Converted by SYNCMoss\n')
-                                if instrumental_exp_line is not None:
-                                    f.write(instrumental_exp_line + '\n')
-                                if instrumental_int_line is not None:
-                                    f.write(instrumental_int_line + '\n')
+                                for metadata_line in metadata_lines:
+                                    f.write(metadata_line + '\n')
                             for j in range(len(A)):
                                 f.write(f"{A[j]}\t{B[j]}\n")
                             f.write('\n')  # Empty line at end as in original
@@ -735,11 +752,17 @@ class RawToDatThread(QThread):
             
             # Report results
             if converted_count > 0:
-                warning_suffix = f"\n{sms_metadata_warning}" if sms_metadata_warning else ''
-                if error_count == 0:
-                    self.finished.emit(f"Successfully converted {converted_count} RAW file(s) to .dat format{warning_suffix}")
+                if metadata_method == 'CMS':
+                    metadata_suffix = "\nEmbedded #@GCMS metadata (CMS mode)."
+                elif metadata_method == 'SMS':
+                    metadata_suffix = "\nEmbedded #@INSexp/#@INSint metadata (SMS mode)."
                 else:
-                    self.finished.emit(f"Converted {converted_count} file(s), {error_count} failed{warning_suffix}")
+                    metadata_suffix = ''
+                warning_suffix = f"\n{metadata_warning}" if metadata_warning else ''
+                if error_count == 0:
+                    self.finished.emit(f"Successfully converted {converted_count} RAW file(s) to .dat format{metadata_suffix}{warning_suffix}")
+                else:
+                    self.finished.emit(f"Converted {converted_count} file(s), {error_count} failed{metadata_suffix}{warning_suffix}")
             else:
                 self.error.emit("No RAW files were successfully converted")
                 
@@ -789,17 +812,24 @@ class PhysicsApp(QMainWindow):
             self.dir_path = os.path.dirname(sys.executable)
         else:
             self.dir_path = os.path.dirname(os.path.abspath(__file__))
+        # Writable directory for parameter files, Calibration.dat and calibr.png.
+        # On a frozen macOS app this redirects to ~/Library/Application Support;
+        # everywhere else it is the bundled parameters/ folder next to the app.
+        self.params_dir = _resolve_params_dir(self.dir_path)
         self.workfolder = None  # Start with no workfolder selected
         self.workfolder_check = 1
         self.check_points_match = False
         self.newfilename = str('')
         self.newfilename2 = str('')
-        self.calibration_path = os.path.join(self.dir_path, "Calibration.dat")
+        self.calibration_path = os.path.join(self.params_dir, "Calibration.dat")
         self.points_match = True
         self.path_list = []
         self.backgrounds = []  # List to store calculated backgrounds
         self.sequence_fitting_type = 0  # 0 = initial, 1 = result
         self.use_dat_instrumental_metadata = True
+        # Set once the user ticks "do not ask again" on the mixed/different
+        # instrumental-function warning (per-session, resets on restart).
+        self.suppress_mixed_metadata_warning = False
         self.x0 = 0.0
         self.MulCo = 0.0
 
@@ -946,7 +976,7 @@ class PhysicsApp(QMainWindow):
 
         fit_par_layout = QHBoxLayout()
         g_label = QLabel("G")
-        self.GCMS_input = QLineEdit(str(np.genfromtxt(os.path.join(self.dir_path, 'parameters', 'GCMS.txt'), delimiter='\t')))
+        self.GCMS_input = QLineEdit(str(np.genfromtxt(os.path.join(self.params_dir, 'GCMS.txt'), delimiter='\t')))
         integral_label = QLabel("Integral")
         self.jn0_input = QLineEdit("32")
         fit_par_layout.addWidget(g_label)
@@ -964,7 +994,7 @@ class PhysicsApp(QMainWindow):
         self.btnchoose.setFont(QFont('Arial', 18))
         self.btnchoose.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.btnchoose.clicked.connect(self.choose_file)
-        self.process_path = QTextEdit("['Calibration.dat']")
+        self.process_path = QTextEdit(f"['{self.calibration_path}']")
         self.process_path.setFont(QFont('Arial', 14))
         self.process_path.setMaximumHeight(100)  # Make it taller
         # Allow editing of file paths
@@ -1230,10 +1260,10 @@ class PhysicsApp(QMainWindow):
     def plot_default_spectrum(self):
         """Load and plot the default spectrum from Calibration.dat"""
         try:
-            A_list, B_list = load_spectrum(self, ["Calibration.dat"], calibration_path=self.calibration_path)
+            A_list, B_list = load_spectrum(self, [self.calibration_path], calibration_path=self.calibration_path)
             if A_list and B_list:
                 # Calculate background for calibration
-                backgrounds = calculate_backgrounds(["Calibration.dat"], self.calibration_path)
+                backgrounds = calculate_backgrounds([self.calibration_path], self.calibration_path)
                 plot_spectrum(self.figure, A_list, B_list, ["Calibration.dat"], backgrounds=backgrounds, theme=self._theme)
                 self._update_legend_toggle()
                 self.toolbar.push_current()  # Set current view as home
@@ -1609,6 +1639,117 @@ class PhysicsApp(QMainWindow):
     #     self.log.setStyleSheet("color: blue;")
     #     # TODO: Implement actual functionality
 
+    def check_user_expressions(self, action_label):
+        """Validate every user-typed Expression/Distr/Corr text before starting
+        a fit or a show-model run.
+
+        On failure the offending table fields turn red (they recover as soon as
+        the user clicks into them), the log box explains each problem, and False
+        is returned so the caller can abort before any thread starts.
+        """
+        try:
+            problems = validate_user_expressions(self)
+        except Exception as e:
+            self.log.setPlainText(f"{action_label} was not started — could not read the model: {e}")
+            self.log.setStyleSheet("color: red;")
+            return False
+
+        if not problems:
+            return True
+
+        lines = []
+        for prob in problems:
+            if prob.get('row') is not None:
+                self.params_table.mark_expression_error(prob['row'])
+                label = f"{prob['kind']} (table row {prob['row']})"
+            else:
+                label = prob['kind']
+            lines.append(f"{label}: '{prob['text']}' could not be evaluated: {prob['error']}")
+        self.log.setPlainText(
+            f"{action_label} was not started — invalid expression(s):\n" + "\n".join(lines)
+        )
+        self.log.setStyleSheet("color: red;")
+        return False
+
+    def confirm_instrumental_methods(self, spectrum_files, mode):
+        """Warn the user, before a fit starts, about two instrumental-method
+        situations. Returns True to proceed, False to abort.
+
+        * Method override (any mode): when "use instrumental function from .dat
+          file" is on and a spectrum's metadata selects a different method than
+          the CMS/SMS checkbox, that file's method wins — tell the user how to
+          change it. Always shown (independent of the warning below).
+        * Different instrumental functions (multi-spectrum): when the spectra do
+          not all share one instrumental function (a CMS+SMS mix, or the same
+          method with different values), confirm the user means it. Carries a
+          "do not ask again" tick that suppresses it for the rest of the session.
+
+        When .dat metadata is disabled every spectrum resolves to the same
+        internal method, so neither warning fires and a heterogeneous selection
+        is fitted uniformly.
+        """
+        use_dat = bool(getattr(self, 'use_dat_instrumental_metadata', True))
+        ui_method = 'CMS' if self.MS_fit.isChecked() else 'SMS'
+        overridden, nonuniform, resolved = analyze_instrumental_methods(self, spectrum_files, use_dat)
+
+        if overridden and not self._warn_method_override(overridden, ui_method):
+            return False
+
+        if (nonuniform and mode != 'single'
+                and not getattr(self, 'suppress_mixed_metadata_warning', False)):
+            proceed, dont_ask = self._warn_mixed_metadata(resolved, mode)
+            if dont_ask:
+                self.suppress_mixed_metadata_warning = True
+            if not proceed:
+                return False
+
+        return True
+
+    def _warn_method_override(self, overridden, ui_method):
+        """Popup: the .dat metadata overrides the selected CMS/SMS method.
+        Returns True to proceed, False to abort."""
+        lines = []
+        for spectrum_file, resolved in overridden:
+            tag = '#@GCMS' if resolved['method'] == 'CMS' else '#@INSexp/#@INSint'
+            lines.append(f"• {os.path.basename(spectrum_file)} → {resolved['method']} mode (file contains {tag})")
+        message = (
+            f"{ui_method} mode is selected, but the .dat metadata of the following "
+            f"spectrum(a) selects a different method, which will be used instead:\n\n"
+            + "\n".join(lines)
+            + f"\n\nTo fit in {ui_method} mode, either disable \"use instrumental "
+              f"function from .dat file\" in the Instrumental function menu, or remove "
+              f"the metadata from the file(s).\n\nProceed anyway?"
+        )
+        reply = QMessageBox.warning(
+            self, "Instrumental method from .dat file", message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _warn_mixed_metadata(self, resolved, mode):
+        """Popup with a "do not ask again" tick: the spectra do not share one
+        instrumental function. Returns (proceed: bool, dont_ask: bool)."""
+        methods = {r['method'] for r in resolved}
+        if len(methods) > 1:
+            what = "a mix of CMS and SMS spectra"
+        else:
+            what = f"several {next(iter(methods))} spectra with different instrumental functions"
+        if mode == 'simultaneous':
+            how = "They will be fitted together in one simultaneous fit, each section with its own instrumental function."
+        else:
+            how = "Each spectrum will be fitted separately with its own instrumental function."
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Different instrumental functions")
+        box.setText(f"You are about to fit {what}.\n\n{how}\n\nContinue?")
+        dont_ask_cb = QCheckBox("Do not ask again")
+        box.setCheckBox(dont_ask_cb)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.Yes)
+        reply = box.exec()
+        return (reply == QMessageBox.StandardButton.Yes, dont_ask_cb.isChecked())
+
     def initialize_parameters(self):
         """Initialize parameters from INSint.txt and INSexp.txt"""
         try:
@@ -1619,15 +1760,15 @@ class PhysicsApp(QMainWindow):
             self.JN0 = JN0
 
             try:
-                GCMS = int(self.GCMS_input.text())
+                GCMS = float(self.GCMS_input.text())
             except:
                 GCMS = 0.1
             self.GCMS = GCMS
 
-            instrumental_int_path = os.path.join(self.dir_path, 'parameters', 'INSint.txt')
+            instrumental_int_path = os.path.join(self.params_dir, 'INSint.txt')
             self.MulCo, self.x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)
             
-            instrumental_exp_path = os.path.join(self.dir_path, 'parameters', 'INSexp.txt')
+            instrumental_exp_path = os.path.join(self.params_dir, 'INSexp.txt')
             self.INS = np.genfromtxt(instrumental_exp_path, delimiter=' ', skip_footer=0)
             
             print(f'Initialized: MulCo={self.MulCo}, x0={self.x0}')
@@ -1678,7 +1819,7 @@ class PhysicsApp(QMainWindow):
         
         # Start calibration in a separate thread
         self.calibration_thread = CalibrationThread(
-            self.dir_path, file, experimental_method, self.INS, JN, self.x0, self.MulCo, vel_start, self.pool
+            self.params_dir, file, experimental_method, self.INS, JN, self.x0, self.MulCo, vel_start, self.pool
         )
         self.calibration_thread.finished.connect(self.on_calibration_finished)
         self.calibration_thread.error.connect(self.on_calibration_error)
@@ -1694,7 +1835,7 @@ class PhysicsApp(QMainWindow):
             self.toolbar.push_current()  # Set current view as home
             
             # Update calibration path (Calibration.dat was already saved by Calibration function)
-            self.calibration_path = os.path.join(self.dir_path, 'Calibration.dat')
+            self.calibration_path = os.path.join(self.params_dir, 'Calibration.dat')
             
             self.log.setPlainText("Calibration completed successfully")
             self.log.setStyleSheet("color: green;")
@@ -1721,11 +1862,17 @@ class PhysicsApp(QMainWindow):
         self.inprogress = True
         
         self.path_list = self.parse_process_path()
-        
+
         # Initialize
         if not self.initialize_parameters():
+            self.inprogress = False
             return
-        
+
+        # Refuse to start when an Expression/Distr/Corr text does not evaluate
+        if not self.check_user_expressions("Show model"):
+            self.inprogress = False
+            return
+
         # Start model calculation in a separate thread
         if not self.path_list:
             self.log.setPlainText("Calculating model on synthetic grid (-15..15 mm/s, 4096 points)...")
@@ -2589,8 +2736,14 @@ class PhysicsApp(QMainWindow):
 
         self.log.setPlainText("Starting fit...")
         self.log.setStyleSheet("color: cyan;")
-        
+
         if not self.initialize_parameters():
+            self.inprogress = False
+            return
+
+        # Refuse to start when an Expression/Distr/Corr text does not evaluate
+        if not self.check_user_expressions("Fit"):
+            self.inprogress = False
             return
 
         try:
@@ -2625,6 +2778,12 @@ class PhysicsApp(QMainWindow):
                 )
                 
                 if reply == QMessageBox.StandardButton.Yes:
+                    # Batch = each spectrum fitted on its own (its own metadata).
+                    # Confirm any method override / different instrumental
+                    # functions across the batch before starting.
+                    if not self.confirm_instrumental_methods(spectrum_files, 'sequential'):
+                        self.inprogress = False
+                        return
                     self.start_sequential_fitting(spectrum_files)
                     return
                 else:
@@ -2632,12 +2791,19 @@ class PhysicsApp(QMainWindow):
                     self.log.setPlainText("Sequential fitting canceled. Fitting first spectrum only.")
                     self.log.setStyleSheet("color: orange;")
                     spectrum_files = [spectrum_files[0]]
-            
-            # Single spectrum or simultaneous fitting (with Nbaseline)
+                    fitting_mode = 'single'
+
+            # Single spectrum or simultaneous fitting (with Nbaseline): confirm
+            # the instrumental method(s) before spawning the fitting thread.
+            files_for_confirm = spectrum_files if fitting_mode == 'simultaneous' else [spectrum_files[0]]
+            if not self.confirm_instrumental_methods(files_for_confirm, fitting_mode):
+                self.inprogress = False
+                return
+
             spectrum_file = spectrum_files[0]
             self.log.setPlainText(f"Fitting spectrum: {os.path.basename(spectrum_file)}")
             self.log.setStyleSheet("color: cyan;")
-            
+
             # Start fitting in background thread
             self.fitting_thread = FittingThread(self, spectrum_file, self.pool)
             self.fitting_thread.finished.connect(self.on_fitting_finished)

@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from syncmoss.constants import number_of_baseline_parameters
-from syncmoss.model_io import read_model
+from syncmoss.model_io import read_model, _save_model_to_file, load_model_from_path
 
 pytestmark = pytest.mark.gui
 
@@ -67,6 +67,35 @@ def test_select_model_then_read_model(physics_app):
     assert model == ["Sextet"]
     # baseline (8) + Sextet (11) parameters.
     assert len(p) == number_of_baseline_parameters + 11
+
+
+def test_save_model_drops_empty_rows_and_reloads(physics_app, tmp_path):
+    """Saving must omit empty (None) rows; loading restores the same models."""
+    w = physics_app
+    # Two models placed in non-contiguous rows, leaving empty rows around/between.
+    w.params_table.select_model(2, "Sextet")
+    w.params_table.select_model(5, "Doublet")
+
+    file_path = str(tmp_path / "model.mdl")
+    _save_model_to_file(w, file_path)
+
+    with open(file_path, encoding="utf-8") as fh:
+        data_lines = [ln.rstrip("\n") for ln in fh
+                      if ln.strip() and not ln.lstrip().startswith("#")]
+
+    # Header (model names) holds only baseline + the two real models, no 'None'.
+    model_names = data_lines[0].split("\t")
+    assert model_names == ["baseline", "Sextet", "Doublet"]
+    assert "None" not in model_names
+    # One param-data line per kept row: header + colors + 3 param rows.
+    assert len(data_lines) == 2 + 3
+
+    # Reloading into a fresh table reproduces the same model sequence.
+    load_model_from_path(w, file_path)
+    assert "red" not in w.log.styleSheet().lower(), w.log.toPlainText()
+    model, p, *_ = read_model(w)
+    assert model == ["Sextet", "Doublet"]
+    assert len(p) == number_of_baseline_parameters + 11 + 7
 
 
 def test_resize_event_does_not_crash(physics_app):

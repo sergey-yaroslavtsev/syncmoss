@@ -10,8 +10,21 @@ import re
 import platform
 from syncmoss.models import TI
 from syncmoss.models_positions import mod_pos
-from syncmoss.constants import number_of_baseline_parameters
 from syncmoss.model_io import read_model
+# NOTE: instrumental_io is imported lazily inside functions below — it imports
+# load_spectrum from this module, so a top-level import here would be circular.
+
+
+def save_spectrum_with_metadata(save_path, A, B, metadata_lines):
+    """Write a two-column (velocity, intensity) spectrum to ``save_path``,
+    preceded by any instrumental ``#@`` header lines so the metadata survives
+    spectrum-processing operations. ``metadata_lines`` are written verbatim."""
+    with open(save_path, 'w') as f:
+        if metadata_lines:
+            f.write('# Saved by SYNCMoss\n')
+            for line in metadata_lines:
+                f.write(line + '\n')
+        np.savetxt(f, np.column_stack((A, B)), delimiter='\t', fmt='%.6f')
 
 
 def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", points_match=True):
@@ -305,14 +318,20 @@ def sum_all_spectra(main_window):
             main_window.log.setStyleSheet("color: orange;")
             return
 
+        # Carry instrumental metadata over only if every input that has metadata
+        # agrees; mismatched metadata is dropped (the sum is then ambiguous).
+        from syncmoss.instrumental_io import shared_dat_metadata_lines
+        metadata_lines = shared_dat_metadata_lines(main_window.path_list)
+
         # Save the summed spectrum
-        np.savetxt(save_path, np.column_stack((summed_A, summed_B)), delimiter='\t', fmt='%.6f')
+        save_spectrum_with_metadata(save_path, summed_A, summed_B, metadata_lines)
 
         # Auto-load the saved spectrum
         main_window.process_path.setPlainText(f"['{save_path}']")
         main_window.show_pressed()  # This will load and display the summed spectrum
 
-        main_window.log.setPlainText(f"Summed {len(main_window.path_list)} spectra and saved to {os.path.basename(save_path)}")
+        metadata_note = '' if metadata_lines else ' (instrumental metadata not carried over)'
+        main_window.log.setPlainText(f"Summed {len(main_window.path_list)} spectra and saved to {os.path.basename(save_path)}{metadata_note}")
         main_window.log.setStyleSheet("color: green;")
 
     except Exception as e:
@@ -377,35 +396,15 @@ def subtract_model_from_spectrum(main_window):
         for i in range(len(con1)):
             p[int(con1[i])] = p[int(con2[i])] * con3[i]
 
-        # Get experimental method parameters
+        # Get experimental method parameters. Resolve the instrumental function
+        # for this spectrum exactly as the fit does: its own .dat metadata
+        # (#@GCMS or #@INSexp/#@INSint) when that option is enabled, otherwise the
+        # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
-        experimental_method = 1 if main_window.chb1.isChecked() else 3  # 1=MS, 3=SMS
-
-        # Setup parameters based on experimental method
-        if experimental_method == 1:  # MS
-            INS = float(main_window.l0_input.text())
-            pNorm = np.array([float(0)] * number_of_baseline_parameters)
-            pNorm[0] = 1
-            Norm = 1.0
-            method_params = {
-                'x0': 0.0,
-                'MulCo': 1.0,
-                'INS': INS,
-                'Met': 1,
-                'Norm': Norm
-            }
-        else:  # SMS
-            INS = main_window.INS
-            pNorm = np.array([float(0)] * number_of_baseline_parameters)
-            pNorm[0] = 1
-            Norm = TI(np.array([float(1000)]), pNorm, [], JN, main_window.pool, main_window.x0, main_window.MulCo, INS, [0], [0])[0]
-            method_params = {
-                'x0': main_window.x0,
-                'MulCo': main_window.MulCo,
-                'INS': INS,
-                'Met': 0,
-                'Norm': Norm
-            }
+        from syncmoss.instrumental_io import resolve_instrumental_for_file, compute_norm
+        use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
+        method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)
+        method_params['Norm'] = compute_norm(main_window.pool, JN, method_params)
 
         # Calculate model spectrum
         try:
@@ -445,8 +444,10 @@ def subtract_model_from_spectrum(main_window):
             main_window.log.setStyleSheet("color: orange;")
             return
 
-        # Save the subtracted spectrum
-        np.savetxt(save_path, np.column_stack((A, B_subtracted)), delimiter='\t', fmt='%.6f')
+        # Save the subtracted spectrum, preserving the source's instrumental metadata
+        from syncmoss.instrumental_io import read_dat_metadata_lines
+        metadata_lines = read_dat_metadata_lines(spectrum_path)
+        save_spectrum_with_metadata(save_path, A, B_subtracted, metadata_lines)
 
         # Auto-load the saved spectrum
         main_window.process_path.setPlainText(f"['{save_path}']")
@@ -555,8 +556,10 @@ def process_half_spectrum(main_window, spectrum_path, save_path, auto_load=False
             A_half[i] = (A[i*2] + A[i*2+1]) / 2  # Average velocity
             B_half[i] = B[i*2] + B[i*2+1]  # Sum intensity
 
-        # Save the half-points spectrum
-        np.savetxt(save_path, np.column_stack((A_half, B_half)), delimiter='\t', fmt='%.6f')
+        # Save the half-points spectrum, preserving the source's instrumental metadata
+        from syncmoss.instrumental_io import read_dat_metadata_lines
+        metadata_lines = read_dat_metadata_lines(spectrum_path)
+        save_spectrum_with_metadata(save_path, A_half, B_half, metadata_lines)
 
         # Auto-load if requested
         if auto_load:

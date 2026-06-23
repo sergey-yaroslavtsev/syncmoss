@@ -3,7 +3,7 @@ import sys
 import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
 from syncmoss.syncmoss_main import PhysicsApp
-__VERSION__ = "0.2.1"
+__VERSION__ = "0.2.2"
 
 
 def _run_gui_smoke():
@@ -40,6 +40,7 @@ def main():
     pool = mp.Pool(processes=num_processes)
 
     app = QApplication(sys.argv)
+    app.setApplicationName("SYNCmoss")
     window = PhysicsApp(pool=pool)
     window.show()
     return app.exec()

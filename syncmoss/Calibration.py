@@ -31,6 +31,7 @@ import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
 import multiprocessing as mp
 import matplotlib.pyplot as plt
+import os
 import platform
 import re
 import time
@@ -541,7 +542,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
             model = ['Sextet', 'Sextet', 'Doublet']
 
             try:
-                Be_param = np.genfromtxt(str(dir_path) + str('\\\\parameters\\\\Be.txt')*(platform.system() == 'Windows') + str('/parameters/Be.txt')*(platform.system() != 'Windows'), delimiter='\t', skip_footer=0)
+                Be_param = np.genfromtxt(os.path.join(dir_path, 'Be.txt'), delimiter='\t', skip_footer=0)
                 print('file was read')
             except:
                 Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 0.772, 1])
@@ -742,7 +743,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
 
         ax.text(len(xn2)/2, max(id[0]) + 10 * np.sqrt(max(id[0])), str('lin ')*(method==1) + str('sin ')*(method==0) + str(n1) + str(' ') + str(n2), color='r', fontsize=8, horizontalalignment='center')
 
-        fig.savefig('calibr.png', bbox_inches='tight')
+        fig.savefig(os.path.join(dir_path, 'calibr.png'), bbox_inches='tight')
         plt.close()
 
         print('Shift due to instrumental function ', INS_shift)

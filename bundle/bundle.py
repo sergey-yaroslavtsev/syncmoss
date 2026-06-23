@@ -66,7 +66,6 @@ def copy_resources():
         # from syncmoss/
         os.path.join(syncmoss_DIR, "theme_dark.json"),
         os.path.join(syncmoss_DIR, "theme_light.json"),
-        os.path.join(syncmoss_DIR, "Calibration.dat"),
         # from repo root
         os.path.join(ROOT_DIR, "COPYING.txt"),
         os.path.join(ROOT_DIR, "NOTICE.txt"),
@@ -117,7 +116,7 @@ def verify():
         "parameters/INSint.txt",
         "theme_dark.json",
         "theme_light.json",
-        "Calibration.dat",
+        "parameters/Calibration.dat",
         "COPYING.txt",
         "NOTICE.txt",
         "LICENSE",

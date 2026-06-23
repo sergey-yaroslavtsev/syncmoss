@@ -24,6 +24,7 @@ DEFAULT_INSINT_TEXT = "2.448293819453453 0.03380920627191801 "
 
 DAT_INS_EXP_PREFIX = '#@INSexp'
 DAT_INS_INT_PREFIX = '#@INSint'
+DAT_GCMS_PREFIX = '#@GCMS'
 
 
 def _parse_float_sequence(text):
@@ -40,13 +41,19 @@ def _parse_float_sequence(text):
 
 
 def parse_dat_instrumental_metadata(file_path):
-    """Read #@INSexp / #@INSint metadata from a .dat file header."""
+    """Read #@INSexp / #@INSint / #@GCMS metadata from a .dat file header.
+
+    #@INSexp + #@INSint mark a spectrum converted in SMS mode, #@GCMS marks a
+    spectrum converted in CMS mode (single G value of the single-line absorber).
+    """
     result = {
         'INS': None,
         'MulCo': None,
         'x0': None,
+        'GCMS': None,
         'has_insexp': False,
         'has_insint': False,
+        'has_gcms': False,
     }
 
     if not file_path or not os.path.exists(file_path):
@@ -79,6 +86,14 @@ def parse_dat_instrumental_metadata(file_path):
                         result['has_insint'] = True
                     continue
 
+                if stripped.startswith(DAT_GCMS_PREFIX):
+                    payload = stripped[len(DAT_GCMS_PREFIX):].strip()
+                    parsed = _parse_float_sequence(payload)
+                    if parsed.size > 0:
+                        result['GCMS'] = float(parsed[0])
+                        result['has_gcms'] = True
+                    continue
+
                 if not stripped.startswith('#') and not stripped.startswith('<'):
                     break
     except Exception as e:
@@ -89,53 +104,243 @@ def parse_dat_instrumental_metadata(file_path):
 
 def get_sms_instrumental_from_global_files(app):
     """Read SMS instrumental function from global INSexp/INSint files."""
-    insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
-    instrumental_int_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+    insexp_path = os.path.join(app.params_dir, 'INSexp.txt')
+    instrumental_int_path = os.path.join(app.params_dir, 'INSint.txt')
 
     INS = np.genfromtxt(insexp_path, delimiter=' ', skip_footer=0)
     MulCo, x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)
     return np.array(INS, dtype=float), float(MulCo), float(x0)
 
 
-def resolve_sms_instrumental_for_file(app, spectrum_file, use_dat_metadata=True):
+def get_internal_gcms(app):
+    """Current internal G value for CMS: the G input field, falling back to
+    parameters/GCMS.txt, then to 0.1."""
+    try:
+        return float(app.GCMS_input.text())
+    except Exception:
+        pass
+    try:
+        gcms_path = os.path.join(app.params_dir, 'GCMS.txt')
+        return float(np.genfromtxt(gcms_path, delimiter='\t'))
+    except Exception:
+        return 0.1
+
+
+def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, force_method=None):
     """
-    Resolve SMS instrumental parameters for a spectrum.
+    Resolve the instrumental parameters (CMS or SMS) for one spectrum.
+
+    The single source of truth for "what instrumental function does this spectrum
+    use". When ``use_dat_metadata`` is enabled the spectrum's own .dat header
+    decides the method: a #@GCMS line marks a CMS spectrum, #@INSexp + #@INSint
+    mark an SMS spectrum (#@GCMS wins if a file carries both). Otherwise — or when
+    the file has no usable metadata — the UI-selected method (CMS/SMS checkboxes)
+    with the internal values is used: the G input field for CMS, the global
+    INSexp/INSint files for SMS. This is what lets different spectra of one
+    simultaneous fit use dedicated values, including mixing CMS and SMS spectra.
+
+    ``force_method`` ('CMS' or 'SMS') locks the method instead of letting the file
+    or the checkboxes choose it: only metadata of that method is honoured (the
+    other method's metadata is ignored), and the internal fallback is that method.
+    Used by the instrumental-function refinement, where the user explicitly
+    refines one method and the reference file must not flip it.
 
     Returns:
-        INS, MulCo, x0, note
+        dict with keys:
+            'method' : 'CMS' or 'SMS'
+            'Met'    : models.TI Met argument (1 for CMS, 0 for SMS)
+            'INS'    : float G (CMS) or instrumental-function array (SMS)
+            'x0'     : float
+            'MulCo'  : float
+            'source' : 'file' or 'internal'
+            'note'   : human-readable description for the log box
     """
-    INS_global, MulCo_global, x0_global = get_sms_instrumental_from_global_files(app)
-
-    if not use_dat_metadata:
-        return INS_global, MulCo_global, x0_global, "Using global INSexp/INSint files (.dat metadata use is disabled)."
-
-    if not spectrum_file or not str(spectrum_file).lower().endswith('.dat'):
-        return INS_global, MulCo_global, x0_global, "Using global INSexp/INSint files (input is not a .dat file)."
-
-    meta = parse_dat_instrumental_metadata(spectrum_file)
-    if meta['INS'] is not None and meta['MulCo'] is not None and meta['x0'] is not None:
-        return meta['INS'], meta['MulCo'], meta['x0'], f"Using instrumental function from .dat file: {os.path.basename(spectrum_file)}"
-
-    missing = []
-    if meta['INS'] is None:
-        missing.append('#@INSexp')
-    if meta['MulCo'] is None or meta['x0'] is None:
-        missing.append('#@INSint')
-    missing_txt = ', '.join(missing) if missing else 'metadata'
-
-    return (
-        INS_global,
-        MulCo_global,
-        x0_global,
-        f".dat instrumental metadata not found ({missing_txt}) in {os.path.basename(spectrum_file)}. Fallback to global INSexp/INSint files.",
+    ui_method = force_method or (
+        'CMS' if (getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked()) else 'SMS'
     )
+    name = os.path.basename(str(spectrum_file)) if spectrum_file else ''
+    mulco_cms = float(getattr(app, 'MulCoCMS', 0.28))
+    fallback_reason = None
+
+    if use_dat_metadata and spectrum_file and str(spectrum_file).lower().endswith('.dat'):
+        meta = parse_dat_instrumental_metadata(spectrum_file)
+        has_sms = meta['INS'] is not None and meta['MulCo'] is not None and meta['x0'] is not None
+        # File metadata may set the method, unless we are locked to the other one.
+        if meta['has_gcms'] and force_method != 'SMS':
+            g = float(meta['GCMS'])
+            return {
+                'method': 'CMS', 'Met': 1, 'INS': g, 'x0': 0.0,
+                'MulCo': mulco_cms, 'source': 'file',
+                'note': f"{name}: CMS — G = {g:g} from .dat metadata (#@GCMS)",
+            }
+        if has_sms and force_method != 'CMS':
+            return {
+                'method': 'SMS', 'Met': 0, 'INS': meta['INS'], 'x0': float(meta['x0']),
+                'MulCo': float(meta['MulCo']), 'source': 'file',
+                'note': f"{name}: SMS — instrumental function from .dat metadata (#@INSexp/#@INSint)",
+            }
+        # No usable metadata for the (possibly forced) method -> internal fallback.
+        missing = []
+        if force_method != 'CMS':
+            if meta['INS'] is None:
+                missing.append('#@INSexp')
+            if meta['MulCo'] is None or meta['x0'] is None:
+                missing.append('#@INSint')
+        if force_method != 'SMS':
+            missing.append('#@GCMS')
+        fallback_reason = f"no usable .dat metadata ({', '.join(missing)})"
+    elif not use_dat_metadata:
+        fallback_reason = ".dat metadata use is disabled"
+    elif spectrum_file:
+        fallback_reason = "input is not a .dat file"
+
+    suffix = f" ({fallback_reason})" if fallback_reason else ""
+    if ui_method == 'CMS':
+        g = get_internal_gcms(app)
+        return {
+            'method': 'CMS', 'Met': 1, 'INS': float(g), 'x0': 0.0,
+            'MulCo': mulco_cms, 'source': 'internal',
+            'note': f"{name or 'model'}: CMS — internal G = {g:g}{suffix}",
+        }
+    INS_global, MulCo_global, x0_global = get_sms_instrumental_from_global_files(app)
+    return {
+        'method': 'SMS', 'Met': 0, 'INS': INS_global, 'x0': float(x0_global),
+        'MulCo': float(MulCo_global), 'source': 'internal',
+        'note': f"{name or 'model'}: SMS — global INSexp/INSint files{suffix}",
+    }
+
+
+def same_method_params(a, b):
+    """True when two resolve_instrumental_for_file() results are numerically identical."""
+    return (
+        a['method'] == b['method']
+        and a['Met'] == b['Met']
+        and float(a['x0']) == float(b['x0'])
+        and float(a['MulCo']) == float(b['MulCo'])
+        and np.array_equal(np.atleast_1d(a['INS']), np.atleast_1d(b['INS']))
+    )
+
+
+def analyze_instrumental_methods(app, spectrum_files, use_dat_metadata):
+    """Resolve the instrumental method of every spectrum and report the two
+    situations the fit dialog warns about.
+
+    Returns ``(overridden, nonuniform, resolved)``:
+      * ``resolved``   : list of resolve_instrumental_for_file() results, in order.
+      * ``overridden`` : list of ``(file, resolved)`` whose method comes from the
+                         .dat metadata and differs from the UI-selected method
+                         (i.e. the file overrides the CMS/SMS checkbox). Empty
+                         when .dat metadata is disabled (everything is internal).
+      * ``nonuniform`` : True when more than one spectrum is involved and they do
+                         not all share identical instrumental parameters (a mix
+                         of CMS and SMS, or the same method with different values).
+    """
+    ui_method = 'CMS' if (getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked()) else 'SMS'
+    resolved = [resolve_instrumental_for_file(app, f, use_dat_metadata=use_dat_metadata) for f in spectrum_files]
+    overridden = [(f, r) for f, r in zip(spectrum_files, resolved)
+                  if r['source'] == 'file' and r['method'] != ui_method]
+    nonuniform = len(resolved) > 1 and not all(same_method_params(resolved[0], r) for r in resolved[1:])
+    return overridden, nonuniform, resolved
+
+
+def compute_norm(pool, JN, method_params):
+    """Normalization integral for a resolved method (CMS or SMS)."""
+    pNorm = np.array([float(0)] * number_of_baseline_parameters)
+    pNorm[0] = 1
+    return m5.TI(
+        np.array([float(1000)]), pNorm, [], JN, pool,
+        method_params['x0'], method_params['MulCo'], method_params['INS'],
+        [0], [0], Met=method_params['Met'],
+    )[0]
+
+
+def build_dat_metadata_lines(app):
+    """Instrumental header lines to embed into .dat files converted from RAW.
+
+    CMS mode (the CMS checkbox is checked): a single #@GCMS line with the
+    current G value. SMS mode: #@INSexp / #@INSint lines from the global
+    parameter files.
+
+    Returns:
+        (lines, method): list of header strings (without newlines) and the
+        method name ('CMS' or 'SMS').
+    """
+    if getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked():
+        g = get_internal_gcms(app)
+        return [f'{DAT_GCMS_PREFIX} {float(g)}'], 'CMS'
+    INS, MulCo, x0 = get_sms_instrumental_from_global_files(app)
+    INS = np.atleast_1d(INS)
+    return [
+        DAT_INS_EXP_PREFIX + ' ' + ' '.join(str(float(v)) for v in INS),
+        f'{DAT_INS_INT_PREFIX} {float(MulCo)} {float(x0)}',
+    ], 'SMS'
+
+
+def read_dat_metadata_lines(file_path):
+    """Verbatim instrumental header lines (#@INSexp/#@INSint/#@GCMS) of a .dat
+    file, without trailing newlines. Empty list when the file has none.
+
+    Used to carry instrumental metadata across spectrum-processing operations
+    (subtract model, half points, sum) so a converted .dat does not silently
+    lose its #@GCMS / #@INSexp / #@INSint header.
+    """
+    lines = []
+    if not file_path or not os.path.exists(file_path):
+        return lines
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for _ in range(40):
+                line = f.readline()
+                if not line:
+                    break
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith((DAT_INS_EXP_PREFIX, DAT_INS_INT_PREFIX, DAT_GCMS_PREFIX)):
+                    lines.append(stripped)
+                elif not stripped.startswith('#') and not stripped.startswith('<'):
+                    break
+    except Exception as e:
+        print(f"[Instrumental function] Could not read DAT metadata lines from {file_path}: {e}")
+    return lines
+
+
+def dat_metadata_key(file_path):
+    """A hashable, comparable representation of a .dat file's instrumental
+    metadata, or None when the file carries none. Two files share metadata iff
+    their keys are equal."""
+    meta = parse_dat_instrumental_metadata(file_path)
+    if meta['has_gcms']:
+        return ('CMS', round(float(meta['GCMS']), 9))
+    if meta['has_insexp'] and meta['has_insint']:
+        ins = tuple(round(float(v), 9) for v in np.atleast_1d(meta['INS']))
+        return ('SMS', ins, round(float(meta['MulCo']), 9), round(float(meta['x0']), 9))
+    return None
+
+
+def shared_dat_metadata_lines(file_paths):
+    """Instrumental header lines to carry over when several .dat spectra are
+    combined into one (the "sum all spectra" case).
+
+    Files without metadata are ignored. If every file that *has* metadata agrees,
+    those lines are returned; if they disagree, [] is returned so the combined
+    file is written without (now-ambiguous) instrumental metadata.
+    """
+    keyed = [(dat_metadata_key(fp), fp) for fp in file_paths]
+    keyed = [(k, fp) for k, fp in keyed if k is not None]
+    if not keyed:
+        return []
+    first_key = keyed[0][0]
+    if all(k == first_key for k, _ in keyed):
+        return read_dat_metadata_lines(keyed[0][1])
+    return []
 
 
 def reset_instrumental_defaults(app):
     """Restore default values for INSexp.txt and INSint.txt."""
     try:
-        insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
-        instrumental_int_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+        insexp_path = os.path.join(app.params_dir, 'INSexp.txt')
+        instrumental_int_path = os.path.join(app.params_dir, 'INSint.txt')
         os.makedirs(os.path.dirname(insexp_path), exist_ok=True)
 
         with open(insexp_path, 'w', encoding='utf-8') as f:
@@ -240,7 +445,10 @@ def instrumental(app, ref, mode=0, pool=None):
             CMS_ch = 1
         elif app.SMS_fit.isChecked():
             use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
-            INS, MulCo, x0, note = resolve_sms_instrumental_for_file(app, file, use_dat_metadata=use_dat_metadata)
+            # Refinement is locked to SMS here, so the reference file's metadata
+            # must not flip it to CMS (force_method='SMS').
+            mp = resolve_instrumental_for_file(app, file, use_dat_metadata=use_dat_metadata, force_method='SMS')
+            INS, MulCo, x0, note = mp['INS'], mp['MulCo'], mp['x0'], mp['note']
             print(f"[Instrumental function] {note}")
             p0 = np.copy(INS)
             n = int(len(INS)/3)
@@ -360,7 +568,7 @@ def instrumental(app, ref, mode=0, pool=None):
             p = np.concatenate((p, np.array([0, 0, 0, 0, 0, 0, 0])))
         
         try:
-            be_path = os.path.join(app.dir_path, 'parameters', 'Be.txt')
+            be_path = os.path.join(app.params_dir, 'Be.txt')
             Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
             print('Be file was read')
         except:
@@ -401,7 +609,7 @@ def instrumental(app, ref, mode=0, pool=None):
             p = np.concatenate((p, np.array([0, 0, 0, bg_tmp*0.4, 0, 0, 0])))
         
         try:
-            be_path = os.path.join(app.dir_path, 'parameters', 'Be.txt')
+            be_path = os.path.join(app.params_dir, 'Be.txt')
             Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
             print('Be file was read')
         except:
@@ -571,16 +779,16 @@ def instrumental(app, ref, mode=0, pool=None):
     INSp = p[mod_p_len:]
     
     if CMS_ch == 0:
-        insexp_path = os.path.join(app.dir_path, 'parameters', 'INSexp.txt')
+        insexp_path = os.path.join(app.params_dir, 'INSexp.txt')
     else:
-        insexp_path = os.path.join(app.dir_path, 'parameters', 'GCMS.txt')
+        insexp_path = os.path.join(app.params_dir, 'GCMS.txt')
     
     if CMS_ch == 0:
         with open(insexp_path, "w") as f:
             for i in range(0, len(INSp)):
                 f.write(str(INSp[i]) + ' ')
         
-        instrumental_int_path = os.path.join(app.dir_path, 'parameters', 'INSint.txt')
+        instrumental_int_path = os.path.join(app.params_dir, 'INSint.txt')
         with open(instrumental_int_path, "w") as f:
             f.write(str(MulCo) + ' ')
             f.write(str(x0) + ' ')

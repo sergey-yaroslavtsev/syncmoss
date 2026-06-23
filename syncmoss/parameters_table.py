@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QDialog, QListWidget, QDialogButtonBox, QMessageBox, QGridLayout, QComboBox,
     QSpinBox, QTableWidget, QTableWidgetItem
 )
-from PySide6.QtCore import Qt, QRegularExpression
+from PySide6.QtCore import Qt, QRegularExpression, QEvent
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
 from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters
 from syncmoss.spectrum_io import calculate_backgrounds
@@ -856,7 +856,7 @@ class ParametersTable(QWidget):
             # Based on Doublet, load from Be.txt or defaults
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'A', 'G2/G1']
             try:
-                be_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'parameters', 'Be.txt'), delimiter='\t')
+                be_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'Be.txt'), delimiter='\t')
                 values = [str(be_param[i]) for i in range(7)]
                 self.main_window.log.setPlainText("Be.txt loaded successfully.")
             except:
@@ -869,7 +869,7 @@ class ParametersTable(QWidget):
             # Based on Doublet, load from KB.txt
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'A', 'G2/G1']
             try:
-                kb_param = np.genfromtxt(os.path.join(self.main_window.dir_path, 'parameters', 'KB.txt'), delimiter='\t')
+                kb_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'KB.txt'), delimiter='\t')
                 values = [str(kb_param[i]) for i in range(7)]
                 self.main_window.log.setPlainText("KB.txt loaded successfully.")
             except:
@@ -1248,6 +1248,62 @@ class ParametersTable(QWidget):
                     value_input = param_widget.layout().itemAt(1).widget()
                     texts[component_idx] = value_input.text()
         return texts
+
+    # Column (layout index) of the free-text expression field per model type.
+    _EXPRESSION_COLUMNS = {'Expression': 1, 'Distr': 5, 'Corr': 2}
+
+    def get_expression_rows(self):
+        """
+        Table rows holding free-text expressions, per model kind.
+
+        Returns:
+            dict: {'Expression': [row, ...], 'Distr': [...], 'Corr': [...]} in
+                  table order — the same order read_model() collects the
+                  Expr/Distri/Cor lists in.
+        """
+        rows = {'Expression': [], 'Distr': [], 'Corr': []}
+        for row_idx in range(1, len(self.row_widgets)):
+            row_widget = self.row_widgets[row_idx]
+            start_widget = row_widget.layout().itemAt(0).widget()
+            model_btn = start_widget.layout().itemAt(1).widget()
+            model_name = model_btn.text()
+            if model_name in rows:
+                rows[model_name].append(row_idx)
+        return rows
+
+    def expression_value_input(self, row):
+        """The QLineEdit holding the free-text expression of an
+        Expression/Distr/Corr row (None for other rows)."""
+        if row < 0 or row >= len(self.row_widgets):
+            return None
+        row_widget = self.row_widgets[row]
+        start_widget = row_widget.layout().itemAt(0).widget()
+        model_btn = start_widget.layout().itemAt(1).widget()
+        col = self._EXPRESSION_COLUMNS.get(model_btn.text())
+        if col is None or col >= row_widget.layout().count():
+            return None
+        param_widget = row_widget.layout().itemAt(col).widget()
+        return param_widget.layout().itemAt(1).widget()
+
+    def mark_expression_error(self, row):
+        """Turn an invalid expression field red. The highlight is removed the
+        moment the user clicks into (or focuses) the field — see eventFilter."""
+        value_input = self.expression_value_input(row)
+        if value_input is None:
+            return
+        value_input.setStyleSheet("background-color: red; color: white;")
+        value_input.setProperty('expression_error', True)
+        value_input.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        # Clear the red invalid-expression highlight as soon as the user clicks
+        # into or focuses the offending field.
+        if isinstance(obj, QLineEdit) and obj.property('expression_error'):
+            if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.FocusIn):
+                obj.setStyleSheet("")
+                obj.setProperty('expression_error', False)
+                obj.removeEventFilter(self)
+        return super().eventFilter(obj, event)
 
     def get_parameter_names(self):
         """
