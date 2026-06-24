@@ -58,6 +58,8 @@ syncmoss = [
     "icons/*.ico",
     "icons/*.svg",
     "parameters/*.txt",
+    "parameters/*.dat",
+    "parameters/*.png",
     "*.json",
     "*.dat",
 ]
