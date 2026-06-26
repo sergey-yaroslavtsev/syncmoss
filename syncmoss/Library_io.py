@@ -48,6 +48,15 @@ MODEL_PARAMETER_NAMES = {
 	'Average_H': ['T', 'δ, mm/s', 'ε, mm/s', 'Hin, T', 'L, mm/s', 'G, mm/s', 'Hex, T', 'K', 'J', 'θ, °', 'N'],
 	'Distr': ['par', 'L', 'R', 'Num', 'Probability density function'],
 	'Corr': ['par', 'Dependency function'],
+	# Polarized ("thick") variants (asymmetry A -> orientation angles; +alpha_k for Hamilton).
+	'Doublet_(thick)': ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θh, °', 'φh, °', 'G2/G1'],
+	'Sextet_(thick)': ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'θh, °', 'φh, °', 'a+', 'a-', 'GH, T', 'I1/I3'],
+	'MDGD_(thick)': ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'GH, T', 'Dδε', 'DδH', 'DεH', 'θh, °', 'φh, °', 'a+', 'a-', 'I1/I3'],
+	'Relax_MS_(thick)': ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'θh, °', 'φh, °', 'R', 'alfa', 'S'],
+	'Relax_2S_(thick)': ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θh, °', 'φh, °', 'Ω12', 'P1/P2'],
+	'Hamilton_mc_(thick)': ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °'],
+	'ASM_(thick)': ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θh, °', 'φh, °', 'Num', 'I13'],
+	'Layer': [],
 }
 
 

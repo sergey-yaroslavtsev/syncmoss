@@ -60,6 +60,23 @@ def mod_len_def(mod_name):
         return 14
     elif mod_name == 'Nbaseline':
         return number_of_baseline_parameters
+    # Polarized ("thick") variants (A replaced by theta_h, phi_h; +alpha_k for Hamilton).
+    elif mod_name == 'Doublet_(thick)':
+        return 8
+    elif mod_name == 'Sextet_(thick)':
+        return 12
+    elif mod_name == 'MDGD_(thick)':
+        return 15
+    elif mod_name == 'Relax_MS_(thick)':
+        return 10
+    elif mod_name == 'Relax_2S_(thick)':
+        return 12
+    elif mod_name == 'Hamilton_mc_(thick)':
+        return 12
+    elif mod_name == 'ASM_(thick)':
+        return 13
+    elif mod_name == 'Layer':
+        return 0
     else:
         return 0
 
@@ -128,6 +145,7 @@ def create_subspectra(app, model, Distri, Cor, p):
     passthrough_non_spectral = {
         'Expression': 1,
         'Variables': numco,
+        'Layer': 0,  # layer boundary marker: no parameters, no own subspectrum
     }
     
     V = 0

@@ -215,8 +215,10 @@ def open_library_model_dialog(main_window, parent_widget, insert_row, model_opti
     submodel_names = []
     if model_options:
         try:
-            asm_index = model_options.index('ASM')
-            submodel_names = list(model_options[:asm_index + 1])
+            # All fittable model types precede the 'Be' preset in MODEL_OPTIONS
+            # (this includes the polarized "(thick)" variants and ASM_(thick)).
+            be_index = model_options.index('Be')
+            submodel_names = list(model_options[:be_index])
         except ValueError:
             submodel_names = list(model_options)
     else:

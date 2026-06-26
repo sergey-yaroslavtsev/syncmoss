@@ -28,11 +28,21 @@ _CBL = f"{_ICONS_DIR}/CheckBox_L.png"
 _CBL2 = f"{_ICONS_DIR}/CheckBox_L2.png"
 
 MODEL_OPTIONS = [
+    # thin (scalar) models
     'Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S',
-    'Hamilton_mc', 'Hamilton_pc', 'ASM', 'Be', 'KB_nano', 'Distr', 'Corr',
+    'Hamilton_mc', 'Hamilton_pc', 'ASM',
+    # polarized "(thick)" models (SMS only)
+    'Doublet_(thick)', 'Sextet_(thick)', 'MDGD_(thick)', 'Relax_MS_(thick)',
+    'Relax_2S_(thick)', 'Hamilton_mc_(thick)', 'ASM_(thick)',
+    # presets / structural / utility
+    'Be', 'KB_nano', 'Layer', 'Distr', 'Corr',
     'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline',
     'Copy', 'Paste'
 ]
+
+# Insert a separator line in the model dropdown BEFORE each of these entries,
+# to visually split: thin | thick | presets/utility.
+_MENU_SEPARATOR_BEFORE = {'Doublet_(thick)', 'Be'}
 
 class ClickableLabel(QLabel):
     def __init__(self, text, row, col):
@@ -259,8 +269,11 @@ class ParametersTable(QWidget):
             'Expression': '#5599cc', 'Variables': '#5599cc',
             'Distr': '#774488', 'Corr': '#774488',
             'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
+            'Layer': '#2a8a8a',
         }
         for option in model_options:
+            if option in _MENU_SEPARATOR_BEFORE:
+                model_menu.addSeparator()
             if option in _menu_colors:
                 wa = QWidgetAction(self)
                 lbl = QPushButton(option)
@@ -359,15 +372,26 @@ class ParametersTable(QWidget):
                 if opt == 'Paste':
                     self.paste_model_from_memory(r)
                     return
-                # Validate Corr can only be selected if previous model is Distr
-                if opt == 'Corr' and r > 0:
-                    prev_row_widget = self.row_widgets[r-1]
-                    prev_start = prev_row_widget.layout().itemAt(0).widget()
-                    prev_model_btn = prev_start.layout().itemAt(1).widget()
-                    prev_model = prev_model_btn.text()
-                    if prev_model != 'Distr' and prev_model != 'Corr':
-                        self.main_window.log.setPlainText("Error: 'Corr' can only be selected if previous model is 'Distr' or 'Corr'")
-                        self.main_window.log.setStyleSheet("color: red;")
+                # Distr/Corr attach to the PRECEDING component, so they cannot
+                # follow the baseline, a Layer marker, an Expression, or an empty
+                # row. Corr is stricter: it may only follow a Distr/Corr. If the
+                # placement is invalid, do nothing (the row stays as it was).
+                if opt in ('Distr', 'Corr'):
+                    prev_model = ''
+                    if r > 0:
+                        prev_start = self.row_widgets[r - 1].layout().itemAt(0).widget()
+                        prev_model = prev_start.layout().itemAt(1).widget().text()
+                    if opt == 'Corr':
+                        allowed = prev_model in ('Distr', 'Corr')
+                    else:  # Distr
+                        allowed = prev_model not in ('baseline', 'Layer', 'Expression', 'None', '')
+                    if not allowed:
+                        self.main_window.log.setPlainText(
+                            f"'{opt}' cannot be placed after '{prev_model or 'nothing'}' "
+                            f"(it must follow a "
+                            + ("'Distr'/'Corr'" if opt == 'Corr' else "fittable component") + ")."
+                        )
+                        self.main_window.log.setStyleSheet("color: orange;")
                         return
                 self.select_model(r, opt)
                 return
@@ -676,6 +700,18 @@ class ParametersTable(QWidget):
             if model in ['Distr', 'Corr', 'Expression']:
                 last_col = self.row_params[row] - 1  # 0-based last meaningful column
                 self._apply_expression_expansion(row, last_col)
+            elif model == 'Layer':
+                # Layer has no parameters; show it as one long, locked box
+                # (red lock), purely cosmetic, like the expanded field of Distr.
+                param_widget = row_widget.layout().itemAt(1).widget()
+                name_label = param_widget.layout().itemAt(0).layout().itemAt(0).widget()
+                name_label.setText('Layer')
+                name_label.original_text = 'Layer'
+                value_input = param_widget.layout().itemAt(1).widget()
+                value_input.setText('')
+                value_input.setValidator(None)
+                value_input.setReadOnly(True)
+                self._apply_expression_expansion(row, 0)
 
             if row < len(self.row_fix_locked) and self.row_fix_locked[row]:
                 self._set_row_fix_states(row, [True] * numco)
@@ -852,6 +888,53 @@ class ParametersTable(QWidget):
             lowers = ['0', '', '', '', '', '', '0.098', '0', '-1', '0', '7', '0']
             uppers = ['', '', '', '', '', '', '', '', '1', '1', '', '']
             fixes = [False, False, False, False, False, False, True, False, False, True, True, False]
+        # --- Polarized ("thick") variants: asymmetry A is replaced by the
+        # orientation angles (theta_h, phi_h) of the component axis in the lab
+        # frame (theta_h from the beam, phi_h from the polarization h); Hamilton
+        # gains the beam-rotation angle alpha_k. (A Singlet is isotropic, so it
+        # has no distinct thick form.) ---
+        elif model == 'Doublet_(thick)':
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θh, °', 'φh, °', 'G2/G1']
+            values = ['1.0', '0.0', '1.0', '0.098', '0.1', '0.0', '0.0', '1.0']
+            lowers = ['0', '', '', '0.098', '0', '-180', '-360', '0']
+            uppers = ['', '', '', '', '', '180', '360', '']
+            fixes = [False, False, False, True, False, False, False, True]
+        elif model == 'Sextet_(thick)':
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'θh, °', 'φh, °', 'a+', 'a-', 'GH, T', 'I1/I3']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '3.0']
+            lowers = ['0', '', '', '', '0.098', '0', '-180', '-360', '', '', '0', '0']
+            uppers = ['', '', '', '', '', '', '180', '360', '', '', '', '']
+            fixes = [False, False, False, False, True, False, False, False, True, True, True, True]
+        elif model == 'MDGD_(thick)':
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'GH, T', 'Dδε', 'DδH', 'DεH', 'θh, °', 'φh, °', 'a+', 'a-', 'I1/I3']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '3.0']
+            lowers = ['0', '', '', '', '0.098', '0', '0', '-1', '-1', '-1', '-180', '-360', '', '', '0']
+            uppers = ['', '', '', '', '', '', '', '1', '1', '1', '180', '360', '', '', '']
+            fixes = [False, False, False, False, True, False, True, True, True, True, False, False, True, True, True]
+        elif model == 'Relax_MS_(thick)':
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'θh, °', 'φh, °', 'R', 'alfa', 'S']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.0', '0.0', '0.5', '1.0', '101']
+            lowers = ['0', '', '', '', '0.098', '-180', '-360', '0', '0', '0.5']
+            uppers = ['', '', '', '', '', '180', '360', '', '100', '']
+            fixes = [False, False, False, False, False, False, False, False, False, True]
+        elif model == 'Relax_2S_(thick)':
+            names = ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θh, °', 'φh, °', 'Ω12', 'P1/P2']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.0', '0.0', '-33.0', '0.1', '0.0', '0.0', '0.3', '1']
+            lowers = ['', '', '', '', '', '', '', '0.098', '-180', '-360', '0', '0']
+            uppers = ['', '', '', '', '', '', '', '', '180', '360', '', '']
+            fixes = [False, False, False, False, False, False, False, False, False, False, False, True]
+        elif model == 'Hamilton_mc_(thick)':
+            names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0']
+            lowers = ['0', '', '', '', '0.098', '0', '-1', '-180', '-360', '-180', '-360', '-360']
+            uppers = ['', '', '', '', '', '', '1', '180', '360', '180', '360', '360']
+            fixes = [False, False, False, False, True, False, False, False, False, False, False, False]
+        elif model == 'ASM_(thick)':
+            names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θh, °', 'φh, °', 'Num', 'I13']
+            values = ['1.0', '0.0', '0.0', '0.0', '30.0', '5.0', '0.098', '0.1', '0.1', '0.0', '0.0', '25', '3.0']
+            lowers = ['0', '', '', '', '', '', '0.098', '0', '-1', '-180', '-360', '7', '0']
+            uppers = ['', '', '', '', '', '', '', '', '1', '180', '360', '', '']
+            fixes = [False, False, False, False, False, False, True, False, False, False, False, True, False]
         elif model == 'Be':
             # Based on Doublet, load from Be.txt or defaults
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'A', 'G2/G1']
@@ -942,6 +1025,10 @@ class ParametersTable(QWidget):
             lowers = ['1', '']
             uppers = ['', '']
             fixes = [True, True]
+        elif model == 'Layer':
+            # Layer boundary marker: no parameters.
+            self.row_params[row] = 0
+            return
         else:
             return  # No auto-fill for others
 
@@ -964,7 +1051,7 @@ class ParametersTable(QWidget):
                 fix_cb.setChecked(fix)
 
         # Special fixed checkboxes for certain models
-        if model == 'Relax_MS':
+        if model == 'Relax_MS' or model == 'Relax_MS_(thick)':
             i = len(names) - 1  # last 'S'
             if i < numco:
                 param_widget = self.row_widgets[row].layout().itemAt(i+1).widget()
@@ -972,7 +1059,7 @@ class ParametersTable(QWidget):
                 fix_cb.setChecked(True)
                 fix_cb.setEnabled(False)
                 fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
-        elif model == 'ASM':
+        elif model == 'ASM' or model == 'ASM_(thick)':
             i = len(names) - 2  # one before last 'Num'
             if i < numco:
                 param_widget = self.row_widgets[row].layout().itemAt(i+1).widget()

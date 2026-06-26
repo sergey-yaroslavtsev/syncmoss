@@ -385,7 +385,16 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
     return(Voi)
 
 @njit(cache=True)
-def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
+def _ham_mono_core(Q, Hhf, etto, phi, tet):
+    """Shared SMS-Hamiltonian core: everything EXCEPT the polarization projection.
+
+    Builds and diagonalises the combined quadrupole + magnetic Hamiltonian and
+    returns, per transition (8 of them), the polarization-INDEPENDENT spherical
+    transition amplitudes (g0, g1, g2 for q = +1, 0, -1, each already carrying the
+    1/4*sqrt(...) prefactor) and the line positions S (mm/s). ``Ham_mono`` (thin,
+    one polarization) and ``Ham_mono_thick`` (2x2 matrix) both project these onto
+    their polarization geometry; this avoids duplicating the diagonalisation.
+    """
     Q = Q / c * E0_J
     phi = phi / 180 * np.pi
     tet = tet / 180 * np.pi
@@ -419,35 +428,47 @@ def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
     Hex = np.real(Hex)
     Hgr = np.real(Hgr)
 
-    phir = phir / 180 * np.pi
-    tetr = tetr / 180 * np.pi
-    aM = np.array([[0.0 + 0j] * 8] * 3)
-
-    F2 = np.sqrt(2) * np.sin(tetr) * (-1j) * np.exp(1j * (phir))
-    F4 = np.sqrt(2) * np.cos(tetr) * (1j)
-    F6 = np.sqrt(2) * np.sin(tetr) * (1j) * np.exp(-1j * (phir))
-
+    g0 = np.array([0.0 + 0j] * 8)
+    g1 = np.array([0.0 + 0j] * 8)
+    g2 = np.array([0.0 + 0j] * 8)
     for i in range(0, 8):
-        aM[0][i] = (np.sqrt(1 / 3) * Vex[1][i - 4 * (i // 4)] * np.conjugate(Vgr[1][i // 4]) + Vex[0][
+        g0[i] = (np.sqrt(1 / 3) * Vex[1][i - 4 * (i // 4)] * np.conjugate(Vgr[1][i // 4]) + Vex[0][
             i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4])) \
-                    * (1 / 4) * np.sqrt(3 / np.pi) * F2
+                    * (1 / 4) * np.sqrt(3 / np.pi)
 
-        aM[1][i] = (np.sqrt(2 / 3) * Vex[1][i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4]) + np.sqrt(2 / 3) *
+        g1[i] = (np.sqrt(2 / 3) * Vex[1][i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4]) + np.sqrt(2 / 3) *
                     Vex[2][i - 4 * (i // 4)] * np.conjugate(Vgr[1][i // 4])) \
-                    * (1/4) * np.sqrt(3*2/np.pi) * F4
+                    * (1/4) * np.sqrt(3*2/np.pi)
 
-        aM[2][i] = (np.sqrt(1 / 3) * Vex[2][i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4]) + Vex[3][
+        g2[i] = (np.sqrt(1 / 3) * Vex[2][i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4]) + Vex[3][
             i - 4 * (i // 4)] * np.conjugate(Vgr[1][i // 4])) \
-                    * (1 / 4) * np.sqrt(3 / np.pi) * F6
+                    * (1 / 4) * np.sqrt(3 / np.pi)
 
     S = np.array([float(0)] * 8)
     for i in range(0, 8):
         S[i] = Hex[i - 4 * (i // 4)] - Hgr[i // 4]
     S = S / E0_J * c
 
-    E = aM[0] + aM[1] + aM[2]
-    I = np.real(E * np.conjugate(E))
-    I = I * np.pi
+    return (g0, g1, g2, S)
+
+
+@njit(cache=True)
+def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
+    """SMS single-crystal line intensities/positions for one linear polarization.
+
+    Thin-sample projection of the shared core onto the radiation magnetic field
+    at (tetr, phir): the per-transition intensity I[k] = pi*|<e|I.h|g>|^2.
+    """
+    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+
+    phir = phir / 180 * np.pi
+    tetr = tetr / 180 * np.pi
+    F2 = np.sqrt(2) * np.sin(tetr) * (-1j) * np.exp(1j * (phir))
+    F4 = np.sqrt(2) * np.cos(tetr) * (1j)
+    F6 = np.sqrt(2) * np.sin(tetr) * (1j) * np.exp(-1j * (phir))
+
+    E = g0 * F2 + g1 * F4 + g2 * F6
+    I = np.real(E * np.conjugate(E)) * np.pi
 
     return (I, S)
 
@@ -768,8 +789,15 @@ def Angles_min(tet, N, K, J, Hin, Hex, X, L, G, eps, Sig):
     return (spc / N * np.pi / 2)
 
 @njit(cache=True)
-def relax_MS(S, x, I, Sig, eps, Hv, W, Ah, R, alfa):
+def _relax_MS_groups(S, x, Sig, eps, Hv, W, R, alfa):
+    """Shared many-state relaxation core: the three Delta m line groups.
 
+    Returns (tmp1, tmp2, tmp3) — the relaxation-broadened spectra of the outer
+    (Delta m = +/-1), middle (Delta m = 0) and inner (Delta m = +/-1) groups,
+    BEFORE the intensity weighting. ``relax_MS`` (thin, scalar) weights them by
+    the asymmetry Ah; ``relax_MS_thick`` weights them at the isotropic asymmetry
+    and keeps them separate for the per-group 2x2 polarization matrices.
+    """
     numb = np.linspace(0, 2 * S, int(2 * S + 1))#, dtype=int)
     numb2 = np.linspace(1, 2 * S + 1, int(2 * S + 1))#, dtype=int)
 
@@ -844,15 +872,22 @@ def relax_MS(S, x, I, Sig, eps, Hv, W, Ah, R, alfa):
     Weigth = np.exp(alfa*(-1) * np.cos(np.pi / 2 * ((numb2 - S - 1) / S) ** 2) ** 2)
     Weigth = Weigth / np.sum(Weigth) /2/np.pi
 
-    I1 = I * 3 * (1 - Ah) / (8 - 4 * Ah)
-    I2 = I * 2 * Ah / (8 - 4 * Ah)
-    I3 = I * 1 * (1 - Ah) / (8 - 4 * Ah)
-
     tmp1 = (Weigth * V1).sum(axis=1)
     tmp2 = (Weigth * V2).sum(axis=1)
     tmp3 = (Weigth * V3).sum(axis=1)
 
-    return(2 * tmp1 * I1 + 2 * tmp2 * I2 + 2 * tmp3 * I3)
+    return (tmp1, tmp2, tmp3)
+
+
+@njit(cache=True)
+def relax_MS(S, x, I, Sig, eps, Hv, W, Ah, R, alfa):
+    """Many-state relaxation sextet (thin, scalar): weight the three Delta m
+    groups by the 3:2:1 asymmetry Ah and sum into one absorber."""
+    tmp1, tmp2, tmp3 = _relax_MS_groups(S, x, Sig, eps, Hv, W, R, alfa)
+    I1 = I * 3 * (1 - Ah) / (8 - 4 * Ah)
+    I2 = I * 2 * Ah / (8 - 4 * Ah)
+    I3 = I * 1 * (1 - Ah) / (8 - 4 * Ah)
+    return (2 * tmp1 * I1 + 2 * tmp2 * I2 + 2 * tmp3 * I3)
 
 
 # @njit # (1) https://doi.org/10.1016/j.cam.2008.04.040
@@ -1005,6 +1040,213 @@ def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
     return Line
 
 
+# ===========================================================================
+# Polarized ("thick") transmission: 2x2 cross-section matrix machinery.
+#
+# For a polarized (synchrotron) source the scalar transmission integral breaks
+# down once the absorber cannot attenuate every polarization equally: a resolved
+# circular/linear line would absorb more than 50% of a linearly polarized beam,
+# which is unphysical. The correct object is a 2x2 cross-section matrix
+# sigma(E) acting in the polarization plane; the transmission for the incident
+# polarization e1 = h (the radiation magnetic field) is [expm(-sigma(E))]_11.
+#
+# Each "(thick)" component adds its own 2x2 matrix to a shared accumulator and
+# the matrices are summed BEFORE the single matrix exponential (homogeneous
+# sample) - that is what lets the polarization state evolve coherently through
+# the mixture. Scalar (non-thick) components are isotropic in the polarization
+# plane (proportional to the identity) and keep multiplying the running scalar
+# transmission exactly as before; the two factor cleanly because the identity
+# commutes with everything.
+#
+# Normalisation: every matrix below satisfies the powder average <Mhat> = I, so
+# a thick component reduces EXACTLY to its scalar counterpart when its
+# orientation is averaged over the sphere, and to the correct polarized line
+# intensities in the thin limit. Geometry (lab frame): beam k = z, radiation
+# magnetic field h = e1 = x, second polarization e2 = y. (theta_h, phi_h) is the
+# orientation of the component symmetry axis (V_zz for a doublet, B_hf for a
+# sextet) in that frame - theta_h from the beam k, phi_h from h - so the angle
+# beta between h and the axis obeys cos(beta) = sin(theta_h) cos(phi_h).
+# ===========================================================================
+
+_I2 = np.eye(2, dtype=complex)
+_J2 = np.array([[0.0, 1.0], [-1.0, 0.0]], dtype=complex)  # 1j*_J2 is Hermitian
+
+
+def _axis_xyz(theta_deg, phi_deg):
+    """Unit vector of a symmetry axis at (theta, phi) [deg] in the lab frame."""
+    th = theta_deg / 180.0 * np.pi
+    ph = phi_deg / 180.0 * np.pi
+    s = np.sin(th)
+    return s * np.cos(ph), s * np.sin(ph), np.cos(th)
+
+
+def _mm_perp(mx, my):
+    """2x2 projector m_perp m_perp^T onto the polarization plane (e1=h, e2)."""
+    return np.array([[mx * mx, mx * my], [mx * my, my * my]], dtype=complex)
+
+
+def _mhat_dm0(mx, my):
+    """Normalised matrix for a Delta m = 0 (pi) line; powder average = I."""
+    return 3.0 * _mm_perp(mx, my)
+
+
+def _mhat_dm1(mx, my, mz, sign):
+    """Normalised matrix for a Delta m = +/-1 (sigma) line; powder average = I.
+
+    ``sign`` = +1 for sigma+ (Delta m = +1), -1 for sigma- (Delta m = -1). The
+    +/- i*mz term is the magneto-optical (Faraday) part that distinguishes the
+    two circular eigenpolarizations; it vanishes for the axis in the
+    polarization plane (mz = 0) and is what makes a single sigma line saturate
+    at 50% transmission for thick absorbers.
+    """
+    return 1.5 * ((_I2 - _mm_perp(mx, my)) + sign * 1j * mz * _J2)
+
+
+def _mhat_dm1_sym(mx, my):
+    """Faraday-averaged Delta m = +/-1 matrix (sigma+ and sigma- blended).
+
+    Used where a model lumps the +/-1 lines together (the relaxation groups):
+    the +/- i*mz terms cancel, leaving the symmetric (linear-eigenpolarization)
+    part. Powder average = I; still saturates at 50% for an axis lying in the
+    polarization plane.
+    """
+    return 1.5 * (_I2 - _mm_perp(mx, my))
+
+
+def _expm_neg(Sig):
+    """Matrix exponential expm(-Sig) for a stack of 2x2 matrices.
+
+    ``Sig`` has shape (N, 2, 2) (complex, Hermitian). Uses the closed-form 2x2
+    matrix exponential vectorised over the energy axis N; returns shape
+    (N, 2, 2). Equals the identity wherever Sig is zero.
+    """
+    M = -Sig
+    a = M[:, 0, 0]
+    b = M[:, 0, 1]
+    cc = M[:, 1, 0]
+    dd = M[:, 1, 1]
+    s = 0.5 * (a + dd)
+    det = a * dd - b * cc
+    disc = np.sqrt(s * s - det + 0j)
+    tiny = np.abs(disc) < 1e-12
+    disc_safe = np.where(tiny, 1.0 + 0j, disc)
+    sinhc = np.where(tiny, 1.0 + 0j, np.sinh(disc_safe) / disc_safe)
+    es = np.exp(s)
+    ch = np.cosh(disc)
+    out = np.empty_like(M)
+    out[:, 0, 0] = es * (ch + sinhc * (a - s))
+    out[:, 0, 1] = es * (sinhc * b)
+    out[:, 1, 0] = es * (sinhc * cc)
+    out[:, 1, 1] = es * (ch + sinhc * (dd - s))
+    return out
+
+
+def _expm_neg11(Sig):
+    """Real part of [expm(-Sig)]_00 for a stack of 2x2 matrices (shape (N,)).
+
+    Equals 1 wherever Sig is zero, so a spectrum with no thick component is
+    multiplied by 1 (a no-op).
+    """
+    return np.real(_expm_neg(Sig)[:, 0, 0])
+
+
+@njit(cache=True)
+def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
+    """Per-transition 2x2 cross-section matrices for the SMS Hamiltonian.
+
+    Mirrors ``Ham_mono`` (single-crystal, SMS) but, instead of a scalar
+    intensity per transition, returns the 8 polarization matrices P[k] in the
+    (e1=h, e2) basis. ``(phir, tetr)`` give the radiation magnetic field h in
+    the EFG (PAS) frame and ``alfak`` is the rotation of the beam k around h
+    that fixes the second polarization e2 = k x h. P[k][0,0] equals exactly the
+    scalar ``Ham_mono`` intensity I[k] for the same (phir, tetr), so the thin
+    limit reduces to the scalar SMS model.
+    """
+    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+
+    # e1 = h at (tetr, phir); e2 = k x h with k rotated by alfak around h.
+    tetr1 = tetr / 180 * np.pi
+    phir1 = phir / 180 * np.pi
+    ak = alfak / 180 * np.pi
+    that = np.array([np.cos(tetr1) * np.cos(phir1), np.cos(tetr1) * np.sin(phir1), -np.sin(tetr1)])
+    phat = np.array([-np.sin(phir1), np.cos(phir1), 0.0])
+    e2 = np.sin(ak) * that - np.cos(ak) * phat
+    tet2 = np.arccos(e2[2])
+    phi2 = np.arctan2(e2[1], e2[0])
+
+    F2a = np.sqrt(2) * np.sin(tetr1) * (-1j) * np.exp(1j * phir1)
+    F4a = np.sqrt(2) * np.cos(tetr1) * (1j)
+    F6a = np.sqrt(2) * np.sin(tetr1) * (1j) * np.exp(-1j * phir1)
+    F2b = np.sqrt(2) * np.sin(tet2) * (-1j) * np.exp(1j * phi2)
+    F4b = np.sqrt(2) * np.cos(tet2) * (1j)
+    F6b = np.sqrt(2) * np.sin(tet2) * (1j) * np.exp(-1j * phi2)
+
+    A1 = np.array([0.0 + 0j] * 8)
+    A2 = np.array([0.0 + 0j] * 8)
+    for i in range(0, 8):
+        A1[i] = g0[i] * F2a + g1[i] * F4a + g2[i] * F6a
+        A2[i] = g0[i] * F2b + g1[i] * F4b + g2[i] * F6b
+
+    P = np.zeros((8, 2, 2), dtype=np.complex128)
+    for i in range(0, 8):
+        P[i, 0, 0] = np.pi * (A1[i] * np.conjugate(A1[i]))
+        P[i, 0, 1] = np.pi * (A1[i] * np.conjugate(A2[i]))
+        P[i, 1, 0] = np.pi * (A2[i] * np.conjugate(A1[i]))
+        P[i, 1, 1] = np.pi * (A2[i] * np.conjugate(A2[i]))
+    return (P, S)
+
+
+@njit(cache=True)
+def relax_MS_thick(S, x, I, Sig, eps, Hv, W, R, alfa):
+    """Many-state relaxation sextet (polarized): the three Delta m groups,
+    each scaled by the 3:2:1 isotropic (Ah = 1/2) weights and the thickness I and
+    returned SEPARATELY so ``TImod`` can multiply each by its own 2x2 matrix.
+    Summing the three returned arrays reproduces ``relax_MS`` at Ah = 1/2. The
+    relaxation/diagonalisation lives in the shared core ``_relax_MS_groups``.
+    """
+    tmp1, tmp2, tmp3 = _relax_MS_groups(S, x, Sig, eps, Hv, W, R, alfa)
+    Ah = 0.5
+    I1 = I * 3 * (1 - Ah) / (8 - 4 * Ah)
+    I2 = I * 2 * Ah / (8 - 4 * Ah)
+    I3 = I * 1 * (1 - Ah) / (8 - 4 * Ah)
+    return (2 * tmp1 * I1, 2 * tmp2 * I2, 2 * tmp3 * I3)
+
+
+@njit(cache=True)
+def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m, Num):
+    """Per-modulation-point line positions for the anharmonic spin modulation.
+
+    Same modulation physics as ``ASM`` but (a) returns ``co`` = cos^2(theta) of
+    the local moment (used to reconstruct the local moment direction) and (b)
+    samples the six line positions at the SAME Num points (no per-line
+    subsampling), so ``TImod`` can build a 2x2 cross-section matrix per point
+    from the local moment direction and average them over the modulation.
+    """
+    K = K_cei(m)
+    Num = int(Num / 6) * 6 + 1
+    X = np.linspace(0, K, Num)
+    if m >= 0:
+        co = SN(X, m) ** 2
+    else:
+        co = 1 - SN(X, m) ** 2
+
+    eps = eps_m + eps_lat * (3 * co - 1) / 2
+    H = His + Han * (3 * co - 1) / 2
+    a1 = eps_lat ** 2 * 3 / c * E0_J / (gex * mun * H + (H == 0)) * (co + 1 / 8 * (1 - co)) * (1 - co)
+    a2 = eps_lat ** 2 * 3 / c * E0_J / (gex * mun * H + (H == 0)) * (co - 1 / 8 * (1 - co)) * (1 - co)
+
+    H = H / E0_J * c
+
+    v1 = sigm + eps + a1 + mun * (3 * gex - ggr) / 2 * H
+    v6 = sigm + eps - a1 - mun * (3 * gex - ggr) / 2 * H
+    v2 = sigm - eps - a2 + mun * (gex - ggr) / 2 * H
+    v5 = sigm - eps + a2 - mun * (gex - ggr) / 2 * H
+    v3 = sigm - eps + a2 - mun * (gex + ggr) / 2 * H
+    v4 = sigm - eps - a2 + mun * (gex + ggr) / 2 * H
+
+    return (co, v1, v2, v3, v4, v5, v6)
+
+
 def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters):
         # SCR = np.array(x_exp)
         SCR = x_exp
@@ -1086,7 +1328,13 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
 
             N += (Wid / 2 / np.pi / ((E - SCR * MulCo) ** 2 + (Wid / 2) ** 2)) ** 2 * Wid * np.pi
 
+        Kpref = np.pi * (G / 2 / E0 * c * MulCo)
+        Smat = None       # 2x2 cross-section accumulator for the CURRENT layer (thick components)
+        Smat_old = None   # mirrors CHold for the matrix path (used by the Distr reset)
+        Tprod = None      # running product of completed layer transmission matrices (None = identity)
+
         for i in range (0, len(model)):
+            Smat_t = Smat
             if model[i] == 'Singlet':
                 I = abs(p[V])
                 S = (-1) * p[V + 1]*MulCo + E
@@ -1324,6 +1572,251 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                                   * (I * ASM(T, Sig, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E)))
                 V += 12
 
+            # --- Polarized ("thick") model variants ------------------------
+            # These add a 2x2 cross-section matrix to Smat instead of a scalar
+            # exponent; the single matrix exponential is taken after the loop.
+            # Each reduces to its scalar twin when the orientation is averaged
+            # over the sphere (powder), since every Mhat below averages to I.
+            # (A Singlet is isotropic, so its thick form equals the scalar one
+            # exactly; there is therefore no Singlet_(thick).)
+            if model[i] == 'Doublet_(thick)':
+                I = abs(p[V])
+                WL = abs(p[V + 3]) * MulCo
+                WG1 = abs(p[V + 4]) * MulCo
+                WG2 = WG1 * p[V + 7]
+                S1 = (-1) * (p[V + 1] - p[V + 2]) * MulCo + E   # delta - eps -> line B
+                S2 = (-1) * (p[V + 1] + p[V + 2]) * MulCo + E   # delta + eps -> line A
+                mx, my, mz = _axis_xyz(p[V + 5], p[V + 6])
+                mm = _mm_perp(mx, my)
+                Mh_A = 1.5 * (_I2 - mm)         # line A: Delta m = +/-1 (the 3/4 sin^2 line)
+                Mh_B = 0.5 * _I2 + 1.5 * mm     # line B: mixed Delta m = 0 and +/-1
+                VoiB = Voight(WL, WG1, S1)
+                VoiA = Voight(WL, WG2, S2)
+                add = Kpref * T * (0.5 * I) * (VoiA[:, None, None] * Mh_A[None, :, :]
+                                               + VoiB[:, None, None] * Mh_B[None, :, :])
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 8
+            if model[i] == 'Sextet_(thick)':
+                I = abs(p[V])
+                I13 = p[V + 11]
+                Aeff = 0.5
+                I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
+                I2 = I * 2 * Aeff / (8 - 4 * Aeff)
+                I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
+                HH = p[V + 3] / 3.101
+                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 8] * MulCo + E
+                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 9] * MulCo + E
+                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 9] * MulCo + E
+                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 9] * MulCo + E
+                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 9] * MulCo + E
+                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 8] * MulCo + E
+                WL = abs(p[V + 4]) * MulCo
+                WG = abs(p[V + 5]) * MulCo
+                GaH = abs(p[V + 10]) / 2 / 3.101 * MulCo
+                Ga16 = (WG ** 2 + GaH ** 2) ** (1 / 2)
+                Ga25 = (WG ** 2 + (3.0760 / 5.3123 * GaH) ** 2) ** (1 / 2)
+                Ga34 = (WG ** 2 + (0.8397 / 5.3123 * GaH) ** 2) ** (1 / 2)
+                Voi1 = Voight(WL, Ga16, S1)
+                Voi2 = Voight(WL, Ga25, S2)
+                Voi3 = Voight(WL, Ga34, S3)
+                Voi4 = Voight(WL, Ga34, S4)
+                Voi5 = Voight(WL, Ga25, S5)
+                Voi6 = Voight(WL, Ga16, S6)
+                mx, my, mz = _axis_xyz(p[V + 6], p[V + 7])
+                Msp = _mhat_dm1(mx, my, mz, 1.0)   # sigma+ (Delta m = +1): lines 3, 6
+                Msm = _mhat_dm1(mx, my, mz, -1.0)  # sigma- (Delta m = -1): lines 1, 4
+                Mpi = _mhat_dm0(mx, my)            # pi (Delta m = 0): lines 2, 5
+                add = Kpref * (
+                    I1 * (Voi1[:, None, None] * Msm[None, :, :] + Voi6[:, None, None] * Msp[None, :, :])
+                    + I2 * (Voi2[:, None, None] * Mpi[None, :, :] + Voi5[:, None, None] * Mpi[None, :, :])
+                    + I3 * (Voi3[:, None, None] * Msp[None, :, :] + Voi4[:, None, None] * Msm[None, :, :]))
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 12
+            if model[i] == 'MDGD_(thick)':
+                I = abs(p[V])
+                I13 = p[V + 14]
+                Aeff = 0.5
+                I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
+                I2 = I * 2 * Aeff / (8 - 4 * Aeff)
+                I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
+                HH = p[V + 3] / 3.101
+                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 12] * MulCo + E
+                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 13] * MulCo + E
+                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 13] * MulCo + E
+                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 13] * MulCo + E
+                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 13] * MulCo + E
+                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 12] * MulCo + E
+                WL = abs(p[V + 4]) * MulCo
+                Guni = abs(p[V + 5]) * MulCo
+                Gh = abs(p[V + 6]) * MulCo
+                Gde = p[V + 7]
+                Gdh = p[V + 8]
+                Geh = p[V + 9]
+                Cd = [1, 1, 1, 1, 1, 1]
+                Ce = [1, -1, -1, -1, -1, 1]
+                Ch = [-1 / 6.202, -1 / 10.71, -1 / 39.24, 1 / 39.24, 1 / 10.71, 1 / 6.202]
+                Gfinal = []
+                for j in range(0, 6):
+                    Gfinal.append(np.sqrt(abs(Guni ** 2 + Ch[j] ** 2 * Gh ** 2 + Cd[j] * Ce[j] * Gde * Guni ** 2 * max(0, (1 - (abs(Gdh) + abs(Geh)) ** 2)) + Cd[j] * Ch[j] * 2 * Gdh * Guni * Gh + Ce[j] * Ch[j] * 2 * Geh * Guni * Gh)))
+                Voi1 = Voight(WL, Gfinal[0], S1)
+                Voi2 = Voight(WL, Gfinal[1], S2)
+                Voi3 = Voight(WL, Gfinal[2], S3)
+                Voi4 = Voight(WL, Gfinal[3], S4)
+                Voi5 = Voight(WL, Gfinal[4], S5)
+                Voi6 = Voight(WL, Gfinal[5], S6)
+                mx, my, mz = _axis_xyz(p[V + 10], p[V + 11])
+                Msp = _mhat_dm1(mx, my, mz, 1.0)
+                Msm = _mhat_dm1(mx, my, mz, -1.0)
+                Mpi = _mhat_dm0(mx, my)
+                add = Kpref * (
+                    I1 * (Voi1[:, None, None] * Msm[None, :, :] + Voi6[:, None, None] * Msp[None, :, :])
+                    + I2 * (Voi2[:, None, None] * Mpi[None, :, :] + Voi5[:, None, None] * Mpi[None, :, :])
+                    + I3 * (Voi3[:, None, None] * Msp[None, :, :] + Voi4[:, None, None] * Msm[None, :, :]))
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 15
+            if model[i] == 'Relax_MS_(thick)':
+                I = abs(float(p[V]) * 2)
+                sig0 = float(p[V + 1]) * MulCo
+                eps = float(p[V + 2]) * MulCo
+                Hv = float(p[V + 3]) * MulCo / 2 / 3.1098
+                W = float(p[V + 4]) * MulCo / 2
+                th = p[V + 5]
+                ph = p[V + 6]
+                R = float(p[V + 7])
+                alfa = float(p[V + 8])
+                Sspin = float(p[V + 9])
+                g1, g2, g3 = relax_MS_thick(Sspin, E, I, sig0, eps, Hv, W, R, alfa)
+                mx, my, mz = _axis_xyz(th, ph)
+                Md1 = _mhat_dm1_sym(mx, my)  # outer/inner Delta m = +/-1 (groups blend sigma+/-)
+                Mpi = _mhat_dm0(mx, my)      # middle Delta m = 0
+                add = Kpref * T * (g1[:, None, None] * Md1[None, :, :]
+                                   + g2[:, None, None] * Mpi[None, :, :]
+                                   + g3[:, None, None] * Md1[None, :, :])
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 10
+            if model[i] == 'Relax_2S_(thick)':
+                I = abs(p[V])
+                Aeff = 0.5
+                I1 = I * 3 * (1 - Aeff) / (8 - 4 * Aeff)
+                I2 = I * 2 * Aeff / (8 - 4 * Aeff)
+                I3 = I * 1 * (1 - Aeff) / (8 - 4 * Aeff)
+                Sig1 = p[V + 1] * MulCo
+                Q1 = p[V + 2] / 3 * MulCo
+                H1 = p[V + 3] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
+                Sig2 = p[V + 4] * MulCo
+                Q2 = p[V + 5] / 3 * MulCo
+                H2 = p[V + 6] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
+                WL = p[V + 7] * MulCo
+                We = p[V + 10] * MulCo
+                R = p[V + 11]
+                mx, my, mz = _axis_xyz(p[V + 8], p[V + 9])
+                Msp = _mhat_dm1(mx, my, mz, 1.0)
+                Msm = _mhat_dm1(mx, my, mz, -1.0)
+                Mpi = _mhat_dm0(mx, my)
+                B1 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1 / 2, -3 / 2, E, R)  # sigma-
+                B2 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1 / 2, 3 / 2, E, R)    # sigma+
+                B3 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1 / 2, -1 / 2, E, R)  # pi
+                B4 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1 / 2, 1 / 2, E, R)    # pi
+                B5 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1 / 2, 1 / 2, E, R)   # sigma+
+                B6 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1 / 2, -1 / 2, E, R)   # sigma-
+                add = Kpref * (
+                    I1 * (B1[:, None, None] * Msm[None, :, :] + B2[:, None, None] * Msp[None, :, :])
+                    + I2 * (B3[:, None, None] * Mpi[None, :, :] + B4[:, None, None] * Mpi[None, :, :])
+                    + I3 * (B5[:, None, None] * Msp[None, :, :] + B6[:, None, None] * Msm[None, :, :]))
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 12
+            if model[i] == 'Hamilton_mc_(thick)':
+                I = abs(p[V])
+                delt = p[V + 1] * MulCo
+                Q = p[V + 2]
+                H = p[V + 3]
+                WL = p[V + 4] * MulCo
+                WG = p[V + 5] * MulCo
+                eto = p[V + 6]
+                tet = p[V + 7]
+                phi = p[V + 8]
+                tetr = p[V + 9]
+                phir = p[V + 10]
+                alfak = p[V + 11]
+                Pmat, S = Ham_mono_thick(Q, H, eto, phi, tet, phir, tetr, alfak)
+                S = S * MulCo + delt
+                add = np.zeros((len(E), 2, 2), dtype=complex)
+                for k in range(0, 8):
+                    add += Voight(WL, WG, E - S[k])[:, None, None] * Pmat[k][None, :, :]
+                add = Kpref * I * add
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 12
+            if model[i] == 'ASM_(thick)':
+                # Anharmonic spin modulation, polarized. The moment direction
+                # rotates along the cycloid (a distribution of H orientations
+                # with the radiation h held fixed); each modulation point is a
+                # sextet whose 2x2 matrix is built from the LOCAL moment
+                # direction, and the matrices are averaged over the modulation.
+                # Geometry: (theta_h, phi_h) is the cycloid (anharmonicity) axis
+                # n in the lab frame (beam k = z, h = x); the moment swings in
+                # the plane spanned by n and the in-plane part of h, with polar
+                # angle theta where cos^2(theta) = co. The cycloid samples both
+                # senses of the moment, so the magneto-optical term averages out
+                # and the symmetric Delta m = +/-1 matrix is used.
+                I = abs(p[V])
+                sigm = p[V + 1] * MulCo
+                eps_m = p[V + 2] * MulCo
+                eps_lat = p[V + 3] * MulCo
+                His = p[V + 4] * MulCo
+                Han = p[V + 5] * MulCo
+                WL = abs(p[V + 6]) * MulCo
+                WG = abs(p[V + 7]) * MulCo
+                m_asm = p[V + 8]
+                th = p[V + 9]
+                ph = p[V + 10]
+                Num = int(abs(p[V + 11]))
+                I13 = p[V + 12]
+                co, v1, v2, v3, v4, v5, v6 = ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m_asm, Num)
+                Nn = len(co)
+                Aeff = 0.5
+                I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
+                I2 = I * 2 * Aeff / (8 - 4 * Aeff)
+                I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
+                nx, ny, nz = _axis_xyz(th, ph)
+                ex, ey, ez = 1.0 - nx * nx, -nx * ny, -nx * nz   # h - (h.n) n, with h = x
+                en = (ex * ex + ey * ey + ez * ez) ** 0.5
+                if en < 1e-9:                                    # h parallel to the axis
+                    ex, ey, ez, en = 0.0, 1.0, 0.0, 1.0
+                ex, ey = ex / en, ey / en
+                add = np.zeros((len(E), 2, 2), dtype=complex)
+                for j in range(0, Nn):
+                    cphi = np.sqrt(abs(co[j]))
+                    sphi = np.sqrt(max(0.0, 1.0 - co[j]))
+                    mxj = cphi * nx + sphi * ex
+                    myj = cphi * ny + sphi * ey
+                    Md1 = _mhat_dm1_sym(mxj, myj)
+                    Mpi = _mhat_dm0(mxj, myj)
+                    add += (I1 * (Voight(WL, WG, E - v1[j]) + Voight(WL, WG, E - v6[j]))[:, None, None] * Md1[None, :, :]
+                            + I2 * (Voight(WL, WG, E - v2[j]) + Voight(WL, WG, E - v5[j]))[:, None, None] * Mpi[None, :, :]
+                            + I3 * (Voight(WL, WG, E - v3[j]) + Voight(WL, WG, E - v4[j]))[:, None, None] * Md1[None, :, :]) / Nn
+                add = Kpref * add
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 13
+            if model[i] == 'Layer':
+                # Physical layer boundary (no parameters). Within a layer the
+                # cross-sections add; between layers the 2x2 transmission
+                # matrices multiply, because the polarization state leaving one
+                # layer enters the next and the matrices do not commute. Flush
+                # the current layer's matrix into the running product and start
+                # a fresh (empty) layer.
+                if Smat is not None:
+                    layerT = _expm_neg(Smat)
+                    Tprod = layerT if Tprod is None else np.matmul(layerT, Tprod)
+                CHt = CH
+                Smat_t = None
+
             if model[i] == 'Variables':
                 V += 15
                 CHt = CH
@@ -1334,6 +1827,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
             if model[i] == 'Distr':
                 Num = int(p[V + 3])
                 CH = CHold
+                Smat = Smat_old      # mirror the CH reset for the matrix accumulator
+                Smat_t = Smat
                 X = np.linspace(np.array(p[V+1]), np.array(p[V+2]), Num)
                 # print(p[V+1], p[V+2], eval(str(Distri[Di])))
                 # print(Distri[Di])
@@ -1356,7 +1851,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
 
                 Vnum = int(4*(model[k]=='Singlet') + 7*(model[k]=='Doublet') + 11*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 14 * (model[k] == 'MDGD')\
                            + 9*(model[k]=='Relax_MS') + 15*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 12*(model[k]=='ASM')\
-                           + 11*(model[k]=='Relax_2S')) + 11*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+                           + 11*(model[k]=='Relax_2S')) + 11*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')\
+                           + 8*(model[k]=='Doublet_(thick)') + 12*(model[k]=='Sextet_(thick)') + 15*(model[k]=='MDGD_(thick)')\
+                           + 10*(model[k]=='Relax_MS_(thick)') + 12*(model[k]=='Relax_2S_(thick)') + 12*(model[k]=='Hamilton_mc_(thick)') + 13*(model[k]=='ASM_(thick)')
 
                 model_d = np.array([model[k:i]] * Num).flatten()
                 # print('distr model', model_d, str(Distri[Di]))
@@ -1411,7 +1908,14 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
 
             CHold = CH
             CH = CHt
+            Smat_old = Smat
+            Smat = Smat_t
 
+        if Smat is not None:
+            layerT = _expm_neg(Smat)
+            Tprod = layerT if Tprod is None else np.matmul(layerT, Tprod)
+        if Tprod is not None:
+            CH = CH * np.real(Tprod[:, 0, 0])
         if Met == 0:
             CH = CH * N * 2 / (1 - (EE) ** 2)
         elif Met == 1 or Met == 2 or Met == 3:
@@ -1513,6 +2017,8 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
                 V += int(4 * (model[j] == 'Singlet') + 7 * (model[j] == 'Doublet') + 11 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 14 * (model[j] == 'MDGD')\
                     + 11 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 9 * (model[j] == 'Relax_MS') + 12*(model[j]=='ASM')\
                     + 11 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
+                    + 8 * (model[j] == 'Doublet_(thick)') + 12 * (model[j] == 'Sextet_(thick)') + 15 * (model[j] == 'MDGD_(thick)')\
+                    + 10 * (model[j] == 'Relax_MS_(thick)') + 12 * (model[j] == 'Relax_2S_(thick)') + 12 * (model[j] == 'Hamilton_mc_(thick)') + 13 * (model[j] == 'ASM_(thick)')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + 15 * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)

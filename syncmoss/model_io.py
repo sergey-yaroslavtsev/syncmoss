@@ -28,11 +28,18 @@ def mod_len_def(mod, include_special=True):
         int: Number of parameters
     """
     base_params = int(
-        4 * (mod == 'Singlet') + 7 * (mod == 'Doublet') + 11 * (mod == 'Sextet') + 
-        14 * (mod == 'Sextet(rough)') + 11 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') + 
-        9 * (mod == 'Relax_MS') + 12 * (mod == 'ASM') + 11 * (mod == 'Hamilton_mc') + 
+        4 * (mod == 'Singlet') + 7 * (mod == 'Doublet') + 11 * (mod == 'Sextet') +
+        14 * (mod == 'Sextet(rough)') + 11 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
+        9 * (mod == 'Relax_MS') + 12 * (mod == 'ASM') + 11 * (mod == 'Hamilton_mc') +
         9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 14 * (mod == 'MDGD') +
-        number_of_baseline_parameters * (mod == 'Nbaseline')  # Nbaseline has baseline parameters
+        number_of_baseline_parameters * (mod == 'Nbaseline') +  # Nbaseline has baseline parameters
+        # Polarized ("thick") variants: asymmetry A replaced by orientation
+        # angles (theta_h, phi_h); Hamilton gains the beam-rotation angle alpha_k.
+        8 * (mod == 'Doublet_(thick)') +
+        12 * (mod == 'Sextet_(thick)') + 15 * (mod == 'MDGD_(thick)') +
+        10 * (mod == 'Relax_MS_(thick)') + 12 * (mod == 'Relax_2S_(thick)') +
+        12 * (mod == 'Hamilton_mc_(thick)') + 13 * (mod == 'ASM_(thick)')
+        # 'Layer' has 0 parameters (handled by the default for unknown names).
     )
     
     if include_special:
