@@ -389,12 +389,14 @@ class ShowModelThread(QThread):
     finished = Signal(object, object, object, object, object, object, object, object, object, str)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note
     error = Signal(str)
     
-    def __init__(self, main_window, path_list, pool):
+    def __init__(self, main_window, path_list, pool, velocity_range=15.0):
         super().__init__()
         self.main_window = main_window
         self.path_list = path_list
         self.pool = pool
-    
+        # ± x-axis range (mm/s) for the synthetic grid used in model-only mode.
+        self.velocity_range = velocity_range
+
     def run(self):
         try:
             # Read model from parameter table
@@ -443,13 +445,13 @@ class ShowModelThread(QThread):
                             start_idx = i + 1
                     model_sections.append(model[start_idx:])
 
-                    synthetic_grid = np.linspace(-15.0, 15.0, 4096)
+                    synthetic_grid = np.linspace(-self.velocity_range, self.velocity_range, 4096)
                     A_list = [synthetic_grid.copy() for _ in range(len(model_sections))]
                     A = A_list
                     B = None
                 else:
                     # Single-spectrum synthetic mode
-                    A = np.linspace(-15.0, 15.0, 4096)
+                    A = np.linspace(-self.velocity_range, self.velocity_range, 4096)
                     B = None
             elif num_nbaseline > 0:
                 # Multiple spectra case - handle each spectrum section separately
@@ -1952,8 +1954,20 @@ class PhysicsApp(QMainWindow):
         if self.inprogress == True:
             return
         self.inprogress = True
-        
-        self.path_list = self.parse_process_path()
+
+        # Model-only mode: "Model_<N>" in the path box plots just the model on a
+        # synthetic ±N mm/s grid, with no experimental spectrum.
+        is_model_only, velocity_range, error_message = self.parse_model_only_request()
+        if is_model_only:
+            if error_message:
+                self.log.setPlainText(error_message)
+                self.log.setStyleSheet("color: red;")
+                self.inprogress = False
+                return
+            self.path_list = []
+        else:
+            self.path_list = self.parse_process_path()
+            velocity_range = 15.0
 
         # Initialize
         if not self.initialize_parameters():
@@ -1967,12 +1981,14 @@ class PhysicsApp(QMainWindow):
 
         # Start model calculation in a separate thread
         if not self.path_list:
-            self.log.setPlainText("Calculating model on synthetic grid (-15..15 mm/s, 4096 points)...")
+            self.log.setPlainText(
+                f"Calculating model on synthetic grid (-{velocity_range:g}..{velocity_range:g} mm/s, 4096 points)..."
+            )
         else:
             self.log.setPlainText("Calculating model...")
         self.log.setStyleSheet("color: blue;")
-        
-        self.show_model_thread = ShowModelThread(self, self.path_list, self.pool)
+
+        self.show_model_thread = ShowModelThread(self, self.path_list, self.pool, velocity_range=velocity_range)
         self.show_model_thread.finished.connect(self.on_show_model_finished)
         self.show_model_thread.error.connect(self.on_show_model_error)
         self.show_model_thread.start()
@@ -2180,6 +2196,35 @@ class PhysicsApp(QMainWindow):
         self.raw_to_dat_thread.finished.connect(self.on_raw_to_dat_finished)
         self.raw_to_dat_thread.error.connect(self.on_raw_to_dat_error)
         self.raw_to_dat_thread.start()
+
+    def parse_model_only_request(self):
+        """Inspect the path box for the model-only ``Model_<N>`` syntax.
+
+        Typing e.g. ``Model_6`` (or ``Model_6.5``) into the spectrum path box
+        requests model-only mode: just the model is plotted on a synthetic
+        ±N mm/s grid, with no experimental spectrum loaded or fitted.
+
+        Returns a ``(is_model_only, velocity_range, error_message)`` tuple:
+          - ``is_model_only``: True when the box starts with ``Model_``
+            (case-insensitive), regardless of whether the range is valid.
+          - ``velocity_range``: the ± x-axis range in mm/s (float) when valid,
+            else None.
+          - ``error_message``: a human-readable reason when the syntax is
+            malformed, else None.
+        """
+        text = self.process_path.toPlainText().strip().strip("[]'\" ")
+        match = re.match(r'^model_(.*)$', text, re.IGNORECASE)
+        if not match:
+            return False, None, None
+        raw = match.group(1).strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            return True, None, (f"Invalid model-only range '{raw}'. "
+                                "Use e.g. 'Model_6' or 'Model_6.5'.")
+        if value <= 0:
+            return True, None, f"Model-only range must be positive (got {value:g})."
+        return True, value, None
 
     def parse_process_path(self):
         """Parse the process_path text field to extract file paths"""
@@ -2508,10 +2553,18 @@ class PhysicsApp(QMainWindow):
         if self.inprogress == True:
             return
         self.inprogress = True
-        
+
+        # Model-only mode (Model_<N> in the path box) has no spectrum to show.
+        if self.parse_model_only_request()[0]:
+            self.log.setPlainText("Model-only mode (Model_N): no spectrum to show. "
+                                  "Use 'Show model', or enter a spectrum path.")
+            self.log.setStyleSheet("color: orange;")
+            self.inprogress = False
+            return
+
         # Parse the current content of process_path
         self.path_list = self.parse_process_path()
-        
+
         if not self.path_list:
             self.log.setPlainText("No spectrum selected")
             self.log.setStyleSheet("color: orange;")
@@ -2825,6 +2878,14 @@ class PhysicsApp(QMainWindow):
         if self.inprogress == True:
             return
         self.inprogress = True
+
+        # Model-only mode (Model_<N> in the path box) has no spectrum to fit.
+        if self.parse_model_only_request()[0]:
+            self.log.setPlainText("Model-only mode (Model_N): nothing to fit. "
+                                  "Use 'Show model', or enter a spectrum path to fit.")
+            self.log.setStyleSheet("color: orange;")
+            self.inprogress = False
+            return
 
         self.log.setPlainText("Starting fit...")
         self.log.setStyleSheet("color: cyan;")
