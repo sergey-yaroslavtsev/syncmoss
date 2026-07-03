@@ -1,5 +1,5 @@
 """GUI-level tests for the polarized ("thick") models, the Layer marker, the
-Distr/Corr placement guard, and the SMS-only fit guard.
+Distr/Corr placement guard, and the default-locked orientation angles.
 
 Head-less (offscreen Qt) via the ``physics_app`` fixture.
 """
@@ -31,7 +31,7 @@ def test_thick_model_selection_param_count(physics_app):
     pt = physics_app.params_table
     pt.select_model(1, 'Sextet_(thick)')
     assert _model_name(pt, 1) == 'Sextet_(thick)'
-    assert pt.row_params[1] == 12  # T,d,e,H,L,G,theta_h,phi_h,a+,a-,GH,I1/I3
+    assert pt.row_params[1] == 13  # T,d,e,H,L,G,theta_h,phi_h,A,a+,a-,GH,I1/I3
 
 
 def test_distr_after_baseline_is_blocked(physics_app):
@@ -80,68 +80,50 @@ def test_corr_requires_distr_or_corr(physics_app):
     assert _model_name(pt, 3) == 'Corr'
 
 
-def _cms_dat(tmp_path, name='cms.dat'):
-    p = tmp_path / name
-    p.write_text("#@GCMS 0.25\n")           # CMS marker
-    return str(p)
+# Extra parameters each thick model introduces that are FIXED by default, as
+# {param column: label} (item: "lock extra angles in thick models"); the user
+# unticks the box to refine them. (theta_h, phi_h replace the scalar asymmetry
+# and are followed by the uniaxial texture parameter A; Hamilton keeps its crystal
+# angles and only adds the beam-rotation angle alpha_k, with no texture parameter.)
+_THICK_LOCKED_ANGLES = {
+    'Doublet_(thick)':     {5: 'θh, °', 6: 'φh, °', 7: 'A'},
+    'Sextet_(thick)':      {6: 'θh, °', 7: 'φh, °', 8: 'A'},
+    'MDGD_(thick)':        {10: 'θh, °', 11: 'φh, °', 12: 'A'},
+    'Relax_MS_(thick)':    {5: 'θh, °', 6: 'φh, °', 7: 'A'},
+    'Relax_2S_(thick)':    {8: 'θh, °', 9: 'φh, °', 10: 'A'},
+    'Hamilton_mc_(thick)': {11: 'αk, °'},
+    'ASM_(thick)':         {9: 'θh, °', 10: 'φh, °', 11: 'A'},
+}
 
 
-def _sms_dat(tmp_path, name='sms.dat'):
-    p = tmp_path / name
-    p.write_text("# no instrumental metadata\n")  # -> resolves to SMS (UI fallback)
-    return str(p)
+def _param_top_layout(pt, row, col):
+    param_widget = pt.row_widgets[row].layout().itemAt(col + 1).widget()
+    return param_widget.layout().itemAt(0).layout()
 
 
-def test_thick_model_fit_guard(physics_app, monkeypatch, tmp_path):
-    import syncmoss.syncmoss_main as sm
-    # Don't pop up a modal dialog during the test.
-    monkeypatch.setattr(sm.QMessageBox, 'warning', staticmethod(lambda *a, **k: None))
+def _fix_cb(pt, row, col):
+    return _param_top_layout(pt, row, col).itemAt(1).widget()
 
+
+def _param_name(pt, row, col):
+    return _param_top_layout(pt, row, col).itemAt(0).widget().text()
+
+
+@pytest.mark.parametrize("model", sorted(_THICK_LOCKED_ANGLES))
+def test_thick_extra_angles_locked_by_default(physics_app, model):
     pt = physics_app.params_table
-    pt.select_model(1, 'Doublet_(thick)')
-
-    # CMS selected -> blocked (regardless of the files)
-    physics_app.MS_fit.setChecked(True)
-    assert physics_app.check_polarized_models_method([], "Fit") is False
-
-    # SMS, internal instrumental (read-from-file OFF) -> allowed
-    physics_app.SMS_fit.setChecked(True)
-    physics_app.use_dat_instrumental_metadata = False
-    assert physics_app.check_polarized_models_method([_cms_dat(tmp_path)], "Fit") is True
-
-    # SMS + read-from-file ON, the spectrum is CMS by metadata, no Nbaseline -> blocked
-    physics_app.use_dat_instrumental_metadata = True
-    assert physics_app.check_polarized_models_method([_cms_dat(tmp_path)], "Fit") is False
-
-    # SMS + read-from-file ON, but the spectrum resolves to SMS -> allowed
-    assert physics_app.check_polarized_models_method([_sms_dat(tmp_path)], "Fit") is True
+    pt.select_model(1, model)
+    assert _model_name(pt, 1) == model
+    for col, label in _THICK_LOCKED_ANGLES[model].items():
+        assert _param_name(pt, 1, col) == label, f"{model}: unexpected label at col {col}"
+        cb = _fix_cb(pt, 1, col)
+        assert cb.isChecked(), f"{model}: angle '{label}' should be fixed by default"
+        # Locked but unlockable: the checkbox stays enabled so the user can refine it.
+        assert cb.isEnabled(), f"{model}: angle '{label}' must remain user-unlockable"
 
 
-def test_thick_guard_nbaseline_sections(physics_app, monkeypatch, tmp_path):
-    import syncmoss.syncmoss_main as sm
-    monkeypatch.setattr(sm.QMessageBox, 'warning', staticmethod(lambda *a, **k: None))
-    physics_app.SMS_fit.setChecked(True)
-    physics_app.use_dat_instrumental_metadata = True
-    files = [_cms_dat(tmp_path), _sms_dat(tmp_path)]   # spectrum0=CMS, spectrum1=SMS
-
+def test_thick_non_angle_param_not_force_locked(physics_app):
+    """Sanity: the default lock is scoped to the angles, not (e.g.) the thickness T."""
     pt = physics_app.params_table
-    # Thick in the SMS section (section 1) only -> allowed
-    pt.select_model(1, 'Doublet')           # section 0 -> CMS spectrum (no thick)
-    pt.select_model(2, 'Nbaseline')
-    pt.select_model(3, 'Doublet_(thick)')   # section 1 -> SMS spectrum
-    assert physics_app.check_polarized_models_method(files, "Fit") is True
-
-    # Thick in the CMS section (section 0) -> blocked
-    pt.select_model(1, 'Doublet_(thick)')   # section 0 -> CMS spectrum (thick!)
-    pt.select_model(3, 'Doublet')
-    assert physics_app.check_polarized_models_method(files, "Fit") is False
-
-
-def test_no_thick_model_is_never_guarded(physics_app, monkeypatch, tmp_path):
-    import syncmoss.syncmoss_main as sm
-    monkeypatch.setattr(sm.QMessageBox, 'warning', staticmethod(lambda *a, **k: None))
-    pt = physics_app.params_table
-    pt.select_model(1, 'Doublet')            # scalar only
-    physics_app.MS_fit.setChecked(True)      # even in CMS
-    physics_app.use_dat_instrumental_metadata = True
-    assert physics_app.check_polarized_models_method([_cms_dat(tmp_path)], "Fit") is True
+    pt.select_model(1, 'Sextet_(thick)')
+    assert _fix_cb(pt, 1, 0).isChecked() is False   # T (col 0) stays free

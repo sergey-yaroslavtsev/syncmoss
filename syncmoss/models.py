@@ -1074,9 +1074,9 @@ def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
 # LINEAR polarization along h:  C_a = tr[expm(-Sigma) rho]
 #                                   = (1+p)/2 [expm(-Sigma)]_11 + (1-p)/2 [expm(-Sigma)]_22.
 #
-#   p = 1.0  -> fully polarized (DEFAULT): reads the (1,1) element only, i.e. the
-#               original SMS behaviour -- nothing changes unless you edit this.
-#   p ~ 0.98 -> a realistic synchrotron (SMS) beam.
+#   p = 0.98 -> a realistic synchrotron (SMS) beam (DEFAULT).
+#   p = 1.0  -> fully polarized: reads the (1,1) element only, i.e. the original
+#               SMS behaviour.
 #   p = 0.0  -> unpolarized: half the trace, the conventional radioactive-source
 #               (CMS) readout.
 #
@@ -1129,6 +1129,28 @@ def _mhat_dm1_sym(mx, my):
     polarization plane.
     """
     return 1.5 * (_I2 - _mm_perp(mx, my))
+
+
+def _texture_blend(M, A):
+    """Uniaxial (fiber) texture average of a thick building-block matrix.
+
+    A textured powder whose symmetry axes follow an axially symmetric orientation
+    distribution about the lab-frame axis (theta_h, phi_h) averages, *before* the
+    matrix exponential, to
+
+        <M> = (1 - A) * I2 + A * M(axis),
+
+    where the order parameter ``A = <P2(cos psi)>`` (psi = angle to the texture
+    axis) interpolates continuously between a random powder (A = 0 -> I2, i.e. the
+    scalar model recovered exactly at any thickness) and a perfectly aligned
+    single crystal (A = 1 -> M, the current single-orientation thick model). Every
+    building block (``_mhat_dm0/1/1_sym``, doublet Mh_A/Mh_B) powder-averages to
+    I2, so this is exact for the quadratic (symmetric) parts; the magneto-optical
+    (Faraday) term is scaled by the same single parameter A, so A = 1 reproduces
+    the single-crystal thick model exactly (Faraday included) and A = 0 the scalar
+    twin exactly. A = 1 is a bit-exact no-op.
+    """
+    return (1.0 - A) * _I2 + A * M
 
 
 def _expm_neg(Sig):
@@ -1601,37 +1623,38 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 I = abs(p[V])
                 WL = abs(p[V + 3]) * MulCo
                 WG1 = abs(p[V + 4]) * MulCo
-                WG2 = WG1 * p[V + 7]
+                WG2 = WG1 * p[V + 8]
+                Atex = p[V + 7]                 # uniaxial (fiber) texture order parameter
                 S1 = (-1) * (p[V + 1] - p[V + 2]) * MulCo + E   # delta - eps -> line B
                 S2 = (-1) * (p[V + 1] + p[V + 2]) * MulCo + E   # delta + eps -> line A
                 mx, my, mz = _axis_xyz(p[V + 5], p[V + 6])
                 mm = _mm_perp(mx, my)
-                Mh_A = 1.5 * (_I2 - mm)         # line A: Delta m = +/-1 (the 3/4 sin^2 line)
-                Mh_B = 0.5 * _I2 + 1.5 * mm     # line B: mixed Delta m = 0 and +/-1
+                Mh_A = _texture_blend(1.5 * (_I2 - mm), Atex)   # line A: Delta m = +/-1 (the 3/4 sin^2 line)
+                Mh_B = _texture_blend(0.5 * _I2 + 1.5 * mm, Atex)  # line B: mixed Delta m = 0 and +/-1
                 VoiB = Voight(WL, WG1, S1)
                 VoiA = Voight(WL, WG2, S2)
                 add = Kpref * T * (0.5 * I) * (VoiA[:, None, None] * Mh_A[None, :, :]
                                                + VoiB[:, None, None] * Mh_B[None, :, :])
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 8
+                V += 9
             if model[i] == 'Sextet_(thick)':
                 I = abs(p[V])
-                I13 = p[V + 11]
+                I13 = p[V + 12]
                 Aeff = 0.5
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 HH = p[V + 3] / 3.101
-                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 8] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 9] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 9] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 9] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 9] * MulCo + E
-                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 8] * MulCo + E
+                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 9] * MulCo + E
+                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 10] * MulCo + E
+                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 10] * MulCo + E
+                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 10] * MulCo + E
+                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 10] * MulCo + E
+                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 9] * MulCo + E
                 WL = abs(p[V + 4]) * MulCo
                 WG = abs(p[V + 5]) * MulCo
-                GaH = abs(p[V + 10]) / 2 / 3.101 * MulCo
+                GaH = abs(p[V + 11]) / 2 / 3.101 * MulCo
                 Ga16 = (WG ** 2 + GaH ** 2) ** (1 / 2)
                 Ga25 = (WG ** 2 + (3.0760 / 5.3123 * GaH) ** 2) ** (1 / 2)
                 Ga34 = (WG ** 2 + (0.8397 / 5.3123 * GaH) ** 2) ** (1 / 2)
@@ -1641,31 +1664,32 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Voi4 = Voight(WL, Ga34, S4)
                 Voi5 = Voight(WL, Ga25, S5)
                 Voi6 = Voight(WL, Ga16, S6)
+                Atex = p[V + 8]                   # uniaxial (fiber) texture order parameter
                 mx, my, mz = _axis_xyz(p[V + 6], p[V + 7])
-                Msp = _mhat_dm1(mx, my, mz, 1.0)   # sigma+ (Delta m = +1): lines 3, 6
-                Msm = _mhat_dm1(mx, my, mz, -1.0)  # sigma- (Delta m = -1): lines 1, 4
-                Mpi = _mhat_dm0(mx, my)            # pi (Delta m = 0): lines 2, 5
+                Msp = _texture_blend(_mhat_dm1(mx, my, mz, 1.0), Atex)   # sigma+ (Delta m = +1): lines 3, 6
+                Msm = _texture_blend(_mhat_dm1(mx, my, mz, -1.0), Atex)  # sigma- (Delta m = -1): lines 1, 4
+                Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)            # pi (Delta m = 0): lines 2, 5
                 add = Kpref * (
                     I1 * (Voi1[:, None, None] * Msm[None, :, :] + Voi6[:, None, None] * Msp[None, :, :])
                     + I2 * (Voi2[:, None, None] * Mpi[None, :, :] + Voi5[:, None, None] * Mpi[None, :, :])
                     + I3 * (Voi3[:, None, None] * Msp[None, :, :] + Voi4[:, None, None] * Msm[None, :, :]))
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 12
+                V += 13
             if model[i] == 'MDGD_(thick)':
                 I = abs(p[V])
-                I13 = p[V + 14]
+                I13 = p[V + 15]
                 Aeff = 0.5
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 HH = p[V + 3] / 3.101
-                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 12] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 13] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 13] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 13] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 13] * MulCo + E
-                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 12] * MulCo + E
+                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 13] * MulCo + E
+                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 14] * MulCo + E
+                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 14] * MulCo + E
+                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 14] * MulCo + E
+                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 14] * MulCo + E
+                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 13] * MulCo + E
                 WL = abs(p[V + 4]) * MulCo
                 Guni = abs(p[V + 5]) * MulCo
                 Gh = abs(p[V + 6]) * MulCo
@@ -1684,17 +1708,18 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Voi4 = Voight(WL, Gfinal[3], S4)
                 Voi5 = Voight(WL, Gfinal[4], S5)
                 Voi6 = Voight(WL, Gfinal[5], S6)
+                Atex = p[V + 12]                  # uniaxial (fiber) texture order parameter
                 mx, my, mz = _axis_xyz(p[V + 10], p[V + 11])
-                Msp = _mhat_dm1(mx, my, mz, 1.0)
-                Msm = _mhat_dm1(mx, my, mz, -1.0)
-                Mpi = _mhat_dm0(mx, my)
+                Msp = _texture_blend(_mhat_dm1(mx, my, mz, 1.0), Atex)
+                Msm = _texture_blend(_mhat_dm1(mx, my, mz, -1.0), Atex)
+                Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)
                 add = Kpref * (
                     I1 * (Voi1[:, None, None] * Msm[None, :, :] + Voi6[:, None, None] * Msp[None, :, :])
                     + I2 * (Voi2[:, None, None] * Mpi[None, :, :] + Voi5[:, None, None] * Mpi[None, :, :])
                     + I3 * (Voi3[:, None, None] * Msp[None, :, :] + Voi4[:, None, None] * Msm[None, :, :]))
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 15
+                V += 16
             if model[i] == 'Relax_MS_(thick)':
                 I = abs(float(p[V]) * 2)
                 sig0 = float(p[V + 1]) * MulCo
@@ -1703,19 +1728,20 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 W = float(p[V + 4]) * MulCo / 2
                 th = p[V + 5]
                 ph = p[V + 6]
-                R = float(p[V + 7])
-                alfa = float(p[V + 8])
-                Sspin = float(p[V + 9])
+                Atex = p[V + 7]              # uniaxial (fiber) texture order parameter
+                R = float(p[V + 8])
+                alfa = float(p[V + 9])
+                Sspin = float(p[V + 10])
                 g1, g2, g3 = relax_MS_thick(Sspin, E, I, sig0, eps, Hv, W, R, alfa)
                 mx, my, mz = _axis_xyz(th, ph)
-                Md1 = _mhat_dm1_sym(mx, my)  # outer/inner Delta m = +/-1 (groups blend sigma+/-)
-                Mpi = _mhat_dm0(mx, my)      # middle Delta m = 0
+                Md1 = _texture_blend(_mhat_dm1_sym(mx, my), Atex)  # outer/inner Delta m = +/-1 (groups blend sigma+/-)
+                Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)      # middle Delta m = 0
                 add = Kpref * T * (g1[:, None, None] * Md1[None, :, :]
                                    + g2[:, None, None] * Mpi[None, :, :]
                                    + g3[:, None, None] * Md1[None, :, :])
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 10
+                V += 11
             if model[i] == 'Relax_2S_(thick)':
                 I = abs(p[V])
                 Aeff = 0.5
@@ -1729,12 +1755,13 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Q2 = p[V + 5] / 3 * MulCo
                 H2 = p[V + 6] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
                 WL = p[V + 7] * MulCo
-                We = p[V + 10] * MulCo
-                R = p[V + 11]
+                Atex = p[V + 10]             # uniaxial (fiber) texture order parameter
+                We = p[V + 11] * MulCo
+                R = p[V + 12]
                 mx, my, mz = _axis_xyz(p[V + 8], p[V + 9])
-                Msp = _mhat_dm1(mx, my, mz, 1.0)
-                Msm = _mhat_dm1(mx, my, mz, -1.0)
-                Mpi = _mhat_dm0(mx, my)
+                Msp = _texture_blend(_mhat_dm1(mx, my, mz, 1.0), Atex)
+                Msm = _texture_blend(_mhat_dm1(mx, my, mz, -1.0), Atex)
+                Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)
                 B1 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1 / 2, -3 / 2, E, R)  # sigma-
                 B2 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1 / 2, 3 / 2, E, R)    # sigma+
                 B3 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1 / 2, -1 / 2, E, R)  # pi
@@ -1747,7 +1774,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                     + I3 * (B5[:, None, None] * Msp[None, :, :] + B6[:, None, None] * Msm[None, :, :]))
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 12
+                V += 13
             if model[i] == 'Hamilton_mc_(thick)':
                 I = abs(p[V])
                 delt = p[V + 1] * MulCo
@@ -1793,8 +1820,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 m_asm = p[V + 8]
                 th = p[V + 9]
                 ph = p[V + 10]
-                Num = int(abs(p[V + 11]))
-                I13 = p[V + 12]
+                Atex = p[V + 11]                 # uniaxial (fiber) texture order parameter
+                Num = int(abs(p[V + 12]))
+                I13 = p[V + 13]
                 co, v1, v2, v3, v4, v5, v6 = ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m_asm, Num)
                 Nn = len(co)
                 Aeff = 0.5
@@ -1813,15 +1841,15 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                     sphi = np.sqrt(max(0.0, 1.0 - co[j]))
                     mxj = cphi * nx + sphi * ex
                     myj = cphi * ny + sphi * ey
-                    Md1 = _mhat_dm1_sym(mxj, myj)
-                    Mpi = _mhat_dm0(mxj, myj)
+                    Md1 = _texture_blend(_mhat_dm1_sym(mxj, myj), Atex)
+                    Mpi = _texture_blend(_mhat_dm0(mxj, myj), Atex)
                     add += (I1 * (Voight(WL, WG, E - v1[j]) + Voight(WL, WG, E - v6[j]))[:, None, None] * Md1[None, :, :]
                             + I2 * (Voight(WL, WG, E - v2[j]) + Voight(WL, WG, E - v5[j]))[:, None, None] * Mpi[None, :, :]
                             + I3 * (Voight(WL, WG, E - v3[j]) + Voight(WL, WG, E - v4[j]))[:, None, None] * Md1[None, :, :]) / Nn
                 add = Kpref * add
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 13
+                V += 14
             if model[i] == 'Layer':
                 # Physical layer boundary (no parameters). Within a layer the
                 # cross-sections add; between layers the 2x2 transmission
@@ -1870,8 +1898,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Vnum = int(4*(model[k]=='Singlet') + 7*(model[k]=='Doublet') + 11*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 14 * (model[k] == 'MDGD')\
                            + 9*(model[k]=='Relax_MS') + 15*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 12*(model[k]=='ASM')\
                            + 11*(model[k]=='Relax_2S')) + 11*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')\
-                           + 8*(model[k]=='Doublet_(thick)') + 12*(model[k]=='Sextet_(thick)') + 15*(model[k]=='MDGD_(thick)')\
-                           + 10*(model[k]=='Relax_MS_(thick)') + 12*(model[k]=='Relax_2S_(thick)') + 12*(model[k]=='Hamilton_mc_(thick)') + 13*(model[k]=='ASM_(thick)')
+                           + 9*(model[k]=='Doublet_(thick)') + 13*(model[k]=='Sextet_(thick)') + 16*(model[k]=='MDGD_(thick)')\
+                           + 11*(model[k]=='Relax_MS_(thick)') + 13*(model[k]=='Relax_2S_(thick)') + 12*(model[k]=='Hamilton_mc_(thick)') + 14*(model[k]=='ASM_(thick)')
 
                 model_d = np.array([model[k:i]] * Num).flatten()
                 # print('distr model', model_d, str(Distri[Di]))
@@ -2047,8 +2075,8 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
                 V += int(4 * (model[j] == 'Singlet') + 7 * (model[j] == 'Doublet') + 11 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 14 * (model[j] == 'MDGD')\
                     + 11 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 9 * (model[j] == 'Relax_MS') + 12*(model[j]=='ASM')\
                     + 11 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
-                    + 8 * (model[j] == 'Doublet_(thick)') + 12 * (model[j] == 'Sextet_(thick)') + 15 * (model[j] == 'MDGD_(thick)')\
-                    + 10 * (model[j] == 'Relax_MS_(thick)') + 12 * (model[j] == 'Relax_2S_(thick)') + 12 * (model[j] == 'Hamilton_mc_(thick)') + 13 * (model[j] == 'ASM_(thick)')\
+                    + 9 * (model[j] == 'Doublet_(thick)') + 13 * (model[j] == 'Sextet_(thick)') + 16 * (model[j] == 'MDGD_(thick)')\
+                    + 11 * (model[j] == 'Relax_MS_(thick)') + 13 * (model[j] == 'Relax_2S_(thick)') + 12 * (model[j] == 'Hamilton_mc_(thick)') + 14 * (model[j] == 'ASM_(thick)')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + 15 * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)

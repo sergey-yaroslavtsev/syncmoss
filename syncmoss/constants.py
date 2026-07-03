@@ -1,6 +1,6 @@
 # Constants
 numro = 50
-numco = 15
+numco = 16
 
 # Number of baseline parameters
 number_of_baseline_parameters = 8

@@ -60,21 +60,22 @@ def mod_len_def(mod_name):
         return 14
     elif mod_name == 'Nbaseline':
         return number_of_baseline_parameters
-    # Polarized ("thick") variants (A replaced by theta_h, phi_h; +alpha_k for Hamilton).
+    # Polarized ("thick") variants (A_asym replaced by theta_h, phi_h and the
+    # uniaxial texture parameter A; +alpha_k and no texture for Hamilton).
     elif mod_name == 'Doublet_(thick)':
-        return 8
+        return 9
     elif mod_name == 'Sextet_(thick)':
-        return 12
+        return 13
     elif mod_name == 'MDGD_(thick)':
-        return 15
+        return 16
     elif mod_name == 'Relax_MS_(thick)':
-        return 10
+        return 11
     elif mod_name == 'Relax_2S_(thick)':
-        return 12
+        return 13
     elif mod_name == 'Hamilton_mc_(thick)':
         return 12
     elif mod_name == 'ASM_(thick)':
-        return 13
+        return 14
     elif mod_name == 'Layer':
         return 0
     else:

@@ -129,7 +129,7 @@ dmypy.json
 
 # Project specific
 .vscode/
-for tests/
+for_tests/
 source_code/
 bundle/build/
 bundle/Windows/

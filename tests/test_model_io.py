@@ -25,15 +25,16 @@ EXPECTED_PARAM_COUNTS = {
     "Variables": numco,                       # 15
     "Nbaseline": number_of_baseline_parameters,  # 8
     # Polarized ("thick") variants: asymmetry A -> orientation angles
-    # (theta_h, phi_h); Hamilton gains the beam-rotation angle alpha_k.
+    # (theta_h, phi_h) + uniaxial texture parameter A; Hamilton gains the
+    # beam-rotation angle alpha_k (and has no texture parameter).
     # (Singlet has no thick form: it is isotropic, so thick == scalar exactly.)
-    "Doublet_(thick)": 8,
-    "Sextet_(thick)": 12,
-    "MDGD_(thick)": 15,
-    "Relax_MS_(thick)": 10,
-    "Relax_2S_(thick)": 12,
+    "Doublet_(thick)": 9,
+    "Sextet_(thick)": 13,
+    "MDGD_(thick)": 16,
+    "Relax_MS_(thick)": 11,
+    "Relax_2S_(thick)": 13,
     "Hamilton_mc_(thick)": 12,
-    "ASM_(thick)": 13,
+    "ASM_(thick)": 14,
     "Layer": 0,
 }
 

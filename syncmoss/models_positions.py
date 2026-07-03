@@ -915,27 +915,27 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S1 = (p[V + 1] - p[V + 2])
                 S2 = (p[V + 1] + p[V + 2])
                 SET.append([S1, S2])
-                V += 8
+                V += 9
             if model[i] == 'Sextet_(thick)':
                 HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 8]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 9]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 9]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 9]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 9]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 8]
+                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 9]
+                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
+                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
+                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
+                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
+                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 9]
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 12
+                V += 13
             if model[i] == 'MDGD_(thick)':
                 HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 12]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 13]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 13]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 13]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 13]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 12]
+                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 13]
+                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
+                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
+                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
+                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
+                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 13]
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 15
+                V += 16
             if model[i] == 'Relax_MS_(thick)':
                 HH = float(p[V + 3]) / 3.1098
                 S1 = (p[V + 1] - HH / 2 + p[V + 2])
@@ -945,7 +945,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2])
                 S6 = (p[V + 1] + HH / 2 + p[V + 2])
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 10
+                V += 11
             if model[i] == 'Relax_2S_(thick)':
                 HH = float(p[V + 3]) / 3.1098
                 S1 = (p[V + 1] - HH / 2 + p[V + 2])
@@ -962,7 +962,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S52 = (p[V + 4] + 3.0760 / 5.3123 * HH2 / 2 - p[V + 5])
                 S62 = (p[V + 4] + HH2 / 2 + p[V + 5])
                 SET.append([S1, S2, S3, S4, S5, S6, S12, S22, S32, S42, S52, S62])
-                V += 12
+                V += 13
             if model[i] == 'Hamilton_mc_(thick)':
                 delt = p[V + 1]
                 Q = p[V + 2]
@@ -994,7 +994,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S3 = Sig - eps + a2 - mun * (gex + ggr) / 2 * H
                 S4 = Sig - eps - a2 + mun * (gex + ggr) / 2 * H
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 13
+                V += 14
             if model[i] == 'Layer':
                 SET.append([])
                 V += 0
@@ -1056,8 +1056,8 @@ def mod_pos(p, model, INS, Met=0):
                 V += int(4 * (model[j] == 'Singlet') + 7 * (model[j] == 'Doublet') + 11 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 14 * (model[j] == 'MDGD')\
                     + 11 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 9 * (model[j] == 'Relax_MS') + 12 * (model[j] == 'ASM')\
                     + 11 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
-                    + 8 * (model[j] == 'Doublet_(thick)') + 12 * (model[j] == 'Sextet_(thick)') + 15 * (model[j] == 'MDGD_(thick)')\
-                    + 10 * (model[j] == 'Relax_MS_(thick)') + 12 * (model[j] == 'Relax_2S_(thick)') + 12 * (model[j] == 'Hamilton_mc_(thick)') + 13 * (model[j] == 'ASM_(thick)')\
+                    + 9 * (model[j] == 'Doublet_(thick)') + 13 * (model[j] == 'Sextet_(thick)') + 16 * (model[j] == 'MDGD_(thick)')\
+                    + 11 * (model[j] == 'Relax_MS_(thick)') + 13 * (model[j] == 'Relax_2S_(thick)') + 12 * (model[j] == 'Hamilton_mc_(thick)') + 14 * (model[j] == 'ASM_(thick)')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + 15 * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
