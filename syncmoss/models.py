@@ -1068,6 +1068,24 @@ def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
 # beta between h and the axis obeys cos(beta) = sin(theta_h) cos(phi_h).
 # ===========================================================================
 
+# --- Incident-beam polarization (the SINGLE manual knob) -------------------
+# The transmission is read out from the polarization density matrix
+# rho = diag((1+p)/2, (1-p)/2) of the incident beam, p being the degree of
+# LINEAR polarization along h:  C_a = tr[expm(-Sigma) rho]
+#                                   = (1+p)/2 [expm(-Sigma)]_11 + (1-p)/2 [expm(-Sigma)]_22.
+#
+#   p = 1.0  -> fully polarized (DEFAULT): reads the (1,1) element only, i.e. the
+#               original SMS behaviour -- nothing changes unless you edit this.
+#   p ~ 0.98 -> a realistic synchrotron (SMS) beam.
+#   p = 0.0  -> unpolarized: half the trace, the conventional radioactive-source
+#               (CMS) readout.
+#
+# THIS CONSTANT IS THE ONE PLACE TO EDIT to model a partially polarized SMS
+# beam. It applies to SMS spectra only; CMS spectra (Met == 1) are always read
+# out unpolarized (rho = I/2, a fixed 1:1 mixture) regardless of this value,
+# because an unpolarized source defines no direction in the polarization plane.
+SMS_LINEAR_POLARIZATION = 0.98
+
 _I2 = np.eye(2, dtype=complex)
 _J2 = np.array([[0.0, 1.0], [-1.0, 0.0]], dtype=complex)  # 1j*_J2 is Hermitian
 
@@ -1915,7 +1933,19 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
             layerT = _expm_neg(Smat)
             Tprod = layerT if Tprod is None else np.matmul(layerT, Tprod)
         if Tprod is not None:
-            CH = CH * np.real(Tprod[:, 0, 0])
+            # Read the transmission out of the beam polarization density matrix
+            # rho = diag(rho11, rho22): C_a = tr[Tprod . rho]. A CMS (radioactive
+            # source, Met == 1) is unpolarized -> fixed rho = I/2 (half the
+            # trace). An SMS is linearly polarized to the degree
+            # SMS_LINEAR_POLARIZATION (p=1 default -> the (1,1) element only, the
+            # original fully-polarized behaviour).
+            if Mett == 1:
+                rho11 = rho22 = 0.5
+            else:
+                pol = SMS_LINEAR_POLARIZATION
+                rho11 = 0.5 * (1.0 + pol)
+                rho22 = 0.5 * (1.0 - pol)
+            CH = CH * (rho11 * np.real(Tprod[:, 0, 0]) + rho22 * np.real(Tprod[:, 1, 1]))
         if Met == 0:
             CH = CH * N * 2 / (1 - (EE) ** 2)
         elif Met == 1 or Met == 2 or Met == 3:

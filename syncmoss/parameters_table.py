@@ -892,49 +892,51 @@ class ParametersTable(QWidget):
         # orientation angles (theta_h, phi_h) of the component axis in the lab
         # frame (theta_h from the beam, phi_h from the polarization h); Hamilton
         # gains the beam-rotation angle alpha_k. (A Singlet is isotropic, so it
-        # has no distinct thick form.) ---
+        # has no distinct thick form.) The extra orientation angles (theta_h,
+        # phi_h; alpha_k for Hamilton) are FIXED by default -- untick their
+        # "fix" box to refine them. ---
         elif model == 'Doublet_(thick)':
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θh, °', 'φh, °', 'G2/G1']
             values = ['1.0', '0.0', '1.0', '0.098', '0.1', '0.0', '0.0', '1.0']
             lowers = ['0', '', '', '0.098', '0', '-180', '-360', '0']
             uppers = ['', '', '', '', '', '180', '360', '']
-            fixes = [False, False, False, True, False, False, False, True]
+            fixes = [False, False, False, True, False, True, True, True]  # theta_h, phi_h locked by default
         elif model == 'Sextet_(thick)':
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'θh, °', 'φh, °', 'a+', 'a-', 'GH, T', 'I1/I3']
             values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '3.0']
             lowers = ['0', '', '', '', '0.098', '0', '-180', '-360', '', '', '0', '0']
             uppers = ['', '', '', '', '', '', '180', '360', '', '', '', '']
-            fixes = [False, False, False, False, True, False, False, False, True, True, True, True]
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True]  # theta_h, phi_h locked by default
         elif model == 'MDGD_(thick)':
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'GH, T', 'Dδε', 'DδH', 'DεH', 'θh, °', 'φh, °', 'a+', 'a-', 'I1/I3']
             values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '3.0']
             lowers = ['0', '', '', '', '0.098', '0', '0', '-1', '-1', '-1', '-180', '-360', '', '', '0']
             uppers = ['', '', '', '', '', '', '', '1', '1', '1', '180', '360', '', '', '']
-            fixes = [False, False, False, False, True, False, True, True, True, True, False, False, True, True, True]
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True, True]  # theta_h, phi_h locked by default
         elif model == 'Relax_MS_(thick)':
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'θh, °', 'φh, °', 'R', 'alfa', 'S']
             values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.0', '0.0', '0.5', '1.0', '101']
             lowers = ['0', '', '', '', '0.098', '-180', '-360', '0', '0', '0.5']
             uppers = ['', '', '', '', '', '180', '360', '', '100', '']
-            fixes = [False, False, False, False, False, False, False, False, False, True]
+            fixes = [False, False, False, False, False, True, True, False, False, True]  # theta_h, phi_h locked by default
         elif model == 'Relax_2S_(thick)':
             names = ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θh, °', 'φh, °', 'Ω12', 'P1/P2']
             values = ['1.0', '0.0', '0.0', '33.0', '0.0', '0.0', '-33.0', '0.1', '0.0', '0.0', '0.3', '1']
             lowers = ['', '', '', '', '', '', '', '0.098', '-180', '-360', '0', '0']
             uppers = ['', '', '', '', '', '', '', '', '180', '360', '', '']
-            fixes = [False, False, False, False, False, False, False, False, False, False, False, True]
+            fixes = [False, False, False, False, False, False, False, False, True, True, False, True]  # theta_h, phi_h locked by default
         elif model == 'Hamilton_mc_(thick)':
             names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °']
             values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0']
             lowers = ['0', '', '', '', '0.098', '0', '-1', '-180', '-360', '-180', '-360', '-360']
             uppers = ['', '', '', '', '', '', '1', '180', '360', '180', '360', '360']
-            fixes = [False, False, False, False, True, False, False, False, False, False, False, False]
+            fixes = [False, False, False, False, True, False, False, False, False, False, False, True]  # alpha_k (the extra thick angle) locked by default
         elif model == 'ASM_(thick)':
             names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θh, °', 'φh, °', 'Num', 'I13']
             values = ['1.0', '0.0', '0.0', '0.0', '30.0', '5.0', '0.098', '0.1', '0.1', '0.0', '0.0', '25', '3.0']
             lowers = ['0', '', '', '', '', '', '0.098', '0', '-1', '-180', '-360', '7', '0']
             uppers = ['', '', '', '', '', '', '', '', '1', '180', '360', '', '']
-            fixes = [False, False, False, False, False, False, True, False, False, False, False, True, False]
+            fixes = [False, False, False, False, False, False, True, False, False, True, True, True, False]  # theta_h, phi_h locked by default
         elif model == 'Be':
             # Based on Doublet, load from Be.txt or defaults
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'A', 'G2/G1']

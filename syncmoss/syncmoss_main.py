@@ -1673,98 +1673,6 @@ class PhysicsApp(QMainWindow):
         self.log.setStyleSheet("color: red;")
         return False
 
-    @staticmethod
-    def _split_model_by_nbaseline(model):
-        """Split a model name list into one section per (N)baseline, in order.
-
-        Section ``i`` holds the components fitted against spectrum ``i`` of a
-        simultaneous fit. There are ``model.count('Nbaseline') + 1`` sections.
-        """
-        sections, cur = [], []
-        for m in model:
-            if m == 'Nbaseline':
-                sections.append(cur)
-                cur = []
-            else:
-                cur.append(m)
-        sections.append(cur)
-        return sections
-
-    def check_polarized_models_method(self, spectrum_files, action_label):
-        """Refuse to start when a polarized "(thick)" component would actually be
-        applied to a non-SMS spectrum. Returns True to proceed, False to abort
-        (with a Log message and a popup).
-
-        Logic (thick components describe a linearly polarized synchrotron / SMS
-        source):
-
-        * CMS mode selected            -> forbid.
-        * SMS mode, read-from-file OFF -> allow (internal SMS for every spectrum).
-        * SMS mode, read-from-file ON  -> resolve each spectrum's method from its
-          .dat metadata. If none is CMS, allow. If some are CMS:
-            - no 'Nbaseline' in the model (single / sequential fit) -> the whole
-              model, thick components included, is applied to that CMS spectrum
-              -> forbid.
-            - 'Nbaseline' present (simultaneous fit) -> only forbid if a thick
-              component sits in the model section assigned to a CMS spectrum.
-        """
-        try:
-            model = read_model(self)[0]
-        except Exception:
-            return True  # the normal read-model error path will report it
-        thick = sorted({m for m in model if m.endswith('_(thick)')})
-        if not thick:
-            return True
-
-        ui_method = 'CMS' if (getattr(self, 'MS_fit', None) is not None and self.MS_fit.isChecked()) else 'SMS'
-        use_dat = bool(getattr(self, 'use_dat_instrumental_metadata', True))
-        reason = None
-
-        if ui_method == 'CMS':
-            reason = ("CMS (conventional source) mode is selected. Polarized "
-                      "\"(thick)\" models describe a linearly polarized synchrotron "
-                      "(SMS) source and cannot be fitted in CMS mode.")
-        elif use_dat:
-            # Per-spectrum method from .dat metadata: [SMS, SMS, CMS, ...]
-            try:
-                _, _, resolved = analyze_instrumental_methods(self, list(spectrum_files), True)
-                methods = [r['method'] for r in resolved]
-            except Exception:
-                methods = []
-            cms_idx = [i for i, met in enumerate(methods) if met == 'CMS']
-            cms_names = [os.path.basename(str(spectrum_files[i])) for i in cms_idx if i < len(spectrum_files)]
-            if cms_idx:
-                if 'Nbaseline' not in model:
-                    reason = ("the instrumental metadata marks spectrum(a) "
-                              f"{', '.join(cms_names) or '(some)'} as CMS, and the model has no "
-                              "'Nbaseline' so the whole model — including the polarized "
-                              "\"(thick)\" component(s) — is applied to a CMS spectrum.")
-                else:
-                    sections = self._split_model_by_nbaseline(model)
-                    bad = []
-                    for i in cms_idx:
-                        if i < len(sections) and any(m.endswith('_(thick)') for m in sections[i]):
-                            nm = os.path.basename(str(spectrum_files[i])) if i < len(spectrum_files) else f"#{i}"
-                            bad.append(nm)
-                    if bad:
-                        reason = ("a polarized \"(thick)\" component is assigned to a CMS "
-                                  f"spectrum (from .dat metadata): {', '.join(bad)}.")
-        # SMS + read-from-file OFF, or no CMS spectrum involved -> allowed.
-
-        if reason is None:
-            return True
-
-        tail = ("\n\nFit polarized \"(thick)\" models in SMS mode; disable \"use "
-                "instrumental function from .dat file\" (Instrumental function menu) "
-                "to use the internal SMS instrumental function, or keep the thick "
-                "component(s) out of any CMS section.")
-        msg = (f"{action_label} was not started — the model uses polarized "
-               f"\"(thick)\" component(s): {', '.join(thick)}.\n\n{reason}{tail}")
-        self.log.setPlainText(msg)
-        self.log.setStyleSheet("color: red;")
-        QMessageBox.warning(self, "Polarized (thick) models require SMS", msg)
-        return False
-
     def confirm_instrumental_methods(self, spectrum_files, mode):
         """Warn the user, before a fit starts, about two instrumental-method
         situations. Returns True to proceed, False to abort.
@@ -2937,10 +2845,6 @@ class PhysicsApp(QMainWindow):
                     if not self.confirm_instrumental_methods(spectrum_files, 'sequential'):
                         self.inprogress = False
                         return
-                    # Refuse polarized "(thick)" models applied to a CMS spectrum.
-                    if not self.check_polarized_models_method(spectrum_files, "Fit"):
-                        self.inprogress = False
-                        return
                     self.start_sequential_fitting(spectrum_files)
                     return
                 else:
@@ -2954,11 +2858,6 @@ class PhysicsApp(QMainWindow):
             # the instrumental method(s) before spawning the fitting thread.
             files_for_confirm = spectrum_files if fitting_mode == 'simultaneous' else [spectrum_files[0]]
             if not self.confirm_instrumental_methods(files_for_confirm, fitting_mode):
-                self.inprogress = False
-                return
-
-            # Refuse polarized "(thick)" models applied to a CMS spectrum.
-            if not self.check_polarized_models_method(files_for_confirm, "Fit"):
                 self.inprogress = False
                 return
 
