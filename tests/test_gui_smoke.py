@@ -65,8 +65,8 @@ def test_select_model_then_read_model(physics_app):
 
     model, p, *_ = read_model(w)
     assert model == ["Sextet"]
-    # baseline (8) + Sextet (11) parameters.
-    assert len(p) == number_of_baseline_parameters + 11
+    # baseline (8) + polarized Sextet (13) parameters.
+    assert len(p) == number_of_baseline_parameters + 13
 
 
 def test_save_model_drops_empty_rows_and_reloads(physics_app, tmp_path):
@@ -95,7 +95,7 @@ def test_save_model_drops_empty_rows_and_reloads(physics_app, tmp_path):
     assert "red" not in w.log.styleSheet().lower(), w.log.toPlainText()
     model, p, *_ = read_model(w)
     assert model == ["Sextet", "Doublet"]
-    assert len(p) == number_of_baseline_parameters + 11 + 7
+    assert len(p) == number_of_baseline_parameters + 13 + 9
 
 
 def test_resize_event_does_not_crash(physics_app):

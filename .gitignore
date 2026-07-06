@@ -144,6 +144,10 @@ syncmoss/*.svg
 # (the active implementation is now the optimized minimi_lib.py).
 syncmoss/minimi_lib_old.py
 
+# Pre-merge copy of the models module, kept locally for reference only
+# (before the thin + polarized "thick" models were merged into models.py).
+syncmoss/models_full_old.py
+
 # minimi_lib optimization: local-only test tooling and notes (depend on the
 # git-ignored minimi_lib_old.py; kept out of the tracked repo).
 verify_minimi.py

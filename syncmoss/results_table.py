@@ -459,10 +459,13 @@ class ResultsTable(QWidget):
             
             if model_name == 'Doublet':
                 try:
+                    # Be.txt / KB.txt hold the polarized Doublet preset (9 values);
+                    # a Be/KB_nano row is fixed to those, so an exact match flags it.
                     be_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'Be.txt'), delimiter='\t')
                     kb_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'KB.txt'), delimiter='\t')
-                    if self.fit_parameters[param_index:param_index+len(param_names)].tolist() == be_param.tolist() \
-                        or self.fit_parameters[param_index:param_index+len(param_names)].tolist() == kb_param.tolist():
+                    fitted = self.fit_parameters[param_index:param_index+len(param_names)]
+                    if (len(fitted) == len(be_param) and np.allclose(fitted, be_param)) \
+                        or (len(fitted) == len(kb_param) and np.allclose(fitted, kb_param)):
                             print("Impurity detected, skipping intensity calculation for Doublet impurity.")
                             self.buttons[i*3 + 1].setText('Impurity')
                             self.buttons[i*3 + 2].setText('no %')

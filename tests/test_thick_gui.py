@@ -29,9 +29,9 @@ def test_layer_selection_has_no_parameters(physics_app):
 
 def test_thick_model_selection_param_count(physics_app):
     pt = physics_app.params_table
-    pt.select_model(1, 'Sextet_(thick)')
-    assert _model_name(pt, 1) == 'Sextet_(thick)'
-    assert pt.row_params[1] == 13  # T,d,e,H,L,G,theta_h,phi_h,A,a+,a-,GH,I1/I3
+    pt.select_model(1, 'Sextet')
+    assert _model_name(pt, 1) == 'Sextet'
+    assert pt.row_params[1] == 13  # T,d,e,H,L,G,theta_k,phi_h,A,a+,a-,GH,I1/I3
 
 
 def test_distr_after_baseline_is_blocked(physics_app):
@@ -80,19 +80,19 @@ def test_corr_requires_distr_or_corr(physics_app):
     assert _model_name(pt, 3) == 'Corr'
 
 
-# Extra parameters each thick model introduces that are FIXED by default, as
-# {param column: label} (item: "lock extra angles in thick models"); the user
-# unticks the box to refine them. (theta_h, phi_h replace the scalar asymmetry
-# and are followed by the uniaxial texture parameter A; Hamilton keeps its crystal
-# angles and only adds the beam-rotation angle alpha_k, with no texture parameter.)
+# Orientation/texture parameters each polarized model carries that are FIXED by
+# default, as {param column: label}; the user unticks the box to refine them.
+# (theta_k, phi_h replace the former scalar asymmetry and are followed by the
+# uniaxial texture parameter A; Hamilton_mc keeps its crystal angles and only
+# adds the beam-rotation angle alpha_k, with no texture parameter.)
 _THICK_LOCKED_ANGLES = {
-    'Doublet_(thick)':     {5: 'θh, °', 6: 'φh, °', 7: 'A'},
-    'Sextet_(thick)':      {6: 'θh, °', 7: 'φh, °', 8: 'A'},
-    'MDGD_(thick)':        {10: 'θh, °', 11: 'φh, °', 12: 'A'},
-    'Relax_MS_(thick)':    {5: 'θh, °', 6: 'φh, °', 7: 'A'},
-    'Relax_2S_(thick)':    {8: 'θh, °', 9: 'φh, °', 10: 'A'},
-    'Hamilton_mc_(thick)': {11: 'αk, °'},
-    'ASM_(thick)':         {9: 'θh, °', 10: 'φh, °', 11: 'A'},
+    'Doublet':     {5: 'θk, °', 6: 'φh, °', 7: 'A'},
+    'Sextet':      {6: 'θk, °', 7: 'φh, °', 8: 'A'},
+    'MDGD':        {10: 'θk, °', 11: 'φh, °', 12: 'A'},
+    'Relax_MS':    {5: 'θk, °', 6: 'φh, °', 7: 'A'},
+    'Relax_2S':    {8: 'θk, °', 9: 'φh, °', 10: 'A'},
+    'Hamilton_mc': {11: 'αk, °'},
+    'ASM':         {9: 'θk, °', 10: 'φh, °', 11: 'A'},
 }
 
 
@@ -125,5 +125,5 @@ def test_thick_extra_angles_locked_by_default(physics_app, model):
 def test_thick_non_angle_param_not_force_locked(physics_app):
     """Sanity: the default lock is scoped to the angles, not (e.g.) the thickness T."""
     pt = physics_app.params_table
-    pt.select_model(1, 'Sextet_(thick)')
+    pt.select_model(1, 'Sextet')
     assert _fix_cb(pt, 1, 0).isChecked() is False   # T (col 0) stays free

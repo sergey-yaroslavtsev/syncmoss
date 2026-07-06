@@ -1237,6 +1237,60 @@ def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
 
 
 @njit(cache=True)
+def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
+    """Per-transition 2x2 cross-section matrices for the CMS (unpolarized) Hamiltonian.
+
+    Like ``Ham_mono_thick`` (same shared core, same 8 matrices P[k]), but for a
+    conventional radioactive (CMS, ``Met == 1``) source, which is unpolarized.
+    The meaning of ``(phir, tetr)`` therefore changes: here they give the BEAM
+    direction k in the EFG (PAS) frame -- NOT the radiation magnetic field h as
+    in the SMS ``Ham_mono_thick``. The two polarization basis vectors are the
+    spherical-basis vectors perpendicular to k (e1 = theta_hat, e2 = phi_hat).
+
+    There is no beam-rotation angle ``alfak``: an unpolarized source is read out
+    as the half-trace (1/2)tr[expm(-Sigma)] (see the readout in ``TImod``), which
+    is invariant under any rotation of (e1, e2) within the plane perpendicular to
+    k. ``alfak`` would only spin that arbitrary basis, so it is redundant for a
+    CMS spectrum (the user leaves it fixed). The thin limit (1/2)tr P[k] equals
+    the scalar ``Ham_mono_CMS`` intensity I[k] for the same beam (phir, tetr).
+    """
+    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+
+    # (phir, tetr) is the beam direction k; e1 = theta_hat, e2 = phi_hat are the
+    # spherical-basis unit vectors perpendicular to k (any orthonormal pair works,
+    # the half-trace readout is basis-invariant -> alfak is redundant here).
+    tetr1 = tetr / 180 * np.pi
+    phir1 = phir / 180 * np.pi
+    e1 = np.array([np.cos(tetr1) * np.cos(phir1), np.cos(tetr1) * np.sin(phir1), -np.sin(tetr1)])
+    e2 = np.array([-np.sin(phir1), np.cos(phir1), 0.0])
+    tet1 = np.arccos(e1[2])
+    phi1 = np.arctan2(e1[1], e1[0])
+    tet2 = np.arccos(e2[2])
+    phi2 = np.arctan2(e2[1], e2[0])
+
+    F2a = np.sqrt(2) * np.sin(tet1) * (-1j) * np.exp(1j * phi1)
+    F4a = np.sqrt(2) * np.cos(tet1) * (1j)
+    F6a = np.sqrt(2) * np.sin(tet1) * (1j) * np.exp(-1j * phi1)
+    F2b = np.sqrt(2) * np.sin(tet2) * (-1j) * np.exp(1j * phi2)
+    F4b = np.sqrt(2) * np.cos(tet2) * (1j)
+    F6b = np.sqrt(2) * np.sin(tet2) * (1j) * np.exp(-1j * phi2)
+
+    A1 = np.array([0.0 + 0j] * 8)
+    A2 = np.array([0.0 + 0j] * 8)
+    for i in range(0, 8):
+        A1[i] = g0[i] * F2a + g1[i] * F4a + g2[i] * F6a
+        A2[i] = g0[i] * F2b + g1[i] * F4b + g2[i] * F6b
+
+    P = np.zeros((8, 2, 2), dtype=np.complex128)
+    for i in range(0, 8):
+        P[i, 0, 0] = np.pi * (A1[i] * np.conjugate(A1[i]))
+        P[i, 0, 1] = np.pi * (A1[i] * np.conjugate(A2[i]))
+        P[i, 1, 0] = np.pi * (A2[i] * np.conjugate(A1[i]))
+        P[i, 1, 1] = np.pi * (A2[i] * np.conjugate(A2[i]))
+    return (P, S)
+
+
+@njit(cache=True)
 def relax_MS_thick(S, x, I, Sig, eps, Hv, W, R, alfa):
     """Many-state relaxation sextet (polarized): the three Delta m groups,
     each scaled by the 3:2:1 isotropic (Ah = 1/2) weights and the thickness I and
@@ -1383,81 +1437,6 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 V += 4
                 Voi = Voight(WL, WG, S)
                 CHt = CH*np.exp((-1)*np.pi*(G/2/E0*c*MulCo)*T*I*Voi)
-            if model[i] == 'Doublet':
-                I = abs(p[V])
-                I1 = I * (p[V+5]+1)/2/(2-p[V+5]) #(2-p[V+5]*2) / 2
-                I2 = I * 3*(1-p[V+5])/2/(2-p[V+5]) #p[V+5]*2 / 2
-                WL = abs(p[V + 3]) * MulCo
-                WG1 = abs(p[V + 4]) * MulCo
-                WG2 = WG1 * p[V + 6]
-                S1 = (-1) * (p[V + 1] - p[V + 2])*MulCo + E
-                S2 = (-1) * (p[V + 1] + p[V + 2])*MulCo + E
-                Voi1 = Voight(WL, WG1, S1)
-                Voi2 = Voight(WL, WG2, S2)
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * T * (I1 * Voi1 + I2 * Voi2))
-                V += 7
-            if model[i] == 'Sextet':
-                I = abs(p[V])
-                I1 = I * (4*p[V+10]/(p[V+10]+1)) * (1 - p[V + 6]) / (8 - 4 * p[V + 6])
-                I2 = I * 2 * p[V + 6] / (8 - 4 * p[V + 6])
-                I3 = I * (4/(p[V+10]+1)) * (1 - p[V + 6]) / (8 - 4 * p[V + 6])
-                HH = p[V + 3] / 3.101
-                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 7] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 8] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 8] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 8] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 8] * MulCo + E
-                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 7] * MulCo + E
-                WL = abs(p[V + 4]) * MulCo
-                WG = abs(p[V + 5]) * MulCo
-                GaH = abs(p[V + 9]) / 2 / 3.101 * MulCo
-                Ga16 = (WG**2 + GaH**2)** (1/2)
-                Ga25 = (WG**2 + (3.0760 / 5.3123 * GaH)**2)** (1/2)
-                Ga34 = (WG**2 + (0.8397 / 5.3123 * GaH)**2)** (1/2)
-                Voi1 = Voight(WL, Ga16, S1)
-                Voi2 = Voight(WL, Ga25, S2)
-                Voi3 = Voight(WL, Ga34, S3)
-                Voi4 = Voight(WL, Ga34, S4)
-                Voi5 = Voight(WL, Ga25, S5)
-                Voi6 = Voight(WL, Ga16, S6)
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * (I1*(Voi1+Voi6)+I2*(Voi2+Voi5)+I3*(Voi3+Voi4)))
-                V += 11
-            if model[i] == 'MDGD': # not finished
-                I = abs(p[V])
-                I1 = I * (4*p[V+13]/(p[V+13]+1)) * (1 - p[V + 10]) / (8 - 4 * p[V + 10])
-                I2 = I * 2 * p[V + 10] / (8 - 4 * p[V + 10])
-                I3 = I * (4/(p[V+13]+1)) * (1 - p[V + 10]) / (8 - 4 * p[V + 10])
-                HH = p[V + 3] / 3.101
-                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 11] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 12] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 12] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 12] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 12] * MulCo + E
-                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 11] * MulCo + E
-                WL = abs(p[V + 4]) * MulCo
-
-                Guni = abs(p[V + 5]) * MulCo
-                Gh = abs(p[V + 6]) * MulCo #/ 2 / 3.101
-                Gde = p[V + 7] #* MulCo
-                Gdh = p[V + 8] #* MulCo
-                Geh = p[V + 9] #* MulCo
-
-                Cd = [1,1,1,1,1,1]
-                Ce = [1,-1,-1,-1,-1,1]
-                Ch = [-1/6.202,-1/10.71,-1/39.24,1/39.24,1/10.71,1/6.202]
-
-                Gfinal = []
-                for j in range(0, 6):
-                    Gfinal.append(np.sqrt(abs(Guni**2 + Ch[j]**2*Gh**2 + Cd[j]*Ce[j]*Gde*Guni**2 * max( 0, (1 - (abs(Gdh)+abs(Geh))**2)) + Cd[j]*Ch[j]*2*Gdh*Guni*Gh + Ce[j]*Ch[j]*2*Geh*Guni*Gh )))
-
-                Voi1 = Voight(WL, Gfinal[0], S1)
-                Voi2 = Voight(WL, Gfinal[1], S2)
-                Voi3 = Voight(WL, Gfinal[2], S3)
-                Voi4 = Voight(WL, Gfinal[3], S4)
-                Voi5 = Voight(WL, Gfinal[4], S5)
-                Voi6 = Voight(WL, Gfinal[5], S6)
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * (I1*(Voi1+Voi6)+I2*(Voi2+Voi5)+I3*(Voi3+Voi4)))
-                V += 14
             if model[i] == 'Sextet(rough)':
                 I = abs(p[V])
                 I1 = I * p[V + 9]  / (1 + p[V + 9] + p[V + 10]) * p[V + 11] / (1 + p[V + 11])
@@ -1488,31 +1467,6 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo)\
                                   * (I1*Voi1+I6*Voi6+I2*Voi2+I5*Voi5+I3*Voi3+I4*Voi4))
                 V += 14
-            if model[i] == 'Hamilton_mc':
-                I = abs(p[V])
-                delt = p[V+1] * MulCo
-                Q = p[V+2]
-                H = p[V+3]
-                WL = p[V+4] * MulCo
-                WG = p[V+5] * MulCo
-                eto = p[V+6]
-                tet = p[V+7]
-                phi = p[V+8]
-                tetr = p[V+9]
-                phir = p[V+10]
-                if Mett == 0 or Met == 3:
-                    Itmp, S = Ham_mono(Q, H, eto, phi, tet, phir, tetr)
-                if Mett == 1:
-                    Itmp, S = Ham_mono_CMS(Q, H, eto, phi, tet, phir, tetr)
-                # if Mett != 1 and Mett != 0:
-
-                I = Itmp * I
-                S = S * MulCo
-                S += delt
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo)\
-                                  * (I[0]*Voight(WL,WG,E-S[0])+I[1]*Voight(WL,WG,E-S[1])+I[2]*Voight(WL,WG,E-S[2])+I[3]*Voight(WL,WG,E-S[3])\
-                                    +I[4]*Voight(WL,WG,E-S[4])+I[5]*Voight(WL,WG,E-S[5])+I[6]*Voight(WL,WG,E-S[6])+I[7]*Voight(WL,WG,E-S[7])))
-                V += 11
             if model[i] == 'Hamilton_pc':
                 I = abs(p[V])
                 delt = p[V+1] * MulCo
@@ -1531,20 +1485,6 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                                   * (I[0]*Voight(WL,WG,E-S[0])+I[1]*Voight(WL,WG,E-S[1])+I[2]*Voight(WL,WG,E-S[2])+I[3]*Voight(WL,WG,E-S[3])\
                                     +I[4]*Voight(WL,WG,E-S[4])+I[5]*Voight(WL,WG,E-S[5])+I[6]*Voight(WL,WG,E-S[6])+I[7]*Voight(WL,WG,E-S[7])))
                 V += 9
-            if model[i] == 'Relax_MS':
-                I = abs(float(p[V]) * 2)
-                Sig = float(p[V + 1]) * MulCo
-                eps = float(p[V + 2]) * MulCo
-                Hv = float(p[V + 3]) * MulCo / 2 / 3.1098
-                W = float(p[V + 4]) * MulCo / 2
-                Ah = float(p[V + 5])
-                R = float(p[V + 6])
-                alfa = float(p[V + 7])
-                S = float(p[V + 8])
-
-                CHt = CH * (np.exp(relax_MS(S, E, I, Sig, eps, Hv, W, Ah, R, alfa) *(-1)*np.pi*(G/2/E0*c*MulCo)*T))
-
-                V += 9
             if model[i] == 'Average_H':
                 I = abs(p[V])
                 Sig = p[V+1] * MulCo
@@ -1560,66 +1500,14 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
 
                 CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * T * I * Angles_min(tet, Num, K, J, Hin, Hex, E, WL, WG, Q, Sig))
                 V += 11
-            if model[i] == 'Relax_2S':
-                I = abs(p[V])
-                I1 = I * 3 * (1 - p[V + 8]) / (8 - 4 * p[V + 8])
-                I2 = I * 2 * p[V + 8]       / (8 - 4 * p[V + 8])
-                I3 = I * 1 * (1 - p[V + 8]) / (8 - 4 * p[V + 8])
-                Sig1 = p[V + 1] * MulCo
-                Q1 = p[V + 2] / 3 * MulCo
-                H1 = p[V + 3] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
-                Sig2 = p[V + 4] * MulCo
-                Q2 = p[V + 5] / 3 * MulCo
-                H2 = p[V + 6] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
-                WL = p[V + 7] * MulCo
-                # WG = p[V + 8] * MulCo
-                # A = p[V + 9]
-                We = p[V + 9] * MulCo
-                R = p[V + 10]
-
-                # Enew = E
-                ## Enew = np.sort(np.concatenate((E, (E[:-1] + E[1:]) / 2)))
-                # WGS = WG / 2 / np.sqrt(2 * np.log(2)) + 0.001*(WG==0)
-                # Ga, GV = np.meshgrid(Enew[:-1], E)
-                # GG = (1 / WGS / np.sqrt(2 * np.pi) * np.exp(-(Ga - GV) ** 2 / WGS ** 2 / 2))
-
-
-                # Blu = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, GG, We, -1/2, -3/2, Enew, R) * I1 + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, GG, We, 1/2,  3/2, Enew, R) * I1\
-                #     + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, GG, We, -1/2, -1/2, Enew, R) * I2 + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, GG, We, 1/2,  1/2, Enew, R) * I2\
-                #     + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, GG, We, -1/2,  1/2, Enew, R) * I3 + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, GG, We, 1/2, -1/2, Enew, R) * I3
-
-                Blu = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1/2, -3/2, E, R) * I1 + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1/2,  3/2, E, R) * I1\
-                    + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1/2, -1/2, E, R) * I2 + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1/2,  1/2, E, R) * I2\
-                    + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1/2,  1/2, E, R) * I3 + Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1/2, -1/2, E, R) * I3
-
-
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * Blu)
-                V += 11
-            if model[i] == 'ASM':
-                I = abs(p[V])
-                Sig = p[V + 1] * MulCo
-                eps_m = p[V + 2] * MulCo
-                eps_lat = p[V + 3] * MulCo
-                His = p[V + 4] * MulCo #/ 3.101
-                Han = p[V + 5] * MulCo #/ 3.101
-                WL = abs(p[V + 6]) * MulCo
-                WG = abs(p[V + 7]) * MulCo
-                m = p[V + 8] #np.sign(p[V + 8]) * np.abs((p[V + 8]))**(1/5)
-                A = p[V + 9]
-                Num = int(abs(p[V + 10]))
-                I13 = p[V + 11]
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo)\
-                                  * (I * ASM(T, Sig, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E)))
-                V += 12
-
-            # --- Polarized ("thick") model variants ------------------------
-            # These add a 2x2 cross-section matrix to Smat instead of a scalar
+            # --- Polarized model components ---------------------------------
+            # Each adds a 2x2 cross-section matrix to Smat instead of a scalar
             # exponent; the single matrix exponential is taken after the loop.
-            # Each reduces to its scalar twin when the orientation is averaged
-            # over the sphere (powder), since every Mhat below averages to I.
-            # (A Singlet is isotropic, so its thick form equals the scalar one
-            # exactly; there is therefore no Singlet_(thick).)
-            if model[i] == 'Doublet_(thick)':
+            # The texture order parameter A blends between a random powder
+            # (A = 0, every Mhat below averages to I and the component reduces
+            # EXACTLY to its former scalar form) and a single crystal (A = 1).
+            # (Singlet is isotropic, so it has no polarized form and stays scalar.)
+            if model[i] == 'Doublet':
                 I = abs(p[V])
                 WL = abs(p[V + 3]) * MulCo
                 WG1 = abs(p[V + 4]) * MulCo
@@ -1638,7 +1526,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 9
-            if model[i] == 'Sextet_(thick)':
+            if model[i] == 'Sextet':
                 I = abs(p[V])
                 I13 = p[V + 12]
                 Aeff = 0.5
@@ -1676,7 +1564,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 13
-            if model[i] == 'MDGD_(thick)':
+            if model[i] == 'MDGD':
                 I = abs(p[V])
                 I13 = p[V + 15]
                 Aeff = 0.5
@@ -1720,7 +1608,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 16
-            if model[i] == 'Relax_MS_(thick)':
+            if model[i] == 'Relax_MS':
                 I = abs(float(p[V]) * 2)
                 sig0 = float(p[V + 1]) * MulCo
                 eps = float(p[V + 2]) * MulCo
@@ -1742,7 +1630,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 11
-            if model[i] == 'Relax_2S_(thick)':
+            if model[i] == 'Relax_2S':
                 I = abs(p[V])
                 Aeff = 0.5
                 I1 = I * 3 * (1 - Aeff) / (8 - 4 * Aeff)
@@ -1775,7 +1663,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 13
-            if model[i] == 'Hamilton_mc_(thick)':
+            if model[i] == 'Hamilton_mc':
                 I = abs(p[V])
                 delt = p[V + 1] * MulCo
                 Q = p[V + 2]
@@ -1788,7 +1676,14 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 tetr = p[V + 9]
                 phir = p[V + 10]
                 alfak = p[V + 11]
-                Pmat, S = Ham_mono_thick(Q, H, eto, phi, tet, phir, tetr, alfak)
+                # SMS (Mett != 1): (tetr, phir) is the radiation field h and
+                # alfak rotates the beam k about h. CMS (Mett == 1, unpolarized):
+                # (tetr, phir) is the beam k itself and alfak is redundant -- the
+                # half-trace readout (below) is basis-invariant. Same shared core.
+                if Mett == 1:
+                    Pmat, S = Ham_mono_thick_CMS(Q, H, eto, phi, tet, phir, tetr)
+                else:
+                    Pmat, S = Ham_mono_thick(Q, H, eto, phi, tet, phir, tetr, alfak)
                 S = S * MulCo + delt
                 add = np.zeros((len(E), 2, 2), dtype=complex)
                 for k in range(0, 8):
@@ -1797,7 +1692,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 12
-            if model[i] == 'ASM_(thick)':
+            if model[i] == 'ASM':
                 # Anharmonic spin modulation, polarized. The moment direction
                 # rotates along the cycloid (a distribution of H orientations
                 # with the radiation h held fixed); each modulation point is a
@@ -1895,11 +1790,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                         Ck += 1
                     k -= 1
 
-                Vnum = int(4*(model[k]=='Singlet') + 7*(model[k]=='Doublet') + 11*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 14 * (model[k] == 'MDGD')\
-                           + 9*(model[k]=='Relax_MS') + 15*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 12*(model[k]=='ASM')\
-                           + 11*(model[k]=='Relax_2S')) + 11*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')\
-                           + 9*(model[k]=='Doublet_(thick)') + 13*(model[k]=='Sextet_(thick)') + 16*(model[k]=='MDGD_(thick)')\
-                           + 11*(model[k]=='Relax_MS_(thick)') + 13*(model[k]=='Relax_2S_(thick)') + 12*(model[k]=='Hamilton_mc_(thick)') + 14*(model[k]=='ASM_(thick)')
+                Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 13*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 16 * (model[k] == 'MDGD')\
+                           + 11*(model[k]=='Relax_MS') + 15*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 14*(model[k]=='ASM')\
+                           + 13*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
 
                 model_d = np.array([model[k:i]] * Num).flatten()
                 # print('distr model', model_d, str(Distri[Di]))
@@ -1963,10 +1856,22 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
         if Tprod is not None:
             # Read the transmission out of the beam polarization density matrix
             # rho = diag(rho11, rho22): C_a = tr[Tprod . rho]. A CMS (radioactive
-            # source, Met == 1) is unpolarized -> fixed rho = I/2 (half the
+            # source, Mett == 1) is unpolarized -> fixed rho = I/2 (half the
             # trace). An SMS is linearly polarized to the degree
             # SMS_LINEAR_POLARIZATION (p=1 default -> the (1,1) element only, the
             # original fully-polarized behaviour).
+            #
+            # The branch keys on ``Mett`` (the source CLASS), NOT ``Met`` (which
+            # also encodes the source-line shape and the recursion sentinel).
+            # ``Mett == 1`` is the sole unpolarized (CMS) source; every other
+            # value is polarized SMS:
+            #   * Mett == 0                -> SMS (the GUI's only SMS value);
+            #   * Mett == 2, 3             -> currently unreachable source-line
+            #                                 variants (no caller sets Met 2/3),
+            #                                 SMS-type, so they read out polarized;
+            #   * Met == -1 (per-energy recursion) does not touch Mett -- the
+            #     parent forwards its own Mett here, so a CMS *or* SMS parent is
+            #     classified correctly inside the recursion.
             if Mett == 1:
                 rho11 = rho22 = 0.5
             else:
@@ -2072,11 +1977,9 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
 
             for j in range(MV, len(model)):
                 MV += 1
-                V += int(4 * (model[j] == 'Singlet') + 7 * (model[j] == 'Doublet') + 11 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 14 * (model[j] == 'MDGD')\
-                    + 11 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 9 * (model[j] == 'Relax_MS') + 12*(model[j]=='ASM')\
-                    + 11 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
-                    + 9 * (model[j] == 'Doublet_(thick)') + 13 * (model[j] == 'Sextet_(thick)') + 16 * (model[j] == 'MDGD_(thick)')\
-                    + 11 * (model[j] == 'Relax_MS_(thick)') + 13 * (model[j] == 'Relax_2S_(thick)') + 12 * (model[j] == 'Hamilton_mc_(thick)') + 14 * (model[j] == 'ASM_(thick)')\
+                V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 13 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 16 * (model[j] == 'MDGD')\
+                    + 13 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14*(model[j]=='ASM')\
+                    + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + 15 * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)

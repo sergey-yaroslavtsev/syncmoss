@@ -34,48 +34,35 @@ def mod_len_def(mod_name):
     Returns:
         Integer number of parameters for that model
     """
+    # Every component type is the polarized model now: the former scalar
+    # asymmetry A was replaced by the orientation angles (theta_k, phi_h) + the
+    # uniaxial texture parameter A (Hamilton_mc gained alpha_k, no texture).
     if mod_name == 'Singlet':
         return 4
     elif mod_name == 'Doublet':
-        return 7
+        return 9
     elif mod_name == 'Sextet':
-        return 11
+        return 13
     elif mod_name == 'Sextet(rough)':
         return 14
     elif mod_name == 'Relax_2S':
-        return 11
+        return 13
     elif mod_name == 'Average_H':
         return 11
     elif mod_name == 'Relax_MS':
-        return 9
-    elif mod_name == 'ASM':
-        return 12
-    elif mod_name == 'Hamilton_mc':
         return 11
+    elif mod_name == 'ASM':
+        return 14
+    elif mod_name == 'Hamilton_mc':
+        return 12
     elif mod_name == 'Hamilton_pc':
         return 9
     elif mod_name == 'Variables':
         return numco
     elif mod_name == 'MDGD':
-        return 14
+        return 16
     elif mod_name == 'Nbaseline':
         return number_of_baseline_parameters
-    # Polarized ("thick") variants (A_asym replaced by theta_h, phi_h and the
-    # uniaxial texture parameter A; +alpha_k and no texture for Hamilton).
-    elif mod_name == 'Doublet_(thick)':
-        return 9
-    elif mod_name == 'Sextet_(thick)':
-        return 13
-    elif mod_name == 'MDGD_(thick)':
-        return 16
-    elif mod_name == 'Relax_MS_(thick)':
-        return 11
-    elif mod_name == 'Relax_2S_(thick)':
-        return 13
-    elif mod_name == 'Hamilton_mc_(thick)':
-        return 12
-    elif mod_name == 'ASM_(thick)':
-        return 14
     elif mod_name == 'Layer':
         return 0
     else:

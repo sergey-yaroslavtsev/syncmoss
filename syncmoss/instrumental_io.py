@@ -572,27 +572,27 @@ def instrumental(app, ref, mode=0, pool=None):
             Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
             print('Be file was read')
         except:
-            Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 0.772, 1])
+            Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
             print('COULD NOT READ Be.txt')
 
         p = np.concatenate((p, Be_param))
         p1 = np.array([4.6, -0.097, 0.098, 0.0])
         p = np.concatenate((p, p1))
-        
+        # Layout: baseline(8) + polarized Doublet(9) + Singlet(4); Singlet T is 17.
         bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
         bounds[0][0] = 0
-        bounds[0][15] = 0.001
+        bounds[0][17] = 0.001
         if CMS_ch == 0:
-            # Fix everything except Ns + T of singlet
-            fix = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18], dtype=int)
-        
+            # Fix everything except Ns + T of singlet (indices 0 and 17)
+            fix = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20], dtype=int)
+
         bounds = np.concatenate((bounds, bounds0), axis=1)
         mod_p_len = len(p)
         p = np.concatenate((p, p0))
         print(p)
         print(fix)
         print(f"[Instrumental function] Mode 0: Creating INSSS function, CMS_ch={CMS_ch}")
-        
+
         if CMS_ch == 0:
             def INSSS(x_exp, p):
                 return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:])
@@ -613,33 +613,35 @@ def instrumental(app, ref, mode=0, pool=None):
             Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
             print('Be file was read')
         except:
-            Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 0.772, 1])
+            Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
             print('COULD NOT READ Be.txt')
-        
+
         if CMS_ch == 1:
             Be_param[0] = 0
-        
+
         p = np.concatenate((p, Be_param))
-        p1 = np.array([7.5, 0, 0, 33.04, 0.098, 0, 0.5, 0, 0, 0, 3])
+        # Polarized Sextet (13): I, d, e, H, L, G, theta_k=90, phi_h=0, A=0, a+, a-, GH, I13.
+        p1 = np.array([7.5, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 3])
         p = np.concatenate((p, p1))
-        
+        # Layout: baseline(8) + polarized Doublet(9) + polarized Sextet(13);
+        # Sextet T is index 17 and its texture A is index 25.
         bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
         bounds[0][0] = 0
-        bounds[0][15] = 0.001
+        bounds[0][17] = 0.001
         if CMS_ch == 0:
-            # Fix everything except Ns + T and A of sextet
-            fix = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22, 23, 24, 25], dtype=int)
+            # Fix everything except Ns + T and A of sextet (indices 0, 17, 25)
+            fix = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29], dtype=int)
         if CMS_ch == 1:
-            # Fix everything except Ns, Nnr + T and A of sextet
-            fix = np.array([1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22, 23, 24, 25], dtype=int)
+            # Fix everything except Ns, Nnr + T and A of sextet (indices 0, 4, 17, 25)
+            fix = np.array([1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29], dtype=int)
             bounds[0][4] = 0
-        
+
         bounds = np.concatenate((bounds, bounds0), axis=1)
         mod_p_len = len(p)
         p = np.concatenate((p, p0))
         print(p)
         print(fix)
-        
+
         if CMS_ch == 0:
             def INSSS(x_exp, p):
                 return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:])

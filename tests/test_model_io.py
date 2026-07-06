@@ -9,32 +9,26 @@ from syncmoss.constants import numco, number_of_baseline_parameters
 from syncmoss.model_io import mod_len_def, _remap_reference_text
 
 
-# Expected parameter count per model type (must match models.TImod parameter layout).
+# Expected parameter count per model type (must match models.TImod parameter
+# layout). Every anisotropic component is now the polarized model: the former
+# scalar asymmetry A was replaced by orientation angles (theta_k, phi_h) + the
+# uniaxial texture parameter A (Hamilton_mc gained alpha_k, no texture). Singlet
+# is isotropic (no angles/texture); Sextet(rough)/Average_H/Hamilton_pc had no
+# polarized twin and keep their counts.
 EXPECTED_PARAM_COUNTS = {
     "Singlet": 4,
-    "Doublet": 7,
-    "Sextet": 11,
+    "Doublet": 9,
+    "Sextet": 13,
     "Sextet(rough)": 14,
-    "MDGD": 14,
-    "Relax_2S": 11,
+    "MDGD": 16,
+    "Relax_2S": 13,
     "Average_H": 11,
-    "Relax_MS": 9,
-    "ASM": 12,
-    "Hamilton_mc": 11,
+    "Relax_MS": 11,
+    "ASM": 14,
+    "Hamilton_mc": 12,
     "Hamilton_pc": 9,
     "Variables": numco,                       # 15
     "Nbaseline": number_of_baseline_parameters,  # 8
-    # Polarized ("thick") variants: asymmetry A -> orientation angles
-    # (theta_h, phi_h) + uniaxial texture parameter A; Hamilton gains the
-    # beam-rotation angle alpha_k (and has no texture parameter).
-    # (Singlet has no thick form: it is isotropic, so thick == scalar exactly.)
-    "Doublet_(thick)": 9,
-    "Sextet_(thick)": 13,
-    "MDGD_(thick)": 16,
-    "Relax_MS_(thick)": 11,
-    "Relax_2S_(thick)": 13,
-    "Hamilton_mc_(thick)": 12,
-    "ASM_(thick)": 14,
     "Layer": 0,
 }
 

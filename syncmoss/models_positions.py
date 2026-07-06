@@ -792,21 +792,6 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S = p[V + 1]
                 V += 4
                 SET.append([S])
-            if model[i] == 'Doublet':
-                S1 = (p[V + 1] - p[V + 2])
-                S2 = (p[V + 1] + p[V + 2])
-                SET.append([S1, S2])
-                V += 7
-            if model[i] == 'Sextet':
-                HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 7]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 8]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 8]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 8]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 8]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 7]
-                SET.append([S1, S2, S3, S4, S5, S6])
-                V += 11
             if model[i] == 'Sextet(rough)':
                 HH = p[V + 3] / 3.101
                 S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 6]
@@ -817,32 +802,6 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 6]
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 14
-            if model[i] == 'MDGD':
-                HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 11]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 12]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 12]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 12]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 12]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 11]
-                SET.append([S1, S2, S3, S4, S5, S6])
-                V += 14
-            if model[i] == 'Hamilton_mc':
-                delt = p[V+1]
-                Q = p[V+2]
-                H = p[V+3]
-                eto = p[V+6]
-                tet = p[V+7]
-                phi = p[V+8]
-                tetr = p[V+9]
-                phir = p[V+10]
-                if Met == 0: # is it useless? polarization do not changes positions but intensities
-                    S = Ham_mono(Q, H, eto, phi, tet, phir, tetr)[1]
-                if Met == 1:
-                    S = Ham_mono_CMS(Q, H, eto, phi, tet, phir, tetr)[1]
-                S += delt
-                SET.append(S)
-                V += 11
             if model[i] == 'Hamilton_pc':
                 delt = p[V+1]
                 Q = p[V+2]
@@ -854,6 +813,34 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S += delt
                 SET.append(S)
                 V += 9
+            # --- Polarized model components: same line POSITIONS as before the
+            # thin/thick merge (polarization changes intensities, not positions);
+            # only the parameter indices shifted because A -> (theta_k, phi_h). ---
+            if model[i] == 'Doublet':
+                S1 = (p[V + 1] - p[V + 2])
+                S2 = (p[V + 1] + p[V + 2])
+                SET.append([S1, S2])
+                V += 9
+            if model[i] == 'Sextet':
+                HH = p[V + 3] / 3.101
+                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 9]
+                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
+                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
+                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
+                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
+                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 9]
+                SET.append([S1, S2, S3, S4, S5, S6])
+                V += 13
+            if model[i] == 'MDGD':
+                HH = p[V + 3] / 3.101
+                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 13]
+                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
+                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
+                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
+                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
+                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 13]
+                SET.append([S1, S2, S3, S4, S5, S6])
+                V += 16
             if model[i] == 'Relax_MS':
                 HH = float(p[V + 3]) / 3.1098
                 S1 = (p[V + 1] - HH / 2 + p[V + 2])
@@ -863,8 +850,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2])
                 S6 = (p[V + 1] + HH / 2 + p[V + 2])
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 9
-
+                V += 11
             if model[i] == 'Relax_2S':
                 HH = float(p[V + 3]) / 3.1098
                 S1 = (p[V + 1] - HH / 2 + p[V + 2])
@@ -881,89 +867,8 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S52 = (p[V + 4] + 3.0760 / 5.3123 * HH2 / 2 - p[V + 5])
                 S62 = (p[V + 4] + HH2 / 2 + p[V + 5])
                 SET.append([S1, S2, S3, S4, S5, S6, S12, S22, S32, S42, S52, S62])
-                V += 11
-
-            if model[i] == 'ASM':
-                I = abs(p[V])
-                Sig = p[V + 1]
-                eps_m = p[V + 2]
-                eps_lat = p[V + 3]
-                His = p[V + 4] #/ 3.101
-                Han = p[V + 5] #/ 3.101
-
-                eps = eps_m + eps_lat
-                H = His + Han
-                a1 = eps_lat ** 2 * 3 / c * E0_J / (gex * mun * H + (H == 0))
-                a2 = eps_lat ** 2 * 3 / c * E0_J / (gex * mun * H + (H == 0))
-
-                H = H / E0_J * c
-
-                S1 = Sig + eps + a1 + mun * (3 * gex - ggr) / 2 * H
-                S6 = Sig + eps - a1 - mun * (3 * gex - ggr) / 2 * H
-                S2 = Sig - eps - a2 + mun * (gex - ggr) / 2 * H
-                S5 = Sig - eps + a2 - mun * (gex - ggr) / 2 * H
-                S3 = Sig - eps + a2 - mun * (gex + ggr) / 2 * H
-                S4 = Sig - eps - a2 + mun * (gex + ggr) / 2 * H
-                SET.append([S1, S2, S3, S4, S5, S6])
-
-                V += 12
-
-            # --- Polarized ("thick") variants: line POSITIONS are identical to
-            # the scalar twin (polarization changes intensities, not positions);
-            # only parameter indices shift because A -> (theta_h, phi_h). ---
-            if model[i] == 'Doublet_(thick)':
-                S1 = (p[V + 1] - p[V + 2])
-                S2 = (p[V + 1] + p[V + 2])
-                SET.append([S1, S2])
-                V += 9
-            if model[i] == 'Sextet_(thick)':
-                HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 9]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 9]
-                SET.append([S1, S2, S3, S4, S5, S6])
                 V += 13
-            if model[i] == 'MDGD_(thick)':
-                HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 13]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 13]
-                SET.append([S1, S2, S3, S4, S5, S6])
-                V += 16
-            if model[i] == 'Relax_MS_(thick)':
-                HH = float(p[V + 3]) / 3.1098
-                S1 = (p[V + 1] - HH / 2 + p[V + 2])
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2])
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2])
-                S6 = (p[V + 1] + HH / 2 + p[V + 2])
-                SET.append([S1, S2, S3, S4, S5, S6])
-                V += 11
-            if model[i] == 'Relax_2S_(thick)':
-                HH = float(p[V + 3]) / 3.1098
-                S1 = (p[V + 1] - HH / 2 + p[V + 2])
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2])
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2])
-                S6 = (p[V + 1] + HH / 2 + p[V + 2])
-                HH2 = float(p[V + 6]) / 3.1098
-                S12 = (p[V + 4] - HH2 / 2 + p[V + 5])
-                S22 = (p[V + 4] - 3.0760 / 5.3123 * HH2 / 2 - p[V + 5])
-                S32 = (p[V + 4] - 0.8397 / 5.3123 * HH2 / 2 - p[V + 5])
-                S42 = (p[V + 4] + 0.8397 / 5.3123 * HH2 / 2 - p[V + 5])
-                S52 = (p[V + 4] + 3.0760 / 5.3123 * HH2 / 2 - p[V + 5])
-                S62 = (p[V + 4] + HH2 / 2 + p[V + 5])
-                SET.append([S1, S2, S3, S4, S5, S6, S12, S22, S32, S42, S52, S62])
-                V += 13
-            if model[i] == 'Hamilton_mc_(thick)':
+            if model[i] == 'Hamilton_mc':
                 delt = p[V + 1]
                 Q = p[V + 2]
                 H = p[V + 3]
@@ -976,7 +881,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S += delt
                 SET.append(S)
                 V += 12
-            if model[i] == 'ASM_(thick)':
+            if model[i] == 'ASM':
                 Sig = p[V + 1]
                 eps_m = p[V + 2]
                 eps_lat = p[V + 3]
@@ -1053,11 +958,9 @@ def mod_pos(p, model, INS, Met=0):
 
             for j in range(MV, len(model)):
                 MV += 1
-                V += int(4 * (model[j] == 'Singlet') + 7 * (model[j] == 'Doublet') + 11 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 14 * (model[j] == 'MDGD')\
-                    + 11 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 9 * (model[j] == 'Relax_MS') + 12 * (model[j] == 'ASM')\
-                    + 11 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
-                    + 9 * (model[j] == 'Doublet_(thick)') + 13 * (model[j] == 'Sextet_(thick)') + 16 * (model[j] == 'MDGD_(thick)')\
-                    + 11 * (model[j] == 'Relax_MS_(thick)') + 13 * (model[j] == 'Relax_2S_(thick)') + 12 * (model[j] == 'Hamilton_mc_(thick)') + 14 * (model[j] == 'ASM_(thick)')\
+                V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 13 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 16 * (model[j] == 'MDGD')\
+                    + 13 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14 * (model[j] == 'ASM')\
+                    + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + 15 * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)

@@ -252,15 +252,31 @@ $$
 $$
 
 By construction $(\hat P_k)_{11}=\pi|A_1^k|^2$ equals the scalar `Ham_mono`
-intensity, so the thin limit reproduces the scalar SMS model. Under a CMS source
-the *same* $\hat P_k$ is used, read out (per §4) as its half-trace
-$\tfrac12\operatorname{tr}\hat P_k=\tfrac{\pi}{2}\big(|A_1^k|^2+|A_2^k|^2\big)
-=\tfrac{\pi}{2}\lVert\mathbf d_{k,\perp}\rVert^2$. **Note:** unlike the sextet-type
-matrices (whose half-trace depends only on $\theta_h$), here $\alpha_k$ rotates the
-beam $\mathbf k=\mathbf e_1\times\mathbf e_2$ about $\mathbf h$, so it changes
-$\mathbf d_{k,\perp}$ and *does* affect even the CMS readout. On a CMS spectrum
-$\alpha_k$ is therefore a physically ill-constrained ("nonsense") parameter left to
-the user; it is a genuine SMS observable for a thick sample.
+intensity, so the thin limit reproduces the scalar SMS model.
+
+**The two sources use different geometries** for this single-crystal model — the
+angles $(\theta,\varphi)$ (columns `tetr, phir`) are reinterpreted, and the code
+selects one of two cores by `Met`:
+
+* **SMS** ($\texttt{Met}\ne1$, linearly polarized; core `Ham_mono_thick`) — the
+  construction above: $(\theta_h,\varphi_h)$ is the radiation field $\mathbf h$ in
+  the PAS and $\alpha_k$ rotates the beam $\mathbf k=\mathbf e_1\times\mathbf e_2$
+  about $\mathbf h$. For a thick sample $\alpha_k$ is a **genuine observable** — it
+  mixes the two polarization channels during propagation (the off-diagonal
+  $\hat P_{k,01}\propto A_1\overline{A_2}$), so it affects even the $(1,1)$ readout.
+
+* **CMS** ($\texttt{Met}=1$, unpolarized; core `Ham_mono_thick_CMS`) —
+  $(\theta,\varphi)$ is instead the **beam direction $\mathbf k$** in the PAS, and
+  the two polarizations $\mathbf e_1=\hat{\boldsymbol\theta}(\mathbf k)$,
+  $\mathbf e_2=\hat{\boldsymbol\varphi}(\mathbf k)$ are the spherical-basis unit
+  vectors perpendicular to $\mathbf k$. The readout (per §4) is the half-trace
+  $\tfrac12\operatorname{tr}\hat P_k=\tfrac{\pi}{2}\big(|A_1^k|^2+|A_2^k|^2\big)
+  =\tfrac{\pi}{2}\lVert\mathbf d_{k,\perp}\rVert^2$, which is **invariant under any
+  rotation of $(\mathbf e_1,\mathbf e_2)$ about $\mathbf k$**. There is therefore
+  **no $\alpha_k$**: it would only spin that arbitrary transverse basis, so it is
+  redundant (a true no-op) and the user leaves it fixed. The thin limit
+  $\tfrac12\operatorname{tr}\hat P_k$ equals the scalar `Ham_mono_CMS` intensity for
+  the same beam $(\theta,\varphi)$ (verified $<10^{-10}$).
 
 ### 2.7 Anharmonic spin modulation `ASM_(thick)` (14 params) — *non-trivial, with a geometric assumption*
 
@@ -314,9 +330,10 @@ orientation. Confirm/refine for quantitative work.
 | ASM | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 12→14 |
 | Layer | marker, no params | 0 |
 
-(Singlet has no thick form. For Hamilton the existing $(\theta,\varphi)$ already
-are the radiation direction $(\theta_h,\varphi_h)$; only $\alpha_k$ is added — see
-§3.1 for why Hamilton gets no texture parameter.)
+(Singlet has no thick form. For Hamilton the existing $(\theta,\varphi)$ already are
+the SMS radiation direction $(\theta_h,\varphi_h)$ — under CMS they are the beam
+direction $\mathbf k$ instead, see §2.6; only $\alpha_k$ is added — see §3.1 for why
+Hamilton gets no texture parameter.)
 
 ### 3.1 Uniaxial (fiber) texture parameter $A$
 
@@ -397,8 +414,9 @@ the polar angle $\theta_h$, so the azimuth $\varphi_h$ has **no effect** (an
 unpolarized source defines no direction in the polarization plane); a resolved
 allowed line saturates at exactly $50\%$ absorption for any orientation, a forbidden
 line vanishes, and a random powder shows no floor. (`Hamilton_mc_(thick)` is the one
-exception — its $\alpha_k$ re-aims the beam $\mathbf k$ and so still enters the CMS
-readout, see §2.6.) Because
+exception — under CMS its $(\theta,\varphi)$ are the **beam direction $\mathbf k$ in
+the crystal frame**, so *both* angles are physical (they aim the beam through the
+anisotropic crystal), whereas $\alpha_k$ becomes redundant; see §2.6.) Because
 the matrix exponential is convex, $\tfrac12(e^{-\lambda_+}+e^{-\lambda_-})\ne
 e^{-\frac12(\lambda_++\lambda_-)}$, so the matrix treatment (not a scalar effective
 thickness) is still required for a thick oriented absorber even with an unpolarized

@@ -10,6 +10,7 @@ import platform
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from syncmoss.constants import numco, numro, number_of_baseline_parameters
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
+from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
 
 
 def mod_len_def(mod, include_special=True):
@@ -27,19 +28,17 @@ def mod_len_def(mod, include_special=True):
     Returns:
         int: Number of parameters
     """
+    # Every component type is now the polarized model: the former scalar
+    # asymmetry A was replaced by the orientation angles (theta_k, phi_h) plus
+    # the uniaxial texture parameter A (Hamilton_mc gained the beam-rotation
+    # angle alpha_k and has no texture parameter). See syncmoss.legacy for how
+    # pre-merge model files / presets are upgraded to these counts.
     base_params = int(
-        4 * (mod == 'Singlet') + 7 * (mod == 'Doublet') + 11 * (mod == 'Sextet') +
-        14 * (mod == 'Sextet(rough)') + 11 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
-        9 * (mod == 'Relax_MS') + 12 * (mod == 'ASM') + 11 * (mod == 'Hamilton_mc') +
-        9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 14 * (mod == 'MDGD') +
-        number_of_baseline_parameters * (mod == 'Nbaseline') +  # Nbaseline has baseline parameters
-        # Polarized ("thick") variants: asymmetry A replaced by orientation
-        # angles (theta_h, phi_h) plus the uniaxial texture parameter A; Hamilton
-        # gains the beam-rotation angle alpha_k (and has no texture parameter).
-        9 * (mod == 'Doublet_(thick)') +
-        13 * (mod == 'Sextet_(thick)') + 16 * (mod == 'MDGD_(thick)') +
-        11 * (mod == 'Relax_MS_(thick)') + 13 * (mod == 'Relax_2S_(thick)') +
-        12 * (mod == 'Hamilton_mc_(thick)') + 14 * (mod == 'ASM_(thick)')
+        4 * (mod == 'Singlet') + 9 * (mod == 'Doublet') + 13 * (mod == 'Sextet') +
+        14 * (mod == 'Sextet(rough)') + 13 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
+        11 * (mod == 'Relax_MS') + 14 * (mod == 'ASM') + 12 * (mod == 'Hamilton_mc') +
+        9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 16 * (mod == 'MDGD') +
+        number_of_baseline_parameters * (mod == 'Nbaseline')  # Nbaseline has baseline parameters
         # 'Layer' has 0 parameters (handled by the default for unknown names).
     )
     
@@ -192,6 +191,8 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                     continue
 
                 row_data = M_list[row_data_idx]
+                # Upgrade a pre-merge (scalar) submodel row to the polarized layout.
+                row_data = upgrade_mdl_row(normalize_legacy_model_name(source_models[src_idx]), row_data)
                 num_params = len(row_data) // 5
                 dst_row_widget = main_window.params_table.row_widgets[dst_row]
 
@@ -232,7 +233,9 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
         num_rows_to_load = min(len(main_window.params_table.row_widgets) - 1, len(M_list[0]) - 1)
         for i in range(1, num_rows_to_load + 1):
             if i < len(M_list[0]):
-                model_name = M_list[0][i]
+                # Map any pre-merge name (e.g. 'Doublet_(thick)') to its current
+                # name so the row can be built with the polarized model.
+                model_name = normalize_legacy_model_name(M_list[0][i])
                 if model_name and model_name != 'None':
                     main_window.params_table.select_model(i, model_name)
 
@@ -258,6 +261,11 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                 break
 
             row_data = M_list[k + param_start_idx]
+            # Upgrade a pre-merge (scalar) component row to the current polarized
+            # layout (insert theta_k/phi_h, remap the asymmetry). No-op for files
+            # already in the new layout. Row k's model name is M_list[0][k].
+            if k >= 1 and k < len(M_list[0]):
+                row_data = upgrade_mdl_row(normalize_legacy_model_name(M_list[0][k]), row_data)
             num_params = len(row_data) // 5  # Each param has 5 fields: value, lower, upper, name?, fix
 
             for i in range(num_params):

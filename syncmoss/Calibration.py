@@ -38,14 +38,18 @@ import time
 from syncmoss.constants import number_of_baseline_parameters
 MulCoCMS = 0.28
 
-def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1):
+def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1, GCMS = 0.1):
     """Fit the velocity calibration of a standard absorber spectrum.
 
-    Loads the calibration spectrum ``Cal_file`` from ``dir_path``, fits it with the
-    selected drive model (``VVV == 1`` -> sinusoidal, otherwise linear) and returns
-    the calibration result. ``INS`` / ``JN`` / ``x0`` / ``MulCo`` configure the
-    instrumental function and transmission integral; ``pool`` is the shared
-    multiprocessing pool.
+    Loads the calibration spectrum ``Cal_file`` from ``dir_path`` and fits it.
+    ``VVV`` selects the experimental method: ``VVV == 1`` is a conventional source
+    (CMS / MS mode) and ``VVV == 3`` a synchrotron source (SMS). ``JN`` / ``x0`` /
+    ``MulCo`` configure the transmission integral; ``pool`` is the shared pool.
+
+    The instrumental function differs by method: SMS uses the multi-line ``INS``
+    array (``#@INSexp``/``#@INSint``); CMS uses a SINGLE Gaussian width ``GCMS``
+    (the GUI GCMS box), passed to the ``Met==1`` transmission exactly as the CMS
+    fit does (``INS = [GCMS]``, ``MulCoCMS``). ``INS`` is ignored for CMS.
 
     Used by syncmoss_main.py (CalibrationThread) to build the channel->velocity scale.
 
@@ -55,12 +59,13 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
     print('VVV = ', VVV)
     if VVV == 1:
         Li_Lo = 1
+        # CMS instrumental function is a single Gaussian width (GCMS), NOT the
+        # multi-line SMS INS array; Met==1 expects exactly one width.
+        INS = np.array([float(GCMS)])
         pNorm = np.array([float(0)] * number_of_baseline_parameters)
         pNorm[0] = 1
         Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, 0.0, MulCoCMS, INS, [0], [0], Met=1)[0]
         def func(x, p):
-            #p = np.insert(p, 3, 0)
-            #p = np.insert(p, 7, 0)
             return m5.TI(x, p, model, JN, pool, 0.0, MulCoCMS, INS, [], [], Met=1, Norm=Norm)
             # return m5.PV(x, p, model, pool)
         INS_shift = 0
@@ -72,8 +77,6 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
         # JN = 32
         Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, x0, MulCo, INS, [0], [0])[0]
         def func(x, p):
-            #p = np.insert(p, 3, 0)
-            #p = np.insert(p, 7, 0)
             return m5.TI(x, p, model, JN, pool, x0, MulCo, INS, [], [], Norm=Norm)
         INS_shift = 0
         for i in range (0, int((len(INS))/3)):
@@ -121,11 +124,10 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
         Hx2 = np.concatenate((np.array([float(0)] * len(H1)), np.array([float(1)] * len(H2))), axis=0)
         Hx = np.concatenate((H1, H2), axis=0)
         if min(Hx) > -2.95 and max(Hx) < 2.95:
-            # pCAL2[number_of_baseline_parameters + 6] = 0.5  # asymmetry parameter
-            p[10] = 0.5 # in this case this parameter do not affect the model
-        # else:
-        #     pCAL2[number_of_baseline_parameters + 6] = p[10]  # asymmetry parameter
-        pCAL2[number_of_baseline_parameters + 6] = p[10]  # asymmetry parameter
+            p[10] = 0.0 # tiny velocity range: texture undefined -> isotropic (A=0)
+        # p[10] is the Sextet texture order parameter A (index 8 in the polarized
+        # layout: T,d,e,H,L,G,theta_k,phi_h,A,...); A=0 is the isotropic powder.
+        pCAL2[number_of_baseline_parameters + 8] = p[10]  # texture order parameter A
         pCAL2[0] = p[11]
         if p[12] > p[11]*10:
             p[12] = p[11]*10
@@ -144,15 +146,15 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
         pCAL2[number_of_baseline_parameters] = p[9] # intensity of main component
 
         if VVV == 3:
-            pCAL2[number_of_baseline_parameters + 11] = p[11] # intensity of impurity
+            # second Sextet intensity: index nbp + 13 in the polarized layout
+            # (baseline 8 + first Sextet 13 -> second Sextet starts at nbp+13).
+            pCAL2[number_of_baseline_parameters + 13] = p[11] # intensity of impurity
         Hx = p[0] / np.pi * len(xn2) * np.sin(np.pi / len(xn2)) * np.cos(p[1] + np.pi / len(xn2) * (2 * x + 1)) + p[2]
         if min(Hx) > -2.95 and max(Hx) < 2.95:
-            # pCAL2[number_of_baseline_parameters + 6] = 0.5  # asymmetry parameter
-            p[10] = 0.5
+            p[10] = 0.0  # tiny velocity range: texture undefined -> isotropic (A=0)
             # print('very small velocity range - texture could not be defined')
-        # else:
-        #     pCAL2[number_of_baseline_parameters + 6] = p[10]  # asymmetry parameter
-        pCAL2[number_of_baseline_parameters + 6] = p[10]  # asymmetry parameter
+        # p[10] is the Sextet texture order parameter A (index 8 in the layout).
+        pCAL2[number_of_baseline_parameters + 8] = p[10]  # texture order parameter A
         if VVV == 1:
             pCAL2[0] = p[11]
             if p[12] > p[11] * 10:
@@ -280,7 +282,9 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
 
 
     model = ['Sextet']
-    p00 = np.array([(max(id[0]) - 2 * np.sqrt(max(id[0])))*(1-0.4*(VVV==1)), 0, 0, 0, (max(id[0]) - 2 * np.sqrt(max(id[0])))*(0.4*(VVV==1)), 0, 0, 0, 8, 0.0, 0, 33.04, 0.098, 0.0, 0.5, 0, 0, 0, 3])
+    # Sextet block is the polarized layout: I, d, e, H, L, G, theta_k=90, phi_h=0,
+    # A=0 (isotropic texture -> identical to the old scalar sextet), a+, a-, GH, I13.
+    p00 = np.array([(max(id[0]) - 2 * np.sqrt(max(id[0])))*(1-0.4*(VVV==1)), 0, 0, 0, (max(id[0]) - 2 * np.sqrt(max(id[0])))*(0.4*(VVV==1)), 0, 0, 0, 8, 0.0, 0, 33.04, 0.098, 0.0, 90, 0, 0, 0, 0, 0, 3])
     sex0 = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
     bounds = np.array([[-np.inf] * len(p00), [np.inf] * len(p00)], dtype=float)
     bounds[0][number_of_baseline_parameters+1] = -0.05
@@ -323,7 +327,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
                 shift_m = sex0[i] - Vel_max_m / np.pi * len(xn2) * np.sin(np.pi / len(xn2)) * np.cos(np.pi / len(xn2) * (2 * ch_m1 + 1) + (np.pi / len(xn2) * phase0))
                 x = sin_cal(xn2, [Vel_max_m, (np.pi / len(xn2) * phase0), shift_m])  # p[1] mean different on method
                 # A and I1/I3 are 12th and 16th parameters.
-                res = mi.minimi_hi(func, x, id[0], p00, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+4, number_of_baseline_parameters+5, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10]), bounds=bounds, MI=3, MI2=5) # int(11*(VVV==3)+1), int(15*(VVV==3)+1)
+                res = mi.minimi_hi(func, x, id[0], p00, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+4, number_of_baseline_parameters+5, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10, number_of_baseline_parameters+11, number_of_baseline_parameters+12]), bounds=bounds, MI=3, MI2=5) # int(11*(VVV==3)+1), int(15*(VVV==3)+1)
                 # if res[2] < 10000:
                 hi_m[k] = res[2]
                 hi_c = hi_m[k]
@@ -383,7 +387,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
                 velocity_step_m = -(sex0[j]-sex0[i])/(ch_m2-ch_m1)
                 Vel_max_m = sex0[i] + velocity_step_m*ch_m1
                 x = lin_cal(xn2, [Vel_max_m, Vel_max_m-velocity_step_m*phase0, velocity_step_m])  # p[1] mean different on method
-                res = mi.minimi_hi(func, x, id[0], p00, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+4, number_of_baseline_parameters+5, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10]), bounds=bounds, MI=3, MI2=5)
+                res = mi.minimi_hi(func, x, id[0], p00, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+4, number_of_baseline_parameters+5, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10, number_of_baseline_parameters+11, number_of_baseline_parameters+12]), bounds=bounds, MI=3, MI2=5)
                 # if res[2] < 10000:
                 hi_m_lin[k] = res[2]
                 hi_c = hi_m_lin[k]
@@ -448,7 +452,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
     p00 = np.copy(p0)
     start_time = time.time()
     for i in range(0, 4):
-        p = mi.minimi_hi(func, x, id[0], p0, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+3, number_of_baseline_parameters+4, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10]), MI=3, MI2=5)[0] # int(15*(VVV==3)+1)  int(11*(VVV==3)+1)
+        p = mi.minimi_hi(func, x, id[0], p0, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+3, number_of_baseline_parameters+4, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10, number_of_baseline_parameters+11, number_of_baseline_parameters+12]), MI=3, MI2=5)[0] # int(15*(VVV==3)+1)  int(11*(VVV==3)+1)
         # print(p)
         sex0 = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123, -5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
         # No reversal is needed here even for Vel_start == 1: the velocity
@@ -463,18 +467,20 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
         x1 = x[:int(len(x)/2)]
         x2 = x[int(len(x)/2):]
         p[V+3] = p[V+3] / 3.101
-        ps0x[0]  = (np.abs(x1 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 7])).argmin()
-        ps0x[1]  = (np.abs(x1 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 8])).argmin()
-        ps0x[2]  = (np.abs(x1 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 8])).argmin()
-        ps0x[3]  = (np.abs(x1 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 8])).argmin()
-        ps0x[4]  = (np.abs(x1 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 8])).argmin()
-        ps0x[5]  = (np.abs(x1 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 7])).argmin()
-        ps0x[6]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 7])).argmin()
-        ps0x[7]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 8])).argmin()
-        ps0x[8]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 8])).argmin()
-        ps0x[9]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 8])).argmin()
-        ps0x[10] = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 8])).argmin()
-        ps0x[11] = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 7])).argmin()
+        # Sextet outer-line shift a+ is index V+9 and inner shift a- is V+10 in
+        # the polarized layout (T,d,e,H,L,G,theta_k,phi_h,A,a+,a-,GH,I13).
+        ps0x[0]  = (np.abs(x1 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 9])).argmin()
+        ps0x[1]  = (np.abs(x1 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 10])).argmin()
+        ps0x[2]  = (np.abs(x1 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 10])).argmin()
+        ps0x[3]  = (np.abs(x1 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 10])).argmin()
+        ps0x[4]  = (np.abs(x1 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 10])).argmin()
+        ps0x[5]  = (np.abs(x1 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 9])).argmin()
+        ps0x[6]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 9])).argmin()
+        ps0x[7]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 10])).argmin()
+        ps0x[8]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 10])).argmin()
+        ps0x[9]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 10])).argmin()
+        ps0x[10] = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 10])).argmin()
+        ps0x[11] = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 9])).argmin()
         p[V + 3] = p[V + 3] * 3.101
         j = 0
         for k in range(0, 12):
@@ -508,7 +514,8 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
         JN = 64
         Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, x0, MulCo, INS, [0], [0])[0]
 
-    pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0, 8.2, 0, 0, 33.04, 0.098, 0.0, 0.5, 0, 0, 0, 3])
+    # Polarized Sextet block (theta_k=90, phi_h=0, A=0 -> isotropic == old scalar).
+    pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0, 8.2, 0, 0, 33.04, 0.098, 0.0, 90, 0, 0, 0, 0, 0, 3])
     ps1 = np.append(ps, 1)
 
     def parabolic(x, p):
@@ -545,31 +552,35 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
                 Be_param = np.genfromtxt(os.path.join(dir_path, 'Be.txt'), delimiter='\t', skip_footer=0)
                 print('file was read')
             except:
-                Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 0.772, 1])
+                Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
                 print('COULD NOT READ Be.txt')
-            pCAL = np.array([p[0], 0, 0, 0, 0, 0, 0, 0, 8.08, 0, 0, 33.04, 0.098, 0, 0.5, 0, 0, 0, 3, 0.451, -0.041, 0.003, 30.88, 0.098, 0.1, 0.5, 0, 0, 0, 3])#, 0.048, 0.103, -0.259, 0.098, 0.105, 0.265, 1])
+            # baseline(8) + two polarized Sextets(13 each, theta_k=90/phi_h=0/A=0)
+            # + the Be impurity Doublet (9-value polarized layout, read from Be.txt).
+            pCAL = np.array([p[0], 0, 0, 0, 0, 0, 0, 0,
+                             8.08, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 3,
+                             0.451, -0.041, 0.003, 30.88, 0.098, 0.1, 90, 0, 0, 0, 0, 0, 3])
             pCAL = np.concatenate((pCAL, Be_param))
         if VVV == 1:
             # model = ['Sextet', 'Sextet']
             # pCAL = np.array([p[0], 0, 0, p[3], 0, 0, 8.08, 0, 0, 33.04, 0.098, 0, 0.5, 0, 0, 0, 3, 0.0, -0.041, 0.003, 30.88, 0.098, 0.1, 0.5, 0, 0, 0, 3])#, 0.048, 0.103, -0.259, 0.098, 0.105, 0.265, 1])
             model = ['Sextet']
-            pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0, 8.08, 0, 0, 33.04, 0.098, 0, 0.5, 0, 0, 0, 3])
+            pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0, 8.08, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 3])
             print('background ', pCAL[0], pCAL[4], ps1[3])
 
     if method == 1:
         model = ['Sextet']
         pCAL = p0
-        pCAL[number_of_baseline_parameters+10] = 3
-        pCAL[number_of_baseline_parameters+5] = 0
+        pCAL[number_of_baseline_parameters+12] = 3   # I1/I3 (index 12 in polarized layout)
+        pCAL[number_of_baseline_parameters+5] = 0    # G
         print('background ', pCAL[0], pCAL[4], ps1[3])
 
 
     xT = cal(xn2, ps1)
 
-    ps1 = np.append(ps1, 8)
-    ps1 = np.append(ps1, 0.5)
+    ps1 = np.append(ps1, 8)      # ps1[9]:  main-component intensity I
+    ps1 = np.append(ps1, 0)      # ps1[10]: texture order parameter A (0 = isotropic)
     if VVV == 3:
-        ps1 = np.append(ps1, 0.5)
+        ps1 = np.append(ps1, 0.5)  # ps1[11]: impurity (second Sextet) intensity
     if VVV == 1:
 
         tot = (pCAL[0] + pCAL[4])
@@ -754,7 +765,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1
         print('impurity is', pS[11]/(pS[9]+pS[11])*100, '%')
         print('maximum deviation is ', max(np.abs(spc2-spc3)), 'or ',  max(np.abs(spc2-spc3))/pCAL[0], '%')
         # if VVV == 3:
-        print('Texture parameter is', pS[10], 'should be 0.5 for isotropic')
+        print('Texture parameter is', pS[10], 'should be 0 for isotropic')
 
 
     if platform.system() == 'Windows':

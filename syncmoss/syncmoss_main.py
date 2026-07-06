@@ -237,7 +237,7 @@ class CalibrationThread(QThread):
     finished = Signal(object, object, object)  # A, B, C
     error = Signal(str)
     
-    def __init__(self, dir_path, file, experimental_method, INS, JN, x0, MulCo, vel_start, pool):
+    def __init__(self, dir_path, file, experimental_method, INS, JN, x0, MulCo, vel_start, pool, GCMS=0.1):
         super().__init__()
         self.dir_path = dir_path
         self.file = file
@@ -248,17 +248,18 @@ class CalibrationThread(QThread):
         self.MulCo = MulCo
         self.vel_start = vel_start
         self.pool = pool  # Store reference to global pool
-    
+        self.GCMS = GCMS  # single Gaussian width used as the CMS instrumental function
+
     def run(self):
         try:
             # Use the global pool (passed to constructor)
             pool = self.pool
-            
+
             # Run calibration
             A, B, C = Calibration(
-                self.dir_path, self.file, pool, 
-                self.experimental_method, self.INS, self.JN, 
-                self.x0, self.MulCo, self.vel_start
+                self.dir_path, self.file, pool,
+                self.experimental_method, self.INS, self.JN,
+                self.x0, self.MulCo, self.vel_start, GCMS=self.GCMS
             )
             
             # Don't close the global pool - it's reused throughout the app
@@ -1821,7 +1822,8 @@ class PhysicsApp(QMainWindow):
         
         # Start calibration in a separate thread
         self.calibration_thread = CalibrationThread(
-            self.params_dir, file, experimental_method, self.INS, JN, self.x0, self.MulCo, vel_start, self.pool
+            self.params_dir, file, experimental_method, self.INS, JN, self.x0, self.MulCo, vel_start, self.pool,
+            GCMS=self.GCMS
         )
         self.calibration_thread.finished.connect(self.on_calibration_finished)
         self.calibration_thread.error.connect(self.on_calibration_error)
