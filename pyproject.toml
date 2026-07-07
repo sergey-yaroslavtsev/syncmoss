@@ -70,7 +70,7 @@ local_scheme = "no-local-version"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --basetemp=./.pytest_tmp"
 markers = [
     "gui: builds the PySide6 GUI; runs head-less via QT_QPA_PLATFORM=offscreen (set in tests/conftest.py)",
     "slow: slow tests (numba compilation / fitting)",

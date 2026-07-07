@@ -141,6 +141,61 @@ def test_cms_hamilton_independent_of_alfak(monkeypatch):
     assert sms_moved, "SMS Hamilton_mc should depend on alpha_k (a genuine observable)"
 
 
+def _compute_multi(model_list, params, mett, pol, monkeypatch):
+    """Per-energy transmission for a multi-component stack (model given as a list,
+    so 'Layer' markers are honoured)."""
+    monkeypatch.setattr(m5, "SMS_LINEAR_POLARIZATION", pol)
+    return np.asarray(
+        m5.TImod(_E, np.array(params, float), np.array(model_list), _E, 0.0, 1.0,
+                 np.array([]), [], [], Met=-1, Mett=mett),
+        dtype=float,
+    )
+
+
+# Two genuinely thick, anisotropic components to stack (I=20, A=1 -> strong
+# non-commutativity between the two 2x2 amplitude operators).
+_DOUBLET = [20.0, 0.0, 1.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0]
+_SEXTET = [20.0, 0.0, 0.0, 33.0, 0.098, 0.15, 50.0, 30.0, 1.0, 0.0, 0.0, 0.0, 3.0]
+
+
+def test_same_layer_order_is_invisible(monkeypatch):
+    """Within ONE layer the cross-section matrices ADD, and addition commutes, so
+    the component order inside a layer never changes the spectrum -- for SMS or
+    CMS. (No 'Layer' marker between the two components.)"""
+    for mett in (0, 1):
+        y_ds = _compute_multi(["Doublet", "Sextet"], _DOUBLET + _SEXTET, mett, 1.0, monkeypatch)
+        y_sd = _compute_multi(["Sextet", "Doublet"], _SEXTET + _DOUBLET, mett, 1.0, monkeypatch)
+        assert np.allclose(y_ds, y_sd, rtol=1e-11, atol=1e-13), (
+            f"same-layer component order must not matter (mett={mett})"
+        )
+
+
+def test_layer_order_visible_to_sms_not_cms(monkeypatch):
+    """Across a 'Layer' boundary the beam AMPLITUDE is propagated (expm(-Smat/2)
+    per layer, non-commuting), so a POLARIZED (SMS) source sees the layer order,
+    while an UNPOLARIZED (CMS) source cannot (its half-trace is cyclic-invariant).
+    This is the whole point of the amplitude-formalism readout."""
+    ab = ["Doublet", "Layer", "Sextet"]
+    ba = ["Sextet", "Layer", "Doublet"]
+    p_ab = _DOUBLET + _SEXTET
+    p_ba = _SEXTET + _DOUBLET
+
+    # SMS: order is physical -> the two stackings differ.
+    y_ab_sms = _compute_multi(ab, p_ab, mett=0, pol=1.0, monkeypatch=monkeypatch)
+    y_ba_sms = _compute_multi(ba, p_ba, mett=0, pol=1.0, monkeypatch=monkeypatch)
+    assert np.all(np.isfinite(y_ab_sms)) and np.all((0 < y_ab_sms) & (y_ab_sms <= 1 + 1e-9))
+    assert np.max(np.abs(y_ab_sms - y_ba_sms)) > 1e-3, (
+        "SMS: swapping two thick layers must change the spectrum (order is physical)"
+    )
+
+    # CMS: unpolarized source is blind to the order (fixed rho = I/2).
+    y_ab_cms = _compute_multi(ab, p_ab, mett=1, pol=1.0, monkeypatch=monkeypatch)
+    y_ba_cms = _compute_multi(ba, p_ba, mett=1, pol=1.0, monkeypatch=monkeypatch)
+    assert np.allclose(y_ab_cms, y_ba_cms, rtol=1e-9, atol=1e-11), (
+        "CMS: an unpolarized source cannot see the layer order (half-trace is cyclic)"
+    )
+
+
 def test_scalar_model_unaffected_by_polarization(monkeypatch):
     """An isotropic model (Singlet) has no polarization matrix, so the knob and
     the CMS branch leave it untouched (regression guard for the readout change).

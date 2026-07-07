@@ -1341,7 +1341,7 @@ def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m, Num):
     return (co, v1, v2, v3, v4, v5, v6)
 
 
-def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters):
+def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False):
         # SCR = np.array(x_exp)
         SCR = x_exp
         N = np.array([float(0)]*len(SCR))
@@ -1425,7 +1425,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
         Kpref = np.pi * (G / 2 / E0 * c * MulCo)
         Smat = None       # 2x2 cross-section accumulator for the CURRENT layer (thick components)
         Smat_old = None   # mirrors CHold for the matrix path (used by the Distr reset)
-        Tprod = None      # running product of completed layer transmission matrices (None = identity)
+        Tprod = None      # running product of completed-layer AMPLITUDE matrices expm(-Smat/2) (None = identity)
 
         for i in range (0, len(model)):
             Smat_t = Smat
@@ -1436,7 +1436,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 WG = abs(p[V + 3]) * MulCo
                 V += 4
                 Voi = Voight(WL, WG, S)
-                CHt = CH*np.exp((-1)*np.pi*(G/2/E0*c*MulCo)*T*I*Voi)
+                CHt = CH*np.exp((-1)*np.pi*(G/2/E0*c*MulCo)*I*Voi)
             if model[i] == 'Sextet(rough)':
                 I = abs(p[V])
                 I1 = I * p[V + 9]  / (1 + p[V + 9] + p[V + 10]) * p[V + 11] / (1 + p[V + 11])
@@ -1498,7 +1498,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 tet = p[V+9] / 180 * np.pi
                 Num = max(int(p[V+10]), 1)
 
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * T * I * Angles_min(tet, Num, K, J, Hin, Hex, E, WL, WG, Q, Sig))
+                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * I * Angles_min(tet, Num, K, J, Hin, Hex, E, WL, WG, Q, Sig))
                 V += 11
             # --- Polarized model components ---------------------------------
             # Each adds a 2x2 cross-section matrix to Smat instead of a scalar
@@ -1521,7 +1521,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Mh_B = _texture_blend(0.5 * _I2 + 1.5 * mm, Atex)  # line B: mixed Delta m = 0 and +/-1
                 VoiB = Voight(WL, WG1, S1)
                 VoiA = Voight(WL, WG2, S2)
-                add = Kpref * T * (0.5 * I) * (VoiA[:, None, None] * Mh_A[None, :, :]
+                add = Kpref * (0.5 * I) * (VoiA[:, None, None] * Mh_A[None, :, :]
                                                + VoiB[:, None, None] * Mh_B[None, :, :])
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
@@ -1624,7 +1624,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 mx, my, mz = _axis_xyz(th, ph)
                 Md1 = _texture_blend(_mhat_dm1_sym(mx, my), Atex)  # outer/inner Delta m = +/-1 (groups blend sigma+/-)
                 Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)      # middle Delta m = 0
-                add = Kpref * T * (g1[:, None, None] * Md1[None, :, :]
+                add = Kpref * (g1[:, None, None] * Md1[None, :, :]
                                    + g2[:, None, None] * Mpi[None, :, :]
                                    + g3[:, None, None] * Md1[None, :, :])
                 Smat_t = add if Smat is None else Smat + add
@@ -1747,13 +1747,19 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 V += 14
             if model[i] == 'Layer':
                 # Physical layer boundary (no parameters). Within a layer the
-                # cross-sections add; between layers the 2x2 transmission
-                # matrices multiply, because the polarization state leaving one
-                # layer enters the next and the matrices do not commute. Flush
-                # the current layer's matrix into the running product and start
-                # a fresh (empty) layer.
+                # cross-sections add (into Smat); between layers the beam
+                # AMPLITUDE is propagated coherently, because the polarization
+                # state leaving one layer enters the next. The per-layer
+                # amplitude operator is expm(-Smat/2) (half the intensity
+                # cross-section, as a matrix); these multiply in beam order and
+                # do NOT commute, so the layer order is physical for a polarized
+                # source. Flush the current layer's amplitude matrix into the
+                # running product and start a fresh (empty) layer. (Multiplying
+                # the full expm(-Smat) and reading its diagonal instead -- the
+                # former behaviour -- gives an order-BLIND result even for an
+                # SMS, because Smat is Hermitian; see the readout after the loop.)
                 if Smat is not None:
-                    layerT = _expm_neg(Smat)
+                    layerT = _expm_neg(Smat / 2)
                     Tprod = layerT if Tprod is None else np.matmul(layerT, Tprod)
                 CHt = CH
                 Smat_t = None
@@ -1824,6 +1830,22 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                         break
 
 
+                # A distributed component joins the CURRENT layer. The recursive
+                # call below evaluates the Num copies and -- because it is asked
+                # with return_layer_matrix=True -- hands back (scalar_part,
+                # Sigma_matrix) WITHOUT exponentiating or reading out. The copies'
+                # matrices are already summed into Sigma inside the recursion (the
+                # fine-grain mixture: matrices averaged before the exponential),
+                # and here Sigma is ADDED to this layer's Smat while the scalar
+                # part multiplies into CH. So a distributed component behaves
+                # exactly like an undistributed one placed in the same layer:
+                # everything between 'Layer' markers sums into one Smat, one
+                # expm(-Smat/2), one rho-readout at the top level -- no double
+                # exponential and no doubled SMS_LINEAR_POLARIZATION. Scalars
+                # (Smat_in is None) simply multiply into CH, unchanged whether or
+                # not they sit in a Layer. The parent's matrix accumulator was
+                # rewound to Smat_old above, so the component's own undistributed
+                # contribution from the previous loop iteration is removed first.
                 if MultiDistr == 0:
                     # print('Dk =', Dk, ' Ck =', Ck)
                     if len(O)==0 and Dk!=0:
@@ -1836,7 +1858,10 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                             mDk += 1
                         if model[mk] == 'Corr':
                             mCk += 1
-                    CHt = CH * (TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O))
+                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True)
+                    CHt = CH * CH_in                                  # scalar (thin) part multiplies in, as before
+                    if Smat_in is not None:                          # thick part joins the CURRENT layer's Smat
+                        Smat_t = Smat_in if Smat is None else Smat + Smat_in
                 else:
                     CHt = CH
                 Di += 1
@@ -1850,16 +1875,39 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
             Smat_old = Smat
             Smat = Smat_t
 
+        if return_layer_matrix:
+            # Inner Distr recursion: hand back the accumulated layer cross-section
+            # matrix WITHOUT exponentiating or reading it out, so the distribution
+            # joins the caller's current layer (matrices sum before the single
+            # exponential) and the rho-readout happens once at the top level. CH
+            # carries any scalar (thin) part. model_d never contains a 'Layer', so
+            # Tprod is None here and Smat holds the whole distributed cross-section.
+            return (CH, Smat)
         if Smat is not None:
-            layerT = _expm_neg(Smat)
+            layerT = _expm_neg(Smat / 2)
             Tprod = layerT if Tprod is None else np.matmul(layerT, Tprod)
         if Tprod is not None:
-            # Read the transmission out of the beam polarization density matrix
-            # rho = diag(rho11, rho22): C_a = tr[Tprod . rho]. A CMS (radioactive
-            # source, Mett == 1) is unpolarized -> fixed rho = I/2 (half the
-            # trace). An SMS is linearly polarized to the degree
-            # SMS_LINEAR_POLARIZATION (p=1 default -> the (1,1) element only, the
-            # original fully-polarized behaviour).
+            # Amplitude readout. Tprod = expm(-Smat_n/2) ... expm(-Smat_1/2) is
+            # the stack's 2x2 amplitude transmission operator (beam order, last
+            # layer leftmost). The detected intensity for an incident beam with
+            # polarization density matrix rho = diag(rho11, rho22) is
+            #     C_a = tr[Tprod rho Tprod^H] = tr[rho . Tprod^H Tprod]
+            #         = rho11 * Gram[0,0] + rho22 * Gram[1,1],  Gram = Tprod^H Tprod,
+            # i.e. C_a = sum_i rho_ii ||Tprod e_i||^2. Propagating the amplitude
+            # (half cross-section) and only then forming the intensity is what
+            # makes the layer order visible to a polarized source. Limits that
+            # are unchanged: a SINGLE layer has Gram = expm(-Smat) exactly (Smat
+            # Hermitian => expm(-Smat/2)^H expm(-Smat/2) = expm(-Smat)), so this
+            # is bit-identical to the old diag(expm(-Smat)) readout; and any CMS
+            # stack is unchanged too (rho = I/2 -> C_a = (1/2)tr[Tprod^H Tprod],
+            # cyclic-invariant, = (1/2)tr[expm(-Smat_n)...expm(-Smat_1)]). Only a
+            # MULTI-layer SMS moves -- previously the diagonal of a product of
+            # full exponentials, whose real part is order-independent for
+            # Hermitian Smat and so could not see the order at all.
+            #
+            # rho = diag(rho11, rho22). A CMS (radioactive source, Mett == 1) is
+            # unpolarized -> fixed rho = I/2 (half the trace). An SMS is linearly
+            # polarized to the degree SMS_LINEAR_POLARIZATION (p=1 -> pure (1,1)).
             #
             # The branch keys on ``Mett`` (the source CLASS), NOT ``Met`` (which
             # also encodes the source-line shape and the recursion sentinel).
@@ -1878,7 +1926,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 pol = SMS_LINEAR_POLARIZATION
                 rho11 = 0.5 * (1.0 + pol)
                 rho22 = 0.5 * (1.0 - pol)
-            CH = CH * (rho11 * np.real(Tprod[:, 0, 0]) + rho22 * np.real(Tprod[:, 1, 1]))
+            Tdag = np.conjugate(np.transpose(Tprod, (0, 2, 1)))   # per-energy Hermitian conjugate
+            Gram = np.matmul(Tdag, Tprod)                         # Gram = Tprod^H Tprod (Hermitian, PSD)
+            CH = CH * (rho11 * np.real(Gram[:, 0, 0]) + rho22 * np.real(Gram[:, 1, 1]))
         if Met == 0:
             CH = CH * N * 2 / (1 - (EE) ** 2)
         elif Met == 1 or Met == 2 or Met == 3:

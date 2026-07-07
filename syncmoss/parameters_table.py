@@ -640,6 +640,9 @@ class ParametersTable(QWidget):
                     name_label.row = r
             # Refresh highlights after structural changes
             self.update_distr_corr_highlights()
+            # Grow the table widget so QScrollArea scrolls instead of squeezing rows.
+            self.adjustSize()
+            self.updateGeometry()
         else:
             # Normal model selection
             row_widget = self.row_widgets[row]
