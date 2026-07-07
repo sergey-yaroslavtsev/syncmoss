@@ -128,6 +128,7 @@ from syncmoss.instrumental_io import (
 from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
 from syncmoss.Library_io import export_library, import_library
 from syncmoss.Library_window import save_to_library_via_dialog
+from syncmoss.models_description_window import ModelsDescriptionWindow, resolve_models_description_path
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -789,6 +790,7 @@ class PhysicsApp(QMainWindow):
         self.toggle_dat_ins_action = None
         self.last_plot_data = None
         self.last_fitting_data = None
+        self.models_description_window = None
 
         self.setWindowTitle('SYNCMoss ESRF ID14')
         self.setGeometry(50, 50, 1600, 900)
@@ -925,9 +927,12 @@ class PhysicsApp(QMainWindow):
         export_lib_action.triggered.connect(self.export_library_pressed)
         import_lib_action = QAction("Import Library", self)
         import_lib_action.triggered.connect(self.import_library_pressed)
+        models_description_action = QAction("Models description", self)
+        models_description_action.triggered.connect(self.open_models_description_pressed)
         self.supp_menu.addAction(ham_guess_action)
         self.supp_menu.addAction(export_lib_action)
         self.supp_menu.addAction(import_lib_action)
+        self.supp_menu.addAction(models_description_action)
         self.supp_btn.setMenu(self.supp_menu)
 
         # Add all buttons to top controls
@@ -1437,6 +1442,30 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.log.setPlainText(f"Import Library failed: {e}")
             self.log.setStyleSheet("color: red;")
+
+    def open_models_description_pressed(self):
+        """Open model descriptions markdown in a separate, copy-friendly window."""
+        doc_path = resolve_models_description_path(self.dir_path)
+        if not os.path.isfile(doc_path):
+            self.log.setPlainText(f"Models description file not found: {doc_path}")
+            self.log.setStyleSheet("color: red;")
+            QMessageBox.warning(self, "Models description", f"File not found:\n{doc_path}")
+            return
+
+        if self.models_description_window is None:
+            self.models_description_window = ModelsDescriptionWindow(doc_path)
+        else:
+            self.models_description_window.markdown_path = doc_path
+            self.models_description_window.reload_document()
+
+        app_icon = self.windowIcon()
+        if not app_icon.isNull():
+            self.models_description_window.setWindowIcon(app_icon)
+
+        self.models_description_window.showNormal()
+        self.models_description_window.show()
+        self.models_description_window.raise_()
+        self.models_description_window.activateWindow()
 
     def update_velocity_label(self):
         """Update the velocity label and button icon based on velocity direction"""

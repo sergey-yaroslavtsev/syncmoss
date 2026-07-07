@@ -114,6 +114,7 @@ def verify():
         "parameters/GCMS.txt",
         "parameters/INSexp.txt",
         "parameters/INSint.txt",
+        "parameters/models_description.md",
         "theme_dark.json",
         "theme_light.json",
         "parameters/Calibration.dat",

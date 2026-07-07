@@ -333,10 +333,10 @@ def test_fit_linked_parameter_across_mixed_spectra(physics_app, tmp_path):
     pool = ThreadPool(processes=2)
     try:
         _prepare_two_spectrum_fit(physics_app, cms, sms)
-        # Parameter layout for [baseline(8), Sextet(13), Nbaseline(8), Sextet(13)]:
-        #   spectrum-1 Sextet H = p[11], spectrum-2 Sextet H = p[32].
+        # Parameter layout for [baseline(8), Sextet(14), Nbaseline(8), Sextet(14)]:
+        #   spectrum-1 Sextet H = p[11], spectrum-2 Sextet H = p[33].
         # (H is column 3, before the inserted theta_k, so H = component_start + 3;
-        #  second Sextet starts at 8 + 13 + 8 = 29 -> its H is p[32].)
+        #  second Sextet starts at 8 + 14 + 8 = 30 -> its H is p[33].)
         # Link spectrum-2's H to spectrum-1's H (row 3 = 2nd Sextet, col 3 = H).
         _set_param_value(physics_app, 3, 3, "=[11,1]")
         result = fitting_io.fit_single_spectrum(physics_app, cms, pool)
@@ -347,7 +347,7 @@ def test_fit_linked_parameter_across_mixed_spectra(physics_app, tmp_path):
     assert result["success"], result.get("message")
     params = result["parameters"]
     # The constraint must hold exactly after the fit
-    assert params[32] == pytest.approx(params[11])
+    assert params[33] == pytest.approx(params[11])
 
 
 # ---------------------------------------------------------------------------

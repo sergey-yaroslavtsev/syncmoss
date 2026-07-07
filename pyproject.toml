@@ -60,6 +60,7 @@ syncmoss = [
     "parameters/*.txt",
     "parameters/*.dat",
     "parameters/*.png",
+    "parameters/*.md",
     "*.json",
     "*.dat",
 ]

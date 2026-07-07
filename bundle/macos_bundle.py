@@ -112,6 +112,7 @@ def verify(app_dir: str):
         "Contents/MacOS/icons/CheckBox.png",
         "Contents/MacOS/parameters/Be.txt",
         "Contents/MacOS/parameters/KB.txt",
+        "Contents/MacOS/parameters/models_description.md",
         "Contents/MacOS/parameters/Calibration.dat",
         "Contents/MacOS/theme_dark.json",
         "Contents/MacOS/theme_light.json",
