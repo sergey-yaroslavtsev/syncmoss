@@ -812,6 +812,43 @@ class ParametersTable(QWidget):
                                 new_index = ref_index + delta
                                 value_input.setText(f"=[{new_index},{value_part}]")
                                 value_input.setStyleSheet("")
+                    elif 'p[' in text:
+                        # Free-text expression field (Distr/Corr/Expression): shift
+                        # every p[N] parameter reference the same way as =[X,y].
+                        new_text, has_deleted_ref = self._shift_p_references(
+                            text, start_index, delta)
+                        if new_text != text:
+                            value_input.setText(new_text)
+                        if has_deleted_ref:
+                            value_input.setStyleSheet("background-color: red;")
+                        elif new_text != text:
+                            value_input.setStyleSheet("")
+
+    def _shift_p_references(self, text, start_index, delta):
+        """Shift every p[N] parameter reference in an expression by the same
+        rule update_references applies to =[X,y]: on insert (delta>0) bump refs
+        at/after start_index; on delete (delta<0) drop refs inside the deleted
+        window and bump refs above it. Returns (new_text, has_deleted_ref)."""
+        has_deleted_ref = [False]
+
+        def repl(match):
+            ref_index = int(match.group(1))
+            if delta < 0:  # deleting
+                deleted_count = -delta
+                if start_index <= ref_index < start_index + deleted_count:
+                    # References a deleted parameter -> expression is now broken.
+                    has_deleted_ref[0] = True
+                    return match.group(0)
+                if ref_index >= start_index + deleted_count:
+                    return f"p[{ref_index + delta}]"
+                return match.group(0)
+            if delta > 0:  # inserting
+                if ref_index >= start_index:
+                    return f"p[{ref_index + delta}]"
+            return match.group(0)
+
+        new_text = re.sub(r'p\[(\d+)\]', repl, text)
+        return new_text, has_deleted_ref[0]
 
     def on_value_changed(self, input_widget, row, col):
         """Handle value changes - check references and update grey frames for Distr/Corr"""
@@ -1326,6 +1363,48 @@ class ParametersTable(QWidget):
             if model_name in rows:
                 rows[model_name].append(row_idx)
         return rows
+
+    def get_empty_parameter_slots(self):
+        """Active numeric parameter value fields left empty.
+
+        This happens when a =[X,y] reference is deleted: update_references()
+        clears the referring field. read_model() would silently read an empty
+        field as 0.0, so show/fit must be blocked until it is filled. The
+        free-text expression column of Distr/Corr/Expression rows is excluded —
+        its emptiness is reported by validate_user_expressions instead.
+
+        Returns:
+            list of dicts ``{'row', 'col', 'param', 'model'}``.
+        """
+        empties = []
+        for row in range(len(self.row_widgets)):
+            row_widget = self.row_widgets[row]
+            start_widget = row_widget.layout().itemAt(0).widget()
+            model_btn = start_widget.layout().itemAt(1).widget()
+            model_name = model_btn.text()
+            expr_layout_col = self._EXPRESSION_COLUMNS.get(model_name)
+            for col in range(self.row_params[row]):
+                if expr_layout_col is not None and col == expr_layout_col - 1:
+                    continue  # free-text expression field, handled elsewhere
+                param_widget = row_widget.layout().itemAt(col + 1).widget()
+                value_input = param_widget.layout().itemAt(1).widget()
+                if not value_input.text().strip():
+                    name_label = param_widget.layout().itemAt(0).layout().itemAt(0).widget()
+                    empties.append({'row': row, 'col': col,
+                                    'param': name_label.original_text or name_label.text(),
+                                    'model': model_name})
+        return empties
+
+    def mark_parameter_error(self, row, col):
+        """Turn an empty/invalid numeric parameter field red, cleared as soon as
+        the user clicks into it (reuses the expression-error eventFilter)."""
+        if row < 0 or row >= len(self.row_widgets):
+            return
+        param_widget = self.row_widgets[row].layout().itemAt(col + 1).widget()
+        value_input = param_widget.layout().itemAt(1).widget()
+        value_input.setStyleSheet("background-color: red; color: white;")
+        value_input.setProperty('expression_error', True)
+        value_input.installEventFilter(self)
 
     def expression_value_input(self, row):
         """The QLineEdit holding the free-text expression of an

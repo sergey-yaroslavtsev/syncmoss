@@ -1672,13 +1672,35 @@ class PhysicsApp(QMainWindow):
     #     # TODO: Implement actual functionality
 
     def check_user_expressions(self, action_label):
-        """Validate every user-typed Expression/Distr/Corr text before starting
-        a fit or a show-model run.
+        """Validate the model before starting a fit or a show-model run.
+
+        Two checks run up front:
+
+        * no active numeric parameter slot may be empty (a =[X,y] reference to a
+          deleted parameter leaves its field empty; read_model would silently
+          read it as 0.0), and
+        * every user-typed Expression/Distr/Corr text must evaluate.
 
         On failure the offending table fields turn red (they recover as soon as
         the user clicks into them), the log box explains each problem, and False
         is returned so the caller can abort before any thread starts.
         """
+        empty_slots = self.params_table.get_empty_parameter_slots()
+        if empty_slots:
+            lines = []
+            for slot in empty_slots:
+                self.params_table.mark_parameter_error(slot['row'], slot['col'])
+                param = slot['param'] or f"column {slot['col']}"
+                lines.append(f"{slot['model']} (table row {slot['row']}): "
+                             f"parameter '{param}' is empty")
+            self.log.setPlainText(
+                f"{action_label} was not started — empty parameter(s) "
+                f"(fill them in; a value referenced by =[...] may have been "
+                f"deleted):\n" + "\n".join(lines)
+            )
+            self.log.setStyleSheet("color: red;")
+            return False
+
         try:
             problems = validate_user_expressions(self)
         except Exception as e:
