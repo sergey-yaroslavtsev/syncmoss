@@ -823,24 +823,24 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 V += 9
             if model[i] == 'Sextet':
                 HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 9]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 10]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 10]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 9]
+                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 10]
+                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 11]
+                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 11]
+                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 11]
+                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 11]
+                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 10]
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 13
+                V += 14
             if model[i] == 'MDGD':
                 HH = p[V + 3] / 3.101
-                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 13]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 14]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 14]
-                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 13]
+                S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 14]
+                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 15]
+                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 15]
+                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 15]
+                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 15]
+                S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 14]
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 16
+                V += 17
             if model[i] == 'Relax_MS':
                 HH = float(p[V + 3]) / 3.1098
                 S1 = (p[V + 1] - HH / 2 + p[V + 2])
@@ -867,7 +867,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S52 = (p[V + 4] + 3.0760 / 5.3123 * HH2 / 2 - p[V + 5])
                 S62 = (p[V + 4] + HH2 / 2 + p[V + 5])
                 SET.append([S1, S2, S3, S4, S5, S6, S12, S22, S32, S42, S52, S62])
-                V += 13
+                V += 14
             if model[i] == 'Hamilton_mc':
                 delt = p[V + 1]
                 Q = p[V + 2]
@@ -958,8 +958,8 @@ def mod_pos(p, model, INS, Met=0):
 
             for j in range(MV, len(model)):
                 MV += 1
-                V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 13 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 16 * (model[j] == 'MDGD')\
-                    + 13 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14 * (model[j] == 'ASM')\
+                V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14 * (model[j] == 'ASM')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')

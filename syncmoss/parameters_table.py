@@ -848,8 +848,12 @@ class ParametersTable(QWidget):
         # former scalar model, A=1 single crystal at the axis). Hamilton_mc
         # carries the beam-rotation angle alpha_k instead and has no texture
         # parameter (its anisotropic-EFG fiber average needs more than one).
-        # Singlet is isotropic, so it has neither. The angles (theta_k, phi_h;
-        # alpha_k) and A are FIXED by default -- untick "fix" to refine them. ---
+        # Singlet is isotropic, so it has neither. The Faraday-active models
+        # (Sextet, MDGD, Relax_2S) also carry a magnetic polar-order parameter A_m
+        # in [-1, 1] immediately after A (the net-magnetisation fraction
+        # S1/sqrt((1+2A)/3) scaling the resolved sigma+- Faraday term; A_m=0
+        # unmagnetised, A_m=1 fully magnetised at the axis). The angles (theta_k,
+        # phi_h; alpha_k), A and A_m are FIXED by default -- untick "fix" to refine. ---
         elif model == 'Doublet':
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1']
             values = ['1.0', '0.0', '1.0', '0.098', '0.1', '90', '0.0', '0', '1.0']
@@ -857,17 +861,17 @@ class ParametersTable(QWidget):
             uppers = ['', '', '', '', '', '180', '360', '1', '']
             fixes = [False, False, False, True, False, True, True, True, True]  # theta_k, phi_h, A locked by default
         elif model == 'Sextet':
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'a+', 'a-', 'GH, T', 'I1/I3']
-            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '90', '0.0', '0', '0.0', '0.0', '0.0', '3.0']
-            lowers = ['0', '', '', '', '0.098', '0', '-180', '-360', '-0.5', '', '', '0', '0']
-            uppers = ['', '', '', '', '', '', '180', '360', '1', '', '', '', '']
-            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True]  # theta_k, phi_h, A locked by default
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'a+', 'a-', 'GH, T', 'I1/I3']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '90', '0.0', '0', '0', '0.0', '0.0', '0.0', '3.0']
+            lowers = ['0', '', '', '', '0.098', '0', '-180', '-360', '-0.5', '-1', '', '', '0', '0']
+            uppers = ['', '', '', '', '', '', '180', '360', '1', '1', '', '', '', '']
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A, A_m locked by default
         elif model == 'MDGD':
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'GH, T', 'Dδε', 'DδH', 'DεH', 'θk, °', 'φh, °', 'A', 'a+', 'a-', 'I1/I3']
-            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '90', '0.0', '0', '0.0', '0.0', '3.0']
-            lowers = ['0', '', '', '', '0.098', '0', '0', '-1', '-1', '-1', '-180', '-360', '-0.5', '', '', '0']
-            uppers = ['', '', '', '', '', '', '', '1', '1', '1', '180', '360', '1', '', '', '']
-            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A locked by default
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'GH, T', 'Dδε', 'DδH', 'DεH', 'θk, °', 'φh, °', 'A', 'A_m', 'a+', 'a-', 'I1/I3']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '90', '0.0', '0', '0', '0.0', '0.0', '3.0']
+            lowers = ['0', '', '', '', '0.098', '0', '0', '-1', '-1', '-1', '-180', '-360', '-0.5', '-1', '', '', '0']
+            uppers = ['', '', '', '', '', '', '', '1', '1', '1', '180', '360', '1', '1', '', '', '']
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A, A_m locked by default
         elif model == 'Hamilton_mc':
             names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °']
             values = ['1.0', '0.0', '0.0', '33.0', '0.098', '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0']
@@ -887,11 +891,11 @@ class ParametersTable(QWidget):
             uppers = ['', '', '', '', '', '180', '360', '1', '', '100', '']
             fixes = [False, False, False, False, False, True, True, True, False, False, True]  # theta_k, phi_h, A locked by default
         elif model == 'Relax_2S':
-            names = ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'Ω12', 'P1/P2']
-            values = ['1.0', '0.0', '0.0', '33.0', '0.0', '0.0', '-33.0', '0.1', '90', '0.0', '0', '0.3', '1']
-            lowers = ['', '', '', '', '', '', '', '0.098', '-180', '-360', '-0.5', '0', '0']
-            uppers = ['', '', '', '', '', '', '', '', '180', '360', '1', '', '']
-            fixes = [False, False, False, False, False, False, False, False, True, True, True, False, True]  # theta_k, phi_h, A locked by default
+            names = ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'Ω12', 'P1/P2']
+            values = ['1.0', '0.0', '0.0', '33.0', '0.0', '0.0', '-33.0', '0.1', '90', '0.0', '0', '0', '0.3', '1']
+            lowers = ['', '', '', '', '', '', '', '0.098', '-180', '-360', '-0.5', '-1', '0', '0']
+            uppers = ['', '', '', '', '', '', '', '', '180', '360', '1', '1', '', '']
+            fixes = [False, False, False, False, False, False, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, A_m locked by default
         elif model == 'ASM':
             names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13']
             values = ['1.0', '0.0', '0.0', '0.0', '30.0', '5.0', '0.098', '0.1', '0.1', '90', '0.0', '0', '25', '3.0']

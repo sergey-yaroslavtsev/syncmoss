@@ -18,10 +18,10 @@ from syncmoss.model_io import mod_len_def, _remap_reference_text
 EXPECTED_PARAM_COUNTS = {
     "Singlet": 4,
     "Doublet": 9,
-    "Sextet": 13,
+    "Sextet": 14,
     "Sextet(rough)": 14,
-    "MDGD": 16,
-    "Relax_2S": 13,
+    "MDGD": 17,
+    "Relax_2S": 14,
     "Average_H": 11,
     "Relax_MS": 11,
     "ASM": 14,

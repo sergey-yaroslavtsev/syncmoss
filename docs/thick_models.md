@@ -165,7 +165,7 @@ $$
 Thin-limit $(1,1)$ element: $(\hat M_A)_{11}=\tfrac32\sin^2\beta\Rightarrow f_+=\tfrac34\sin^2\beta$;
 $(\hat M_B)_{11}=\tfrac12+\tfrac32\cos^2\beta\Rightarrow f_-=\tfrac14(1+3\cos^2\beta)$.
 
-### 2.2 Sextet `Sextet_(thick)` (13 params: $T,\delta,\varepsilon,H,\Gamma_L,\Gamma_G,\theta_h,\varphi_h,A,a_+,a_-,\Gamma_H,I_1/I_3$)
+### 2.2 Sextet `Sextet_(thick)` (14 params: $T,\delta,\varepsilon,H,\Gamma_L,\Gamma_G,\theta_h,\varphi_h,A,A_m,a_+,a_-,\Gamma_H,I_1/I_3$)
 
 Lines $1{=}\sigma^-,2{=}\pi,3{=}\sigma^+,4{=}\sigma^-,5{=}\pi,6{=}\sigma^+$. With
 $r\equiv I_1/I_3$ and $A=\tfrac12$:
@@ -181,14 +181,14 @@ $$
 Positions $v_{1..6}$ and widths $\Gamma_{16},\Gamma_{25},\Gamma_{34}$ (from
 $\Gamma_G,\Gamma_H$) and shifts $a_\pm$ are exactly the scalar `Sextet`.
 
-### 2.3 MDGD `MDGD_(thick)` (16 params)
+### 2.3 MDGD `MDGD_(thick)` (17 params)
 
 Same matrices and $A=\tfrac12$ intensities as the sextet; only the per-line
 Gaussian widths differ — they use the MDGD correlated-distribution widths
 $\Gamma^{(j)}_{\text{final}}(\Gamma_{\text{uni}},\Gamma_H,D_{\delta\varepsilon},
 D_{\delta H},D_{\varepsilon H})$, exactly as scalar `MDGD`.
 
-### 2.4 Two-state relaxation `Relax_2S_(thick)` (13 params)
+### 2.4 Two-state relaxation `Relax_2S_(thick)` (14 params)
 
 Each line is a separate Blume two-state lineshape $B_{m_0\to m_1}(v)$, so each keeps
 its own $\sigma^\pm/\pi$ matrix (Faraday term included). With $A=\tfrac12$
@@ -322,13 +322,16 @@ orientation. Confirm/refine for quantitative work.
 | model | thick change | count |
 |---|---|---|
 | Doublet | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 7→9 |
-| Sextet | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 11→13 |
-| MDGD | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 14→16 |
+| Sextet | $A_{\rm asym}\to\theta_h,\varphi_h,A$; $+A_m$ | 11→14 |
+| MDGD | $A_{\rm asym}\to\theta_h,\varphi_h,A$; $+A_m$ | 14→17 |
 | Relax_MS | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 9→11 |
-| Relax_2S | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 11→13 |
+| Relax_2S | $A_{\rm asym}\to\theta_h,\varphi_h,A$; $+A_m$ | 11→14 |
 | Hamilton_mc | $+\,\alpha_k$ (no texture) | 11→12 |
 | ASM | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 12→14 |
 | Layer | marker, no params | 0 |
+
+(The Faraday-active models — Sextet, MDGD, Relax_2S — carry one further parameter
+$A_m$, the magnetic polar-order fraction, immediately after $A$; see §3.2.)
 
 (Singlet has no thick form. For Hamilton the existing $(\theta,\varphi)$ already are
 the SMS radiation direction $(\theta_h,\varphi_h)$ — under CMS they are the beam
@@ -358,11 +361,64 @@ powder-averages to $\mathbb I_2$, this interpolates continuously:
 * $A=-\tfrac12$ → perfect planar texture (axes uniformly $\perp$ the axis).
 
 $A$ is the order parameter $\langle P_2(\cos\psi)\rangle$ ($\psi$ = angle to the
-texture axis). The magneto-optical (Faraday) $\pm\mathrm i n_z J$ term is scaled
-by the **same single** $A$ (rather than an independent net-magnetization moment
-$S_1$), so $A=1$ reproduces the single-crystal $\sigma^\pm$ lines exactly and
-$A=0$ the powder exactly. Nothing else changes: the matrices are still summed and
-a single $2\times2$ exponential is taken.
+texture axis). The blend $\langle\hat M\rangle=(1-A)\Iop+A\,\hat M$ is applied only
+to the **quadratic** building blocks ($\hat M_A,\hat M_B,\hat M_\pi,\hat
+M_\sigma^{\rm sym}$; helper `_texture_blend`). The magneto-optical (Faraday)
+$\pm\mathrm i n_z J$ term of a resolved $\sigma^\pm$ line is **linear** in the axis
+and averages to a **separate** first moment, the polar-order parameter $S_1$,
+carried by its own fit parameter $A_m$ — see §3.2. With $A_m=0$ (the default) the
+$\sigma^\pm$ blocks use the Faraday-averaged $\hat M_\sigma^{\rm sym}$, so $A=0$
+still recovers the powder exactly and $A=1$ an *unmagnetized* aligned single
+crystal; $A=A_m=1$ recovers the fully magnetized single-crystal $\sigma^\pm$ lines.
+Nothing else changes: the matrices are still summed and a single $2\times2$
+exponential is taken.
+
+### 3.2 Magnetic polar-order parameter $A_m$ ($S_1$)
+
+The three **Faraday-active** models — Sextet, MDGD, Relax_2S, the ones whose
+$\sigma^+$ and $\sigma^-$ partners are resolved at different energies — carry,
+immediately after $A$, a second texture moment. While $A=\langle
+P_2(\cos\chi)\rangle$ measures *alignment*, the Faraday term averages to the first
+moment $S_1=\langle\cos\chi\rangle$, the net **polar** (magnetic) order along the
+texture axis. The textured $\sigma^\pm$ blocks are (helper `_texture_s1`, applied
+in the model on top of the symmetric blend):
+
+$$
+\boxed{\;\langle\hat M_{\sigma^\pm}\rangle=(1-A)\,\Iop+A\,\tfrac32(\Iop-\Pperp)
+\;\pm\;\tfrac32\,\mathrm i\,S_1\,n_z\,J\;},
+\qquad n_z=\cos\theta_h .
+$$
+
+The two moments are not independent: Cauchy–Schwarz gives $S_1^{\,2}\le\tfrac13(1+2A)$.
+We therefore parametrise $S_1$ by the fit parameter $A_m\in[-1,1]$, its fraction of
+that bound,
+
+$$
+S_1=A_m\sqrt{\tfrac{1+2A}{3}},
+$$
+
+so the fit can never leave the physical region whatever $A$ is (at the planar limit
+$A=-\tfrac12$ the bound is $0$, forcing $S_1=0$). $S_1$ is non-zero only for a
+**magnetized** texture (the $+\Bhf$/$-\Bhf$ domains unequally populated), so:
+
+* **$A_m=0$ (default)** — unmagnetized: the $\sigma^\pm$ blocks reduce to the
+  Faraday-averaged $\hat M_\sigma^{\rm sym}$; this is the whole texture model for
+  every EFG (quadrupole) texture and every unmagnetized magnetic texture, at any
+  alignment $A$. It also restores the exact random-powder limit at $A=0$.
+* **$A_m=A=1$** — the fully magnetized single crystal, reproducing the
+  single-crystal $\hat M_{\sigma^\pm}$ of §1.6 exactly (a bit-exact match).
+
+Two caveats, both consequences of the readout being real (§4): $A_m$ is a **purely
+thick, off-axis observable** — in the thin limit the Faraday term is off-diagonal
+and traceless, so $S_1$ affects neither thin polarized nor thin unpolarized spectra
+(like the layer-order effect); and only $|S_1|$ is measurable from **one** layer —
+reversing $A_m$ conjugates $\hat\Sigma$, and the transmission (the real $(1,1)$
+element for SMS, the real half-trace for CMS) is invariant under conjugation. The
+sign of $A_m$ is observable only *relatively*, between two Faraday-active
+components mixed in one absorber or between stacked layers. The models that already
+use the Faraday-averaged $\hat M_\sigma^{\rm sym}$ — Relax_MS (grouped $\sigma$),
+ASM (cycloid average) — and the doublet (no $\sigma^\pm$ splitting) never need
+$A_m$ and do not carry it.
 
 **Hamilton_mc_(thick) has no texture parameter.** Its per-transition matrices
 $\hat P_k$ depend on the *full* crystallite orientation (the anisotropic-EFG

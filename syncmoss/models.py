@@ -1144,13 +1144,38 @@ def _texture_blend(M, A):
     axis) interpolates continuously between a random powder (A = 0 -> I2, i.e. the
     scalar model recovered exactly at any thickness) and a perfectly aligned
     single crystal (A = 1 -> M, the current single-orientation thick model). Every
-    building block (``_mhat_dm0/1/1_sym``, doublet Mh_A/Mh_B) powder-averages to
-    I2, so this is exact for the quadratic (symmetric) parts; the magneto-optical
-    (Faraday) term is scaled by the same single parameter A, so A = 1 reproduces
-    the single-crystal thick model exactly (Faraday included) and A = 0 the scalar
-    twin exactly. A = 1 is a bit-exact no-op.
+    building block powder-averages to I2, so this is exact for the quadratic
+    (symmetric) parts it is applied to (``_mhat_dm0``, ``_mhat_dm1_sym``, doublet
+    Mh_A/Mh_B). The magneto-optical (Faraday) term of a resolved sigma+- line is
+    linear (not quadratic) in the axis and carries the SEPARATE polar-order
+    parameter S1 instead of A -- it is added on top of this symmetric blend via
+    ``_texture_s1`` (see there), not folded into it.
     """
     return (1.0 - A) * _I2 + A * M
+
+
+def _texture_s1(A, Am):
+    """Polar-order parameter S1 that scales the Faraday (sigma+-) term of a texture.
+
+    While A = <P2(cos chi)> measures the *alignment* of the axes about the texture
+    axis (and scales the quadratic parts, via ``_texture_blend``), the Faraday term
+    of a resolved sigma+- line is linear in the axis and averages instead to the
+    first moment S1 = <cos chi>, the net *polar* (magnetic) order along the texture
+    axis. The two are not independent: Cauchy-Schwarz bounds S1**2 <= (1 + 2A)/3.
+    We therefore parametrise S1 by ``Am`` in [-1, 1], the fraction of that bound,
+
+        S1 = Am * sqrt((1 + 2A) / 3),
+
+    so the fit can never leave the physical region whatever A is. S1 is non-zero
+    only for a magnetised texture (domains with +B_hf and -B_hf unequally
+    populated), so ``Am`` defaults to 0 -- an unmagnetised (even if perfectly
+    aligned) sample keeps the Faraday-averaged sigma matrix. ``Am = A = 1`` recovers
+    the fully-magnetised single-crystal sigma+- lines exactly. Only |S1| is
+    observable from one homogeneous layer (its sign conjugates the cross-section,
+    which the intensity readout cannot see); the sign of ``Am`` still matters for
+    the RELATIVE sign between mixed/stacked Faraday-active components.
+    """
+    return Am * np.sqrt(max(0.0, (1.0 + 2.0 * A) / 3.0))
 
 
 def _expm_neg(Sig):
@@ -1506,6 +1531,11 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
             # The texture order parameter A blends between a random powder
             # (A = 0, every Mhat below averages to I and the component reduces
             # EXACTLY to its former scalar form) and a single crystal (A = 1).
+            # The Faraday-active models (Sextet, MDGD, Relax_2S) additionally carry
+            # the magnetic polar-order parameter A_m in [-1, 1] (S1 = A_m*sqrt((1+2A)
+            # /3), see _texture_s1) that scales the resolved sigma+- Faraday term;
+            # A_m = 0 (the default) is an unmagnetised texture, A_m = A = 1 the
+            # fully-magnetised single crystal.
             # (Singlet is isotropic, so it has no polarized form and stays scalar.)
             if model[i] == 'Doublet':
                 I = abs(p[V])
@@ -1528,21 +1558,21 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 V += 9
             if model[i] == 'Sextet':
                 I = abs(p[V])
-                I13 = p[V + 12]
+                I13 = p[V + 13]
                 Aeff = 0.5
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 HH = p[V + 3] / 3.101
-                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 9] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 10] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 10] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 10] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 10] * MulCo + E
-                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 9] * MulCo + E
+                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 10] * MulCo + E
+                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 11] * MulCo + E
+                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 11] * MulCo + E
+                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 11] * MulCo + E
+                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 11] * MulCo + E
+                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 10] * MulCo + E
                 WL = abs(p[V + 4]) * MulCo
                 WG = abs(p[V + 5]) * MulCo
-                GaH = abs(p[V + 11]) / 2 / 3.101 * MulCo
+                GaH = abs(p[V + 12]) / 2 / 3.101 * MulCo
                 Ga16 = (WG ** 2 + GaH ** 2) ** (1 / 2)
                 Ga25 = (WG ** 2 + (3.0760 / 5.3123 * GaH) ** 2) ** (1 / 2)
                 Ga34 = (WG ** 2 + (0.8397 / 5.3123 * GaH) ** 2) ** (1 / 2)
@@ -1553,9 +1583,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Voi5 = Voight(WL, Ga25, S5)
                 Voi6 = Voight(WL, Ga16, S6)
                 Atex = p[V + 8]                   # uniaxial (fiber) texture order parameter
+                Am = p[V + 9]                     # magnetic polar order A_m in [-1,1] (S1 fraction), right after A
                 mx, my, mz = _axis_xyz(p[V + 6], p[V + 7])
-                Msp = _texture_blend(_mhat_dm1(mx, my, mz, 1.0), Atex)   # sigma+ (Delta m = +1): lines 3, 6
-                Msm = _texture_blend(_mhat_dm1(mx, my, mz, -1.0), Atex)  # sigma- (Delta m = -1): lines 1, 4
+                Msig = _texture_blend(_mhat_dm1_sym(mx, my), Atex)       # symmetric (quadratic) sigma part
+                Mfar = 1.5 * _texture_s1(Atex, Am) * 1j * mz * _J2       # +/- Faraday (magneto-optical) term
+                Msp = Msig + Mfar                                        # sigma+ (Delta m = +1): lines 3, 6
+                Msm = Msig - Mfar                                        # sigma- (Delta m = -1): lines 1, 4
                 Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)            # pi (Delta m = 0): lines 2, 5
                 add = Kpref * (
                     I1 * (Voi1[:, None, None] * Msm[None, :, :] + Voi6[:, None, None] * Msp[None, :, :])
@@ -1563,21 +1596,21 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                     + I3 * (Voi3[:, None, None] * Msp[None, :, :] + Voi4[:, None, None] * Msm[None, :, :]))
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 13
+                V += 14
             if model[i] == 'MDGD':
                 I = abs(p[V])
-                I13 = p[V + 15]
+                I13 = p[V + 16]
                 Aeff = 0.5
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 HH = p[V + 3] / 3.101
-                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 13] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 14] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 14] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 14] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 14] * MulCo + E
-                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 13] * MulCo + E
+                S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 14] * MulCo + E
+                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 15] * MulCo + E
+                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 15] * MulCo + E
+                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 15] * MulCo + E
+                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 15] * MulCo + E
+                S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 14] * MulCo + E
                 WL = abs(p[V + 4]) * MulCo
                 Guni = abs(p[V + 5]) * MulCo
                 Gh = abs(p[V + 6]) * MulCo
@@ -1597,9 +1630,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Voi5 = Voight(WL, Gfinal[4], S5)
                 Voi6 = Voight(WL, Gfinal[5], S6)
                 Atex = p[V + 12]                  # uniaxial (fiber) texture order parameter
+                Am = p[V + 13]                    # magnetic polar order A_m in [-1,1] (S1 fraction), right after A
                 mx, my, mz = _axis_xyz(p[V + 10], p[V + 11])
-                Msp = _texture_blend(_mhat_dm1(mx, my, mz, 1.0), Atex)
-                Msm = _texture_blend(_mhat_dm1(mx, my, mz, -1.0), Atex)
+                Msig = _texture_blend(_mhat_dm1_sym(mx, my), Atex)       # symmetric (quadratic) sigma part
+                Mfar = 1.5 * _texture_s1(Atex, Am) * 1j * mz * _J2       # +/- Faraday (magneto-optical) term
+                Msp = Msig + Mfar
+                Msm = Msig - Mfar
                 Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)
                 add = Kpref * (
                     I1 * (Voi1[:, None, None] * Msm[None, :, :] + Voi6[:, None, None] * Msp[None, :, :])
@@ -1607,7 +1643,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                     + I3 * (Voi3[:, None, None] * Msp[None, :, :] + Voi4[:, None, None] * Msm[None, :, :]))
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 16
+                V += 17
             if model[i] == 'Relax_MS':
                 I = abs(float(p[V]) * 2)
                 sig0 = float(p[V + 1]) * MulCo
@@ -1644,11 +1680,14 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 H2 = p[V + 6] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
                 WL = p[V + 7] * MulCo
                 Atex = p[V + 10]             # uniaxial (fiber) texture order parameter
-                We = p[V + 11] * MulCo
-                R = p[V + 12]
+                Am = p[V + 11]               # magnetic polar order A_m in [-1,1] (S1 fraction), right after A
+                We = p[V + 12] * MulCo
+                R = p[V + 13]
                 mx, my, mz = _axis_xyz(p[V + 8], p[V + 9])
-                Msp = _texture_blend(_mhat_dm1(mx, my, mz, 1.0), Atex)
-                Msm = _texture_blend(_mhat_dm1(mx, my, mz, -1.0), Atex)
+                Msig = _texture_blend(_mhat_dm1_sym(mx, my), Atex)       # symmetric (quadratic) sigma part
+                Mfar = 1.5 * _texture_s1(Atex, Am) * 1j * mz * _J2       # +/- Faraday (magneto-optical) term
+                Msp = Msig + Mfar
+                Msm = Msig - Mfar
                 Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)
                 B1 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, -1 / 2, -3 / 2, E, R)  # sigma-
                 B2 = Blume(Sig1, Sig2, Q1, Q2, H1, H2, WL, We, 1 / 2, 3 / 2, E, R)    # sigma+
@@ -1796,9 +1835,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                         Ck += 1
                     k -= 1
 
-                Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 13*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 16 * (model[k] == 'MDGD')\
+                Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
                            + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 14*(model[k]=='ASM')\
-                           + 13*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+                           + 14*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
 
                 model_d = np.array([model[k:i]] * Num).flatten()
                 # print('distr model', model_d, str(Distri[Di]))
@@ -2027,8 +2066,8 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
 
             for j in range(MV, len(model)):
                 MV += 1
-                V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 13 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 16 * (model[j] == 'MDGD')\
-                    + 13 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14*(model[j]=='ASM')\
+                V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14*(model[j]=='ASM')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')

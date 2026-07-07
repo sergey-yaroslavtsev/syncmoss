@@ -31,7 +31,7 @@ def test_thick_model_selection_param_count(physics_app):
     pt = physics_app.params_table
     pt.select_model(1, 'Sextet')
     assert _model_name(pt, 1) == 'Sextet'
-    assert pt.row_params[1] == 13  # T,d,e,H,L,G,theta_k,phi_h,A,a+,a-,GH,I1/I3
+    assert pt.row_params[1] == 14  # T,d,e,H,L,G,theta_k,phi_h,A,a+,a-,GH,I1/I3,A_m
 
 
 def test_distr_after_baseline_is_blocked(physics_app):
@@ -84,13 +84,15 @@ def test_corr_requires_distr_or_corr(physics_app):
 # default, as {param column: label}; the user unticks the box to refine them.
 # (theta_k, phi_h replace the former scalar asymmetry and are followed by the
 # uniaxial texture parameter A; Hamilton_mc keeps its crystal angles and only
-# adds the beam-rotation angle alpha_k, with no texture parameter.)
+# adds the beam-rotation angle alpha_k, with no texture parameter. The
+# Faraday-active models also carry a magnetic polar-order A_m right after A,
+# likewise locked by default.)
 _THICK_LOCKED_ANGLES = {
     'Doublet':     {5: 'θk, °', 6: 'φh, °', 7: 'A'},
-    'Sextet':      {6: 'θk, °', 7: 'φh, °', 8: 'A'},
-    'MDGD':        {10: 'θk, °', 11: 'φh, °', 12: 'A'},
+    'Sextet':      {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'A_m'},
+    'MDGD':        {10: 'θk, °', 11: 'φh, °', 12: 'A', 13: 'A_m'},
     'Relax_MS':    {5: 'θk, °', 6: 'φh, °', 7: 'A'},
-    'Relax_2S':    {8: 'θk, °', 9: 'φh, °', 10: 'A'},
+    'Relax_2S':    {8: 'θk, °', 9: 'φh, °', 10: 'A', 11: 'A_m'},
     'Hamilton_mc': {11: 'αk, °'},
     'ASM':         {9: 'θk, °', 10: 'φh, °', 11: 'A'},
 }

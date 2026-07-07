@@ -17,12 +17,14 @@ from syncmoss.model_io import mod_len_def
 
 
 # (old scalar count, new count, asymmetry index in the old layout)
+# The Faraday-active models (Sextet, MDGD, Relax_2S) gain A_m right after A,
+# so their new count is old + 3 (theta_k, phi_h, A_m) rather than old + 2.
 _MERGED = {
     'Doublet':     (7, 9, 5),
-    'Sextet':      (11, 13, 6),
-    'MDGD':        (14, 16, 10),
+    'Sextet':      (11, 14, 6),
+    'MDGD':        (14, 17, 10),
     'Relax_MS':    (9, 11, 5),
-    'Relax_2S':    (11, 13, 8),
+    'Relax_2S':    (11, 14, 8),
     'ASM':         (12, 14, 9),
     'Hamilton_mc': (11, 12, None),
 }
@@ -88,6 +90,25 @@ def test_upgrade_mdl_row_handles_column_padding(model):
     row = _row(range(old_n), pad_to=16)   # 16 == numco padding in real files
     out = legacy.upgrade_mdl_row(model, row)
     assert len(out) // 5 == new_n
+
+
+# Faraday models: (pre-A_m polarized count, index of A in that layout). A pre-A_m
+# file (theta_k/phi_h/A but no A_m) must gain A_m=0 right after A.
+_PRE_AM = {'Sextet': (13, 8), 'MDGD': (16, 12), 'Relax_2S': (13, 10)}
+
+
+@pytest.mark.parametrize("model", sorted(_PRE_AM))
+def test_upgrade_pre_am_polarized_inserts_am_after_a(model):
+    poly, a_idx = _PRE_AM[model]
+    vals = list(range(poly))
+    vals[a_idx] = 0.7                                  # a distinctive A value
+    out = legacy.upgrade_mdl_row(model, _row(vals))
+    groups = [out[i * 5:i * 5 + 5] for i in range(len(out) // 5)]
+    assert len(groups) == poly + 1 == mod_len_def(model, include_special=False)
+    assert float(groups[a_idx][0]) == 0.7             # A preserved
+    assert groups[a_idx + 1][0] == '0'                # A_m = 0 inserted right after A
+    assert groups[a_idx + 1][1:3] == ['-1', '1']      # A_m bounds [-1, 1]
+    assert float(groups[a_idx + 2][0]) == a_idx + 1   # the old next param shifted by one
 
 
 def test_upgrade_mdl_row_is_noop_for_new_layout():

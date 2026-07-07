@@ -34,10 +34,10 @@ def mod_len_def(mod, include_special=True):
     # angle alpha_k and has no texture parameter). See syncmoss.legacy for how
     # pre-merge model files / presets are upgraded to these counts.
     base_params = int(
-        4 * (mod == 'Singlet') + 9 * (mod == 'Doublet') + 13 * (mod == 'Sextet') +
-        14 * (mod == 'Sextet(rough)') + 13 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
+        4 * (mod == 'Singlet') + 9 * (mod == 'Doublet') + 14 * (mod == 'Sextet') +
+        14 * (mod == 'Sextet(rough)') + 14 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
         11 * (mod == 'Relax_MS') + 14 * (mod == 'ASM') + 12 * (mod == 'Hamilton_mc') +
-        9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 16 * (mod == 'MDGD') +
+        9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 17 * (mod == 'MDGD') +
         number_of_baseline_parameters * (mod == 'Nbaseline')  # Nbaseline has baseline parameters
         # 'Layer' has 0 parameters (handled by the default for unknown names).
     )

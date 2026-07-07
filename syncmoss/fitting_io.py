@@ -42,11 +42,11 @@ def mod_len_def(mod_name):
     elif mod_name == 'Doublet':
         return 9
     elif mod_name == 'Sextet':
-        return 13
+        return 14
     elif mod_name == 'Sextet(rough)':
         return 14
     elif mod_name == 'Relax_2S':
-        return 13
+        return 14
     elif mod_name == 'Average_H':
         return 11
     elif mod_name == 'Relax_MS':
@@ -60,7 +60,7 @@ def mod_len_def(mod_name):
     elif mod_name == 'Variables':
         return numco
     elif mod_name == 'MDGD':
-        return 16
+        return 17
     elif mod_name == 'Nbaseline':
         return number_of_baseline_parameters
     elif mod_name == 'Layer':

@@ -3,8 +3,8 @@ red	blue	lime	blue	cyan	yellow	fuchsia	lime
 10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False
 1	0			False	0.0				False	0.0				False	33.0				False	0.098	0.098			True	0.78	0			False	0.0	0			True	0.81	-1	1		True	0.0	-1	1		True	0.0	-1	1		True	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0.0				True	0.0				True	3.0	0			True
 1.0	0			False	0.0				False	0.0				False	33.0				False	0.098	0.098			True	0.0	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False
-1	1			True	=[60,1]				False	=[61,1]				False	31	1	1000		True	exp(-(X-p[44])**2/2/p[45]**2)				True					False					False					False					False					False					False					False					False					False					False					False
+1	1			True	=[63,1]				False	=[64,1]				False	31	1	1000		True	exp(-(X-p[46])**2/2/p[47]**2)				True					False					False					False					False					False					False					False					False					False					False					False
 2	1			True	X*0.5				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False
 0				True	0.3	0.01			True	0				True	0				True	0				True	0				True	0				True	0				True	0				True	0				True	0				True	0				True	0				True	0				True	0				True	0				True
-p[44]-3*p[45]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
-p[44]+3*p[45]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+p[46]-3*p[47]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+p[46]+3*p[47]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

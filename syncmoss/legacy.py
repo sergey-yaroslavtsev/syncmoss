@@ -23,6 +23,10 @@ The upgrade applies the SAME transform the presets/data files were converted wit
     be, and
   * replace the scalar asymmetry ``A`` with the texture order parameter
     ``A_new = f(A)`` (see :func:`a_scalar_to_texture`);
+  * the Faraday-active models (``Sextet``, ``MDGD``, ``Relax_2S``) additionally
+    gain a magnetic polar-order parameter ``A_m = 0`` immediately after ``A``
+    (unmagnetised, so the sigma+- lines keep their Faraday-averaged form, matching
+    pre-A_m files);
   * ``Hamilton_mc`` had no asymmetry -- it only gains a trailing ``alpha_k = 0``.
 
 The asymmetry->texture map ``f`` is the cubic through the three points the old
@@ -56,12 +60,17 @@ def a_scalar_to_texture(a):
 # and the index of the OLD scalar asymmetry ``A`` within that component (the slot
 # where ``theta_k, phi_h`` are inserted and ``A`` is transformed). ``asym`` is
 # None for Hamilton_mc, which had no asymmetry and only gains a trailing alpha_k.
+# ``am`` marks the Faraday-active models (Sextet, MDGD, Relax_2S) that gained a
+# magnetic polar-order parameter ``A_m`` (= 0, unmagnetised) right after ``A``.
+# For those, ``poly`` is the pre-A_m polarized count (theta_k/phi_h/A but no A_m)
+# and ``a_idx`` the index of ``A`` in that layout, so a pre-A_m file can have A_m
+# inserted in the right place too.
 _MERGED = {
     'Doublet':     {'old': 7,  'asym': 5},
-    'Sextet':      {'old': 11, 'asym': 6},
-    'MDGD':        {'old': 14, 'asym': 10},
+    'Sextet':      {'old': 11, 'asym': 6,  'am': True, 'poly': 13, 'a_idx': 8},
+    'MDGD':        {'old': 14, 'asym': 10, 'am': True, 'poly': 16, 'a_idx': 12},
     'Relax_MS':    {'old': 9,  'asym': 5},
-    'Relax_2S':    {'old': 11, 'asym': 8},
+    'Relax_2S':    {'old': 11, 'asym': 8,  'am': True, 'poly': 13, 'a_idx': 10},
     'ASM':         {'old': 12, 'asym': 9},
     'Hamilton_mc': {'old': 11, 'asym': None},
 }
@@ -71,6 +80,7 @@ _MERGED = {
 _THETA_K_BOUNDS = ('-180', '180')
 _PHI_H_BOUNDS = ('-360', '360')
 _A_TEX_BOUNDS = ('-0.5', '1')
+_A_M_BOUNDS = ('-1', '1')
 _ALPHA_K_BOUNDS = ('-360', '360')
 
 
@@ -102,10 +112,13 @@ def upgrade_mdl_row(model_name, row_data):
 
     If the real parameter count matches the model's OLD scalar count, the row is
     upgraded to the polarized layout: ``theta_k = 90`` and ``phi_h = 0`` are
-    inserted where the scalar asymmetry was, and that asymmetry is remapped to the
-    texture order parameter (Hamilton_mc instead gains a trailing ``alpha_k = 0``).
-    Otherwise (row already in the new layout, or model not part of the merge) it is
-    returned unchanged, so this is safe to call unconditionally while loading.
+    inserted where the scalar asymmetry was, that asymmetry is remapped to the
+    texture order parameter, and the Faraday-active models gain ``A_m = 0`` right
+    after ``A`` (Hamilton_mc instead gains a trailing ``alpha_k = 0``). If instead
+    the count matches a Faraday model's PRE-A_m polarized count, only ``A_m = 0`` is
+    inserted after ``A``. Otherwise (row already in the new layout, or model not
+    part of the merge) it is returned unchanged, so this is safe to call
+    unconditionally while loading.
 
     ``model_name`` must already be normalised (see
     :func:`normalize_legacy_model_name`).
@@ -122,26 +135,38 @@ def upgrade_mdl_row(model_name, row_data):
     real = 0
     while real < n_groups and str(groups[real][0]).strip() != '':
         real += 1
-    if real != info['old']:
-        return row_data                    # already new layout (or unexpected)
-
     real_groups = groups[:real]
     asym = info['asym']
+    am_group = ['0', _A_M_BOUNDS[0], _A_M_BOUNDS[1], '', 'True']
 
-    if asym is None:                       # Hamilton_mc: append alpha_k (= 0)
-        upgraded = real_groups + [['0', _ALPHA_K_BOUNDS[0], _ALPHA_K_BOUNDS[1], '', 'True']]
-    else:
-        a_group = real_groups[asym]
-        a_value, a_fix = a_group[0], a_group[4]
-        # Best effort: only recompute a plain numeric asymmetry. A constraint /
-        # expression reference (``=[..]`` / ``p[..]``) is left untouched.
-        try:
-            a_value = _fmt(a_scalar_to_texture(float(a_group[0])))
-        except (ValueError, TypeError):
-            pass
-        theta = ['90', _THETA_K_BOUNDS[0], _THETA_K_BOUNDS[1], '', 'True']
-        phi = ['0', _PHI_H_BOUNDS[0], _PHI_H_BOUNDS[1], '', 'True']
-        new_a = [a_value, _A_TEX_BOUNDS[0], _A_TEX_BOUNDS[1], '', a_fix]
-        upgraded = real_groups[:asym] + [theta, phi, new_a] + real_groups[asym + 1:]
+    if real == info['old']:
+        # Pre-merge SCALAR row -> full polarized layout.
+        if asym is None:                   # Hamilton_mc: append alpha_k (= 0)
+            upgraded = real_groups + [['0', _ALPHA_K_BOUNDS[0], _ALPHA_K_BOUNDS[1], '', 'True']]
+        else:
+            a_group = real_groups[asym]
+            a_value, a_fix = a_group[0], a_group[4]
+            # Best effort: only recompute a plain numeric asymmetry. A constraint /
+            # expression reference (``=[..]`` / ``p[..]``) is left untouched.
+            try:
+                a_value = _fmt(a_scalar_to_texture(float(a_group[0])))
+            except (ValueError, TypeError):
+                pass
+            theta = ['90', _THETA_K_BOUNDS[0], _THETA_K_BOUNDS[1], '', 'True']
+            phi = ['0', _PHI_H_BOUNDS[0], _PHI_H_BOUNDS[1], '', 'True']
+            new_a = [a_value, _A_TEX_BOUNDS[0], _A_TEX_BOUNDS[1], '', a_fix]
+            # The Faraday-active models (Sextet, MDGD, Relax_2S) gain a magnetic
+            # polar-order parameter A_m = 0 immediately AFTER A (unmagnetised ->
+            # Faraday-averaged sigma, i.e. the pre-A_m behaviour).
+            am = [am_group] if info.get('am') else []
+            upgraded = real_groups[:asym] + [theta, phi, new_a] + am + real_groups[asym + 1:]
+        return [field for g in upgraded for field in g]
 
-    return [field for g in upgraded for field in g]
+    if info.get('am') and real == info['poly']:
+        # Pre-A_m POLARIZED row (already has theta_k/phi_h/A, but no A_m): just
+        # insert A_m = 0 right after A; everything else keeps its place.
+        a_idx = info['a_idx']
+        upgraded = real_groups[:a_idx + 1] + [am_group] + real_groups[a_idx + 1:]
+        return [field for g in upgraded for field in g]
+
+    return row_data                        # already new layout (or unexpected)
