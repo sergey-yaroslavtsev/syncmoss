@@ -1360,13 +1360,28 @@ class PhysicsApp(QMainWindow):
     def on_ms_sms_changed(self, changed_checkbox):
         """Handle MS/SMS checkbox mutual exclusivity"""
         if changed_checkbox == self.MS_fit and self.MS_fit.isChecked():  # MS checked
+            self._adjust_jn0_for_mode_switch(to_cms=True)
             self.SMS_fit.setChecked(False)  # Uncheck SMS
         elif changed_checkbox == self.MS_fit:  # MS checked
             self.SMS_fit.setChecked(True)  # Check SMS
         elif changed_checkbox == self.SMS_fit and self.SMS_fit.isChecked():  # SMS checked
+            self._adjust_jn0_for_mode_switch(to_cms=False)
             self.MS_fit.setChecked(False)  # Uncheck MS
         elif changed_checkbox == self.SMS_fit:  # SMS unchecked
             self.MS_fit.setChecked(True)  # Check MS
+
+    def _adjust_jn0_for_mode_switch(self, to_cms: bool):
+        """Auto-adjust JN0 only for legacy defaults when switching SMS/CMS."""
+        text = self.jn0_input.text().strip()
+        try:
+            current = int(text)
+        except ValueError:
+            return
+
+        if to_cms and current == 32:
+            self.jn0_input.setText("64")
+        elif not to_cms and current == 64:
+            self.jn0_input.setText("32")
 
     def _update_use_dat_instrumental_action_text(self):
         if self.toggle_dat_ins_action is None:
