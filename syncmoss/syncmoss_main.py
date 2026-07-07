@@ -85,10 +85,11 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QTextEdit, QCheckBox, QComboBox, QTableWidget,
     QTableWidgetItem, QScrollArea, QGridLayout, QSplitter, QFrame, QGroupBox,
     QFileDialog, QMessageBox, QProgressBar, QSpinBox, QDoubleSpinBox,
-    QMenu, QSizePolicy, QDialog, QDialogButtonBox
+    QMenu, QSizePolicy, QDialog, QDialogButtonBox, QAbstractScrollArea
 )
 from PySide6.QtGui import (
     QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator,
+    QIntValidator,
     QRegularExpressionValidator, QPalette, QShortcut, QKeySequence
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression, QStandardPaths, QCoreApplication
@@ -923,6 +924,10 @@ class PhysicsApp(QMainWindow):
         self.supp_menu = QMenu(self)
         ham_guess_action = QAction("Find initial guess for Hamiltonian", self)
         ham_guess_action.triggered.connect(self.open_hamiltonian_helper)
+        set_integral_points_action = QAction("Set number of points for full transmission integral", self)
+        set_integral_points_action.triggered.connect(self.open_integral_points_dialog)
+        set_instrumental_lines_action = QAction("Set number of lines to reconstruct the instrumental function", self)
+        set_instrumental_lines_action.triggered.connect(self.open_instrumental_lines_dialog)
         export_lib_action = QAction("Export Library", self)
         export_lib_action.triggered.connect(self.export_library_pressed)
         import_lib_action = QAction("Import Library", self)
@@ -930,6 +935,9 @@ class PhysicsApp(QMainWindow):
         models_description_action = QAction("Models description", self)
         models_description_action.triggered.connect(self.open_models_description_pressed)
         self.supp_menu.addAction(ham_guess_action)
+        self.supp_menu.addAction(set_integral_points_action)
+        self.supp_menu.addAction(set_instrumental_lines_action)
+        self.supp_menu.addSeparator()
         self.supp_menu.addAction(export_lib_action)
         self.supp_menu.addAction(import_lib_action)
         self.supp_menu.addAction(models_description_action)
@@ -965,8 +973,9 @@ class PhysicsApp(QMainWindow):
         self.play_btn.clicked.connect(self.fit_pressed)
 
         # Fit options
-        fit_group = QVBoxLayout()
-        fit_way_layout = QHBoxLayout()
+        fit_options_widget = QWidget()
+        fit_options_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        fit_group = QGridLayout(fit_options_widget)
         self.MS_fit = QCheckBox("CMS")
         self.SMS_fit = QCheckBox("SMS")
         self.SMS_fit.setChecked(True)
@@ -977,23 +986,32 @@ class PhysicsApp(QMainWindow):
         # Connect MS and SMS to be mutually exclusive
         self.MS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.MS_fit))
         self.SMS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.SMS_fit))
-        
-        fit_way_layout.addWidget(self.MS_fit)
-        fit_way_layout.addWidget(self.SMS_fit)
-        fit_way_layout.addWidget(self.APS_fit)
 
         fit_par_layout = QHBoxLayout()
         g_label = QLabel("G")
         self.GCMS_input = QLineEdit(str(np.genfromtxt(os.path.join(self.params_dir, 'GCMS.txt'), delimiter='\t')))
-        integral_label = QLabel("Integral")
-        self.jn0_input = QLineEdit("32")
         fit_par_layout.addWidget(g_label)
         fit_par_layout.addWidget(self.GCMS_input)
-        fit_par_layout.addWidget(integral_label)
-        fit_par_layout.addWidget(self.jn0_input)
 
-        fit_group.addLayout(fit_way_layout)
-        fit_group.addLayout(fit_par_layout)
+        # Two-row layout with aligned right column:
+        # row 1 -> CMS | SMS
+        # row 2 -> G   | APS
+        fit_group.addWidget(self.MS_fit, 0, 0, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        fit_group.addWidget(self.SMS_fit, 0, 1, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        fit_group.addLayout(fit_par_layout, 1, 0)
+        fit_group.addWidget(self.APS_fit, 1, 1, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        fit_group.setColumnStretch(0, 1)
+        fit_group.setColumnStretch(1, 0)
+
+        # These settings are still used by the existing fitting logic; they are
+        # edited via small dialogs opened from the Supp menu.
+        self.jn0_input = QLineEdit("32", self)
+        self.jn0_input.setValidator(QIntValidator(1, 1000000, self))
+        self.jn0_input.hide()
+
+        self.instrumental_number = QLineEdit("3", self)
+        self.instrumental_number.setValidator(QIntValidator(1, 1000, self))
+        self.instrumental_number.hide()
 
         # File chooser
         file_layout = QVBoxLayout()
@@ -1004,12 +1022,18 @@ class PhysicsApp(QMainWindow):
         self.btnchoose.clicked.connect(self.choose_file)
         self.process_path = QTextEdit(f"['{self.calibration_path}']")
         self.process_path.setFont(QFont('Arial', 14))
-        self.process_path.setMaximumHeight(100)  # Make it taller
+        self.process_path.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.process_path.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.process_path.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         # Allow editing of file paths
-        file_choose_layout.addWidget(self.btnchoose)
         file_choose_layout.addWidget(self.process_path)
         file_layout.addLayout(file_choose_layout)
-        file_layout.addLayout(fit_group)
+
+        # Second row: choose-spectrum button on the left, compact fit options on the right.
+        file_controls_layout = QHBoxLayout()
+        file_controls_layout.addWidget(self.btnchoose, 1)
+        file_controls_layout.addWidget(fit_options_widget, 0)
+        file_layout.addLayout(file_controls_layout)
 
         bottom_layout.addWidget(self.play_btn)
         bottom_layout.addLayout(file_layout)
@@ -1057,14 +1081,7 @@ class PhysicsApp(QMainWindow):
         self.instrumental_menu.addAction(reset_defaults)
         self.instrumental_btn.setMenu(self.instrumental_menu)
 
-        instrumental_num_layout = QVBoxLayout()
-        instrumental_num_label = QLabel("№ of lines")
-        instrumental_num_label.setFont(QFont('Arial', 18))
-        self.instrumental_number = QLineEdit("3")
-        instrumental_num_layout.addWidget(instrumental_num_label)
-        instrumental_num_layout.addWidget(self.instrumental_number)
-
-        self.instrumental_btn2 = QPushButton("Refine\nInstr. func.\nESRF")
+        self.instrumental_btn2 = QPushButton("Refine\nInstr. func.")
         self.instrumental_btn2.setFont(QFont('Arial', 15))
         self.instrumental_btn2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
@@ -1082,7 +1099,6 @@ class PhysicsApp(QMainWindow):
         self.instrumental_btn2.setMenu(self.instrumental_menu2)
 
         instrumental_layout.addWidget(self.instrumental_btn)
-        instrumental_layout.addLayout(instrumental_num_layout)
         instrumental_layout.addWidget(self.instrumental_btn2)
 
         show_layout.addLayout(show_buttons)
@@ -1466,6 +1482,73 @@ class PhysicsApp(QMainWindow):
         self.models_description_window.show()
         self.models_description_window.raise_()
         self.models_description_window.activateWindow()
+
+    def _open_integer_setting_dialog(self, title, label_text, target_input, min_value=1, max_value=1000000):
+        """Open a compact modal dialog to edit an integer setting."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(label_text))
+
+        editor = QLineEdit(target_input.text().strip(), dialog)
+        editor.setValidator(QIntValidator(min_value, max_value, dialog))
+        editor.selectAll()
+        layout.addWidget(editor)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        dialog.setMinimumWidth(460)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+
+        value_text = editor.text().strip()
+        if not value_text:
+            QMessageBox.warning(self, title, "Value cannot be empty.")
+            return False
+
+        try:
+            value = int(value_text)
+        except ValueError:
+            QMessageBox.warning(self, title, "Please enter a valid integer.")
+            return False
+
+        if value < min_value or value > max_value:
+            QMessageBox.warning(self, title, f"Value must be between {min_value} and {max_value}.")
+            return False
+
+        target_input.setText(str(value))
+        return True
+
+    def open_integral_points_dialog(self):
+        """Edit the number of points used for full transmission integral."""
+        changed = self._open_integer_setting_dialog(
+            "Set number of points for full transmission integral",
+            "Number of points for full transmission integral:",
+            self.jn0_input,
+            min_value=1,
+            max_value=1000000,
+        )
+        if changed:
+            self.log.setPlainText(f"Integral points set to: {self.jn0_input.text()}")
+            self.log.setStyleSheet("color: blue;")
+
+    def open_instrumental_lines_dialog(self):
+        """Edit the number of lines used to reconstruct the instrumental function."""
+        changed = self._open_integer_setting_dialog(
+            "Set number of lines to reconstruct the instrumental function",
+            "Number of lines to reconstruct the instrumental function:",
+            self.instrumental_number,
+            min_value=1,
+            max_value=1000,
+        )
+        if changed:
+            self.log.setPlainText(f"Number of lines for instrumental function set to: {self.instrumental_number.text()}")
+            self.log.setStyleSheet("color: blue;")
 
     def update_velocity_label(self):
         """Update the velocity label and button icon based on velocity direction"""
