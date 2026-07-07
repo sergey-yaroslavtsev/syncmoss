@@ -43,7 +43,7 @@ from numpy.linalg import eig
 from numpy import linalg as LA
 # from numpy.linalg import inv
 from numpy import abs
-from syncmoss.constants import number_of_baseline_parameters
+from syncmoss.constants import number_of_baseline_parameters, numco
 # import matplotlib.pyplot as plt
 
 G = 4.7 * 10 ** -9  # natural width in eV*10**-9 # 4.7 value from Ralf Rohlsberger
@@ -906,7 +906,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
 
             if model[i] == 'Variables':
                 SET.append([])
-                V += 15
+                V += numco
             if model[i] == 'Expression':
                 SET.append([])
                 V += 1
@@ -962,7 +962,7 @@ def mod_pos(p, model, INS, Met=0):
                     + 13 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14 * (model[j] == 'ASM')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
-                    + 15 * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
+                    + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
                 if model[j] == 'Distr':
                     Di += 1

@@ -43,7 +43,7 @@ from numba import njit, prange
 import scipy
 import scipy.linalg
 dummy = scipy.linalg.eig(np.array([[1,0], [0,1]])) #required to build exe
-from syncmoss.constants import number_of_baseline_parameters
+from syncmoss.constants import number_of_baseline_parameters, numco
 from numpy.linalg import eig
 from numpy import linalg as LA
 # from numpy.linalg import inv
@@ -1765,7 +1765,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 Smat_t = None
 
             if model[i] == 'Variables':
-                V += 15
+                V += numco
                 CHt = CH
             if model[i] == 'Expression':
                 V += 1
@@ -1797,7 +1797,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                     k -= 1
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 13*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 16 * (model[k] == 'MDGD')\
-                           + 11*(model[k]=='Relax_MS') + 15*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 14*(model[k]=='ASM')\
+                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 14*(model[k]=='ASM')\
                            + 13*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
 
                 model_d = np.array([model[k:i]] * Num).flatten()
@@ -2031,7 +2031,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
                     + 13 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14*(model[j]=='ASM')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
-                    + 15 * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
+                    + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
                 if model[j] == 'Distr':
                     Di += 1
