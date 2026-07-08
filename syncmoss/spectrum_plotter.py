@@ -25,6 +25,29 @@ def _tc(theme):
     return theme if theme is not None else _DEFAULT_THEME
 
 
+# Legend label for the high-resolution convergence-check line.
+_HIRES_DIFF_LABEL = 'Integration check (×4)'
+
+
+def _plot_hires_diff(ax, x, diff, reference, label=_HIRES_DIFF_LABEL):
+    """Draw the cyan high-resolution convergence-check line, if ``diff`` is given.
+
+    ``diff`` is (model recomputed with 4× integration points) − (displayed
+    model). It is drawn as a cyan trace positioned just below ``reference``
+    (the residual trace when a spectrum is present, otherwise the model curve)
+    so a visible wiggle flags an under-sampled numerical integral. Mirrors the
+    F2-F line drawn by the instrumental-function fit. A no-op when ``diff`` is
+    None, so callers that have no high-resolution data keep their old output.
+    """
+    if diff is None:
+        return
+    diff = np.asarray(diff, dtype=float)
+    if diff.size == 0:
+        return
+    offset = float(np.min(reference)) - float(np.max(diff))
+    ax.plot(x, diff + offset, color='cyan', label=label)
+
+
 def _subspectra_colors(model_colors, model=None):
     """Build flat color list for subspectra, skipping special models.
     
@@ -271,7 +294,7 @@ def plot_calibration(figure, A, B, C, gridcolor='white', theme=None):
     figure.tight_layout()
     figure.canvas.draw()
 
-def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, model, model_colors, backgrounds=None, gridcolor='white', theme=None):
+def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, model, model_colors, backgrounds=None, gridcolor='white', theme=None, hires_diff=None):
     """
     Plot model with Nbaseline separators - creates separate subplots for each spectrum.
     
@@ -334,7 +357,19 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
             spc_separate.append(SPC_f[start:i])
             start = i
     spc_separate.append(SPC_f[start:])
-    
+
+    # Split the (concatenated) high-resolution difference the same way
+    diff_separate = None
+    if hires_diff is not None:
+        hires_diff = np.asarray(hires_diff, dtype=float)
+        diff_separate = []
+        start = 0
+        for i in range(1, len(A)):
+            if step_sign != np.sign(A[i] - A[i-1]):
+                diff_separate.append(hires_diff[start:i])
+                start = i
+        diff_separate.append(hires_diff[start:])
+
     num_spectra = len(x_separate)
     
     # Collect position artists from all spectra
@@ -421,7 +456,11 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
         residual = y_plot - spc_plot + min(y_plot) - max(y_plot - spc_plot)
         ax.plot(x, residual, color='lime', label='Residual')
         ax.plot(x, y_plot - y_plot + min(y_plot) - max(y_plot - spc_plot), linestyle='--', color=tc['gridcolor'])
-        
+
+        # Plot high-resolution convergence check below the residual
+        if diff_separate is not None and spc_idx < len(diff_separate):
+            _plot_hires_diff(ax, x, diff_separate[spc_idx], residual)
+
         # Plot fit and data
         ax.plot(x, spc_plot, color='r', zorder=len(FS)+2 if FS else 2, label='Fit')
         ax.plot(x, y_plot, linestyle='None', marker='x', color='m', zorder=len(FS)+1 if FS else 1, label='Data')
@@ -454,7 +493,7 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     return all_position_artists
 
 
-def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None):
+def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None):
     """
     Plot simultaneous fitting results with multiple spectra in separate subplots.
     
@@ -587,7 +626,11 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         residual = y - spc + min(y) - max(y - spc)
         ax.plot(x, residual, color='lime', label='Residual')
         ax.plot(x, y - y + min(y) - max(y - spc), linestyle='--', color=tc['gridcolor'])
-        
+
+        # Plot high-resolution convergence check below the residual
+        if hires_diff_list is not None and spc_idx < len(hires_diff_list):
+            _plot_hires_diff(ax, x, hires_diff_list[spc_idx], residual)
+
         # Plot fit and data with higher z-order
         max_z = int(max(v)) if len(v) > 0 else len(FS)
         ax.plot(x, spc, color='r', zorder=max_z+2, label='Fit')
@@ -640,7 +683,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     return svg_path, png_path, position_artists_list
 
 
-def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=None, gridcolor='white', theme=None, model=None):
+def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=None, gridcolor='white', theme=None, model=None, hires_diff=None):
     """
     Plot model with subspectra on the given matplotlib figure.
     
@@ -723,7 +766,10 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
     residual = B_plot - SPC_f_plot + min(B_plot) - max(B_plot - SPC_f_plot)
     ax.plot(A, residual, color='lime', label='Residual')
     ax.plot(A, B_plot - B_plot + min(B_plot) - max(B_plot - SPC_f_plot), linestyle='--', color=tc['gridcolor'])
-    
+
+    # Plot high-resolution convergence check below the residual
+    _plot_hires_diff(ax, A, hires_diff, residual)
+
     # Plot fit and data
     ax.plot(A, SPC_f_plot, color='r', zorder=len(FS)+2, label='Fit')
     ax.plot(A, B_plot, linestyle='None', marker='x', color='m', zorder=len(FS)+1, label='Data')
@@ -751,7 +797,7 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
     return position_artists if 'position_artists' in locals() else []
 
 
-def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, gridcolor='white', theme=None, model=None, has_nbaseline=False):
+def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, gridcolor='white', theme=None, model=None, has_nbaseline=False, hires_diff=None):
     """Plot only model curves (no experimental spectrum), with optional Nbaseline sections."""
     tc = _tc(theme)
     figure.clear()
@@ -807,6 +853,9 @@ def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, g
 
             max_z = int(max(calculate_z_order(fs_section))) if len(fs_section) > 0 else 0
             ax.plot(x, spc, color='r', zorder=max_z + 2, label='Model')
+            # High-resolution convergence check below the model (no residual here)
+            if hires_diff is not None and spc_idx < len(hires_diff):
+                _plot_hires_diff(ax, x, hires_diff[spc_idx], spc)
             ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
             ax.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
             if spc_idx == 0:
@@ -837,6 +886,8 @@ def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, g
 
     max_z = int(max(z)) if len(z) > 0 else 0
     ax.plot(A, SPC_f, color='r', zorder=max_z + 2, label='Model')
+    # High-resolution convergence check below the model (no residual here)
+    _plot_hires_diff(ax, A, hires_diff, SPC_f)
     ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
     ax.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
     ax.set_ylabel('Transmission, counts', color=tc['axes_text_color'])
@@ -917,7 +968,7 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
     return result_svg, result_png
 
 
-def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None):
+def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None):
     """
     Plot spectrum fitting results on the given figure and save to files.
     """
@@ -951,7 +1002,10 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
     residual_offset = min(B) - max(B - SPC_f)
     ax1.plot(A, B - SPC_f + residual_offset, color='lime', label='Residual')
     ax1.plot(A, B - B + residual_offset, linestyle='--', color=tc['gridcolor'])
-    
+
+    # Plot high-resolution convergence check below the residual
+    _plot_hires_diff(ax1, A, hires_diff, B - SPC_f + residual_offset)
+
     # Add labels
     ax1.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
     ax1.set_ylabel('Transmission, counts', color=tc['axes_text_color'])

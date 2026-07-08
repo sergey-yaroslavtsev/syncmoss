@@ -125,6 +125,7 @@ from syncmoss.instrumental_io import (
     analyze_instrumental_methods,
     build_dat_metadata_lines,
     compute_norm,
+    hires_model_diff,
 )
 from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
 from syncmoss.Library_io import export_library, import_library
@@ -389,7 +390,7 @@ class SequentialFittingThread(QThread):
 
 class ShowModelThread(QThread):
     """Thread for running show model calculation without blocking the UI"""
-    finished = Signal(object, object, object, object, object, object, object, object, object, str)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note
+    finished = Signal(object, object, object, object, object, object, object, object, object, str, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note, hires_diff
     error = Signal(str)
     
     def __init__(self, main_window, path_list, pool, velocity_range=15.0):
@@ -551,6 +552,7 @@ class ShowModelThread(QThread):
                 
                 # Calculate spectrum for each section separately, then concatenate
                 SPC_f_sections = []
+                hires_diff_sections = []
                 FS_all = []
                 FS_pos_all = []
                 p_all = []
@@ -575,6 +577,11 @@ class ShowModelThread(QThread):
                                          mp_section['INS'], Distri, Cor,
                                          Met=mp_section['Met'], Norm=mp_section['Norm'])
                     SPC_f_sections.append(SPC_f_section)
+
+                    # High-resolution convergence check for this section (cyan line)
+                    hires_diff_sections.append(hires_model_diff(
+                        pool, JN, A_section, p_section, model_sections[spc_idx],
+                        mp_section, SPC_f_section, Distri, Cor))
 
                     # Create subspectra for this section
                     Ps, Psm, Distri_t, Cor_t = self.main_window.create_subspectra(model_sections[spc_idx], Distri, Cor, p_section, number_of_baseline_parameters)[:4]
@@ -605,22 +612,30 @@ class ShowModelThread(QThread):
                     FS_pos_all.append(FS_pos)
                 
                 if no_spectrum_mode:
-                    # Keep sectioned arrays for dedicated model-only plotting
-                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note)
+                    # Keep sectioned arrays for dedicated model-only plotting;
+                    # the hires diff stays a per-section list to match.
+                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections)
                 else:
                     # Concatenate fitted spectrum sections
                     SPC_f = SPC_f_sections[0]
                     for i in range(1, len(SPC_f_sections)):
                         SPC_f = np.concatenate((SPC_f, SPC_f_sections[i]))
 
+                    # Concatenate the hires diff the same way (plot splits it back)
+                    hires_diff = np.concatenate(hires_diff_sections) if hires_diff_sections else None
+
                     # Emit with lists of subspectra for each section
-                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note)
+                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff)
             else:
                 # Single spectrum case
                 # Calculate full spectrum
-                SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'], 
+                SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
                              method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'])
-                
+
+                # High-resolution convergence check (cyan line)
+                hires_diff = hires_model_diff(pool, JN, A, p, model, method_params,
+                                              SPC_f, Distri, Cor)
+
                 # Create subspectra as before
                 Ps, Psm, Distri_t, Cor_t = self.main_window.create_subspectra(model, Distri, Cor, p, number_of_baseline_parameters)[:4]
                 
@@ -655,7 +670,7 @@ class ShowModelThread(QThread):
                     FS_pos.append(mod_pos(Ps_filtered[i], Psm_filtered[i], method_params['INS'], Met=method_params['Met']))
                 
                 # Emit with single list of subspectra
-                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note)
+                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff)
             
         except Exception as e:
             traceback.print_exc()
@@ -2052,7 +2067,7 @@ class PhysicsApp(QMainWindow):
         self.show_model_thread.error.connect(self.on_show_model_error)
         self.show_model_thread.start()
     
-    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note=''):
+    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None):
         """Handle show model completion"""
         try:
             # If we were showing a distribution, switch back to spectrum view
@@ -2071,15 +2086,15 @@ class PhysicsApp(QMainWindow):
                 position_artists = plot_model_without_spectrum(
                     self.figure, A, SPC_f, FS, FS_pos, p, current_colors,
                     gridcolor=self.gridcolor, theme=self._theme, model=model,
-                    has_nbaseline=has_nbaseline
+                    has_nbaseline=has_nbaseline, hires_diff=hires_diff
                 )
             elif has_nbaseline:
                 # FS and FS_pos are already lists of lists (one list per spectrum section)
                 # p is already a list of parameter arrays (one per spectrum section)
-                position_artists = plot_model_with_nbaseline(self.figure, A, B, SPC_f, FS, FS_pos, p, model, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme)
+                position_artists = plot_model_with_nbaseline(self.figure, A, B, SPC_f, FS, FS_pos, p, model, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme, hires_diff=hires_diff)
             else:
                 # FS and FS_pos are simple lists, p is a single array
-                position_artists = plot_model(self.figure, A, B, SPC_f, FS, FS_pos, p, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme, model=model)
+                position_artists = plot_model(self.figure, A, B, SPC_f, FS, FS_pos, p, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme, model=model, hires_diff=hires_diff)
             
             # Store position artists and enable toggle button
             self.position_artists = position_artists if position_artists else []
@@ -2809,7 +2824,8 @@ class PhysicsApp(QMainWindow):
                 data['FS_list'], data['FS_pos_list'], data['p'], data['begining_spc'],
                 data['model_colors'], data['chi2'], data['spectrum_files'],
                 self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
-                theme=self._theme, model=data.get('model')
+                theme=self._theme, model=data.get('model'),
+                hires_diff_list=data.get('hires_diff_list')
             )
             self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         else:
@@ -2818,7 +2834,8 @@ class PhysicsApp(QMainWindow):
                 self.figure, data['A'], data['B'], data['SPC_f'], data['FS'],
                 data['FS_pos'], data['p'], data['model_colors'], data['chi2'],
                 data['filepath'], self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
-                theme=self._theme, model=data.get('model')
+                theme=self._theme, model=data.get('model'),
+                hires_diff=data.get('hires_diff')
             )
             self.position_artists = position_artists if position_artists else []
         
@@ -3230,6 +3247,7 @@ class PhysicsApp(QMainWindow):
                     'A_list': result['A_list'],
                     'B_list': result['B_list'],
                     'SPC_f_list': result['SPC_f_list'],
+                    'hires_diff_list': result.get('hires_diff_list'),
                     'FS_list': result['FS_list'],
                     'FS_pos_list': result['FS_pos_list'],
                     'p': fitted_parameters,
@@ -3255,11 +3273,12 @@ class PhysicsApp(QMainWindow):
                 }
                 
                 result_svg, result_png, position_artists_list = plot_simultaneous_fitting_result(
-                    self.figure, result['A_list'], result['B_list'], result['SPC_f_list'], 
-                    result['FS_list'], result['FS_pos_list'], fitted_parameters, 
+                    self.figure, result['A_list'], result['B_list'], result['SPC_f_list'],
+                    result['FS_list'], result['FS_pos_list'], fitted_parameters,
                     result['begining_spc'], model_colors, chi2, result['spectrum_files'],
                     self.dir_path, z_order=None, gridcolor=gridcolor,
-                    theme=self._theme, model=result.get('model')
+                    theme=self._theme, model=result.get('model'),
+                    hires_diff_list=result.get('hires_diff_list')
                 )
                 
                 # Store position artists (from all subplots)
@@ -3299,6 +3318,7 @@ class PhysicsApp(QMainWindow):
                     'A': result['A'],
                     'B': result['B'],
                     'SPC_f': result['SPC_f'],
+                    'hires_diff': result.get('hires_diff'),
                     'FS': result['FS'],
                     'FS_pos': FS_pos,
                     'p': fitted_parameters,
@@ -3316,9 +3336,10 @@ class PhysicsApp(QMainWindow):
                 
                 result_svg, result_png, position_artists = plot_fitting_result(
                     self.figure, result['A'], result['B'], result['SPC_f'], result['FS'],
-                    FS_pos, fitted_parameters, model_colors, chi2, result['spectrum_file'], 
+                    FS_pos, fitted_parameters, model_colors, chi2, result['spectrum_file'],
                     self.dir_path, z_order=None, gridcolor=gridcolor,
-                    theme=self._theme, model=result.get('model')
+                    theme=self._theme, model=result.get('model'),
+                    hires_diff=result.get('hires_diff')
                 )
                 
                 # Store position artists and enable toggle button if positions exist

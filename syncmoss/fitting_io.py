@@ -18,6 +18,7 @@ from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
     compute_norm,
     same_method_params,
+    hires_model_diff,
 )
 
 
@@ -535,17 +536,24 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             # Calculate fitted spectrum for each section separately, each with the
             # instrumental parameters resolved for that section's spectrum
             SPC_f_list = []
+            hires_diff_list = []
             for NumSpc in range(number_of_spectra):
                 p_separate = section_parameters(p, NumSpc)
                 mp_i = method_params_list[NumSpc]
                 d_slice = list(Distri_substituted[distr_bounds[NumSpc]:distr_bounds[NumSpc + 1]])
                 c_slice = list(Cor_substituted[corr_bounds[NumSpc]:corr_bounds[NumSpc + 1]])
+                d_arg = d_slice if len(d_slice) > 0 else [0]
+                c_arg = c_slice if len(c_slice) > 0 else [0]
                 SPC_f_separate = m5.TI(A_list[NumSpc], p_separate, model_separate[NumSpc], JN, pool,
                                        mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
-                                       d_slice if len(d_slice) > 0 else [0],
-                                       c_slice if len(c_slice) > 0 else [0],
+                                       d_arg, c_arg,
                                        Met=mp_i['Met'], Norm=mp_i['Norm'])
                 SPC_f_list.append(SPC_f_separate)
+
+                # High-resolution convergence check for this section (cyan line)
+                hires_diff_list.append(hires_model_diff(
+                    pool, JN, A_list[NumSpc], p_separate, model_separate[NumSpc],
+                    mp_i, SPC_f_separate, d_arg, c_arg))
             
             # Now calculate subspectra for plotting
             # Substitute parameter values in Distri and Cor expressions ONCE with full model and full p
@@ -606,6 +614,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'A_list': A_list,  # List of A arrays
                 'B_list': B_list,  # List of B arrays
                 'SPC_f_list': SPC_f_list,  # List of fitted spectra
+                'hires_diff_list': hires_diff_list,  # Per-section 4x-integration convergence check
                 'FS_list': FS_list,  # List of subspectra lists
                 'FS_pos_list': FS_pos_list,  # List of position lists
                 'model_separate': model_separate,  # Separated models
@@ -640,7 +649,11 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 positions = mod_pos(Ps[i], Psm[i], mp0['INS'], Met=mp0['Met'])
                 FS.append(subspectrum)
                 FS_pos.append(positions)
-            
+
+            # High-resolution convergence check (cyan line). Uses the same
+            # instrumental settings and Distri/Cor as func(), so it matches SPC_f.
+            hires_diff = hires_model_diff(pool, JN, A, p, model, mp0, SPC_f, Distri, Cor)
+
             return {
                 'success': True,
                 'parameters': p,
@@ -654,7 +667,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'is_simultaneous': False,
                 'A': A,
                 'B': B,
-                'SPC_f': func(A, p),  # Calculate fitted spectrum
+                'SPC_f': SPC_f,  # Fitted spectrum (already computed above)
+                'hires_diff': hires_diff,  # 4x-integration convergence check
                 'FS': FS,
                 'FS_pos': FS_pos,
                 'spectrum_file': spectrum_file,

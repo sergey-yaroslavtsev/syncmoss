@@ -254,6 +254,34 @@ def compute_norm(pool, JN, method_params):
     )[0]
 
 
+# How many times more integration points the high-resolution convergence check
+# uses. Kept in sync with the "(re)find instrumental function" fit, which
+# recomputes its result at JN*4 to draw the cyan F2-F difference line.
+HIRES_INTEGRATION_FACTOR = 4
+
+
+def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
+                     Distri=[0], Cor=[0]):
+    """High-resolution convergence check: (model at JN*4) - (model at JN).
+
+    ``SPC_f`` is the already-computed model at the displayed ``JN`` (so it is
+    not recomputed here). The same model is recomputed with
+    ``JN*HIRES_INTEGRATION_FACTOR`` integration points and its own
+    normalization, and the difference is returned. Drawn as the cyan line on
+    the spectrum plot: a visible wiggle means the numerical transmission
+    integral is under-sampled at the current JN. Mirrors the F2-F line drawn
+    by the instrumental-function fit.
+    """
+    JN_hi = int(JN) * HIRES_INTEGRATION_FACTOR
+    norm_hi = compute_norm(pool, JN_hi, method_params)
+    SPC_hi = m5.TI(
+        A, p, model, JN_hi, pool,
+        method_params['x0'], method_params['MulCo'], method_params['INS'],
+        Distri, Cor, Met=method_params['Met'], Norm=norm_hi,
+    )
+    return SPC_hi - SPC_f
+
+
 def build_dat_metadata_lines(app):
     """Instrumental header lines to embed into .dat files converted from RAW.
 
