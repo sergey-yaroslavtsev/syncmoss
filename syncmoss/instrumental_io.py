@@ -261,7 +261,7 @@ HIRES_INTEGRATION_FACTOR = 4
 
 
 def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
-                     Distri=[0], Cor=[0]):
+                     Distri=[0], Cor=[0], pol=0.98):
     """High-resolution convergence check: (model at JN*4) - (model at JN).
 
     ``SPC_f`` is the already-computed model at the displayed ``JN`` (so it is
@@ -277,7 +277,7 @@ def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
     SPC_hi = m5.TI(
         A, p, model, JN_hi, pool,
         method_params['x0'], method_params['MulCo'], method_params['INS'],
-        Distri, Cor, Met=method_params['Met'], Norm=norm_hi,
+        Distri, Cor, Met=method_params['Met'], Norm=norm_hi, pol=pol,
     )
     return SPC_hi - SPC_f
 

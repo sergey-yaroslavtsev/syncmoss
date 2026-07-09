@@ -401,6 +401,7 @@ def subtract_model_from_spectrum(main_window):
         # (#@GCMS or #@INSexp/#@INSint) when that option is enabled, otherwise the
         # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
+        pol = float(getattr(main_window, 'SMS_pol', 0.98))  # SMS beam polarization degree
         from syncmoss.instrumental_io import resolve_instrumental_for_file, compute_norm
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)
@@ -411,7 +412,7 @@ def subtract_model_from_spectrum(main_window):
             SPC_f = TI(A, p, model, JN, main_window.pool,
                          method_params['x0'], method_params['MulCo'],
                          method_params['INS'], Distri, Cor,
-                         Met=method_params['Met'], Norm=method_params['Norm'])
+                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
         except Exception as e:
             main_window.log.setPlainText(f"Error calculating model spectrum: {e}")
             main_window.log.setStyleSheet("color: red;")

@@ -493,6 +493,7 @@ class ShowModelThread(QThread):
             
             # Get experimental method parameters
             JN = int(self.main_window.jn0_input.text())
+            pol = float(getattr(self.main_window, 'SMS_pol', 0.98))  # SMS beam polarization degree
 
             pool = self.pool
 
@@ -575,13 +576,13 @@ class ShowModelThread(QThread):
                     SPC_f_section = TI(A_section, p_section, model_sections[spc_idx], JN, pool,
                                          mp_section['x0'], mp_section['MulCo'],
                                          mp_section['INS'], Distri, Cor,
-                                         Met=mp_section['Met'], Norm=mp_section['Norm'])
+                                         Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol)
                     SPC_f_sections.append(SPC_f_section)
 
                     # High-resolution convergence check for this section (cyan line)
                     hires_diff_sections.append(hires_model_diff(
                         pool, JN, A_section, p_section, model_sections[spc_idx],
-                        mp_section, SPC_f_section, Distri, Cor))
+                        mp_section, SPC_f_section, Distri, Cor, pol=pol))
 
                     # Create subspectra for this section
                     Ps, Psm, Distri_t, Cor_t = self.main_window.create_subspectra(model_sections[spc_idx], Distri, Cor, p_section, number_of_baseline_parameters)[:4]
@@ -603,7 +604,7 @@ class ShowModelThread(QThread):
 
                         FS_i = TI(A_section, Ps[i], Psm[i], JN, pool, mp_section['x0'], mp_section['MulCo'],
                                    mp_section['INS'], distri_slice, cor_slice,
-                                   Met=mp_section['Met'], Norm=mp_section['Norm'])
+                                   Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol)
                         FS.append(FS_i)
 
                         FS_pos.append(mod_pos(Ps[i], Psm[i], mp_section['INS'], Met=mp_section['Met']))
@@ -630,11 +631,11 @@ class ShowModelThread(QThread):
                 # Single spectrum case
                 # Calculate full spectrum
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
-                             method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'])
+                             method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
 
                 # High-resolution convergence check (cyan line)
                 hires_diff = hires_model_diff(pool, JN, A, p, model, method_params,
-                                              SPC_f, Distri, Cor)
+                                              SPC_f, Distri, Cor, pol=pol)
 
                 # Create subspectra as before
                 Ps, Psm, Distri_t, Cor_t = self.main_window.create_subspectra(model, Distri, Cor, p, number_of_baseline_parameters)[:4]
@@ -664,7 +665,7 @@ class ShowModelThread(QThread):
                     
                     FS_i = TI(A, Ps_filtered[i], Psm_filtered[i], JN, pool, method_params['x0'], method_params['MulCo'],
                                method_params['INS'], distri_slice, cor_slice,
-                               Met=method_params['Met'], Norm=method_params['Norm'])
+                               Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
                     FS.append(FS_i)
 
                     FS_pos.append(mod_pos(Ps_filtered[i], Psm_filtered[i], method_params['INS'], Met=method_params['Met']))
@@ -943,6 +944,8 @@ class PhysicsApp(QMainWindow):
         set_integral_points_action.triggered.connect(self.open_integral_points_dialog)
         set_instrumental_lines_action = QAction("Set number of lines to reconstruct the instrumental function", self)
         set_instrumental_lines_action.triggered.connect(self.open_instrumental_lines_dialog)
+        set_polarization_action = QAction("Set polarization", self)
+        set_polarization_action.triggered.connect(self.open_polarization_dialog)
         export_lib_action = QAction("Export Library", self)
         export_lib_action.triggered.connect(self.export_library_pressed)
         import_lib_action = QAction("Import Library", self)
@@ -952,6 +955,7 @@ class PhysicsApp(QMainWindow):
         self.supp_menu.addAction(ham_guess_action)
         self.supp_menu.addAction(set_integral_points_action)
         self.supp_menu.addAction(set_instrumental_lines_action)
+        self.supp_menu.addAction(set_polarization_action)
         self.supp_menu.addSeparator()
         self.supp_menu.addAction(export_lib_action)
         self.supp_menu.addAction(import_lib_action)
@@ -1027,6 +1031,19 @@ class PhysicsApp(QMainWindow):
         self.instrumental_number = QLineEdit("3", self)
         self.instrumental_number.setValidator(QIntValidator(1, 1000, self))
         self.instrumental_number.hide()
+
+        # SMS beam linear polarization degree (0..1). Mirrors jn0_input above:
+        # a hidden store edited via the "Set polarization" dialog in the Supp
+        # menu. Its value is mirrored into self.SMS_pol and passed to TI as the
+        # ``pol`` argument, which forwards it into the transmission-integral
+        # workers. Default 0.98 (a realistic synchrotron/SMS beam).
+        self.polarization_input = QLineEdit("0.98", self)
+        pol_validator = QDoubleValidator(0.0, 1.0, 6, self)
+        pol_validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        pol_validator.setLocale(QLocale(QLocale.Language.C))
+        self.polarization_input.setValidator(pol_validator)
+        self.polarization_input.hide()
+        self.SMS_pol = 0.98
 
         # File chooser
         file_layout = QVBoxLayout()
@@ -1554,6 +1571,55 @@ class PhysicsApp(QMainWindow):
         target_input.setText(str(value))
         return True
 
+    def _open_float_setting_dialog(self, title, label_text, target_input, min_value, max_value, decimals=6):
+        """Open a compact modal dialog to edit a floating-point setting.
+
+        Mirrors ``_open_integer_setting_dialog`` but parses a float and validates
+        against an inclusive [min_value, max_value] range. Returns True and writes
+        the new value into ``target_input`` on accept, False otherwise.
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(label_text))
+
+        editor = QLineEdit(target_input.text().strip(), dialog)
+        validator = QDoubleValidator(min_value, max_value, decimals, dialog)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        validator.setLocale(QLocale(QLocale.Language.C))
+        editor.setValidator(validator)
+        editor.selectAll()
+        layout.addWidget(editor)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        dialog.setMinimumWidth(460)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+
+        value_text = editor.text().strip()
+        if not value_text:
+            QMessageBox.warning(self, title, "Value cannot be empty.")
+            return False
+
+        try:
+            value = float(value_text)
+        except ValueError:
+            QMessageBox.warning(self, title, "Please enter a valid number.")
+            return False
+
+        if value < min_value or value > max_value:
+            QMessageBox.warning(self, title, f"Value must be between {min_value} and {max_value}.")
+            return False
+
+        target_input.setText(str(value))
+        return True
+
     def open_integral_points_dialog(self):
         """Edit the number of points used for full transmission integral."""
         changed = self._open_integer_setting_dialog(
@@ -1578,6 +1644,20 @@ class PhysicsApp(QMainWindow):
         )
         if changed:
             self.log.setPlainText(f"Number of lines for instrumental function set to: {self.instrumental_number.text()}")
+            self.log.setStyleSheet("color: blue;")
+
+    def open_polarization_dialog(self):
+        """Edit the SMS beam linear polarization degree (0..1)."""
+        changed = self._open_float_setting_dialog(
+            "Set polarization",
+            "SMS linear polarization degree (0 = unpolarized, 1 = fully polarized):",
+            self.polarization_input,
+            min_value=0.0,
+            max_value=1.0,
+        )
+        if changed:
+            self.SMS_pol = float(self.polarization_input.text())
+            self.log.setPlainText(f"Polarization set to: {self.polarization_input.text()}")
             self.log.setStyleSheet("color: blue;")
 
     def update_velocity_label(self):
@@ -1931,6 +2011,13 @@ class PhysicsApp(QMainWindow):
             except:
                 GCMS = 0.1
             self.GCMS = GCMS
+
+            # Resolve the SMS polarization degree from its store; passed to TI as
+            # the ``pol`` argument, which forwards it to the transmission workers.
+            try:
+                self.SMS_pol = float(self.polarization_input.text())
+            except (ValueError, AttributeError):
+                self.SMS_pol = 0.98
 
             instrumental_int_path = os.path.join(self.params_dir, 'INSint.txt')
             self.MulCo, self.x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)

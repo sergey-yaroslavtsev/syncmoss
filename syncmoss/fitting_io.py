@@ -320,6 +320,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         # when the "use instrumental function from .dat file" option is enabled;
         # otherwise the UI-selected method with the internal values is used.
         JN = int(app.JN0)
+        pol = float(getattr(app, 'SMS_pol', 0.98))  # SMS beam polarization degree
         use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
         files_for_ins = list(spectrum_files) if is_simultaneous else [spectrum_file]
 
@@ -379,7 +380,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             # (TI splits Nbaseline sections internally) — the original code path.
             def func(x, p):
                 return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
-                             Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'])
+                             Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol)
         else:
             # Dedicated per-section instrumental parameters (e.g. mixing CMS and
             # SMS): TI receives one value per section as lists. The full model and
@@ -394,7 +395,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
 
             def func(x, p):
                 return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
-                             Distri, Cor, Met=met_list, Norm=norm_list)
+                             Distri, Cor, Met=met_list, Norm=norm_list, pol=pol)
 
         # Set up bounds and fixed parameters
         # For now, use unbounded optimization
@@ -547,13 +548,13 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 SPC_f_separate = m5.TI(A_list[NumSpc], p_separate, model_separate[NumSpc], JN, pool,
                                        mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
                                        d_arg, c_arg,
-                                       Met=mp_i['Met'], Norm=mp_i['Norm'])
+                                       Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol)
                 SPC_f_list.append(SPC_f_separate)
 
                 # High-resolution convergence check for this section (cyan line)
                 hires_diff_list.append(hires_model_diff(
                     pool, JN, A_list[NumSpc], p_separate, model_separate[NumSpc],
-                    mp_i, SPC_f_separate, d_arg, c_arg))
+                    mp_i, SPC_f_separate, d_arg, c_arg, pol=pol))
             
             # Now calculate subspectra for plotting
             # Substitute parameter values in Distri and Cor expressions ONCE with full model and full p
@@ -587,7 +588,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                     subspectrum = m5.TI(A_list[NumSpc], Ps[i], Psm[i], JN, pool,
                                         mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
                                         Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn],
-                                        Met=mp_i['Met'], Norm=mp_i['Norm'])
+                                        Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol)
                     positions = mod_pos(Ps[i], Psm[i], mp_i['INS'], Met=mp_i['Met'])
 
                     FS.append(subspectrum)
@@ -644,7 +645,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 subspectrum = m5.TI(A, Ps[i], Psm[i], JN, pool,
                                     mp0['x0'], mp0['MulCo'], mp0['INS'],
                                     Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn],
-                                    Met=mp0['Met'], Norm=mp0['Norm'])
+                                    Met=mp0['Met'], Norm=mp0['Norm'], pol=pol)
                 # Calculate positions for this subspectrum
                 positions = mod_pos(Ps[i], Psm[i], mp0['INS'], Met=mp0['Met'])
                 FS.append(subspectrum)
@@ -652,7 +653,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
 
             # High-resolution convergence check (cyan line). Uses the same
             # instrumental settings and Distri/Cor as func(), so it matches SPC_f.
-            hires_diff = hires_model_diff(pool, JN, A, p, model, mp0, SPC_f, Distri, Cor)
+            hires_diff = hires_model_diff(pool, JN, A, p, model, mp0, SPC_f, Distri, Cor, pol=pol)
 
             return {
                 'success': True,

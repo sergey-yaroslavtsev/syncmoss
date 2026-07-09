@@ -1080,11 +1080,12 @@ def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
 #   p = 0.0  -> unpolarized: half the trace, the conventional radioactive-source
 #               (CMS) readout.
 #
-# THIS CONSTANT IS THE ONE PLACE TO EDIT to model a partially polarized SMS
-# beam. It applies to SMS spectra only; CMS spectra (Met == 1) are always read
-# out unpolarized (rho = I/2, a fixed 1:1 mixture) regardless of this value,
-# because an unpolarized source defines no direction in the polarization plane.
-SMS_LINEAR_POLARIZATION = 0.98
+# The degree p is the ``pol`` argument of ``TI`` (default 0.98), which forwards
+# it to ``TImod`` as ``sms_pol``. It is editable at runtime from the GUI
+# (Supp -> "Set polarization"). It applies to SMS spectra only; CMS spectra
+# (Met == 1) are always read out unpolarized (rho = I/2, a fixed 1:1 mixture)
+# regardless of this value, because an unpolarized source defines no direction
+# in the polarization plane.
 
 _I2 = np.eye(2, dtype=complex)
 _J2 = np.array([[0.0, 1.0], [-1.0, 0.0]], dtype=complex)  # 1j*_J2 is Hermitian
@@ -1366,7 +1367,7 @@ def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m, Num):
     return (co, v1, v2, v3, v4, v5, v6)
 
 
-def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False):
+def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.98, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False):
         # SCR = np.array(x_exp)
         SCR = x_exp
         N = np.array([float(0)]*len(SCR))
@@ -1880,7 +1881,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                 # exactly like an undistributed one placed in the same layer:
                 # everything between 'Layer' markers sums into one Smat, one
                 # expm(-Smat/2), one rho-readout at the top level -- no double
-                # exponential and no doubled SMS_LINEAR_POLARIZATION. Scalars
+                # exponential and no doubled polarization readout. Scalars
                 # (Smat_in is None) simply multiply into CH, unchanged whether or
                 # not they sit in a Layer. The parent's matrix accumulator was
                 # rewound to Smat_old above, so the component's own undistributed
@@ -1897,7 +1898,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
                             mDk += 1
                         if model[mk] == 'Corr':
                             mCk += 1
-                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True)
+                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol)
                     CHt = CH * CH_in                                  # scalar (thin) part multiplies in, as before
                     if Smat_in is not None:                          # thick part joins the CURRENT layer's Smat
                         Smat_t = Smat_in if Smat is None else Smat + Smat_in
@@ -1946,7 +1947,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
             #
             # rho = diag(rho11, rho22). A CMS (radioactive source, Mett == 1) is
             # unpolarized -> fixed rho = I/2 (half the trace). An SMS is linearly
-            # polarized to the degree SMS_LINEAR_POLARIZATION (p=1 -> pure (1,1)).
+            # polarized to the degree ``sms_pol`` (p=1 -> pure (1,1)).
             #
             # The branch keys on ``Mett`` (the source CLASS), NOT ``Met`` (which
             # also encodes the source-line shape and the recursion sentinel).
@@ -1962,7 +1963,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
             if Mett == 1:
                 rho11 = rho22 = 0.5
             else:
-                pol = SMS_LINEAR_POLARIZATION
+                # SMS beam linear polarization degree, passed in from TI (which
+                # forwards the GUI value into the pool workers). Default 0.98.
+                pol = sms_pol
                 rho11 = 0.5 * (1.0 + pol)
                 rho22 = 0.5 * (1.0 - pol)
             Tdag = np.conjugate(np.transpose(Tprod, (0, 2, 1)))   # per-energy Hermitian conjugate
@@ -1982,7 +1985,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, Mett = -2,
         return(CH)
 
 
-def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1):  # num - number of Gausians # PS - spc, p - InsFun
+def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=0.98):  # num - number of Gausians # PS - spc, p - InsFun
     """Compute the Mossbauer transmission spectrum (full transmission integral).
 
     Integrates the per-energy model ``TImod`` over the source line shape using
@@ -1996,6 +1999,12 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     Returns:
         numpy.ndarray: model intensity sampled at the experimental points ``x_exp``.
     """
+    # ``pol`` is the SMS beam linear polarization degree (0..1, default 0.98). It
+    # travels to every ``TImod`` worker as the positional ``sms_pol`` argument
+    # (right after ``Met`` in the tuples below) so it is pickled through to the
+    # spawned pool workers -- they re-import this module fresh and cannot see a
+    # value that was only set in the main process, so it MUST travel as an argument.
+
     # INS = np.genfromtxt(realpath, delimiter=' ', skip_footer=0)
     # Per-section instrumental parameters: for an Nbaseline model, x0, MulCo, INS,
     # Met and Norm may each be a list/tuple/array with one entry per section, so a
@@ -2009,7 +2018,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
 
     D = (E[1] - E[0])
     if model.count('Nbaseline') == 0:
-        H = pool.starmap(TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met) for Ex in E])
+        H = pool.starmap(TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol) for Ex in E])
         H = np.array(H, dtype=object).sum(axis=0)
 
         # Ht = np.array([[float(0)] * len(x_exp)] * JN)
@@ -2056,7 +2065,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
             N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
             V = V + number_of_baseline_parameters
-            H = pool.starmap(TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, -2, [], Di, Co, V) for Ex in E])
+            H = pool.starmap(TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V) for Ex in E])
             # Di = H[0][1]
             # Co = H[0][2]
             # V = H[0][3]

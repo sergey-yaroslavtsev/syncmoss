@@ -2,19 +2,20 @@
 
 Covers the two knobs added on top of the fully-polarized SMS assumption:
 
-  (1) ``models.SMS_LINEAR_POLARIZATION`` -- the SMS beam may be partially
-      polarized. The transmission is read out of the density matrix
-      ``rho = diag((1+p)/2, (1-p)/2)``, so the spectrum must be the linear mix
-      ``(1+p)/2 * [read (1,1)] + (1-p)/2 * [read (2,2)]``. p = 1 (the default)
-      reproduces the original (1,1)-only readout.
+  (1) the ``sms_pol`` argument of ``TImod`` (the ``pol`` argument of ``TI``,
+      GUI-editable via Supp -> "Set polarization", default 0.98) -- the SMS beam
+      may be partially polarized. The transmission is read out of the density
+      matrix ``rho = diag((1+p)/2, (1-p)/2)``, so the spectrum must be the linear
+      mix ``(1+p)/2 * [read (1,1)] + (1-p)/2 * [read (2,2)]``. p = 1 reproduces
+      the original (1,1)-only readout.
 
   (2) A conventional radioactive source (CMS, ``Met == 1``) is unpolarized:
       ``rho = I/2`` -> half the trace of the transmission matrix, a FIXED 1:1
-      mixture that ignores ``SMS_LINEAR_POLARIZATION`` entirely. This equals an
-      SMS beam at p = 0, which is what makes thick models valid for a CMS source.
+      mixture that ignores ``sms_pol`` entirely. This equals an SMS beam at
+      p = 0, which is what makes thick models valid for a CMS source.
 
 Pure NumPy/Numba path (``TImod`` called directly, single process) -- no Qt and
-no multiprocessing pool, so monkeypatching the module constant takes effect.
+no multiprocessing pool; ``sms_pol`` is passed straight to the call.
 """
 import numpy as np
 import pytest
@@ -37,13 +38,12 @@ _THICK_CASES = {
 def _compute(model, params, mett, pol, monkeypatch):
     """Per-energy absorber transmission C_a(E) for one thick component.
 
-    ``mett`` selects the source (0 = SMS, 1 = CMS); ``pol`` sets
-    ``SMS_LINEAR_POLARIZATION`` for this call.
+    ``mett`` selects the source (0 = SMS, 1 = CMS); ``pol`` is the SMS linear
+    polarization degree, passed to ``TImod`` as ``sms_pol`` for this call.
     """
-    monkeypatch.setattr(m5, "SMS_LINEAR_POLARIZATION", pol)
     return np.asarray(
         m5.TImod(_E, np.array(params, float), np.array([model]), _E, 0.0, 1.0,
-                 np.array([]), [], [], Met=-1, Mett=mett),
+                 np.array([]), [], [], Met=-1, Mett=mett, sms_pol=pol),
         dtype=float,
     )
 
@@ -52,8 +52,10 @@ def _compute(model, params, mett, pol, monkeypatch):
 def test_sms_default_polarization_reads_11_element(model, monkeypatch):
     """p = 1 must reproduce the original (1,1)-only SMS readout."""
     params = _THICK_CASES[model]
-    # The realistic-beam default value shipped in the module is 0.98 ...
-    assert m5.SMS_LINEAR_POLARIZATION == 0.98
+    # The realistic-beam default polarization degree is 0.98 ...
+    import inspect
+    assert inspect.signature(m5.TImod).parameters["sms_pol"].default == 0.98
+    assert inspect.signature(m5.TI).parameters["pol"].default == 0.98
     # ... and computing at p = 1 is a plain (1,1) readout, in (0, 1].
     y = _compute(model, params, mett=0, pol=1.0, monkeypatch=monkeypatch)
     assert np.all(np.isfinite(y))
@@ -146,10 +148,9 @@ def test_cms_hamilton_independent_of_alfak(monkeypatch):
 def _compute_multi(model_list, params, mett, pol, monkeypatch):
     """Per-energy transmission for a multi-component stack (model given as a list,
     so 'Layer' markers are honoured)."""
-    monkeypatch.setattr(m5, "SMS_LINEAR_POLARIZATION", pol)
     return np.asarray(
         m5.TImod(_E, np.array(params, float), np.array(model_list), _E, 0.0, 1.0,
-                 np.array([]), [], [], Met=-1, Mett=mett),
+                 np.array([]), [], [], Met=-1, Mett=mett, sms_pol=pol),
         dtype=float,
     )
 

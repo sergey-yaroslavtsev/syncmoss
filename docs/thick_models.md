@@ -448,20 +448,20 @@ which is why $\operatorname{tr}$ is cyclic and an unpolarized source cannot tell
 stacking order apart. Both source modes are supported:
 
 * **SMS (synchrotron)** — linearly polarized. The degree of polarization is the
-  single module constant `models.SMS_LINEAR_POLARIZATION` (default `0.98`, a
-  realistic SMS beam):
+  `pol` argument of `TI` (default `0.98`, a realistic SMS beam), which forwards it
+  to `TImod` as `sms_pol`:
   * `p = 1.0` → fully polarized, reads the $(1,1)$ element only — the original
     behaviour.
   * `p ≈ 0.98` → a realistic SMS beam (the default); `p = 0.0` → unpolarized.
 
-  It is a **manual, source-code** knob (one place, edit and re-run); there is no UI
-  field for it.
+  It is editable at runtime from the GUI (**Supp → "Set polarization"**); the value
+  is stored on the app as `SMS_pol` and passed into every `TI` call.
 
 * **CMS (conventional radioactive source, `Met == 1`)** — unpolarized, $\rho=\tfrac12 I$,
   so $C_{\mathrm a}=\tfrac12\operatorname{tr}\exp(-\hat\Sigma)=\tfrac12\big(e^{-\lambda_+}+e^{-\lambda_-}\big)$,
   the average of the two eigen-channel transmissions. This 1:1 mixture is **fixed**
   (an unpolarized beam defines no direction in the polarization plane) and does **not**
-  read `SMS_LINEAR_POLARIZATION`. Thick models are therefore **valid for a CMS source**
+  read `pol`/`sms_pol`. Thick models are therefore **valid for a CMS source**
   and are *no longer refused*.
 
 Consequences for a CMS spectrum (the user is responsible for these): for the
