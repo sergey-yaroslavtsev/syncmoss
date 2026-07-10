@@ -1,9 +1,7 @@
 # spectrum_plotter.py
-import matplotlib.pyplot as plt
 import os
 import numpy as np
-import gc
-from syncmoss.constants import numro, model_colors, number_of_baseline_parameters
+from syncmoss.constants import model_colors, number_of_baseline_parameters
 from syncmoss.model_io import mod_len_def
 
 # Default theme (original dark mode colors)
@@ -400,17 +398,11 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
         
         # Calculate z-order for subspectra
         if len(FS) > 0:
-            v = np.array([len(FS)] * len(FS))
-            for i in range(len(FS)):
-                for k in range(len(FS)):
-                    if min(FS[i]) < min(FS[k]):
-                        v[i] -= 1
-            
+            v = calculate_z_order(FS)
+
             # Plot each subspectrum with fill
-            baseline = p[0] + p[3] * p[0]/100 * x + p[2] * p[0] / 10000 * (x - p[1])**2 + \
-                       p[6] * p[4] / 10000 * (x - p[5])**2 + p[4] + p[7] * p[4]/100 * x
-            baseline_plot = baseline  # Always use counts
-            
+            baseline_plot = calculate_baseline(p, x)  # Always use counts
+
             distri_counter = 0
             skip_step = 0
             position_artists = []  # Collect position artists for this spectrum
@@ -724,17 +716,11 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
     
     # Calculate z-order for subspectra (lower spectra should be drawn first)
     if len(FS) > 0:
-        v = np.array([len(FS)] * len(FS))
-        for i in range(len(FS)):
-            for k in range(len(FS)):
-                if min(FS[i]) < min(FS[k]):
-                    v[i] -= 1
-        
+        v = calculate_z_order(FS)
+
         # Plot each subspectrum with fill
-        baseline = p[0] + p[3] * p[0]/100 * A + p[2] * p[0] / 10000 * (A - p[1])**2 + \
-                   p[6] * p[4] / 10000 * (A - p[5])**2 + p[4] + p[7] * p[4]/100 * A
-        baseline_plot = baseline
-        
+        baseline_plot = calculate_baseline(p, A)
+
         skip_step = 0
         position_artists = []
         for i in range(len(FS)):
@@ -960,8 +946,6 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
     result_png = os.path.join(dir_path, 'result.png')
     figure.savefig(result_png, bbox_inches='tight', facecolor=tc['figure_facecolor'], dpi=300)
     
-    print(f"[DEBUG] Saved plots: {result_svg}, {result_png}")
-    
     # Update layout
     figure.tight_layout()
     
@@ -1041,7 +1025,6 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
         result_png = os.path.join(dir_path, 'result.png')
         figure.savefig(result_png, bbox_inches='tight', facecolor=tc['figure_facecolor'], dpi=300)
         
-        print(f"[DEBUG] Saved fitting plots: {result_svg}, {result_png}")
     
     # Update layout
     figure.tight_layout()
@@ -1196,8 +1179,9 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
     return True
 
 
-def _get_distribution_xlabel(model, distr_model_idx, parameter_names):
-    """Get x-axis label for a distribution plot."""
+def _parent_component_xlabel(model, distr_model_idx, parameter_names, suffix, fallback):
+    """X-axis label for a distribution/correlation plot: walk back from the
+    Distr/Corr entry to the spectral component it belongs to and name it."""
     parent_idx = int(distr_model_idx)
     for k in range(1, len(model)):
         candidate = parent_idx - k
@@ -1208,27 +1192,21 @@ def _get_distribution_xlabel(model, distr_model_idx, parameter_names):
             break
     try:
         if parent_idx + 1 < len(parameter_names):
-            return f"{model[parent_idx]} parameter"
+            return f"{model[parent_idx]} {suffix}"
     except (IndexError, ValueError):
         pass
-    return "Parameter"
+    return fallback
+
+
+def _get_distribution_xlabel(model, distr_model_idx, parameter_names):
+    """Get x-axis label for a distribution plot."""
+    return _parent_component_xlabel(model, distr_model_idx, parameter_names,
+                                    "parameter", "Parameter")
 
 
 def _get_correlation_xlabel(model, distr_model_idx, corr_offset, parameter_names):
     """Get x-axis label for a correlation plot."""
-    parent_idx = int(distr_model_idx)
-    for k in range(1, len(model)):
-        candidate = parent_idx - k
-        if candidate < 0:
-            break
-        if model[candidate] not in _NON_SUBSPECTRUM_MODELS:
-            parent_idx = candidate
-            break
-    try:
-        if parent_idx + 1 < len(parameter_names):
-            return f"{model[parent_idx]} corr. parameter"
-    except (IndexError, ValueError):
-        pass
-    return "Correlated parameter"
+    return _parent_component_xlabel(model, distr_model_idx, parameter_names,
+                                    "corr. parameter", "Correlated parameter")
 
 

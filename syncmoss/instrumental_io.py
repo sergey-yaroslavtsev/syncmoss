@@ -9,9 +9,8 @@ from PySide6.QtWidgets import QMessageBox
 from syncmoss.constants import number_of_baseline_parameters
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
-from syncmoss.spectrum_io import load_spectrum
-from syncmoss.model_io import read_model, mod_len_def
-from syncmoss.spectrum_plotter import plot_instrumental_result
+from syncmoss.spectrum_io import load_spectrum, estimate_edge_background
+from syncmoss.model_io import read_model, read_bounds_and_fix
 
 
 # Built-in defaults used by "Reset to default values" in Instrumental function menu.
@@ -377,29 +376,40 @@ def reset_instrumental_defaults(app):
         with open(instrumental_int_path, 'w', encoding='utf-8') as f:
             f.write(DEFAULT_INSINT_TEXT)
 
-        app.log.setPlainText("Instrumental defaults restored (INSexp.txt, INSint.txt)")
-        app.log.setStyleSheet("color: green;")
+        app.set_status("Instrumental defaults restored (INSexp.txt, INSint.txt)", "green")
 
         QMessageBox.information(app, "Instrumental function", "Default instrumental values were restored.")
         return True
     except Exception as e:
-        app.log.setPlainText(f"Failed to restore instrumental defaults: {e}")
-        app.log.setStyleSheet("color: red;")
+        app.set_status(f"Failed to restore instrumental defaults: {e}", "red")
         return False
 
 
 
 
+def _load_be_param(params_dir):
+    """Reference-absorber (Be window Doublet) parameters from Be.txt, with the
+    built-in fallback values when the file is missing or unreadable."""
+    try:
+        be_path = os.path.join(params_dir, 'Be.txt')
+        Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
+        print('Be file was read')
+    except Exception:
+        Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
+        print('COULD NOT READ Be.txt')
+    return Be_param
+
+
 def instrumental(app, ref, mode=0, pool=None):
     """
     Calculate or refine instrumental function.
-    
+
     Args:
         app: The main application instance
         ref: Reference mode (0=find, 1=refine)
         mode: Calculation mode (0=single line, 1=model, 2=pure a-Fe)
         pool: Multiprocessing pool for parallel computation
-    
+
     Returns:
         dict: Results containing parameters, errors, chi-squared, and file paths
     """
@@ -509,65 +519,19 @@ def instrumental(app, ref, mode=0, pool=None):
     # Read model if mode == 1
     if mode == 1:
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(app)
-        
-        # Apply expressions
+
+        # Apply expressions in the same namespace the fit uses (bare numpy
+        # names + p); a plain eval() here would miss those names.
         for i in range(0, len(NExpr)):
-            p[NExpr[i]] = eval(Expr[i])
+            p[NExpr[i]] = mi._eval_expr(Expr[i], p)
         for i in range(0, len(con1)):
             p[int(con1[i])] = p[int(con2[i])] * con3[i]
-        
+
         confu = np.array([con1, con2, con3]) if len(con1) > 0 else np.array([[-1], [-1], [-1]])
-        
-        # Build bounds and fix arrays from params_table
-        bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
-        fix = np.array([], dtype=int)
-        
-        # Read bounds and fix from baseline (row 0)
-        baseline_row = app.params_table.row_widgets[0]
-        for j in range(number_of_baseline_parameters):
-            param_widget = baseline_row.layout().itemAt(j + 1).widget()  # +1 because itemAt(0) is start_widget
-            # Get bounds
-            bounds_layout = param_widget.layout().itemAt(2).layout()  # Third item is bounds
-            lower_input = bounds_layout.itemAt(0).widget()
-            upper_input = bounds_layout.itemAt(1).widget()
-            if lower_input.text():
-                bounds[0][j] = float(lower_input.text())
-            if upper_input.text():
-                bounds[1][j] = float(upper_input.text())
-            # Get fix checkbox
-            top_layout = param_widget.layout().itemAt(0).layout()
-            fix_cb = top_layout.itemAt(1).widget()
-            if fix_cb.isChecked():
-                fix = np.append(fix, j)
-        
-        # Read bounds and fix from model rows
-        V = number_of_baseline_parameters - 1
-        for i in range(1, len(app.params_table.row_widgets)):
-            row_widget = app.params_table.row_widgets[i]
-            start_widget = row_widget.layout().itemAt(0).widget()
-            model_btn = start_widget.layout().itemAt(1).widget()
-            model_name = model_btn.text()
-            
-            if model_name != 'None':
-                LenM = mod_len_def(model_name)
-                for j in range(LenM):
-                    V += 1
-                    if j + 1 < row_widget.layout().count():
-                        param_widget = row_widget.layout().itemAt(j + 1).widget()
-                        # Get bounds
-                        bounds_layout = param_widget.layout().itemAt(2).layout()
-                        lower_input = bounds_layout.itemAt(0).widget()
-                        upper_input = bounds_layout.itemAt(1).widget()
-                        if lower_input.text():
-                            bounds[0][V] = float(lower_input.text())
-                        if upper_input.text():
-                            bounds[1][V] = float(upper_input.text())
-                        # Get fix checkbox
-                        top_layout = param_widget.layout().itemAt(0).layout()
-                        fix_cb = top_layout.itemAt(1).widget()
-                        if fix_cb.isChecked():
-                            fix = np.append(fix, V)
-        
+
+        # Box bounds and user-fixed parameters straight from the table
+        bounds, fix = read_bounds_and_fix(app, len(p))
+
         # Add constraint and distribution indices to fix
         fix = np.concatenate((fix, con1), axis=0)
         fix = np.concatenate((fix, DistriN), axis=0)
@@ -589,20 +553,13 @@ def instrumental(app, ref, mode=0, pool=None):
     
     # CMS_ch could not be equal to 1 here
     # Not meaningful to use ESRF standard single line absorber for CMS
-    elif mode == 0: 
+    elif mode == 0:
         model = ['Doublet', 'Singlet']
         if CMS_ch == 0:
-            p = np.array([(B[0] + B[1] + B[2] + B[3] + B[4] + B[-1] + B[-2] + B[-3] + B[-4] + B[-5]) / 10])
+            p = np.array([estimate_edge_background(B)])
             p = np.concatenate((p, np.array([0, 0, 0, 0, 0, 0, 0])))
-        
-        try:
-            be_path = os.path.join(app.params_dir, 'Be.txt')
-            Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
-            print('Be file was read')
-        except:
-            Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
-            print('COULD NOT READ Be.txt')
 
+        Be_param = _load_be_param(app.params_dir)
         p = np.concatenate((p, Be_param))
         p1 = np.array([4.6, -0.097, 0.098, 0.0])
         p = np.concatenate((p, p1))
@@ -629,21 +586,14 @@ def instrumental(app, ref, mode=0, pool=None):
     elif mode == 2:
         model = ['Doublet', 'Sextet']
         if CMS_ch == 0:
-            p = np.array([(B[0] + B[1] + B[2] + B[3] + B[4] + B[-1] + B[-2] + B[-3] + B[-4] + B[-5]) / 10])
+            p = np.array([estimate_edge_background(B)])
             p = np.concatenate((p, np.array([0, 0, 0, 0, 0, 0, 0])))
         if CMS_ch == 1:
-            bg_tmp = (B[0] + B[1] + B[2] + B[3] + B[4] + B[-1] + B[-2] + B[-3] + B[-4] + B[-5]) / 10
+            bg_tmp = estimate_edge_background(B)
             p = np.array([bg_tmp*0.6])
             p = np.concatenate((p, np.array([0, 0, 0, bg_tmp*0.4, 0, 0, 0])))
-        
-        try:
-            be_path = os.path.join(app.params_dir, 'Be.txt')
-            Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
-            print('Be file was read')
-        except:
-            Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
-            print('COULD NOT READ Be.txt')
 
+        Be_param = _load_be_param(app.params_dir)
         if CMS_ch == 1:
             Be_param[0] = 0
 

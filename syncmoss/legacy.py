@@ -44,8 +44,6 @@ one acknowledged imperfection of the legacy path.
 """
 from __future__ import annotations
 
-import numpy as np
-
 
 def a_scalar_to_texture(a):
     """Map an old scalar line-asymmetry ``A`` to the new texture order parameter.

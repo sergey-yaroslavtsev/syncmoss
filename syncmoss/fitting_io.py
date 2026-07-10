@@ -1,17 +1,21 @@
 """
 Fitting module for Mössbauer spectroscopy data analysis.
 Handles spectrum fitting using minimization algorithms from minimi_lib.
+
+This module is also the home of the model-decomposition helpers shared by the
+fit and by "Show model" (``syncmoss_main.ShowModelThread``):
+``split_model_sections``, ``create_subspectra`` and
+``compute_component_curves``. Keeping one implementation guarantees that the
+model preview and the fit result are computed identically.
 """
 
 import os
 import traceback
-from functools import partial
-import builtins as bu
 import numpy as np
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
 from syncmoss.constants import number_of_baseline_parameters, numco
-from syncmoss.model_io import mod_len_def as mod_len_def_full, read_model as read_model_full
+from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_bounds_and_fix
 from syncmoss.models_positions import mod_pos
 from syncmoss.spectrum_io import load_spectrum
 from syncmoss.instrumental_io import (
@@ -22,200 +26,160 @@ from syncmoss.instrumental_io import (
 )
 
 
+def split_model_sections(model):
+    """Split a flat model list into per-spectrum sections at 'Nbaseline' markers.
 
-def mod_len_def(mod_name):
+    A model for N spectra contains N-1 'Nbaseline' entries; the returned list
+    always has ``model.count('Nbaseline') + 1`` sections (a model without
+    Nbaseline yields ``[model]``). The markers themselves are not included.
     """
-    Returns the number of parameters for a given model type.
-    
-    Args:
-        mod_name: String name of the model
-        numco: Integer, used for 'Variables' model
-        number_of_baseline_parameters: Integer, used for 'Nbaseline' model
-    
-    Returns:
-        Integer number of parameters for that model
+    sections = []
+    start = 0
+    for i, name in enumerate(model):
+        if name == 'Nbaseline':
+            sections.append(model[start:i])
+            start = i + 1
+    sections.append(model[start:])
+    return sections
+
+
+def _substitute_p_refs(expr_text, p):
+    """Replace every literal ``p[<idx>]`` reference in a Distr/Corr expression
+    with its current numeric value.
+
+    Needed because the expression is later re-evaluated inside ``models.TImod``
+    where ``p`` is a *component-local* parameter slice — the global indices the
+    user typed would resolve against the wrong array there. Indices refer to
+    the parameter array passed here (the full flat array in all callers).
     """
-    # Every component type is the polarized model now: the former scalar
-    # asymmetry A was replaced by the orientation angles (theta_k, phi_h) + the
-    # uniaxial texture parameter A (Hamilton_mc gained alpha_k, no texture).
-    if mod_name == 'Singlet':
-        return 4
-    elif mod_name == 'Doublet':
-        return 9
-    elif mod_name == 'Sextet':
-        return 14
-    elif mod_name == 'Sextet(rough)':
-        return 14
-    elif mod_name == 'Relax_2S':
-        return 14
-    elif mod_name == 'Average_H':
-        return 11
-    elif mod_name == 'Relax_MS':
-        return 11
-    elif mod_name == 'ASM':
-        return 14
-    elif mod_name == 'Hamilton_mc':
-        return 12
-    elif mod_name == 'Hamilton_pc':
-        return 9
-    elif mod_name == 'Variables':
-        return numco
-    elif mod_name == 'MDGD':
-        return 17
-    elif mod_name == 'Nbaseline':
-        return number_of_baseline_parameters
-    elif mod_name == 'Layer':
-        return 0
-    else:
-        return 0
+    STR = str(expr_text) + ' '
+    starts = []
+    ends = []
+    for k in range(len(STR) - 2):
+        if STR[k] == 'p' and STR[k + 1] == '[':
+            starts.append(k)
+            for kk in range(k, len(STR)):
+                if STR[kk] == ']':
+                    ends.append(kk)
+                    break
+    # Replace right-to-left so earlier offsets stay valid.
+    for k in range(len(starts) - 1, -1, -1):
+        STR = STR[:starts[k]] + str(eval(STR[starts[k]:ends[k] + 1])) + STR[ends[k] + 1:]
+    return STR
 
 
-def read_model(app):
-    """
-    Read model configuration from the parameters table.
-    
-    Args:
-        app: Main application object with parameters_table reference
-    
-    Returns:
-        tuple: (model, numro) where:
-            - model: list of model names (e.g., ['baseline', 'Voigt', 'Gauss'])
-            - numro: total number of rows in the model
-    """
-    model = []
-    numro = 0
-    
-    # Get model list from parameters table
-    model_list = app.params_table.get_model_list()
-    
-    # Build model array
-    for model_name in model_list:
-        if model_name != 'baseline':
-            model.append(model_name)
-    
-    # Count total rows (baseline + models)
-    numro = 1  # baseline row
-    
-    for model_name in model:
-        numro += 1  # model row itself
-        model_len = mod_len_def(model_name)
-        numro += model_len  # parameter rows
-    
-    return model, numro
-
-
-def create_subspectra(app, model, Distri, Cor, p):
+def create_subspectra(model, Distri, Cor, p):
     """
     Create subspectra from full model by splitting into individual components.
-    
+
+    Single source of truth for both the fit (this module) and "Show model"
+    (``syncmoss_main.ShowModelThread``).
+
     Args:
-        app: Main application object
         model: List of model names
         Distri: Distribution expressions
         Cor: Correlation expressions
-        p: Parameter array
-    
+        p: Flat parameter array (baseline first). ``p[i]`` references inside
+           Distri/Cor texts are substituted against THIS array, so pass the
+           full array (or an already-substituted Distri/Cor with a section
+           slice of p — re-substitution is then a no-op).
+
     Returns:
         tuple: (Ps, Psm, Distri_t, Cor_t, Di, Co) where:
             - Ps: List of parameter arrays for each subspectrum
             - Psm: List of model lists for each subspectrum
             - Distri_t: Distribution expressions with substituted values
             - Cor_t: Correlation expressions with substituted values
-            - Di: Distribution counter
-            - Co: Correlation counter
+            - Di: Number of Distr entries consumed
+            - Co: Number of Corr entries consumed
     """
-    
     Ps = []
     Psm = []
     Distri_t = []
     Cor_t = []
     Di = 0
     Co = 0
+    # Models that consume parameter slots but never draw their own subspectrum.
+    # 'Layer' is a boundary marker (0 parameters); 'Nbaseline' opens the next
+    # spectrum section and carries that section's baseline parameters. Listing
+    # them here only affects plotting decomposition, never save/load behavior.
     passthrough_non_spectral = {
         'Expression': 1,
         'Variables': numco,
-        'Layer': 0,  # layer boundary marker: no parameters, no own subspectrum
+        'Layer': 0,
+        'Nbaseline': number_of_baseline_parameters,
     }
-    
-    V = 0
-    for i in range(0, len(model)):
-        model_name = model[i]
 
-        # Plotting-only passthrough models: consume parameter slots, do not
-        # create subspectra. This does not change save/load model behavior.
+    V = number_of_baseline_parameters  # index of the next unread slot in p
+    for model_name in model:
         if model_name in passthrough_non_spectral:
             V += passthrough_non_spectral[model_name]
             continue
 
-        # Create parameter array for this model (starts with baseline)
-        ps = np.array([p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]])
-        Psm.append([model_name])
-        
-        # Add model-specific parameters
-        if model_name != 'Distr' and model_name != 'Corr' and model_name != 'Nbaseline':
-            for j in range(0, mod_len_def(model[i])):
-                ps = np.append(ps, p[number_of_baseline_parameters + V])
-                V += 1
-        
-        # Append to list
-        Ps.append(ps)
-        
-        # Handle special cases that modify previous subspectra
         if model_name == 'Distr':
-            # Delete the just-added entry and append params to previous one
-            del Ps[-1]
-            for j in range(0, 5):  # 5 parameters including expression placeholder
-                Ps[-1] = np.append(Ps[-1], p[number_of_baseline_parameters + V])
+            # 5 slots (start, end, N points, target index, expression
+            # placeholder) appended to the PREVIOUS component's parameter set.
+            for _ in range(5):
+                Ps[-1] = np.append(Ps[-1], p[V])
                 V += 1
-            del Psm[-1]
             Psm[-1].append(model_name)
-            
-            # Substitute parameter values into distribution expression
-            STR = Distri[Di] + str(' ')
-            st_ = []
-            en_ = []
-            for k in range(0, len(STR) - 2):
-                if STR[k] == 'p' and STR[k + 1] == '[':
-                    st_.append(k)
-                    for kk in range(k, len(STR)):
-                        if STR[kk] == ']':
-                            en_.append(kk)
-                            break
-            st_ = st_[::-1]
-            en_ = en_[::-1]
-            for k in range(0, len(st_)):
-                STR = str(STR[:st_[k]]) + str(eval(STR[st_[k]:en_[k] + 1])) + str(STR[(en_[k] + 1):])
-            Distri_t.append(STR)
+            Distri_t.append(_substitute_p_refs(Distri[Di], p))
             Di += 1
-        
+            continue
+
         if model_name == 'Corr':
-            # Delete the just-added entry and append params to previous one
-            del Ps[-1]
-            for j in range(1, 3):  # 2 parameters
-                Ps[-1] = np.append(Ps[-1], p[number_of_baseline_parameters + V])
+            # 2 slots (target index, expression placeholder), also appended to
+            # the previous component (a Corr always follows a Distr).
+            for _ in range(2):
+                Ps[-1] = np.append(Ps[-1], p[V])
                 V += 1
-            del Psm[-1]
             Psm[-1].append(model_name)
-            
-            # Substitute parameter values into correlation expression
-            STR = Cor[Co] + str(' ')
-            st_ = []
-            en_ = []
-            for k in range(0, len(STR) - 2):
-                if STR[k] == 'p' and STR[k + 1] == '[':
-                    st_.append(k)
-                    for kk in range(k, len(STR)):
-                        if STR[kk] == ']':
-                            en_.append(kk)
-                            break
-            st_ = st_[::-1]
-            en_ = en_[::-1]
-            for k in range(0, len(st_)):
-                STR = str(STR[:st_[k]]) + str(eval(STR[st_[k]:en_[k] + 1])) + str(STR[(en_[k] + 1):])
-            Cor_t.append(STR)
+            Cor_t.append(_substitute_p_refs(Cor[Co], p))
             Co += 1
-    
+            continue
+
+        # Ordinary spectral component: it is computed standalone on top of the
+        # shared baseline parameters, followed by its own parameter slots.
+        ps = np.array(p[:number_of_baseline_parameters], dtype=float)
+        for _ in range(mod_len_def(model_name, include_special=False)):
+            ps = np.append(ps, p[V])
+            V += 1
+        Ps.append(ps)
+        Psm.append([model_name])
+
     return (Ps, Psm, Distri_t, Cor_t, Di, Co)
+
+
+def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol):
+    """Compute the plotted curve and line positions for each subspectrum.
+
+    Takes the per-component parameter sets from :func:`create_subspectra` and
+    runs the transmission integral / position calculation for each, slicing the
+    (already substituted) Distri/Cor texts to the entries belonging to that
+    component. Shared by the fit and by "Show model".
+
+    Returns:
+        tuple: (FS, FS_pos) — lists with one entry per component.
+    """
+    FS = []
+    FS_pos = []
+    DiEn = 0
+    CoEn = 0
+    for i in range(len(Ps)):
+        DiSt, CoSt = DiEn, CoEn
+        DiEn += Psm[i].count('Distr')
+        CoEn += Psm[i].count('Corr')
+        # The [0] placeholder is never read (the slice is empty exactly when
+        # the component has no Distr/Corr); it just keeps TI's signature happy.
+        distri_slice = Distri_t[DiSt:DiEn] if DiEn > DiSt else [0]
+        cor_slice = Cor_t[CoSt:CoEn] if CoEn > CoSt else [0]
+
+        FS.append(m5.TI(A, Ps[i], Psm[i], JN, pool,
+                        method_params['x0'], method_params['MulCo'],
+                        method_params['INS'], distri_slice, cor_slice,
+                        Met=method_params['Met'], Norm=method_params['Norm'], pol=pol))
+        FS_pos.append(mod_pos(Ps[i], Psm[i], method_params['INS'], Met=method_params['Met']))
+    return FS, FS_pos
 
 
 def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_params=None):
@@ -340,13 +304,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
 
         if is_simultaneous:
             # Split model at Nbaseline boundaries
-            model_separate = []
-            startM = 0
-            for i in range(len(model)):
-                if model[i] == 'Nbaseline':
-                    model_separate.append(model[startM:i])
-                    startM = i + 1
-            model_separate.append(model[startM:])
+            model_separate = split_model_sections(model)
 
             # Calculate parameter indices for each spectrum
             begining_spc = [0]
@@ -397,61 +355,9 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
                              Distri, Cor, Met=met_list, Norm=norm_list, pol=pol)
 
-        # Set up bounds and fixed parameters
-        # For now, use unbounded optimization
-        bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
-        fix = np.array([], dtype=int)
-        
-        # Read bounds and fix from baseline (row 0)
-        baseline_row = app.params_table.row_widgets[0]
-        for j in range(number_of_baseline_parameters):
-            param_widget = baseline_row.layout().itemAt(j + 1).widget()  # +1 because itemAt(0) is start_widget
-            # Get bounds
-            bounds_layout = param_widget.layout().itemAt(2).layout()  # Third item is bounds
-            lower_input = bounds_layout.itemAt(0).widget()
-            upper_input = bounds_layout.itemAt(1).widget()
-            if lower_input.text():
-                bounds[0][j] = float(lower_input.text())
-            if upper_input.text():
-                bounds[1][j] = float(upper_input.text())
-            # Get fix checkbox
-            top_layout = param_widget.layout().itemAt(0).layout()
-            fix_cb = top_layout.itemAt(1).widget()
-            if fix_cb.isChecked():
-                fix = np.append(fix, j)
-        
-        # Read bounds and fix from model rows
-        V = number_of_baseline_parameters - 1
-        for i in range(1, len(app.params_table.row_widgets)):
-            row_widget = app.params_table.row_widgets[i]
-            start_widget = row_widget.layout().itemAt(0).widget()
-            model_btn = start_widget.layout().itemAt(1).widget()
-            model_name = model_btn.text()
-            
-            if model_name != 'None':
-                LenM = mod_len_def_full(model_name, include_special=True)
-                for j in range(LenM):
-                    V += 1
-                    if j + 1 < row_widget.layout().count():
-                        param_widget = row_widget.layout().itemAt(j + 1).widget()
-                        # Get bounds
-                        bounds_layout = param_widget.layout().itemAt(2).layout()
-                        lower_input = bounds_layout.itemAt(0).widget()
-                        upper_input = bounds_layout.itemAt(1).widget()
-                        if lower_input.text():
-                            bounds[0][V] = float(lower_input.text())
-                        if upper_input.text():
-                            bounds[1][V] = float(upper_input.text())
-                        # Get fix checkbox
-                        top_layout = param_widget.layout().itemAt(0).layout()
-                        fix_cb = top_layout.itemAt(1).widget()
-                        if fix_cb.isChecked():
-                            fix = np.append(fix, V)
-        
-        
-        # TODO: Read bounds and fix from parameters table
-        # This would require additional UI elements
-        
+        # Box bounds and user-fixed parameters straight from the table
+        bounds, fix = read_bounds_and_fix(app, len(p))
+
         # Add automatic fixes for constraints, distribution expressions, and expression models
         fix = np.concatenate((fix, con1.astype(int)), axis=0) if len(con1) > 0 else fix
         fix = np.concatenate((fix, DistriN.astype(int)), axis=0) if len(DistriN) > 0 else fix
@@ -527,17 +433,24 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         # For simultaneous fitting, we need to separate results for each spectrum
         # (model_separate and begining_spc were computed before the minimization)
         if is_simultaneous:
-            # Substitute Distri and Cor parameter values ONCE using full model and full p
-            # This ensures constrained parameters are correctly substituted
-            Distri_substituted = np.copy(Distri)
-            Cor_substituted = np.copy(Cor)
+            # Substitute p[i] references in Distri/Cor ONCE, using the full model
+            # and the full fitted p, so constrained and cross-section references
+            # resolve correctly; the per-section work below uses slices of the
+            # substituted lists (re-substitution inside create_subspectra is then
+            # a no-op, making the section-local p_separate safe).
+            Distri_save = list(Distri)
+            Cor_save = list(Cor)
+            Distri_substituted = list(Distri)
+            Cor_substituted = list(Cor)
             if len(Distri) > 0 or len(Cor) > 0:
-                _, _, Distri_substituted, Cor_substituted, _, _ = create_subspectra(app, model, Distri, Cor, p)
+                _, _, Distri_substituted, Cor_substituted, _, _ = create_subspectra(model, Distri, Cor, p)
 
-            # Calculate fitted spectrum for each section separately, each with the
-            # instrumental parameters resolved for that section's spectrum
+            # Per section: fitted spectrum, convergence check and subspectra,
+            # each with the instrumental parameters resolved for that section
             SPC_f_list = []
             hires_diff_list = []
+            FS_list = []
+            FS_pos_list = []
             for NumSpc in range(number_of_spectra):
                 p_separate = section_parameters(p, NumSpc)
                 mp_i = method_params_list[NumSpc]
@@ -555,52 +468,14 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 hires_diff_list.append(hires_model_diff(
                     pool, JN, A_list[NumSpc], p_separate, model_separate[NumSpc],
                     mp_i, SPC_f_separate, d_arg, c_arg, pol=pol))
-            
-            # Now calculate subspectra for plotting
-            # Substitute parameter values in Distri and Cor expressions ONCE with full model and full p
-            Distri_save = np.copy(Distri)
-            Cor_save = np.copy(Cor)
-            if len(Distri) > 0 or len(Cor) > 0:
-                _, _, Distri_substituted, Cor_substituted, _, _ = create_subspectra(app, model, Distri, Cor, p)
-                Distri = Distri_substituted
-                Cor = Cor_substituted
-            
-            FS_list = []
-            FS_pos_list = []
-            Distri_work = np.copy(Distri)
-            Cor_work = np.copy(Cor)
-            
-            for NumSpc in range(number_of_spectra):
-                p_separate = section_parameters(p, NumSpc)
-                mp_i = method_params_list[NumSpc]
 
-                # Calculate subspectra
-                Ps, Psm, Distri_t, Cor_t, Di, Co = create_subspectra(app, model_separate[NumSpc], Distri_work, Cor_work, p_separate)
-
-                FS = []
-                FS_pos = []
-                for i in range(len(Ps)):
-                    CoSt = sum([Psm[j].count('Corr') for j in range(i)])
-                    DiSt = sum([Psm[j].count('Distr') for j in range(i)])
-                    CoEn = CoSt + Psm[i].count('Corr')
-                    DiEn = DiSt + Psm[i].count('Distr')
-
-                    subspectrum = m5.TI(A_list[NumSpc], Ps[i], Psm[i], JN, pool,
-                                        mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
-                                        Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn],
-                                        Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol)
-                    positions = mod_pos(Ps[i], Psm[i], mp_i['INS'], Met=mp_i['Met'])
-
-                    FS.append(subspectrum)
-                    FS_pos.append(positions)
-                
+                Ps, Psm, Distri_t, Cor_t, _, _ = create_subspectra(
+                    model_separate[NumSpc], d_slice, c_slice, p_separate)
+                FS, FS_pos = compute_component_curves(
+                    A_list[NumSpc], Ps, Psm, Distri_t, Cor_t, JN, pool, mp_i, pol)
                 FS_list.append(FS)
                 FS_pos_list.append(FS_pos)
-                
-                # Update Distri and Cor for next spectrum
-                Distri_work = Distri_work[Di:]
-                Cor_work = Cor_work[Co:]
-            
+
             return {
                 'success': True,
                 'parameters': p,
@@ -623,33 +498,15 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'spectrum_files': spectrum_files,
                 'Distri': list(Distri_save),  # Distribution expressions (original)
                 'Cor': list(Cor_save),  # Correlation expressions (original)
-                'Distri_substituted': list(Distri),  # Distribution expressions (substituted)
-                'Cor_substituted': list(Cor),  # Correlation expressions (substituted)
+                'Distri_substituted': list(Distri_substituted),
+                'Cor_substituted': list(Cor_substituted),
                 'instrumental_note': instrumental_note,
             }
-        
+
         else:
-            # Single spectrum - original code
-            # Calculate subspectra for plotting
-            Ps, Psm, Distri_t, Cor_t, Di, Co = create_subspectra(app, model, Distri, Cor, p)
-            
-            # Calculate each subspectrum and its positions
-            FS = []
-            FS_pos = []
-            for i in range(len(Ps)):
-                CoSt = sum([Psm[j].count('Corr') for j in range(i)])
-                DiSt = sum([Psm[j].count('Distr') for j in range(i)])
-                CoEn = CoSt + Psm[i].count('Corr')
-                DiEn = DiSt + Psm[i].count('Distr')
-                print(Ps[i], Psm[i])
-                subspectrum = m5.TI(A, Ps[i], Psm[i], JN, pool,
-                                    mp0['x0'], mp0['MulCo'], mp0['INS'],
-                                    Distri_t[DiSt:DiEn], Cor_t[CoSt:CoEn],
-                                    Met=mp0['Met'], Norm=mp0['Norm'], pol=pol)
-                # Calculate positions for this subspectrum
-                positions = mod_pos(Ps[i], Psm[i], mp0['INS'], Met=mp0['Met'])
-                FS.append(subspectrum)
-                FS_pos.append(positions)
+            # Single spectrum: decompose into subspectra and compute each curve
+            Ps, Psm, Distri_t, Cor_t, _, _ = create_subspectra(model, Distri, Cor, p)
+            FS, FS_pos = compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, mp0, pol)
 
             # High-resolution convergence check (cyan line). Uses the same
             # instrumental settings and Distri/Cor as func(), so it matches SPC_f.
@@ -703,9 +560,9 @@ def determine_fitting_mode(app, spectrum_files):
     
     # Get model list
     model_list = app.params_table.get_model_list()
-    
+
     # Check for Nbaseline (simultaneous fitting)
-    has_nbaseline = bu.any('Nbaseline' in model for model in model_list)
+    has_nbaseline = any('Nbaseline' in model for model in model_list)
     num_spectra = len(spectrum_files)
     
     if has_nbaseline:

@@ -33,20 +33,15 @@ from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, parse_library_model_fil
 from syncmoss.model_io import load_model_from_path, read_model, save_model_to_library
 
 
-def _set_log(main_window, message, color):
-    main_window.log.setPlainText(message)
-    main_window.log.setStyleSheet(f"color: {color};")
-
-
 def save_to_library_via_dialog(main_window):
     """Ask for title/comment/metadata and save model into internal Library folder."""
     try:
         model, *_ = read_model(main_window)
         if 'Nbaseline' in model:
-            _set_log(main_window, "Model with 'Nbaseline' could not be saved to library", "orange")
+            main_window.set_status("Model with 'Nbaseline' could not be saved to library", "orange")
             return
     except Exception as e:
-        _set_log(main_window, f"Could not validate model before saving: {e}", "red")
+        main_window.set_status(f"Could not validate model before saving: {e}", "red")
         return
 
     dialog = QDialog(main_window)
@@ -107,7 +102,7 @@ def save_to_library_via_dialog(main_window):
     layout.addWidget(buttons)
 
     if dialog.exec() != QDialog.DialogCode.Accepted:
-        _set_log(main_window, "Saving to library canceled", "orange")
+        main_window.set_status("Saving to library canceled", "orange")
         return
 
     title = title_input.text().strip()
@@ -126,7 +121,7 @@ def open_library_model_dialog(main_window, parent_widget, insert_row, model_opti
     """Open internal Library browser with filters and detailed preview."""
     library_dir = os.path.join(main_window.dir_path, 'Library')
     if not os.path.isdir(library_dir):
-        _set_log(main_window, f"Library folder not found: {library_dir}", "red")
+        main_window.set_status(f"Library folder not found: {library_dir}", "red")
         return
 
     model_files = sorted(
@@ -137,7 +132,7 @@ def open_library_model_dialog(main_window, parent_widget, insert_row, model_opti
         key=library_model_sort_key,
     )
     if not model_files:
-        _set_log(main_window, "Library folder is empty", "orange")
+        main_window.set_status("Library folder is empty", "orange")
         return
 
     parsed_items = []
@@ -146,10 +141,10 @@ def open_library_model_dialog(main_window, parent_widget, insert_row, model_opti
         try:
             parsed_items.append(parse_library_model_file(path))
         except Exception as e:
-            _set_log(main_window, f"Could not parse library model {file_name}: {e}", "orange")
+            main_window.set_status(f"Could not parse library model {file_name}: {e}", "orange")
 
     if not parsed_items:
-        _set_log(main_window, "No readable model files in Library", "orange")
+        main_window.set_status("No readable model files in Library", "orange")
         return
 
     dialog = QDialog(parent_widget)

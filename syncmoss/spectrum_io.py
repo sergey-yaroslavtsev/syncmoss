@@ -7,12 +7,17 @@ import os
 import numpy as np
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 import re
-import platform
 from syncmoss.models import TI
-from syncmoss.models_positions import mod_pos
 from syncmoss.model_io import read_model
+import syncmoss.minimi_lib as mi
 # NOTE: instrumental_io is imported lazily inside functions below — it imports
 # load_spectrum from this module, so a top-level import here would be circular.
+
+
+def estimate_edge_background(B):
+    """First guess for the off-resonance background: the average of the five
+    first and five last points of the spectrum. Shared with instrumental_io."""
+    return (B[0] + B[1] + B[2] + B[3] + B[4] + B[-1] + B[-2] + B[-3] + B[-4] + B[-5]) / 10
 
 
 def save_spectrum_with_metadata(save_path, A, B, metadata_lines):
@@ -25,6 +30,64 @@ def save_spectrum_with_metadata(save_path, A, B, metadata_lines):
             for line in metadata_lines:
                 f.write(line + '\n')
         np.savetxt(f, np.column_stack((A, B)), delimiter='\t', fmt='%.6f')
+
+
+def _read_calibration_axis(calibration_path, skip_angle_brackets):
+    """Read the calibrated velocity axis and folding metadata.
+
+    Returns ``(A_list_single, cal_method, n1, n2)``: the first-column velocity
+    values and the raw-channel folding recipe from the calibration header line
+    ``# <method> <n1> <n2>`` (method 'sin' or 'lin'; defaults to 'sin' over the
+    full channel range when the header is absent/malformed).
+
+    ``skip_angle_brackets`` also treats lines starting with ``<`` as comments
+    (needed for the Wissel-format readers).
+    """
+    A_list_single = []
+    with open(calibration_path, 'r') as catalog:
+        lines = (line.rstrip() for line in catalog)
+        lines = (line for line in lines if line)  # skipping white lines
+        for line in lines:
+            column = line.split()
+            skip = line.startswith('#') or (skip_angle_brackets and line.startswith('<'))
+            if not skip:  # skipping column labels
+                A_list_single.append(float(column[0]))
+
+    with open(calibration_path, 'r') as cal_type:
+        try:
+            cal_info = (cal_type.readline()).split()[1:]
+            cal_method = cal_info[0]
+            n1 = int(cal_info[1])
+            n2 = int(cal_info[2])
+        except Exception:
+            cal_method = 'sin'
+            n1 = 0
+            n2 = int(len(A_list_single)) * 2 - 1
+
+    return A_list_single, cal_method, n1, n2
+
+
+def _fold_raw_channels(id_data, cal_method, n1, n2):
+    """Fold the raw multichannel counts into one spectrum (SMS mode).
+
+    The velocity drive sweeps the transducer so each velocity is visited more
+    than once; 'sin' folds the three sine segments onto each other, 'lin' sums
+    the up/down ramps. Returns the folded counts, or None for an unknown
+    method (the caller then keeps its default). Index errors from a channel
+    mismatch propagate to the caller, which reports the points problem.
+    """
+    if cal_method == 'sin':
+        spc_1h = id_data[-1][:int(n1 / 2)] + id_data[-1][n1 - int(n1 / 2):n1][::-1]
+        spc_2h = id_data[-1][n2+1:n2 + int((len(id_data[-1]) - 1 - n2) / 2)+1][::-1] + id_data[-1][len(id_data[-1]) - int((len(id_data[-1]) - 1 - n2) / 2):len(id_data[-1])]
+        spc_3h = id_data[-1][n1:n1 + int((n2 - n1 + 1) / 2)] + id_data[-1][n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]
+        return np.concatenate((np.concatenate((spc_1h, spc_2h)), spc_3h))
+    elif cal_method == 'lin':
+        n_sh = 2 * (n1 + (int(len(id_data[-1])) - 1 - n2))
+        B = np.array([float(0)] * int((len(id_data[-1]) - n_sh) / 2))
+        for i in range(0, int((len(id_data[-1]) - n_sh) / 2)):
+            B[i] = id_data[-1][n1 + i] + id_data[-1][n2 - i]
+        return B
+    return None
 
 
 def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", points_match=True):
@@ -80,13 +143,11 @@ def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", p
                     file = path_tmp_local[0]  # Use first file
                 else:
                     if main_window is not None:
-                        main_window.log.setPlainText("No .dat or .mca files found in directory")
-                        main_window.log.setStyleSheet("color: orange;")
+                        main_window.set_status("No .dat or .mca files found in directory", "orange")
                     continue
             except:
                 if main_window is not None:
-                    main_window.log.setPlainText("Directory does not exist")
-                    main_window.log.setStyleSheet("color: yellow;")
+                    main_window.set_status("Directory does not exist", "yellow")
                 continue
 
         in_format_list = file.lower().endswith(tuple(acceptable_formats))
@@ -109,41 +170,20 @@ def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", p
             except:
                 if main_window is not None:
                     if not in_format_list:
-                        main_window.log.setPlainText("File could not be opened as two-column. Please check the file.")
+                        main_window.set_status("File could not be opened as two-column. Please check the file.", "red")
                     else:
-                        main_window.log.setPlainText("Unexpected problem while opening file. Please check the file.")
-                    main_window.log.setStyleSheet("color: red;")
+                        main_window.set_status("Unexpected problem while opening file. Please check the file.", "red")
                 continue
 
         # MCA files
         elif file.endswith('.mca') or file.endswith('.cmca') or file == 'tango':
-            # Calibration
-            with open(calibration_path, 'r') as catalog:
-                lines = (line.rstrip() for line in catalog)
-                lines = (line for line in lines if line)  # skipping white lines
-                for line in lines:
-                    column = line.split()
-                    if not line.startswith('#'):  # skipping column labels
-                        x = float(column[0])
-                        A_list_single.append(x)
-
-            cal_type = open(calibration_path, 'r')
-            try:
-                cal_info = (cal_type.readline()).split()[1:]
-                cal_method = cal_info[0]
-                n1 = int(cal_info[1])
-                n2 = int(cal_info[2])
-            except:
-                cal_method = 'sin'
-                n1 = 0
-                n2 = int(len(A_list_single)) * 2 - 1
-            cal_type.close()
+            A_list_single, cal_method, n1, n2 = _read_calibration_axis(
+                calibration_path, skip_angle_brackets=False)
 
             if file == 'tango':
                 # Tango not implemented
                 if main_window is not None:
-                    main_window.log.setPlainText("Tango not supported")
-                    main_window.log.setStyleSheet("color: orange;")
+                    main_window.set_status("Tango not supported", "orange")
                 continue
             else:
                 LS = len(open(file, 'r').readlines())
@@ -171,45 +211,18 @@ def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", p
                     id_data[-1][-1] = id_half
                     id_data[-1][0] = id_half
             try:
-                if cal_method == 'sin':
-                    spc_1h = id_data[-1][:int(n1 / 2)] + id_data[-1][n1 - int(n1 / 2):n1][::-1]
-                    spc_2h = id_data[-1][n2+1:n2 + int((len(id_data[-1]) - 1 - n2) / 2)+1][::-1] + id_data[-1][len(id_data[-1]) - int((len(id_data[-1]) - 1 - n2) / 2):len(id_data[-1])]
-                    spc_3h = id_data[-1][n1:n1 + int((n2 - n1 + 1) / 2)] + id_data[-1][n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]
-                    B = np.concatenate((np.concatenate((spc_1h, spc_2h)), spc_3h))
-                elif cal_method == 'lin':
-                    n_sh = 2 * (n1 + (int(len(id_data[-1])) - 1 - n2))
-                    B = np.array([float(0)] * int((len(id_data[-1]) - n_sh) / 2))
-                    for i in range(0, int((len(id_data[-1]) - n_sh) / 2)):
-                        B[i] = id_data[-1][n1 + i] + id_data[-1][n2 - i]
+                folded = _fold_raw_channels(id_data, cal_method, n1, n2)
+                if folded is not None:
+                    B = folded
             except:
                 points_match = False
                 B = np.array([float(1)] * (len(A_list_single) + 1))
-                main_window.log.setPlainText("Something wrong with points in .mca or calibration.dat")
-                main_window.log.setStyleSheet("color: red;")
+                main_window.set_status("Something wrong with points in .mca or calibration.dat", "red")
 
         # Other formats (Wissel files)
         elif file.endswith('.ws5') or file.endswith('.w98') or file.endswith('.moe') or file.endswith('.m1') or file.lower().endswith('.mcs'):
-            # Calibration
-            with open(calibration_path, 'r') as catalog:
-                lines = (line.rstrip() for line in catalog)
-                lines = (line for line in lines if line)  # skipping white lines
-                for line in lines:
-                    column = line.split()
-                    if not (line.startswith('#') or line.startswith('<')):  # skipping column labels
-                        x = float(column[0])
-                        A_list_single.append(x)
-
-            cal_type = open(calibration_path, 'r')
-            try:
-                cal_info = (cal_type.readline()).split()[1:]
-                cal_method = cal_info[0]
-                n1 = int(cal_info[1])
-                n2 = int(cal_info[2])
-            except:
-                cal_method = 'sin'
-                n1 = 0
-                n2 = int(len(A_list_single)) * 2 - 1
-            cal_type.close()
+            A_list_single, cal_method, n1, n2 = _read_calibration_axis(
+                calibration_path, skip_angle_brackets=True)
 
             if file.lower().endswith('.mcs'):
                 f = open(file, mode='rb')
@@ -244,21 +257,13 @@ def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", p
 
             # SMS mode
             try:
-                if cal_method == 'sin':
-                    spc_1h = id_data[-1][:int(n1 / 2)] + id_data[-1][n1 - int(n1 / 2):n1][::-1]
-                    spc_2h = id_data[-1][n2+1:n2 + int((len(id_data[-1]) - 1 - n2) / 2)+1][::-1] + id_data[-1][len(id_data[-1]) - int((len(id_data[-1]) - 1 - n2) / 2):len(id_data[-1])]
-                    spc_3h = id_data[-1][n1:n1 + int((n2 - n1 + 1) / 2)] + id_data[-1][n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]
-                    B = np.concatenate((np.concatenate((spc_1h, spc_2h)), spc_3h))
-                elif cal_method == 'lin':
-                    n_sh = 2 * (n1 + (int(len(id_data[-1])) - 1 - n2))
-                    B = np.array([float(0)] * int((len(id_data[-1]) - n_sh) / 2))
-                    for i in range(0, int((len(id_data[-1]) - n_sh) / 2)):
-                        B[i] = id_data[-1][n1 + i] + id_data[-1][n2 - i]
+                folded = _fold_raw_channels(id_data, cal_method, n1, n2)
+                if folded is not None:
+                    B = folded
             except:
                 points_match = False
                 B = np.array([float(1)] * (len(A_list_single) + 1))
-                main_window.log.setPlainText("Something wrong with points in file or calibration.dat")
-                main_window.log.setStyleSheet("color: red;")
+                main_window.set_status("Something wrong with points in file or calibration.dat", "red")
 
         A = np.array(A_list_single)
         A_list.append(A)
@@ -274,30 +279,25 @@ def sum_all_spectra(main_window):
         main_window.path_list = main_window.parse_process_path()
 
         if not main_window.path_list:
-            main_window.log.setPlainText("No spectra selected")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("No spectra selected", "orange")
             return
 
         if len(main_window.path_list) < 2:
-            main_window.log.setPlainText("Need at least 2 spectra to sum")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Need at least 2 spectra to sum", "orange")
             return
 
-        main_window.log.setPlainText(f"Loading {len(main_window.path_list)} spectra for summing...")
-        main_window.log.setStyleSheet("color: blue;")
+        main_window.set_status(f"Loading {len(main_window.path_list)} spectra for summing...", "blue")
 
         # Load all spectra
         A_list, B_list = load_spectrum(main_window, main_window.path_list, calibration_path=main_window.calibration_path)
 
         if not A_list or not B_list or len(A_list) == 0 or len(B_list) == 0:
-            main_window.log.setPlainText("Failed to load spectra")
-            main_window.log.setStyleSheet("color: red;")
+            main_window.set_status("Failed to load spectra", "red")
             return
 
         # Check if all spectra have the same x-axis (length)
         if not all(len(A) == len(A_list[0]) for A in A_list):
-            main_window.log.setPlainText("Spectra have different lengths - cannot sum")
-            main_window.log.setStyleSheet("color: red;")
+            main_window.set_status("Spectra have different lengths - cannot sum", "red")
             return
 
         # Sum the y-values (intensities)
@@ -314,8 +314,7 @@ def sum_all_spectra(main_window):
         )
 
         if not save_path:
-            main_window.log.setPlainText("Save canceled")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Save canceled", "orange")
             return
 
         # Carry instrumental metadata over only if every input that has metadata
@@ -331,12 +330,10 @@ def sum_all_spectra(main_window):
         main_window.show_pressed()  # This will load and display the summed spectrum
 
         metadata_note = '' if metadata_lines else ' (instrumental metadata not carried over)'
-        main_window.log.setPlainText(f"Summed {len(main_window.path_list)} spectra and saved to {os.path.basename(save_path)}{metadata_note}")
-        main_window.log.setStyleSheet("color: green;")
+        main_window.set_status(f"Summed {len(main_window.path_list)} spectra and saved to {os.path.basename(save_path)}{metadata_note}", "green")
 
     except Exception as e:
-        main_window.log.setPlainText(f"Error summing spectra: {str(e)}")
-        main_window.log.setStyleSheet("color: red;")
+        main_window.set_status(f"Error summing spectra: {str(e)}", "red")
 
 
 def subtract_model_from_spectrum(main_window):
@@ -346,30 +343,25 @@ def subtract_model_from_spectrum(main_window):
         main_window.path_list = main_window.parse_process_path()
 
         if not main_window.path_list:
-            main_window.log.setPlainText("No spectrum selected")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("No spectrum selected", "orange")
             return
 
         if len(main_window.path_list) != 1:
-            main_window.log.setPlainText("Please select exactly ONE spectrum for this operation")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Please select exactly ONE spectrum for this operation", "orange")
             return
 
         spectrum_path = main_window.path_list[0]
         if not os.path.exists(spectrum_path):
-            main_window.log.setPlainText("Selected spectrum file does not exist")
-            main_window.log.setStyleSheet("color: red;")
+            main_window.set_status("Selected spectrum file does not exist", "red")
             return
 
-        main_window.log.setPlainText("Loading spectrum and calculating model...")
-        main_window.log.setStyleSheet("color: blue;")
+        main_window.set_status("Loading spectrum and calculating model...", "blue")
 
         # Load the spectrum
         A_list, B_list = load_spectrum(main_window, [spectrum_path], calibration_path=main_window.calibration_path)
 
         if not A_list or not B_list or len(A_list) == 0 or len(B_list) == 0:
-            main_window.log.setPlainText("Failed to load spectrum")
-            main_window.log.setStyleSheet("color: red;")
+            main_window.set_status("Failed to load spectrum", "red")
             return
 
         A = A_list[0]
@@ -379,17 +371,16 @@ def subtract_model_from_spectrum(main_window):
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(main_window)
 
         if len(model) == 0:
-            main_window.log.setPlainText("No model defined - nothing to subtract")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("No model defined - nothing to subtract", "orange")
             return
 
-        # Apply expressions
+        # Apply expressions in the same namespace the fit uses (bare numpy
+        # names + p; see minimi_lib._eval_expr)
         for i in range(len(NExpr)):
             try:
-                p[NExpr[i]] = eval(Expr[i])
+                p[NExpr[i]] = mi._eval_expr(Expr[i], p)
             except Exception as e:
-                main_window.log.setPlainText(f"Error evaluating expression: {e}")
-                main_window.log.setStyleSheet("color: red;")
+                main_window.set_status(f"Error evaluating expression: {e}", "red")
                 return
 
         # Apply constraints
@@ -414,8 +405,7 @@ def subtract_model_from_spectrum(main_window):
                          method_params['INS'], Distri, Cor,
                          Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
         except Exception as e:
-            main_window.log.setPlainText(f"Error calculating model spectrum: {e}")
-            main_window.log.setStyleSheet("color: red;")
+            main_window.set_status(f"Error calculating model spectrum: {e}", "red")
             return
 
         # Calculate baseline properly as in the TI function
@@ -441,8 +431,7 @@ def subtract_model_from_spectrum(main_window):
         )
 
         if not save_path:
-            main_window.log.setPlainText("Save canceled")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Save canceled", "orange")
             return
 
         # Save the subtracted spectrum, preserving the source's instrumental metadata
@@ -454,12 +443,10 @@ def subtract_model_from_spectrum(main_window):
         main_window.process_path.setPlainText(f"['{save_path}']")
         main_window.show_pressed()  # This will load and display the subtracted spectrum
 
-        main_window.log.setPlainText(f"Model subtracted and saved to {os.path.basename(save_path)}")
-        main_window.log.setStyleSheet("color: green;")
+        main_window.set_status(f"Model subtracted and saved to {os.path.basename(save_path)}", "green")
 
     except Exception as e:
-        main_window.log.setPlainText(f"Error subtracting model: {str(e)}")
-        main_window.log.setStyleSheet("color: red;")
+        main_window.set_status(f"Error subtracting model: {str(e)}", "red")
 
 
 def half_points(main_window):
@@ -469,8 +456,7 @@ def half_points(main_window):
         main_window.path_list = main_window.parse_process_path()
 
         if not main_window.path_list:
-            main_window.log.setPlainText("No spectrum selected")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("No spectrum selected", "orange")
             return
 
         num_spectra = len(main_window.path_list)
@@ -491,12 +477,10 @@ def half_points(main_window):
             if reply == QMessageBox.StandardButton.Yes:
                 half_multiple_spectra(main_window)
             else:
-                main_window.log.setPlainText("Half points operation canceled")
-                main_window.log.setStyleSheet("color: orange;")
+                main_window.set_status("Half points operation canceled", "orange")
 
     except Exception as e:
-        main_window.log.setPlainText(f"Error in half points: {str(e)}")
-        main_window.log.setStyleSheet("color: red;")
+        main_window.set_status(f"Error in half points: {str(e)}", "red")
 
 
 def half_single_spectrum(main_window):
@@ -517,20 +501,17 @@ def half_single_spectrum(main_window):
         )
 
         if not save_path:
-            main_window.log.setPlainText("Save canceled")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Save canceled", "orange")
             return
 
         # Process and save the spectrum
         success = process_half_spectrum(main_window, spectrum_path, save_path, auto_load=True)
 
         if success:
-            main_window.log.setPlainText(f"Half-points spectrum saved to {os.path.basename(save_path)}")
-            main_window.log.setStyleSheet("color: green;")
+            main_window.set_status(f"Half-points spectrum saved to {os.path.basename(save_path)}", "green")
 
     except Exception as e:
-        main_window.log.setPlainText(f"Error processing single spectrum: {str(e)}")
-        main_window.log.setStyleSheet("color: red;")
+        main_window.set_status(f"Error processing single spectrum: {str(e)}", "red")
 
 
 def process_half_spectrum(main_window, spectrum_path, save_path, auto_load=False):
@@ -579,8 +560,7 @@ def half_multiple_spectra(main_window):
         save_path_text = main_window.save_path.text().strip()
 
         if not save_path_text:
-            main_window.log.setPlainText("Please specify save path")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Please specify save path", "orange")
             return
 
         # Determine if save_path_text is a file path or directory path
@@ -599,14 +579,12 @@ def half_multiple_spectra(main_window):
             try:
                 os.makedirs(save_dir, exist_ok=True)
             except Exception as e:
-                main_window.log.setPlainText(f"Cannot create directory {save_dir}: {e}")
-                main_window.log.setStyleSheet("color: red;")
+                main_window.set_status(f"Cannot create directory {save_dir}: {e}", "red")
                 return
 
         # Verify it's a directory
         if not os.path.isdir(save_dir):
-            main_window.log.setPlainText("Save path must be a directory for multiple spectra")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Save path must be a directory for multiple spectra", "orange")
             return
 
         processed_count = 0
@@ -629,15 +607,12 @@ def half_multiple_spectra(main_window):
                 continue
 
         if processed_count > 0:
-            main_window.log.setPlainText(f"Processed {processed_count} spectra, saved to {save_dir}")
-            main_window.log.setStyleSheet("color: green;")
+            main_window.set_status(f"Processed {processed_count} spectra, saved to {save_dir}", "green")
         else:
-            main_window.log.setPlainText("No spectra were successfully processed")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("No spectra were successfully processed", "orange")
 
     except Exception as e:
-        main_window.log.setPlainText(f"Error processing multiple spectra: {str(e)}")
-        main_window.log.setStyleSheet("color: red;")
+        main_window.set_status(f"Error processing multiple spectra: {str(e)}", "red")
 
 
 def calculate_backgrounds(paths, calibration_path="Calibration.dat"):
@@ -664,7 +639,7 @@ def calculate_backgrounds(paths, calibration_path="Calibration.dat"):
                 B = B_list[0]
 
                 # Calculate background as in original code (transmission mode)
-                edge_avg = (B[0] + B[1] + B[2] + B[3] + B[4] + B[-1] + B[-2] + B[-3] + B[-4] + B[-5]) / 10
+                edge_avg = estimate_edge_background(B)
                 max_minus_sqrt = max(B) - 3 * np.sqrt(max(B))
 
                 if edge_avg < max_minus_sqrt:

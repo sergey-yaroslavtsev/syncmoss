@@ -10,7 +10,7 @@ import re
 import shutil
 from collections import Counter
 
-from syncmoss.constants import numco
+from syncmoss.constants import numco, mdl_color_names
 
 LIBRARY_METADATA_FIELDS = [
 	'Chemical composition',
@@ -113,9 +113,9 @@ def parse_library_model_file(file_path):
 		# Backward compatibility: detect color row.
 		has_colors = False
 		if len(m_list) > 1:
-			color_names = ['blue', 'red', 'yellow', 'cyan', 'fuchsia', 'lime', 'darkorange', 'blueviolet', 'green', 'tomato', 'white', 'silver', 'lightgreen', 'pink']
 			second_line = m_list[1]
-			has_colors = all((field.startswith('#') and len(field) == 7) or field in color_names or field == '' for field in second_line)
+			# mdl_color_names is shared with model_io so both accept the same files
+			has_colors = all((field.startswith('#') and len(field) == 7) or field in mdl_color_names or field == '' for field in second_line)
 			if has_colors:
 				model_colors = list(second_line)
 
@@ -282,15 +282,6 @@ def _canonical_library_text_for_compare(file_path):
 		return ''.join(prefix + other_lines)
 	except Exception:
 		return None
-
-
-def _base_stem_without_copy_suffix(stem):
-	"""Return stem without trailing ' (N)' suffix to avoid 'name (2) (3)' forms."""
-	m = re.match(r'^(.*?)(?:\s\((\d+)\))?$', stem)
-	if not m:
-		return stem
-	base = (m.group(1) or stem).rstrip()
-	return base or stem
 
 
 def _split_stem_and_version(stem):

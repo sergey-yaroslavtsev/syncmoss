@@ -31,32 +31,15 @@ results_table.fill_table(parameters, model_list, model_colors, parameter_names, 
 import os
 import numpy as np
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QTableWidget, QTableWidgetItem, QTabWidget, QHeaderView
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTableWidget, QTableWidgetItem, QTabWidget
 )
-from PySide6.QtCore import Qt, QSize, QRect, QPoint
+from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QFont, QColor, QImage, QPainter
-from syncmoss.constants import numro, numco
+from syncmoss.constants import numro, numco, contrast_text_color
 from syncmoss.support_math import calculate_intensity_percentage_error
-from numpy import (
-    # constants
-    pi, e,
-
-    # math basics
-    exp, log, log10, sqrt, abs, power,
-
-    # trig functions (core)
-    sin, cos, tan,
-    arcsin, arccos, arctan,
-    sinh, cosh, tanh,
-    arcsinh, arccosh, arctanh,
-
-    # utility math
-    floor, ceil, round, sign,
-
-    # aggregation
-    mean, std, var,
-)
+# NOTE: the eval() calls in this module run against an explicit math_namespace
+# built from np.* — no bare ``from numpy import ...`` block is needed here.
 
 class ClickableResultButton(QPushButton):
     """Clickable button for result table rows that triggers replotting."""
@@ -391,7 +374,7 @@ class ResultsTable(QWidget):
                 color = 'lightgray'
             
             # Determine text color based on background
-            text_color = 'black' if color in ['lightgray', 'red', 'yellow', 'cyan', 'lime', 'darkorange', 'white', 'silver', 'lightgreen', 'pink'] or (isinstance(color, str) and color.startswith('#')) else 'white'
+            text_color = contrast_text_color(color)
             
             # Row 0: Model name
             self.buttons[base_row].setText(model_name)
@@ -447,7 +430,6 @@ class ResultsTable(QWidget):
             if model_name == 'Nbaseline':
                 if current_group:  # Save previous group
                     spectrum_groups.append(current_group)
-                    print(f"The {i} group is {current_group}")
                 current_group = []  # Start new group
                 param_index += len(param_names)
                 continue
@@ -466,11 +448,9 @@ class ResultsTable(QWidget):
                     fitted = self.fit_parameters[param_index:param_index+len(param_names)]
                     if (len(fitted) == len(be_param) and np.allclose(fitted, be_param)) \
                         or (len(fitted) == len(kb_param) and np.allclose(fitted, kb_param)):
-                            print("Impurity detected, skipping intensity calculation for Doublet impurity.")
                             self.buttons[i*3 + 1].setText('Impurity')
                             self.buttons[i*3 + 2].setText('no %')
                             param_index += len(param_names)
-                            print(f"Skipped successfully.")
                             continue
                 except Exception:
                     pass
@@ -597,26 +577,6 @@ class ResultsTable(QWidget):
                         formatted_error = f"±{error_value:.3f}" if isinstance(error_value, (int, float)) else str(error_value)
                         self.labels[error_row][col].setText(formatted_error)
                     error_index += 1
-    
-    def calculate_fraction_errors(self, correlation_matrix):
-        """
-        Calculate errors for the fraction of each submodel.
-        
-        Args:
-            correlation_matrix: Correlation matrix from fitting
-        
-        Returns:
-            dict: Dictionary with fraction errors for each component
-        
-        TODO: Implement fraction error calculation using correlation matrix.
-        This requires:
-        - Identifying which parameters contribute to each fraction
-        - Propagating errors through the fraction calculation
-        - Using correlation matrix for covariance terms
-        """
-        # TODO: Implement
-        fraction_errors = {}
-        return fraction_errors
     
     def _evaluate_expression_with_error(self, component):
         """
@@ -906,29 +866,6 @@ class ResultsTable(QWidget):
         self.correlation_table.resizeColumnsToContents()
         self.correlation_table.resizeRowsToContents()
     
-    def set_button_color(self, row, color):
-        """
-        Set the background color of a button.
-        
-        Args:
-            row: Row index
-            color: Color name or QColor object
-        """
-        if row < 0 or row >= self.num_rows:
-            return
-        
-        # Determine background color
-        if isinstance(color, str):
-            bg_color = color
-        elif isinstance(color, QColor):
-            bg_color = f"rgb({color.red()}, {color.green()}, {color.blue()})"
-        else:
-            bg_color = "white"
-        
-        # Determine text color using same logic as parameters_table.py line 205
-        text_color = 'black' if color in ['red', 'yellow', 'cyan', 'lime', 'darkorange', 'white', 'silver', 'lightgreen', 'pink'] or (isinstance(color, str) and color.startswith('#')) else 'white'
-        
-        self.buttons[row].setStyleSheet(f"background-color: {bg_color}; color: {text_color};")    
     def render_table_to_image(self):
         """
         Render the interactive results table to a QImage (full content, no scrollbars, no empty rows).

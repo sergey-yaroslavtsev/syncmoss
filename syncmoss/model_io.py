@@ -1,14 +1,22 @@
 """
 Module for handling spectra and model I/O operations.
 Includes functions for loading, saving, and reading model files.
+
+NOTE on widget navigation: this module (like fitting_io and instrumental_io)
+reaches into the ParametersTable rows positionally. The layout contract is:
+``row.layout().itemAt(0)`` = start widget (color btn @0, model btn @1), and
+``row.layout().itemAt(col+1)`` = parameter widget for column ``col``, whose own
+layout holds the name/fix row @0 (name label @0, fix checkbox @1), the value
+QLineEdit @1 and the lower/upper bounds layout @2. Any change to the row layout
+in parameters_table.py must keep these indices stable (or update every user of
+:func:`_set_row_param` / :func:`read_model` / :func:`read_bounds_and_fix`).
 """
 
 import os
 import numpy as np
 import re
-import platform
 from PySide6.QtWidgets import QFileDialog, QMessageBox
-from syncmoss.constants import numco, numro, number_of_baseline_parameters
+from syncmoss.constants import numco, number_of_baseline_parameters, mdl_color_names, contrast_text_color
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
 from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
 
@@ -48,6 +56,26 @@ def mod_len_def(mod, include_special=True):
     return base_params
 
 
+def _set_row_param(row_widget, col, value, lower, upper, fix_str):
+    """Write one parameter (value, bounds, fix state) into a table-row column.
+
+    ``col`` is the 0-based parameter column; the widget layout contract is
+    described in the module docstring. Silently ignores columns beyond the
+    row's widget count (rows are built with a fixed number of columns).
+    """
+    if col + 1 >= row_widget.layout().count():
+        return
+    param_widget = row_widget.layout().itemAt(col + 1).widget()
+    param_widget.layout().itemAt(1).widget().setText(value)
+
+    bounds_layout = param_widget.layout().itemAt(2).layout()
+    bounds_layout.itemAt(0).widget().setText(lower)
+    bounds_layout.itemAt(1).widget().setText(upper)
+
+    fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+    fix_cb.setChecked(str(fix_str).lower() == 'true')
+
+
 def load_model(main_window):
     """
     Load a model from a .mdl or .txt file and apply it to the parameters table.
@@ -64,7 +92,7 @@ def load_model(main_window):
     )
 
     if not file_path:
-        main_window.log.setPlainText("Selection was canceled")
+        main_window.set_status("Selection was canceled", "orange")
         return
 
     _load_model_from_path_impl(main_window, file_path)
@@ -79,8 +107,7 @@ def load_model_from_path(main_window, file_path, insert_row=None):
         file_path: Absolute path to a model file
     """
     if not file_path:
-        main_window.log.setPlainText("Selection was canceled")
-        main_window.log.setStyleSheet("color: orange;")
+        main_window.set_status("Selection was canceled", "orange")
         return
     _load_model_from_path_impl(main_window, file_path, insert_row=insert_row)
 
@@ -136,9 +163,9 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
         has_colors = False
         if len(M_list) > 1:
             # Simple check: if all fields in second line are color names or empty
-            color_names = ['blue', 'red', 'yellow', 'cyan', 'fuchsia', 'lime', 'darkorange', 'blueviolet', 'green', 'tomato', 'pink', 'crimson', 'orange', 'purple', 'brown', 'gray', 'black', 'white', 'silver', 'lightgreen']
+            # (mdl_color_names is shared with Library_io so both accept the same files)
             second_line = M_list[1]
-            if all((field.startswith('#') and len(field) == 7) or field in color_names or field == '' for field in second_line):
+            if all((field.startswith('#') and len(field) == 7) or field in mdl_color_names or field == '' for field in second_line):
                 has_colors = True
                 loaded_colors = second_line
             else:
@@ -201,28 +228,15 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                     if base_idx + 4 >= len(row_data):
                         break
 
-                    value = _remap_reference_text(row_data[base_idx], z_value)
-                    lower = _remap_reference_text(row_data[base_idx + 1], z_value)
-                    upper = _remap_reference_text(row_data[base_idx + 2], z_value)
-                    fix_str = row_data[base_idx + 4]
+                    _set_row_param(
+                        dst_row_widget, i,
+                        _remap_reference_text(row_data[base_idx], z_value),
+                        _remap_reference_text(row_data[base_idx + 1], z_value),
+                        _remap_reference_text(row_data[base_idx + 2], z_value),
+                        row_data[base_idx + 4],
+                    )
 
-                    if i + 1 < dst_row_widget.layout().count():
-                        param_widget = dst_row_widget.layout().itemAt(i + 1).widget()
-                        value_input = param_widget.layout().itemAt(1).widget()
-                        value_input.setText(value)
-
-                        bounds_layout = param_widget.layout().itemAt(2).layout()
-                        lower_input = bounds_layout.itemAt(0).widget()
-                        upper_input = bounds_layout.itemAt(1).widget()
-                        lower_input.setText(lower)
-                        upper_input.setText(upper)
-
-                        top_layout = param_widget.layout().itemAt(0).layout()
-                        fix_cb = top_layout.itemAt(1).widget()
-                        fix_cb.setChecked(str(fix_str).lower() == 'true')
-
-            main_window.log.setPlainText("Library submodel appended successfully")
-            main_window.log.setStyleSheet("color: green;")
+            main_window.set_status("Library submodel appended successfully", "green")
             return
 
         # Clear existing models by setting them to None (instead of deleting to preserve color order)
@@ -251,8 +265,7 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                 start_widget = row_widget.layout().itemAt(0).widget()
                 color_btn = start_widget.layout().itemAt(0).widget()
                 bg_color = color if color.startswith('#') else main_window.params_table.get_color_from_code(color)
-                text_color = 'black' if color in ['red', 'yellow', 'cyan', 'lime', 'darkorange', 'white', 'silver', 'lightgreen', 'pink'] or color.startswith('#') else 'white'
-                color_btn.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
+                color_btn.setStyleSheet(f"background-color: {bg_color}; color: {contrast_text_color(color)};")
 
         # Load parameter data for each row (starting from row 0)
         param_start_idx = 2 if has_colors else 1
@@ -276,33 +289,14 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                 if base_idx + 4 >= len(row_data):
                     break
 
-                # Extract parameter data
-                value = row_data[base_idx]
-                lower = row_data[base_idx + 1]
-                upper = row_data[base_idx + 2]
-                # name = row_data[base_idx + 3]  # Not used in current implementation
-                fix_str = row_data[base_idx + 4]
-
-                # Set the parameter values in the table
-                row_widget = main_window.params_table.row_widgets[k]
-                if i + 1 < row_widget.layout().count():
-                    param_widget = row_widget.layout().itemAt(i + 1).widget()
-
-                    # Value input
-                    value_input = param_widget.layout().itemAt(1).widget()
-                    value_input.setText(value)
-
-                    # Bounds
-                    bounds_layout = param_widget.layout().itemAt(2).layout()
-                    lower_input = bounds_layout.itemAt(0).widget()
-                    upper_input = bounds_layout.itemAt(1).widget()
-                    lower_input.setText(lower)
-                    upper_input.setText(upper)
-
-                    # Fix checkbox
-                    top_layout = param_widget.layout().itemAt(0).layout()
-                    fix_cb = top_layout.itemAt(1).widget()
-                    fix_cb.setChecked(fix_str.lower() == 'true')
+                # Each param has 5 fields: value, lower, upper, name (unused), fix
+                _set_row_param(
+                    main_window.params_table.row_widgets[k], i,
+                    row_data[base_idx],
+                    row_data[base_idx + 1],
+                    row_data[base_idx + 2],
+                    row_data[base_idx + 4],
+                )
 
         # Special handling for baseline shifting (similar to original code)
         if len(main_window.params_table.row_widgets) > 0:
@@ -354,12 +348,10 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                     param_widget_3.layout().itemAt(0).layout().itemAt(1).widget().setChecked(True)
                     param_widget_7.layout().itemAt(0).layout().itemAt(1).widget().setChecked(True)
 
-        main_window.log.setPlainText("Model loaded successfully")
-        main_window.log.setStyleSheet("color: green;")
+        main_window.set_status("Model loaded successfully", "green")
 
     except Exception as e:
-        main_window.log.setPlainText(f"Could not load model: {str(e)}")
-        main_window.log.setStyleSheet("color: red;")
+        main_window.set_status(f"Could not load model: {str(e)}", "red")
 
 
 def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
@@ -432,12 +424,10 @@ def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
                         row_data.extend([value, lower, upper, name, fix])
                 f.write('\t'.join(row_data) + '\n')
 
-        main_window.log.setPlainText("Model saved successfully")
-        main_window.log.setStyleSheet("color: green;")
+        main_window.set_status("Model saved successfully", "green")
 
     except Exception as e:
-        main_window.log.setPlainText(f"Could not save model: {str(e)}")
-        main_window.log.setStyleSheet("color: red;")
+        main_window.set_status(f"Could not save model: {str(e)}", "red")
 
 
 def save_model(main_window):
@@ -475,8 +465,7 @@ def save_model(main_window):
             QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.No:
-            main_window.log.setPlainText("Saving canceled")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Saving canceled", "orange")
             return
 
     _save_model_to_file(main_window, file_path)
@@ -498,8 +487,7 @@ def save_model_as(main_window):
     )
 
     if not file_path:
-        main_window.log.setPlainText("Saving canceled")
-        main_window.log.setStyleSheet("color: orange;")
+        main_window.set_status("Saving canceled", "orange")
         return
 
     # Ensure .mdl extension
@@ -513,14 +501,12 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
     """Save current model to internal Library folder with optional comment."""
     model, *_ = read_model(main_window)
     if 'Nbaseline' in model:
-        main_window.log.setPlainText("Model with 'Nbaseline' could not be saved to library")
-        main_window.log.setStyleSheet("color: orange;")
+        main_window.set_status("Model with 'Nbaseline' could not be saved to library", "orange")
         return False
 
     title = (title or '').strip()
     if not title:
-        main_window.log.setPlainText("Library title is empty")
-        main_window.log.setStyleSheet("color: orange;")
+        main_window.set_status("Library title is empty", "orange")
         return False
 
     library_dir = os.path.join(main_window.dir_path, 'Library')
@@ -539,8 +525,7 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
         msg.setDefaultButton(skip_btn)
         msg.exec()
         if msg.clickedButton() is not add_btn:
-            main_window.log.setPlainText("Saving to library canceled")
-            main_window.log.setStyleSheet("color: orange;")
+            main_window.set_status("Saving to library canceled", "orange")
             return False
 
     _save_model_to_file(main_window, file_path, comment=comment, metadata=metadata)
@@ -580,18 +565,22 @@ def read_model(main_window):
     Expr = []
     NExpr = np.array([], dtype=int)
     DistriN = np.array([], dtype=float)
-    
-    # Read baseline parameters from first row (row 0)
-    baseline_row = main_window.params_table.row_widgets[0]
-    for i in range(1, number_of_baseline_parameters + 1):
-        # Access parameter widget: layout().itemAt(i) gives the i-th param widget
-        param_widget = baseline_row.layout().itemAt(i).widget()
-        # Get the value input (second widget in param_layout)
-        value_input = param_widget.layout().itemAt(1).widget()
-        param_text = value_input.text()
-        
+
+    def _field_text(row_widget, item_idx):
+        """Text of the value QLineEdit in the row's item_idx-th param widget."""
+        param_widget = row_widget.layout().itemAt(item_idx).widget()
+        return param_widget.layout().itemAt(1).widget().text()
+
+    def _append_param(param_text):
+        """Append one table field to p.
+
+        A ``=[source,factor]`` text registers a linear constraint (con1 gets
+        this slot's index, con2/con3 the source index and factor; the slot
+        itself receives placeholder 1). Anything else is parsed as a float
+        (empty field -> 0.0).
+        """
+        nonlocal p, con1, con2, con3
         if param_text.startswith('=[') and param_text.endswith(']'):
-            # Constraint format: =[index,multiplier]
             constraint_parts = param_text[2:-1].split(',')
             con1 = np.append(con1, len(p))
             con2 = np.append(con2, float(constraint_parts[0]))
@@ -599,105 +588,114 @@ def read_model(main_window):
             p = np.append(p, 1)
         else:
             p = np.append(p, float(param_text) if param_text else 0.0)
-    
+
+    # Read baseline parameters from first row (row 0)
+    baseline_row = main_window.params_table.row_widgets[0]
+    for i in range(1, number_of_baseline_parameters + 1):
+        _append_param(_field_text(baseline_row, i))
+
     # Read model parameters from remaining rows
     for i in range(1, len(main_window.params_table.row_widgets)):
         row_widget = main_window.params_table.row_widgets[i]
-        
+
         # Get model name from the start_widget (first item in layout)
         start_widget = row_widget.layout().itemAt(0).widget()
         model_btn = start_widget.layout().itemAt(1).widget()  # Second widget is model button
         model_name = model_btn.text()
-        
+
         if model_name != 'None' and model_name != 'baseline':
             model.append(model_name)
-            
+
         model_param_count = mod_len_def(model_name, include_special=False) + 1
-        
+
         # Read parameters for this model
         for j in range(1, min(model_param_count, numco + 1)):
-            # Access parameter widget: layout().itemAt(j) gives the j-th param widget (j=1 to numco)
             if j < row_widget.layout().count():
-                param_widget = row_widget.layout().itemAt(j).widget()
-                # Get the value input (second widget in param_layout)
-                value_input = param_widget.layout().itemAt(1).widget()
-                param_text = value_input.text()
-                
-                if param_text.startswith('=[') and param_text.endswith(']'):
-                    # Constraint
-                    constraint_parts = param_text[2:-1].split(',')
-                    con1 = np.append(con1, len(p))
-                    con2 = np.append(con2, float(constraint_parts[0]))
-                    con3 = np.append(con3, float(constraint_parts[1]))
-                    p = np.append(p, 1)
-                else:
-                    p = np.append(p, float(param_text) if param_text else 0.0)
-        
-        # Handle special model types
+                _append_param(_field_text(row_widget, j))
+
+        # Handle special model types (their expression texts live in the last
+        # column; the expression itself gets a placeholder slot in p)
         if model_name == 'Expression':
-            # Expression should have text in first parameter field
-            param_widget = row_widget.layout().itemAt(1).widget()
-            value_input = param_widget.layout().itemAt(1).widget()
-            expr_text = value_input.text()
-            Expr.append(expr_text)
+            Expr.append(_field_text(row_widget, 1))
             NExpr = np.append(NExpr, len(p))
             p = np.append(p, 0)
-            
+
         elif model_name == 'Distr':
-            # Distribution has 5 parameters plus expression
+            # Distribution has 4 numeric parameters plus the expression
             for j in range(1, 5):
                 if j < row_widget.layout().count():
-                    param_widget = row_widget.layout().itemAt(j).widget()
-                    value_input = param_widget.layout().itemAt(1).widget()
-                    param_text = value_input.text()
-                    
-                    if param_text.startswith('=[') and param_text.endswith(']'):
-                        constraint_parts = param_text[2:-1].split(',')
-                        con1 = np.append(con1, len(p))
-                        con2 = np.append(con2, float(constraint_parts[0]))
-                        con3 = np.append(con3, float(constraint_parts[1]))
-                        p = np.append(p, 1)
-                    else:
-                        p = np.append(p, float(param_text) if param_text else 0.0)
+                    _append_param(_field_text(row_widget, j))
             p = np.append(p, 0)
             # Get distribution expression from 5th field
-            if 5 < row_widget.layout().count():
-                param_widget = row_widget.layout().itemAt(5).widget()
-                value_input = param_widget.layout().itemAt(1).widget()
-                distri_text = value_input.text()
-            else:
-                distri_text = ''
+            distri_text = _field_text(row_widget, 5) if 5 < row_widget.layout().count() else ''
             Distri.append(distri_text)
             DistriN = np.append(DistriN, len(p) - 1)
-            
+
         elif model_name == 'Corr':
-            # Correlation has 1 parameter (par) plus expression (Dependency function)
-            # Only process first parameter as float
+            # Correlation has 1 numeric parameter (par) plus the expression
+            # (Dependency function)
             if 1 < row_widget.layout().count():
-                param_widget = row_widget.layout().itemAt(1).widget()
-                value_input = param_widget.layout().itemAt(1).widget()
-                param_text = value_input.text()
-                
-                if param_text.startswith('=[') and param_text.endswith(']'):
-                    constraint_parts = param_text[2:-1].split(',')
-                    con1 = np.append(con1, len(p))
-                    con2 = np.append(con2, float(constraint_parts[0]))
-                    con3 = np.append(con3, float(constraint_parts[1]))
-                    p = np.append(p, 1)
-                else:
-                    p = np.append(p, float(param_text) if param_text else 0.0)
-            # Add placeholder for expression parameter
+                _append_param(_field_text(row_widget, 1))
             p = np.append(p, 0)
-            # Get correlation expression from 2nd field (Dependency function)
-            if 2 < row_widget.layout().count():
-                param_widget = row_widget.layout().itemAt(2).widget()
-                value_input = param_widget.layout().itemAt(1).widget()
-                cor_text = value_input.text()
-            else:
-                cor_text = ''
+            cor_text = _field_text(row_widget, 2) if 2 < row_widget.layout().count() else ''
             Cor.append(cor_text)
 
     return (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN)
+
+
+def read_bounds_and_fix(main_window, p_len):
+    """Read box bounds and fixed-parameter indices from the parameters table.
+
+    Companion to :func:`read_model` — the same table walk, but collecting the
+    lower/upper bound fields and the "fix" checkboxes into the solver inputs.
+    One shared implementation for the fit (fitting_io) and the instrumental
+    refinement (instrumental_io).
+
+    Args:
+        main_window: The main PhysicsApp window instance
+        p_len: Length of the flat parameter array read_model produced
+
+    Returns:
+        tuple: (bounds, fix) — bounds is a (2, p_len) float array with
+        -inf/+inf where a field is empty; fix is a unique-free int array of
+        parameter indices whose checkbox is ticked.
+    """
+    bounds = np.array([[-np.inf] * p_len, [np.inf] * p_len], dtype=float)
+    fix = np.array([], dtype=int)
+
+    def _read_column(row_widget, item_idx, param_idx):
+        nonlocal fix
+        param_widget = row_widget.layout().itemAt(item_idx).widget()
+        bounds_layout = param_widget.layout().itemAt(2).layout()
+        lower_text = bounds_layout.itemAt(0).widget().text()
+        upper_text = bounds_layout.itemAt(1).widget().text()
+        if lower_text:
+            bounds[0][param_idx] = float(lower_text)
+        if upper_text:
+            bounds[1][param_idx] = float(upper_text)
+        fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+        if fix_cb.isChecked():
+            fix = np.append(fix, param_idx)
+
+    # Baseline (row 0); itemAt(0) is the start widget, columns begin at 1
+    baseline_row = main_window.params_table.row_widgets[0]
+    for j in range(number_of_baseline_parameters):
+        _read_column(baseline_row, j + 1, j)
+
+    # Model rows
+    V = number_of_baseline_parameters - 1
+    for i in range(1, len(main_window.params_table.row_widgets)):
+        row_widget = main_window.params_table.row_widgets[i]
+        model_btn = row_widget.layout().itemAt(0).widget().layout().itemAt(1).widget()
+        model_name = model_btn.text()
+        if model_name == 'None':
+            continue
+        for j in range(mod_len_def(model_name, include_special=True)):
+            V += 1
+            if j + 1 < row_widget.layout().count():
+                _read_column(row_widget, j + 1, V)
+
+    return bounds, fix
 
 
 def validate_user_expressions(main_window):

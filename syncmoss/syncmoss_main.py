@@ -31,68 +31,39 @@ SOFTWARE.
 import os
 import re
 import sys
-import gc
-import io
 import json
-import time
-import copy
-import base64
 import shutil
-import queue
-import platform
-import threading
 import warnings
 import traceback
 import ast
-from functools import partial
 import multiprocessing as mp
-from multiprocessing.pool import ThreadPool
 
 # ---------------------------------------------------------------------------
 # Third-party
 # ---------------------------------------------------------------------------
+# NOTE: user-typed Expression/Distr/Corr strings are evaluated through
+# minimi_lib._eval_expr, whose module namespace provides the bare numpy names
+# (sin, sqrt, ...). Do not re-introduce a ``from numpy import ...`` block here
+# for that purpose.
 import numpy as np
-from numpy import (
-    # constants
-    pi, e,
-
-    # math basics
-    exp, log, log10, sqrt, abs, power,
-
-    # trig functions (core)
-    sin, cos, tan,
-    arcsin, arccos, arctan,
-    sinh, cosh, tanh,
-    arcsinh, arccosh, arctanh,
-
-    # utility math
-    floor, ceil, round, sign,
-
-    # aggregation
-    mean, std, var,
-)
 import matplotlib
 matplotlib.use('QtAgg')  # select the Qt backend before importing pyplot
 import matplotlib.pyplot as plt
-import matplotlib.transforms
 import matplotlib.image
-from matplotlib import colors
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QTextEdit, QCheckBox, QComboBox, QTableWidget,
-    QTableWidgetItem, QScrollArea, QGridLayout, QSplitter, QFrame, QGroupBox,
-    QFileDialog, QMessageBox, QProgressBar, QSpinBox, QDoubleSpinBox,
-    QMenu, QSizePolicy, QDialog, QDialogButtonBox, QAbstractScrollArea
+    QPushButton, QLineEdit, QTextEdit, QCheckBox, QScrollArea, QGridLayout,
+    QSplitter, QFrame, QFileDialog, QMessageBox, QMenu, QSizePolicy,
+    QAbstractScrollArea
 )
 from PySide6.QtGui import (
-    QPixmap, QImage, QPainter, QColor, QFont, QIcon, QAction, QDoubleValidator,
-    QIntValidator,
-    QRegularExpressionValidator, QPalette, QShortcut, QKeySequence
+    QImage, QFont, QIcon, QAction, QDoubleValidator, QIntValidator,
+    QPalette, QShortcut, QKeySequence
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegularExpression, QStandardPaths, QCoreApplication
+from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, QCoreApplication
 
 # ---------------------------------------------------------------------------
 # Local package
@@ -100,13 +71,12 @@ from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize, QLocale, QRegular
 import syncmoss.minimi_lib as mi
 import syncmoss.fitting_io as fitting_io
 from syncmoss.models import TI
-from syncmoss.models_positions import mod_pos
 from syncmoss.Calibration import Calibration
-from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters
+from syncmoss.constants import model_colors, number_of_baseline_parameters
 from syncmoss.parameters_table import ParametersTable
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
-    load_model, read_model, save_model, save_model_as, mod_len_def, load_model_from_path,
+    load_model, read_model, save_model, save_model_as, mod_len_def,
     validate_user_expressions,
 )
 from syncmoss.spectrum_io import (
@@ -116,7 +86,7 @@ from syncmoss.spectrum_io import (
 from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
     plot_distribution, plot_calibration, plot_model, plot_model_with_nbaseline,
-    plot_spectrum, plot_model_without_spectrum,
+    plot_spectrum, plot_model_without_spectrum, calculate_z_order,
 )
 from syncmoss.instrumental_io import (
     instrumental,
@@ -127,10 +97,8 @@ from syncmoss.instrumental_io import (
     compute_norm,
     hires_model_diff,
 )
-from syncmoss.Hamiltonian_helper import HamiltonianHelperWidget
-from syncmoss.Library_io import export_library, import_library
 from syncmoss.Library_window import save_to_library_via_dialog
-from syncmoss.models_description_window import ModelsDescriptionWindow, resolve_models_description_path
+from syncmoss.supp_menu import build_supp_menu
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -187,8 +155,6 @@ plt.rcParams['axes.labelcolor'] = 'w'
 plt.rcParams['axes.edgecolor'] = 'w'
 plt.rcParams['xtick.color'] = 'w'
 plt.rcParams['ytick.color'] = 'w'
-
-MulCoCMS = 0.28
 
 # Optional Tango (beamline control) integration is disabled by default.
 # To enable, install PyTango and provide get_data()/tango_uri below.
@@ -416,39 +382,30 @@ class ShowModelThread(QThread):
                                   f"Need exactly {num_spectra - 1} Nbaseline(s) for {num_spectra} spectra (or 0 for single spectrum).")
                     return
             
-            # Allow showing just baseline (empty model list is OK)
-            # if len(model) == 0:
-            #     self.error.emit("No model defined. Please add model components.")
-            #     return
-            
-            # Apply expressions
+            # Allow showing just baseline (an empty model list is OK)
+
+            # Apply linked expressions and =[..] constraints exactly like the
+            # fit does (same eval namespace: see minimi_lib._eval_expr)
             for i in range(len(NExpr)):
                 try:
-                    p[NExpr[i]] = eval(Expr[i])
+                    p[NExpr[i]] = mi._eval_expr(Expr[i], p)
                 except Exception as e:
                     print(f"Error evaluating expression {Expr[i]}: {e}")
-            
+
             # Apply constraints
             for i in range(len(con1)):
                 p[int(con1[i])] = p[int(con2[i])] * con3[i]
-            
-            # Check if we have Nbaseline models (multiple spectra case)
-            num_nbaseline = model.count('Nbaseline')
-            
+
             # Calculate backgrounds for dual y-axis support
             backgrounds = calculate_backgrounds(self.path_list, self.main_window.calibration_path) if not no_spectrum_mode else []
-            
+
+            # Per-spectrum sections of the model (a model without Nbaseline is
+            # exactly one section)
+            model_sections = fitting_io.split_model_sections(model)
+
             if no_spectrum_mode:
                 if num_nbaseline > 0:
                     # Synthetic mode with Nbaseline sections
-                    model_sections = []
-                    start_idx = 0
-                    for i, m in enumerate(model):
-                        if m == 'Nbaseline':
-                            model_sections.append(model[start_idx:i])
-                            start_idx = i + 1
-                    model_sections.append(model[start_idx:])
-
                     synthetic_grid = np.linspace(-self.velocity_range, self.velocity_range, 4096)
                     A_list = [synthetic_grid.copy() for _ in range(len(model_sections))]
                     A = A_list
@@ -471,15 +428,9 @@ class ShowModelThread(QThread):
                     A_list.append(A_temp[0])
                     B_list.append(B_temp[0])
 
-                # Concatenate for main model calculation
-                A_combined = A_list[0]
-                B_combined = B_list[0]
-                for i in range(1, len(A_list)):
-                    A_combined = np.concatenate((A_combined, A_list[i]))
-                    B_combined = np.concatenate((B_combined, B_list[i]))
-
-                A = A_combined
-                B = B_combined
+                # Concatenate for the emitted full-range arrays
+                A = np.concatenate(A_list)
+                B = np.concatenate(B_list)
             else:
                 # Single spectrum case
                 file = os.path.abspath(self.path_list[0])
@@ -526,38 +477,36 @@ class ShowModelThread(QThread):
             print(f"[Show model] {instrumental_note}")
             method_params = method_params_list[0]
 
+            # Substitute p[i] references in Distri/Cor expressions ONCE against
+            # the FULL parameter array — the same way the fit does — so the
+            # per-section slices below are already numeric.
+            Distri_sub, Cor_sub = list(Distri), list(Cor)
+            if len(Distri) > 0 or len(Cor) > 0:
+                Distri_sub, Cor_sub = fitting_io.create_subspectra(model, Distri, Cor, p)[2:4]
+            distr_bounds = np.cumsum([0] + [ms.count('Distr') for ms in model_sections])
+            corr_bounds = np.cumsum([0] + [ms.count('Corr') for ms in model_sections])
+
             if num_nbaseline > 0:
-                # Multiple spectra case - calculate subspectra for each section separately
-                # Split model at Nbaseline boundaries
-                model_sections = []
-                start_idx = 0
-                for i, m in enumerate(model):
-                    if m == 'Nbaseline':
-                        model_sections.append(model[start_idx:i])
-                        start_idx = i + 1
-                model_sections.append(model[start_idx:])
-                
-                # Find parameter boundaries for each section
-                # First section starts at 0 (includes main baseline)
-                # Each Nbaseline marks the start of a new section with its own baseline
+                # Find parameter boundaries for each section: the first section
+                # starts at 0 (it includes the main baseline); each Nbaseline
+                # marks the start of a new section with its own baseline
                 begining_spc = [0]
                 param_idx = number_of_baseline_parameters  # Start after main baseline
-                
-                for i in range(len(model)):
-                    if model[i] == 'Nbaseline':
+                for name in model:
+                    if name == 'Nbaseline':
                         begining_spc.append(param_idx)
-                        param_idx += number_of_baseline_parameters  # Nbaseline has number_of_baseline_parameters parameters
+                        param_idx += number_of_baseline_parameters
                     else:
-                        # Count parameters for this model
-                        param_idx += mod_len_def(model[i], include_special=True)
-                
-                # Calculate spectrum for each section separately, then concatenate
+                        param_idx += mod_len_def(name, include_special=True)
+
+                # Calculate spectrum, convergence check and subspectra for each
+                # section separately (concatenated for the emit below)
                 SPC_f_sections = []
                 hires_diff_sections = []
                 FS_all = []
                 FS_pos_all = []
                 p_all = []
-                
+
                 for spc_idx in range(len(model_sections)):
                     # Instrumental parameters resolved for this section's spectrum
                     mp_section = method_params_list[spc_idx] if spc_idx < len(method_params_list) else method_params_list[0]
@@ -569,110 +518,57 @@ class ShowModelThread(QThread):
                         p_section = p[begining_spc[spc_idx]:]
                     p_all.append(p_section)
 
-                    # Get spectrum section
                     A_section = A_list[spc_idx]
+                    d_slice = Distri_sub[distr_bounds[spc_idx]:distr_bounds[spc_idx + 1]]
+                    c_slice = Cor_sub[corr_bounds[spc_idx]:corr_bounds[spc_idx + 1]]
+                    d_arg = d_slice if len(d_slice) > 0 else [0]
+                    c_arg = c_slice if len(c_slice) > 0 else [0]
 
                     # Calculate fitted spectrum for this section
                     SPC_f_section = TI(A_section, p_section, model_sections[spc_idx], JN, pool,
-                                         mp_section['x0'], mp_section['MulCo'],
-                                         mp_section['INS'], Distri, Cor,
-                                         Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol)
+                                       mp_section['x0'], mp_section['MulCo'],
+                                       mp_section['INS'], d_arg, c_arg,
+                                       Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol)
                     SPC_f_sections.append(SPC_f_section)
 
                     # High-resolution convergence check for this section (cyan line)
                     hires_diff_sections.append(hires_model_diff(
                         pool, JN, A_section, p_section, model_sections[spc_idx],
-                        mp_section, SPC_f_section, Distri, Cor, pol=pol))
+                        mp_section, SPC_f_section, d_arg, c_arg, pol=pol))
 
-                    # Create subspectra for this section
-                    Ps, Psm, Distri_t, Cor_t = self.main_window.create_subspectra(model_sections[spc_idx], Distri, Cor, p_section, number_of_baseline_parameters)[:4]
-
-                    # Calculate each subspectrum for this section
-                    FS = []
-                    FS_pos = []
-                    CoEn = 0
-                    DiEn = 0
-
-                    for i in range(len(Ps)):
-                        CoSt = CoEn
-                        DiSt = DiEn
-                        CoEn += Psm[i].count('Corr')
-                        DiEn += Psm[i].count('Distr')
-
-                        distri_slice = Distri_t[DiSt:DiEn] if DiEn > DiSt else [0]
-                        cor_slice = Cor_t[CoSt:CoEn] if CoEn > CoSt else [0]
-
-                        FS_i = TI(A_section, Ps[i], Psm[i], JN, pool, mp_section['x0'], mp_section['MulCo'],
-                                   mp_section['INS'], distri_slice, cor_slice,
-                                   Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol)
-                        FS.append(FS_i)
-
-                        FS_pos.append(mod_pos(Ps[i], Psm[i], mp_section['INS'], Met=mp_section['Met']))
-
+                    # Subspectra of this section (shared decomposition with the fit)
+                    Ps, Psm, Distri_t, Cor_t, _, _ = fitting_io.create_subspectra(
+                        model_sections[spc_idx], d_slice, c_slice, p_section)
+                    FS, FS_pos = fitting_io.compute_component_curves(
+                        A_section, Ps, Psm, Distri_t, Cor_t, JN, pool, mp_section, pol)
                     FS_all.append(FS)
                     FS_pos_all.append(FS_pos)
-                
+
                 if no_spectrum_mode:
                     # Keep sectioned arrays for dedicated model-only plotting;
                     # the hires diff stays a per-section list to match.
                     self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections)
                 else:
-                    # Concatenate fitted spectrum sections
-                    SPC_f = SPC_f_sections[0]
-                    for i in range(1, len(SPC_f_sections)):
-                        SPC_f = np.concatenate((SPC_f, SPC_f_sections[i]))
-
-                    # Concatenate the hires diff the same way (plot splits it back)
+                    # Concatenate fitted spectrum and hires diff (plot splits them back)
+                    SPC_f = np.concatenate(SPC_f_sections)
                     hires_diff = np.concatenate(hires_diff_sections) if hires_diff_sections else None
-
-                    # Emit with lists of subspectra for each section
                     self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff)
             else:
-                # Single spectrum case
-                # Calculate full spectrum
+                # Single spectrum case: full spectrum + convergence check
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
-                             method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
+                           method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
 
-                # High-resolution convergence check (cyan line)
                 hires_diff = hires_model_diff(pool, JN, A, p, model, method_params,
                                               SPC_f, Distri, Cor, pol=pol)
 
-                # Create subspectra as before
-                Ps, Psm, Distri_t, Cor_t = self.main_window.create_subspectra(model, Distri, Cor, p, number_of_baseline_parameters)[:4]
-                
-                # Filter out Nbaseline models from subspectra
-                Ps_filtered = []
-                Psm_filtered = []
-                for i in range(len(Psm)):
-                    if 'Nbaseline' not in Psm[i]:
-                        Ps_filtered.append(Ps[i])
-                        Psm_filtered.append(Psm[i])
-                
-                # Calculate each subspectrum
-                FS = []
-                FS_pos = []
-                CoEn = 0
-                DiEn = 0
-                
-                for i in range(len(Ps_filtered)):
-                    CoSt = CoEn
-                    DiSt = DiEn
-                    CoEn += Psm_filtered[i].count('Corr')
-                    DiEn += Psm_filtered[i].count('Distr')
-                    
-                    distri_slice = Distri_t[DiSt:DiEn] if DiEn > DiSt else [0]
-                    cor_slice = Cor_t[CoSt:CoEn] if CoEn > CoSt else [0]
-                    
-                    FS_i = TI(A, Ps_filtered[i], Psm_filtered[i], JN, pool, method_params['x0'], method_params['MulCo'],
-                               method_params['INS'], distri_slice, cor_slice,
-                               Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
-                    FS.append(FS_i)
+                # Subspectra (shared decomposition with the fit)
+                Ps, Psm, Distri_t, Cor_t, _, _ = fitting_io.create_subspectra(model, Distri, Cor, p)
+                FS, FS_pos = fitting_io.compute_component_curves(
+                    A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol)
 
-                    FS_pos.append(mod_pos(Ps_filtered[i], Psm_filtered[i], method_params['INS'], Met=method_params['Met']))
-                
                 # Emit with single list of subspectra
                 self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff)
-            
+
         except Exception as e:
             traceback.print_exc()
             self.error.emit(str(e))
@@ -935,31 +831,10 @@ class PhysicsApp(QMainWindow):
         self.theme_btn.setFont(QFont('Arial', 16))
         self.theme_btn.clicked.connect(self.toggle_theme)
 
+        # The Supp menu (support tools & settings dialogs) lives in supp_menu.py
         self.supp_btn = QPushButton('Supp')
         self.supp_btn.setFont(QFont('Arial', 16))
-        self.supp_menu = QMenu(self)
-        ham_guess_action = QAction("Find initial guess for Hamiltonian", self)
-        ham_guess_action.triggered.connect(self.open_hamiltonian_helper)
-        set_integral_points_action = QAction("Set number of points for full transmission integral", self)
-        set_integral_points_action.triggered.connect(self.open_integral_points_dialog)
-        set_instrumental_lines_action = QAction("Set number of lines to reconstruct the instrumental function", self)
-        set_instrumental_lines_action.triggered.connect(self.open_instrumental_lines_dialog)
-        set_polarization_action = QAction("Set polarization", self)
-        set_polarization_action.triggered.connect(self.open_polarization_dialog)
-        export_lib_action = QAction("Export Library", self)
-        export_lib_action.triggered.connect(self.export_library_pressed)
-        import_lib_action = QAction("Import Library", self)
-        import_lib_action.triggered.connect(self.import_library_pressed)
-        models_description_action = QAction("Models description", self)
-        models_description_action.triggered.connect(self.open_models_description_pressed)
-        self.supp_menu.addAction(ham_guess_action)
-        self.supp_menu.addAction(set_integral_points_action)
-        self.supp_menu.addAction(set_instrumental_lines_action)
-        self.supp_menu.addAction(set_polarization_action)
-        self.supp_menu.addSeparator()
-        self.supp_menu.addAction(export_lib_action)
-        self.supp_menu.addAction(import_lib_action)
-        self.supp_menu.addAction(models_description_action)
+        self.supp_menu = build_supp_menu(self)
         self.supp_btn.setMenu(self.supp_menu)
 
         # Add all buttons to top controls
@@ -1273,7 +1148,7 @@ class PhysicsApp(QMainWindow):
         self.log.setFont(QFont('Arial', 14))
         self.log.setMaximumHeight(100)
         self.log.setReadOnly(True)  # Status field, read-only
-        self.log.setPlainText("Ready")  # Initial status
+        self.set_status("Ready")  # Initial status
 
         self.take_result_btn = QPushButton('Take result as model (F8)')
         self.take_result_btn.setFont(QFont('Arial', 18))
@@ -1312,7 +1187,19 @@ class PhysicsApp(QMainWindow):
         QShortcut(QKeySequence(Qt.Key.Key_Return), self).activated.connect(self.showM_pressed)
         QShortcut(QKeySequence(Qt.Key.Key_Enter), self).activated.connect(self.showM_pressed)
 
-    # Placeholder methods - to be implemented
+    def set_status(self, message, color=None):
+        """Show *message* in the status/log box, optionally re-coloring it.
+
+        Single replacement for the setPlainText/setStyleSheet pair repeated
+        throughout the app. Color convention: green = success, red = error,
+        orange = warning/canceled, blue = setting changed / info,
+        cyan = long-running action started. ``color=None`` keeps the current
+        color (matches the historical bare setPlainText call sites).
+        """
+        self.log.setPlainText(message)
+        if color:
+            self.log.setStyleSheet(f"color: {color};")
+
     def plot_default_spectrum(self):
         """Load and plot the default spectrum from Calibration.dat"""
         try:
@@ -1324,8 +1211,7 @@ class PhysicsApp(QMainWindow):
                 self._update_legend_toggle()
                 self.toolbar.push_current()  # Set current view as home
         except Exception as e:
-            self.log.setPlainText(f"Could not load default spectrum: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Could not load default spectrum: {e}", "red")
 
     def toggle_position_markers(self, show):
         """Toggle visibility of position marker artists."""
@@ -1427,10 +1313,9 @@ class PhysicsApp(QMainWindow):
         self.use_dat_instrumental_metadata = not self.use_dat_instrumental_metadata
         self._update_use_dat_instrumental_action_text()
         if self.use_dat_instrumental_metadata:
-            self.log.setPlainText("Using instrumental function from .dat file is now enabled (SMS).")
+            self.set_status("Using instrumental function from .dat file is now enabled (SMS).", "blue")
         else:
-            self.log.setPlainText("Using instrumental function from .dat file is now disabled (SMS).")
-        self.log.setStyleSheet("color: blue;")
+            self.set_status("Using instrumental function from .dat file is now disabled (SMS).", "blue")
 
     def loadmod_pressed(self):
         load_model(self)
@@ -1440,225 +1325,9 @@ class PhysicsApp(QMainWindow):
 
     def save_model_as_pressed(self):
         save_model_as(self)
-        pass
 
     def save_to_library_pressed(self):
         save_to_library_via_dialog(self)
-
-    def export_library_pressed(self):
-        """Export internal Library folder to a selected destination."""
-        destination = QFileDialog.getExistingDirectory(self, "Select destination folder", self.workfolder or self.dir_path)
-        if not destination:
-            self.log.setPlainText("Export Library canceled")
-            self.log.setStyleSheet("color: orange;")
-            return
-        try:
-            library_dir = os.path.join(self.dir_path, 'Library')
-            target = export_library(library_dir, destination)
-            self.log.setPlainText(f"Library exported to: {target}")
-            self.log.setStyleSheet("color: green;")
-        except Exception as e:
-            self.log.setPlainText(f"Export Library failed: {e}")
-            self.log.setStyleSheet("color: red;")
-
-    def import_library_pressed(self):
-        """Import .mdl files from selected folder into internal Library folder."""
-        source = QFileDialog.getExistingDirectory(self, "Select source folder", self.workfolder or self.dir_path)
-        if not source:
-            self.log.setPlainText("Import Library canceled")
-            self.log.setStyleSheet("color: orange;")
-            return
-        try:
-            library_dir = os.path.join(self.dir_path, 'Library')
-            result = import_library(source, library_dir)
-            if isinstance(result, dict):
-                copied = int(result.get('copied', 0))
-                skipped_identical = int(result.get('skipped_identical', 0))
-                renamed = list(result.get('renamed', []))
-            else:
-                # Backward compatibility fallback
-                copied = int(result)
-                skipped_identical = 0
-                renamed = []
-
-            self.log.setPlainText(
-                f"Imported {copied} .mdl file(s) into Library"
-                + (f" (skipped identical: {skipped_identical})" if skipped_identical else "")
-            )
-            self.log.setStyleSheet("color: green;")
-
-            if copied == 0:
-                QMessageBox.information(
-                    self,
-                    "Import Library",
-                    "Nothing was added: all imported models already exist in Library."
-                )
-
-            if renamed:
-                lines = [f"{old} -> {new}" for old, new in renamed]
-                QMessageBox.information(
-                    self,
-                    "Library versions created",
-                    "Some imported models matched existing titles and were saved as new versions:\n\n"
-                    + "\n".join(lines)
-                )
-        except Exception as e:
-            self.log.setPlainText(f"Import Library failed: {e}")
-            self.log.setStyleSheet("color: red;")
-
-    def open_models_description_pressed(self):
-        """Open model descriptions markdown in a separate, copy-friendly window."""
-        doc_path = resolve_models_description_path(self.dir_path)
-        if not os.path.isfile(doc_path):
-            self.log.setPlainText(f"Models description file not found: {doc_path}")
-            self.log.setStyleSheet("color: red;")
-            QMessageBox.warning(self, "Models description", f"File not found:\n{doc_path}")
-            return
-
-        if self.models_description_window is None:
-            self.models_description_window = ModelsDescriptionWindow(doc_path)
-        else:
-            self.models_description_window.markdown_path = doc_path
-            self.models_description_window.reload_document()
-
-        app_icon = self.windowIcon()
-        if not app_icon.isNull():
-            self.models_description_window.setWindowIcon(app_icon)
-
-        self.models_description_window.showNormal()
-        self.models_description_window.show()
-        self.models_description_window.raise_()
-        self.models_description_window.activateWindow()
-
-    def _open_integer_setting_dialog(self, title, label_text, target_input, min_value=1, max_value=1000000):
-        """Open a compact modal dialog to edit an integer setting."""
-        dialog = QDialog(self)
-        dialog.setWindowTitle(title)
-
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel(label_text))
-
-        editor = QLineEdit(target_input.text().strip(), dialog)
-        editor.setValidator(QIntValidator(min_value, max_value, dialog))
-        editor.selectAll()
-        layout.addWidget(editor)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        dialog.setMinimumWidth(460)
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return False
-
-        value_text = editor.text().strip()
-        if not value_text:
-            QMessageBox.warning(self, title, "Value cannot be empty.")
-            return False
-
-        try:
-            value = int(value_text)
-        except ValueError:
-            QMessageBox.warning(self, title, "Please enter a valid integer.")
-            return False
-
-        if value < min_value or value > max_value:
-            QMessageBox.warning(self, title, f"Value must be between {min_value} and {max_value}.")
-            return False
-
-        target_input.setText(str(value))
-        return True
-
-    def _open_float_setting_dialog(self, title, label_text, target_input, min_value, max_value, decimals=6):
-        """Open a compact modal dialog to edit a floating-point setting.
-
-        Mirrors ``_open_integer_setting_dialog`` but parses a float and validates
-        against an inclusive [min_value, max_value] range. Returns True and writes
-        the new value into ``target_input`` on accept, False otherwise.
-        """
-        dialog = QDialog(self)
-        dialog.setWindowTitle(title)
-
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel(label_text))
-
-        editor = QLineEdit(target_input.text().strip(), dialog)
-        validator = QDoubleValidator(min_value, max_value, decimals, dialog)
-        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
-        validator.setLocale(QLocale(QLocale.Language.C))
-        editor.setValidator(validator)
-        editor.selectAll()
-        layout.addWidget(editor)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        dialog.setMinimumWidth(460)
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return False
-
-        value_text = editor.text().strip()
-        if not value_text:
-            QMessageBox.warning(self, title, "Value cannot be empty.")
-            return False
-
-        try:
-            value = float(value_text)
-        except ValueError:
-            QMessageBox.warning(self, title, "Please enter a valid number.")
-            return False
-
-        if value < min_value or value > max_value:
-            QMessageBox.warning(self, title, f"Value must be between {min_value} and {max_value}.")
-            return False
-
-        target_input.setText(str(value))
-        return True
-
-    def open_integral_points_dialog(self):
-        """Edit the number of points used for full transmission integral."""
-        changed = self._open_integer_setting_dialog(
-            "Set number of points for full transmission integral",
-            "Number of points for full transmission integral:",
-            self.jn0_input,
-            min_value=1,
-            max_value=1000000,
-        )
-        if changed:
-            self.log.setPlainText(f"Integral points set to: {self.jn0_input.text()}")
-            self.log.setStyleSheet("color: blue;")
-
-    def open_instrumental_lines_dialog(self):
-        """Edit the number of lines used to reconstruct the instrumental function."""
-        changed = self._open_integer_setting_dialog(
-            "Set number of lines to reconstruct the instrumental function",
-            "Number of lines to reconstruct the instrumental function:",
-            self.instrumental_number,
-            min_value=1,
-            max_value=1000,
-        )
-        if changed:
-            self.log.setPlainText(f"Number of lines for instrumental function set to: {self.instrumental_number.text()}")
-            self.log.setStyleSheet("color: blue;")
-
-    def open_polarization_dialog(self):
-        """Edit the SMS beam linear polarization degree (0..1)."""
-        changed = self._open_float_setting_dialog(
-            "Set polarization",
-            "SMS linear polarization degree (0 = unpolarized, 1 = fully polarized):",
-            self.polarization_input,
-            min_value=0.0,
-            max_value=1.0,
-        )
-        if changed:
-            self.SMS_pol = float(self.polarization_input.text())
-            self.log.setPlainText(f"Polarization set to: {self.polarization_input.text()}")
-            self.log.setStyleSheet("color: blue;")
 
     def update_velocity_label(self):
         """Update the velocity label and button icon based on velocity direction"""
@@ -1686,19 +1355,16 @@ class PhysicsApp(QMainWindow):
             # clear_row_params now handles resetting model button to "None"
             for row in range(1, len(self.params_table.row_widgets)):
                 self.params_table.clear_row_params(row)
-            self.log.setPlainText("Model cleaned (baseline preserved)")
-            self.log.setStyleSheet("color: green;")
+            self.set_status("Model cleaned (baseline preserved)", "green")
         except Exception as e:
-            self.log.setPlainText(f"Error cleaning model: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error cleaning model: {e}", "red")
 
     def take_result(self):
         """Copy fitting results to parameter table as new model"""
         try:
             # Check if results are available
             if not hasattr(self.results_table, 'current_model_list') or not self.results_table.current_model_list:
-                self.log.setPlainText("No fitting results available")
-                self.log.setStyleSheet("color: orange;")
+                self.set_status("No fitting results available", "orange")
                 return
             
             # Get data from results table
@@ -1734,7 +1400,8 @@ class PhysicsApp(QMainWindow):
                     if param_index >= len(parameters):
                         break
                     
-                    # Get widgets
+                    # Get widgets (positional layout contract documented in
+                    # model_io's module docstring)
                     row_widget = self.params_table.row_widgets[row_idx]
                     param_widget = row_widget.layout().itemAt(col + 1).widget()
                     value_input = param_widget.layout().itemAt(1).widget()
@@ -1765,12 +1432,10 @@ class PhysicsApp(QMainWindow):
                     
                     param_index += 1
             
-            self.log.setPlainText("Result copied to model")
-            self.log.setStyleSheet("color: green;")
+            self.set_status("Result copied to model", "green")
             
         except Exception as e:
-            self.log.setPlainText(f"Error copying result: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error copying result: {e}", "red")
             traceback.print_exc()
 
     def choose_calibration_file(self):
@@ -1783,13 +1448,11 @@ class PhysicsApp(QMainWindow):
         )
         if file_path:
             self.calibration_path = file_path
-            self.log.setPlainText(f"Calibration file set: {os.path.basename(file_path)}")
-            self.log.setStyleSheet("color: green;")
+            self.set_status(f"Calibration file set: {os.path.basename(file_path)}", "green")
             # Optionally replot the default spectrum with new calibration
             self.plot_default_spectrum()
         else:
-            self.log.setPlainText("Calibration selection canceled")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Calibration selection canceled", "orange")
 
     def show_spectrum_options(self):
         """Show dropdown menu for spectrum change options"""
@@ -1819,50 +1482,7 @@ class PhysicsApp(QMainWindow):
         elif option == "half_points":
             half_points(self)
         else:
-            self.log.setPlainText(f"Unknown spectrum option: {option}")
-            self.log.setStyleSheet("color: red;")
-
-    def choose_workfolder(self):
-        """Choose work folder"""
-        folder_path = QFileDialog.getExistingDirectory(
-            self,
-            "Choose work folder",
-            self.workfolder
-        )
-        if folder_path:
-            self.workfolder = folder_path
-            self.log.setPlainText(f"Work folder set: {folder_path}")
-            self.log.setStyleSheet("color: green;")
-            # TODO: Implement any folder change logic
-        else:
-            self.log.setPlainText("Work folder selection canceled")
-            self.log.setStyleSheet("color: orange;")
-
-    # def show_sequence_fitting_options(self):
-    #     """Show dropdown menu for sequence fitting options"""
-    #     menu = QMenu(self)
-        
-    #     # Create actions for each option
-    #     options = [
-    #         ("take always initial guess\nfor the sequence of spectra", 0, "initial"),
-    #         ("take result as initial guess\nfor the sequence of spectra", 1, "result")
-    #     ]
-        
-    #     for text, value, display_name in options:
-    #         action = QAction(text.replace('\n', ' '), self)
-    #         action.triggered.connect(lambda checked, val=value, name=display_name: self.on_sequence_fitting_selected(val, name))
-    #         menu.addAction(action)
-        
-    #     # Show menu below the button
-    #     menu.exec(self.seq_fit_btn.mapToGlobal(self.seq_fit_btn.rect().bottomLeft()))
-
-    # def on_sequence_fitting_selected(self, value, display_name):
-    #     """Handle sequence fitting option selection"""
-    #     self.sequence_fitting_type = value
-    #     self.seq_fit_btn.setText(f"Sequence Fitting\n({display_name})")
-    #     self.log.setPlainText(f"Sequence fitting set to: {display_name}")
-    #     self.log.setStyleSheet("color: blue;")
-    #     # TODO: Implement actual functionality
+            self.set_status(f"Unknown spectrum option: {option}", "red")
 
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
@@ -1886,19 +1506,18 @@ class PhysicsApp(QMainWindow):
                 param = slot['param'] or f"column {slot['col']}"
                 lines.append(f"{slot['model']} (table row {slot['row']}): "
                              f"parameter '{param}' is empty")
-            self.log.setPlainText(
+            self.set_status(
                 f"{action_label} was not started — empty parameter(s) "
                 f"(fill them in; a value referenced by =[...] may have been "
-                f"deleted):\n" + "\n".join(lines)
+                f"deleted):\n" + "\n".join(lines),
+                "red",
             )
-            self.log.setStyleSheet("color: red;")
             return False
 
         try:
             problems = validate_user_expressions(self)
         except Exception as e:
-            self.log.setPlainText(f"{action_label} was not started — could not read the model: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"{action_label} was not started — could not read the model: {e}", "red")
             return False
 
         if not problems:
@@ -1912,10 +1531,10 @@ class PhysicsApp(QMainWindow):
             else:
                 label = prob['kind']
             lines.append(f"{label}: '{prob['text']}' could not be evaluated: {prob['error']}")
-        self.log.setPlainText(
-            f"{action_label} was not started — invalid expression(s):\n" + "\n".join(lines)
+        self.set_status(
+            f"{action_label} was not started — invalid expression(s):\n" + "\n".join(lines),
+            "red",
         )
-        self.log.setStyleSheet("color: red;")
         return False
 
     def confirm_instrumental_methods(self, spectrum_files, mode):
@@ -2028,8 +1647,7 @@ class PhysicsApp(QMainWindow):
             print(f'Initialized: MulCo={self.MulCo}, x0={self.x0}')
 
         except Exception as e:
-            self.log.setPlainText(f"Error loading INS files: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error loading INS files: {e}", "red")
             return False
         return True
 
@@ -2039,8 +1657,7 @@ class PhysicsApp(QMainWindow):
             return
         self.inprogress = True
         if not self.path_list:
-            self.log.setPlainText("No spectrum selected for calibration")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("No spectrum selected for calibration", "orange")
             return
         
         file = os.path.abspath(self.path_list[0])
@@ -2049,8 +1666,7 @@ class PhysicsApp(QMainWindow):
         if not (file.endswith('.mca') or file.endswith('.cmca') or file.endswith('.ws5') or 
                 file.endswith('.w98') or file.endswith('.moe') or file.endswith('.m1') or 
                 file.lower().endswith('.mcs')):
-            self.log.setPlainText("Calibration only works with RAW files (.mca, .cmca, .ws5, .w98, .moe, .m1, .mcs)")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Calibration only works with RAW files (.mca, .cmca, .ws5, .w98, .moe, .m1, .mcs)", "orange")
             return
         
         # Initialize
@@ -2068,8 +1684,7 @@ class PhysicsApp(QMainWindow):
         
         # Disable calibration button during processing
         self.cal_btn.setEnabled(False)
-        self.log.setPlainText("Calibration in progress...")
-        self.log.setStyleSheet("color: blue;")
+        self.set_status("Calibration in progress...", "blue")
         
         # Start calibration in a separate thread
         self.calibration_thread = CalibrationThread(
@@ -2092,11 +1707,9 @@ class PhysicsApp(QMainWindow):
             # Update calibration path (Calibration.dat was already saved by Calibration function)
             self.calibration_path = os.path.join(self.params_dir, 'Calibration.dat')
             
-            self.log.setPlainText("Calibration completed successfully")
-            self.log.setStyleSheet("color: green;")
+            self.set_status("Calibration completed successfully", "green")
         except Exception as e:
-            self.log.setPlainText(f"Error processing calibration results: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error processing calibration results: {e}", "red")
         finally:
             self.inprogress = False
             self.cal_btn.setEnabled(True)
@@ -2104,8 +1717,7 @@ class PhysicsApp(QMainWindow):
     
     def on_calibration_error(self, error_msg):
         """Handle calibration error"""
-        self.log.setPlainText(f"Calibration error: {error_msg}")
-        self.log.setStyleSheet("color: red;")
+        self.set_status(f"Calibration error: {error_msg}", "red")
         self.inprogress = False
         self.cal_btn.setEnabled(True)
     
@@ -2121,8 +1733,7 @@ class PhysicsApp(QMainWindow):
         is_model_only, velocity_range, error_message = self.parse_model_only_request()
         if is_model_only:
             if error_message:
-                self.log.setPlainText(error_message)
-                self.log.setStyleSheet("color: red;")
+                self.set_status(error_message, "red")
                 self.inprogress = False
                 return
             self.path_list = []
@@ -2142,12 +1753,12 @@ class PhysicsApp(QMainWindow):
 
         # Start model calculation in a separate thread
         if not self.path_list:
-            self.log.setPlainText(
-                f"Calculating model on synthetic grid (-{velocity_range:g}..{velocity_range:g} mm/s, 4096 points)..."
+            self.set_status(
+                f"Calculating model on synthetic grid (-{velocity_range:g}..{velocity_range:g} mm/s, 4096 points)...",
+                "blue",
             )
         else:
-            self.log.setPlainText("Calculating model...")
-        self.log.setStyleSheet("color: blue;")
+            self.set_status("Calculating model...", "blue")
 
         self.show_model_thread = ShowModelThread(self, self.path_list, self.pool, velocity_range=velocity_range)
         self.show_model_thread.finished.connect(self.on_show_model_finished)
@@ -2196,162 +1807,48 @@ class PhysicsApp(QMainWindow):
             self.toolbar.push_current()
             
             note_suffix = f"\n{instrumental_note}" if instrumental_note else ""
-            self.log.setPlainText("Model displayed successfully" + note_suffix)
-            self.log.setStyleSheet("color: green;")
+            self.set_status("Model displayed successfully" + note_suffix, "green")
         except Exception as e:
             traceback.print_exc()
-            self.log.setPlainText(f"Error plotting model: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error plotting model: {e}", "red")
         finally:
             self.inprogress = False
     
     def on_show_model_error(self, error_msg):
         """Handle show model error"""
-        self.log.setPlainText(f"Error showing model: {error_msg}")
-        self.log.setStyleSheet("color: red;")
+        self.set_status(f"Error showing model: {error_msg}", "red")
         self.inprogress = False
     
     def on_raw_to_dat_finished(self, success_msg):
         """Handle raw to dat conversion completion"""
-        self.log.setPlainText(success_msg)
-        self.log.setStyleSheet("color: green;")
+        self.set_status(success_msg, "green")
     
     def on_raw_to_dat_error(self, error_msg):
         """Handle raw to dat conversion error"""
-        self.log.setPlainText(f"RAW to DAT conversion error: {error_msg}")
-        self.log.setStyleSheet("color: red;")
+        self.set_status(f"RAW to DAT conversion error: {error_msg}", "red")
     
-    def create_subspectra(self, model, Distri, Cor, p, number_of_baseline_parameters):
-        """
-        Create subspectra from model components.
-        
-        Args:
-            model: list of model names
-            Distri: distribution expressions
-            Cor: correlation expressions
-            p: parameter array
-            number_of_baseline_parameters: number of baseline parameters
-            
-        Returns:
-            tuple: (Ps, Psm, Distri_t, Cor_t, Di, Co)
-        """
-        Ps = []
-        Psm = []
-        Distri_t = []
-        Cor_t = []
-        Di = 0
-        Co = 0
-        V = number_of_baseline_parameters
-        passthrough_non_spectral = {
-            'Expression': 1,
-            'Variables': numco,
-        }
-        
-        for i in range(len(model)):
-            model_name = model[i]
-
-            # Plotting-only passthrough models: consume parameter slots, do not
-            # create subspectra. This does not change save/load model behavior.
-            if model_name in passthrough_non_spectral:
-                V += passthrough_non_spectral[model_name]
-                continue
-
-            ps = np.array(p[0:number_of_baseline_parameters], dtype=float)
-            Psm.append([model_name])
-            LenM = mod_len_def(model_name, include_special=False) + 1
-
-            for j in range(1, LenM):
-                ps = np.append(ps, p[V])
-                V += 1
-            
-            Ps.append(ps)
-            
-            if model_name == 'Distr':
-                del Ps[-1]
-                for j in range(1, 6):
-                    Ps[-1] = np.append(Ps[-1], p[V])
-                    V += 1
-                del Psm[-1]
-                Psm[-1].append(model_name)
-                
-                STR = Distri[Di] + str(' ')
-                # Evaluate p[] references in distribution expression
-                st_ = []
-                en_ = []
-                for k in range(len(STR) - 2):
-                    if STR[k] == 'p' and STR[k + 1] == '[':
-                        st_.append(k)
-                        for kk in range(k, len(STR)):
-                            if STR[kk] == ']':
-                                en_.append(kk)
-                                break
-                st_ = st_[::-1]
-                en_ = en_[::-1]
-                for k in range(len(st_)):
-                    try:
-                        STR = str(STR[:st_[k]]) + str(eval(STR[st_[k]:en_[k] + 1])) + str(STR[(en_[k] + 1):])
-                    except:
-                        pass
-                Distri_t.append(STR)
-                Di += 1
-            
-            if model_name == 'Corr':
-                del Ps[-1]
-                for j in range(1, 3):
-                    Ps[-1] = np.append(Ps[-1], p[V])
-                    V += 1
-                del Psm[-1]
-                Psm[-1].append(model_name)
-                
-                STR = Cor[Co] + str(' ')
-                # Evaluate p[] references in correlation expression
-                st_ = []
-                en_ = []
-                for k in range(len(STR) - 2):
-                    if STR[k] == 'p' and STR[k + 1] == '[':
-                        st_.append(k)
-                        for kk in range(k, len(STR)):
-                            if STR[kk] == ']':
-                                en_.append(kk)
-                                break
-                st_ = st_[::-1]
-                en_ = en_[::-1]
-                for k in range(len(st_)):
-                    try:
-                        STR = str(STR[:st_[k]]) + str(eval(STR[st_[k]:en_[k] + 1])) + str(STR[(en_[k] + 1):])
-                    except:
-                        pass
-                Cor_t.append(STR)
-                Co += 1
-        
-        return (Ps, Psm, Distri_t, Cor_t, Di, Co)
-
     def raw_to_dat(self):
         """Convert RAW spectra to .dat format using current calibration"""
         # Parse the current content of process_path
         self.path_list = self.parse_process_path()
         
         if not self.path_list:
-            self.log.setPlainText("No spectrum selected")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("No spectrum selected", "orange")
             return
         
         # Check if calibration exists
         if not os.path.exists(self.calibration_path):
-            self.log.setPlainText("Calibration file not found. Please calibrate first.")
-            self.log.setStyleSheet("color: red;")
+            self.set_status("Calibration file not found. Please calibrate first.", "red")
             return
         
         # Get save path from save_path field
         save_path = self.save_path.text().strip()
         if not save_path:
-            self.log.setPlainText("Please specify save path")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Please specify save path", "orange")
             return
         
         # Start conversion in a separate thread
-        self.log.setPlainText("Converting RAW to DAT...")
-        self.log.setStyleSheet("color: blue;")
+        self.set_status("Converting RAW to DAT...", "blue")
         
         self.raw_to_dat_thread = RawToDatThread(self, self.path_list, self.calibration_path, save_path)
         self.raw_to_dat_thread.finished.connect(self.on_raw_to_dat_finished)
@@ -2419,11 +1916,9 @@ class PhysicsApp(QMainWindow):
             # Create a new pool
             num_processes = mp.cpu_count() if mp.cpu_count() <= 4 else mp.cpu_count() - 1
             self.pool = mp.Pool(processes=num_processes)
-            self.log.setPlainText("Pool terminated and recreated")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Pool terminated and recreated", "orange")
         except Exception as e:
-            self.log.setPlainText(f"Error during interrupt: {str(e)}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error during interrupt: {str(e)}", "red")
         finally:
             self.inprogress = False
 
@@ -2561,15 +2056,7 @@ class PhysicsApp(QMainWindow):
         self._load_theme()
         self._apply_theme()
         mode_name = self._theme.get('name', 'Dark mode' if self._is_dark_mode else 'Light mode')
-        self.log.setPlainText(f"Switched to {mode_name}")
-
-    def open_hamiltonian_helper(self):
-        """Open placeholder support widget for Hamiltonian initial guess."""
-        self.log.setPlainText("Not yet implemented: Hamiltonian helper coming in future update")
-        self.log.setStyleSheet("color: orange;")
-        # self._ham_helper_window = HamiltonianHelperWidget(self)
-        # self._ham_helper_window.exec()
-
+        self.set_status(f"Switched to {mode_name}")
 
     def choose_file(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -2596,8 +2083,7 @@ class PhysicsApp(QMainWindow):
             # Automatically show the selected spectrum(s)
             self.show_pressed()
         else:
-            self.log.setPlainText("Selection canceled")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Selection canceled", "orange")
 
     def instrumental_pressed(self, ref, mode):
         """
@@ -2631,35 +2117,30 @@ class PhysicsApp(QMainWindow):
                         break
             
             if not has_model:
-                self.log.setPlainText("Specify model to restore instrumental function")
-                self.log.setStyleSheet("color: red;")
+                self.set_status("Specify model to restore instrumental function", "red")
                 self.inprogress = False
                 return
         
         if (self.MS_fit.isChecked() and mode == 0):
-            self.log.setPlainText("This will not work...")
-            self.log.setStyleSheet("color: red;")
+            self.set_status("This will not work...", "red")
             self.inprogress = False
             return
         
         if not self.path_list or len(self.path_list) == 0:
-            self.log.setPlainText("No spectrum loaded")
-            self.log.setStyleSheet("color: red;")
+            self.set_status("No spectrum loaded", "red")
             self.inprogress = False
             return
         
         file = os.path.abspath(self.path_list[0])
         if not os.path.exists(file):
-            self.log.setPlainText("Spectrum file does not exist")
-            self.log.setStyleSheet("color: red;")
+            self.set_status("Spectrum file does not exist", "red")
             self.inprogress = False
             return
         
 
         
         # Start instrumental calculation in a thread
-        self.log.setPlainText(f"Running instrumental function (ref={ref}, mode={mode})...")
-        self.log.setStyleSheet("color: cyan;")
+        self.set_status(f"Running instrumental function (ref={ref}, mode={mode})...", "cyan")
         
         self.instrumental_thread = InstrumentalThread(self, ref, mode, self.pool)
         self.instrumental_thread.finished.connect(self.on_instrumental_finished)
@@ -2681,8 +2162,7 @@ class PhysicsApp(QMainWindow):
             self.canvas.draw()
             self.toolbar.push_current()
             
-            self.log.setPlainText(f"Instrumental function completed. χ² = {result['hi2']:.3f}\nResults saved to {self.dir_path}")
-            self.log.setStyleSheet("color: green;")
+            self.set_status(f"Instrumental function completed. χ² = {result['hi2']:.3f}\nResults saved to {self.dir_path}", "green")
             
             # Update parameters if mode == 1
             if result['mode'] == 1 and result['mod_p_len']:
@@ -2698,15 +2178,13 @@ class PhysicsApp(QMainWindow):
                 self.GCMS = result['G']
                 self.GCMS_input.setText(str(self.GCMS))
         except Exception as e:
-            self.log.setPlainText(f"Error plotting instrumental results: {e}\n{traceback.format_exc()}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error plotting instrumental results: {e}\n{traceback.format_exc()}", "red")
         finally:
             self.inprogress = False
     
     def on_instrumental_error(self, error_msg):
         """Handle instrumental function error"""
-        self.log.setPlainText(f"Instrumental function error: {error_msg}")
-        self.log.setStyleSheet("color: red;")
+        self.set_status(f"Instrumental function error: {error_msg}", "red")
         self.inprogress = False
 
     def show_pressed(self):
@@ -2717,9 +2195,8 @@ class PhysicsApp(QMainWindow):
 
         # Model-only mode (Model_<N> in the path box) has no spectrum to show.
         if self.parse_model_only_request()[0]:
-            self.log.setPlainText("Model-only mode (Model_N): no spectrum to show. "
-                                  "Use 'Show model', or enter a spectrum path.")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Model-only mode (Model_N): no spectrum to show. "
+                                  "Use 'Show model', or enter a spectrum path.", "orange")
             self.inprogress = False
             return
 
@@ -2727,8 +2204,7 @@ class PhysicsApp(QMainWindow):
         self.path_list = self.parse_process_path()
 
         if not self.path_list:
-            self.log.setPlainText("No spectrum selected")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("No spectrum selected", "orange")
             self.inprogress = False
             return
         try:
@@ -2738,33 +2214,24 @@ class PhysicsApp(QMainWindow):
                 plot_spectrum(self.figure, A_list, B_list, self.path_list, self.backgrounds, theme=self._theme)
                 self._update_legend_toggle()
                 self.toolbar.push_current()  # Set current view as home
-                self.log.setPlainText(f"Spectra displayed ({len(A_list)})")
-                self.log.setStyleSheet("color: green;")
+                self.set_status(f"Spectra displayed ({len(A_list)})", "green")
                 # Update baseline Ns based on new spectrum
                 self.params_table.update_baseline_from_bg()
             else:
-                self.log.setPlainText("Could not load spectrum")
-                self.log.setStyleSheet("color: red;")
+                self.set_status("Could not load spectrum", "red")
         except Exception as e:
-            self.log.setPlainText(f"Error displaying spectrum: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error displaying spectrum: {e}", "red")
         finally:
             self.inprogress = False
-        
-        
-    # def showM_pressed(self):
-    #     pass
 
     def choose_workfolder(self):
         """Open folder selection dialog to choose workfolder"""
         folder_path = QFileDialog.getExistingDirectory(self, "Choose Workfolder", self.workfolder)
         if folder_path:
             self.workfolder = folder_path
-            self.log.setPlainText(f"Workfolder changed to: {folder_path}")
-            self.log.setStyleSheet("color: green;")
+            self.set_status(f"Workfolder changed to: {folder_path}", "green")
         else:
-            self.log.setPlainText("Workfolder selection canceled")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Workfolder selection canceled", "orange")
 
     def show_sequence_fitting_options(self):
         """Show dropdown menu for sequence fitting options"""
@@ -2789,16 +2256,16 @@ class PhysicsApp(QMainWindow):
             self.seq_fit_btn.setText("Sequence Fitting\n(initial)")
         else:
             self.seq_fit_btn.setText("Sequence Fitting\n(result)")
-        self.log.setPlainText(f"Sequence fitting type set to: {'initial' if fitting_type == 0 else 'result'}")
-        self.log.setStyleSheet("color: blue;")
+        self.set_status(f"Sequence fitting type set to: {'initial' if fitting_type == 0 else 'result'}", "blue")
 
     def replot_result(self, row_index):
         """
         Replot results with subspectra reordered to bring clicked component to top.
-        
+
         Args:
-            row_index: Index of the row (0 to numro*3-1)
-        
+            row_index: Index of the clicked results-table row (each component
+                occupies 3 rows, so component = row_index // 3)
+
         The function moves the selected subspectrum to the highest z-order (on top),
         allowing users to click buttons in any order to customize the display.
         Works for both single and simultaneous fitting.
@@ -2806,16 +2273,14 @@ class PhysicsApp(QMainWindow):
         try:
             # Check if we have plot data
             if self.last_plot_data is None:
-                self.log.setPlainText("No plot data available. Please fit spectrum first.")
-                self.log.setStyleSheet("color: orange;")
+                self.set_status("No plot data available. Please fit spectrum first.", "orange")
                 return
             
             component_index = row_index // 3  # Which component (0, 1, 2, ...)
             
             # Skip baseline (component 0) - it's not a subspectrum
             if component_index == 0:
-                self.log.setPlainText("Cannot reorder baseline")
-                self.log.setStyleSheet("color: orange;")
+                self.set_status("Cannot reorder baseline", "orange")
                 return
             
             # Get model list to check for special models
@@ -2833,8 +2298,7 @@ class PhysicsApp(QMainWindow):
             
             # Check if clicked component is a special model (no reordering)
             if component_index < len(model_list) and model_list[component_index] in non_subspectrum_models:
-                self.log.setPlainText(f"Cannot reorder {model_list[component_index]}")
-                self.log.setStyleSheet("color: orange;")
+                self.set_status(f"Cannot reorder {model_list[component_index]}", "orange")
                 return
             
             # Handle simultaneous vs single fitting
@@ -2844,8 +2308,7 @@ class PhysicsApp(QMainWindow):
                 total_subspectra = sum(len(FS) for FS in FS_list)
                 
                 if subspectrum_index >= total_subspectra:
-                    self.log.setPlainText(f"Invalid component index: {component_index}")
-                    self.log.setStyleSheet("color: red;")
+                    self.set_status(f"Invalid component index: {component_index}", "red")
                     return
                 
                 # Initialize z_order if not set (flattened across all spectra)
@@ -2853,29 +2316,18 @@ class PhysicsApp(QMainWindow):
                     z_order = []
                     for FS in FS_list:
                         if len(FS) > 0:
-                            v = np.array([len(FS)] * len(FS))
-                            for i in range(len(FS)):
-                                for k in range(len(FS)):
-                                    if min(FS[i]) < min(FS[k]):
-                                        v[i] -= 1
-                            z_order.extend(v.tolist())
+                            z_order.extend(calculate_z_order(FS).tolist())
                     self.last_plot_data['z_order'] = np.array(z_order)
             else:
                 # Single spectrum fitting
                 FS = self.last_plot_data['FS']
                 if subspectrum_index >= len(FS):
-                    self.log.setPlainText(f"Invalid component index: {component_index}")
-                    self.log.setStyleSheet("color: red;")
+                    self.set_status(f"Invalid component index: {component_index}", "red")
                     return
                 
                 # Initialize z_order if not set
                 if self.last_plot_data['z_order'] is None:
-                    v = np.array([len(FS)] * len(FS))
-                    for i in range(len(FS)):
-                        for k in range(len(FS)):
-                            if min(FS[i]) < min(FS[k]):
-                                v[i] -= 1
-                    self.last_plot_data['z_order'] = v.copy()
+                    self.last_plot_data['z_order'] = calculate_z_order(FS)
             
             # Bring selected subspectrum to top by setting highest z-order
             max_z = max(self.last_plot_data['z_order'])
@@ -2885,13 +2337,11 @@ class PhysicsApp(QMainWindow):
             self._replot_with_custom_order()
             
             model_name = self.params_table.get_model_list()[component_index] if component_index < len(self.params_table.get_model_list()) else f"Component {component_index}"
-            self.log.setPlainText(f"Brought '{model_name}' to top")
-            self.log.setStyleSheet("color: green;")
+            self.set_status(f"Brought '{model_name}' to top", "green")
             
         except Exception as e:
             traceback.print_exc()
-            self.log.setPlainText(f"Replot error: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Replot error: {e}", "red")
 
     def _replot_with_custom_order(self):
         """
@@ -2935,8 +2385,7 @@ class PhysicsApp(QMainWindow):
         """Toggle between spectrum and distribution view."""
         try:
             if self.last_plot_data is None:
-                self.log.setPlainText("No plot data available. Please fit spectrum first.")
-                self.log.setStyleSheet("color: orange;")
+                self.set_status("No plot data available. Please fit spectrum first.", "orange")
                 return
             
             data = self.last_plot_data
@@ -2949,13 +2398,11 @@ class PhysicsApp(QMainWindow):
                 self._showing_distribution = False
                 self.SP_DI.setText('Distribution')
                 self._replot_with_custom_order()
-                self.log.setPlainText("Showing spectrum")
-                self.log.setStyleSheet("color: green;")
+                self.set_status("Showing spectrum", "green")
             else:
                 # Switch to distribution view
                 if not Distri:
-                    self.log.setPlainText("No distribution in the model")
-                    self.log.setStyleSheet("color: orange;")
+                    self.set_status("No distribution in the model", "orange")
                     return
                 
                 parameter_names = self.params_table.get_parameter_names()
@@ -2972,16 +2419,13 @@ class PhysicsApp(QMainWindow):
                     self.SP_DI.setText('Spectrum')
                     self.canvas.draw()
                     self.toolbar.push_current()
-                    self.log.setPlainText("Distributions and correlations")
-                    self.log.setStyleSheet("color: green;")
+                    self.set_status("Distributions and correlations", "green")
                 else:
-                    self.log.setPlainText("No distribution in the model")
-                    self.log.setStyleSheet("color: orange;")
+                    self.set_status("No distribution in the model", "orange")
                     
         except Exception as e:
             traceback.print_exc()
-            self.log.setPlainText(f"Distribution error: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Distribution error: {e}", "red")
 
 
     def validate_spectrum_files(self, spectrum_files):
@@ -3044,14 +2488,12 @@ class PhysicsApp(QMainWindow):
 
         # Model-only mode (Model_<N> in the path box) has no spectrum to fit.
         if self.parse_model_only_request()[0]:
-            self.log.setPlainText("Model-only mode (Model_N): nothing to fit. "
-                                  "Use 'Show model', or enter a spectrum path to fit.")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Model-only mode (Model_N): nothing to fit. "
+                                  "Use 'Show model', or enter a spectrum path to fit.", "orange")
             self.inprogress = False
             return
 
-        self.log.setPlainText("Starting fit...")
-        self.log.setStyleSheet("color: cyan;")
+        self.set_status("Starting fit...", "cyan")
 
         if not self.initialize_parameters():
             self.inprogress = False
@@ -3067,16 +2509,14 @@ class PhysicsApp(QMainWindow):
             spectrum_files = self.parse_process_path()
             
             if not spectrum_files:
-                self.log.setPlainText("No spectrum file loaded. Please load a file first.")
-                self.log.setStyleSheet("color: orange;")
+                self.set_status("No spectrum file loaded. Please load a file first.", "orange")
                 self.inprogress = False
                 return
             
             # Validate all spectrum files can be loaded
             valid, error_msg = self.validate_spectrum_files(spectrum_files)
             if not valid:
-                self.log.setPlainText(f"Spectrum validation failed: {error_msg}")
-                self.log.setStyleSheet("color: red;")
+                self.set_status(f"Spectrum validation failed: {error_msg}", "red")
                 self.inprogress = False
                 return
             
@@ -3104,8 +2544,7 @@ class PhysicsApp(QMainWindow):
                     return
                 else:
                     # User declined - fit only first spectrum
-                    self.log.setPlainText("Sequential fitting canceled. Fitting first spectrum only.")
-                    self.log.setStyleSheet("color: orange;")
+                    self.set_status("Sequential fitting canceled. Fitting first spectrum only.", "orange")
                     spectrum_files = [spectrum_files[0]]
                     fitting_mode = 'single'
 
@@ -3117,8 +2556,7 @@ class PhysicsApp(QMainWindow):
                 return
 
             spectrum_file = spectrum_files[0]
-            self.log.setPlainText(f"Fitting spectrum: {os.path.basename(spectrum_file)}")
-            self.log.setStyleSheet("color: cyan;")
+            self.set_status(f"Fitting spectrum: {os.path.basename(spectrum_file)}", "cyan")
 
             # Start fitting in background thread
             self.fitting_thread = FittingThread(self, spectrum_file, self.pool)
@@ -3129,8 +2567,7 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             error_msg = f"Fit error: {e}\n{traceback.format_exc()}"
             print(error_msg)
-            self.log.setPlainText(f"Fit error: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Fit error: {e}", "red")
             self.inprogress = False
     
     def start_sequential_fitting(self, spectrum_files):
@@ -3142,16 +2579,14 @@ class PhysicsApp(QMainWindow):
         """
         # Check if save path is set
         if not self.save_path.text().strip():
-            self.log.setPlainText("Sequential fitting requires save path to be set")
-            self.log.setStyleSheet("color: red;")
+            self.set_status("Sequential fitting requires save path to be set", "red")
             return
         
         # Initialize sequence_params for result mode (None for initial mode)
         self.sequence_params = None
         
         # Calculate backgrounds for all spectra upfront
-        self.log.setPlainText(f"Calculating backgrounds for {len(spectrum_files)} spectra...")
-        self.log.setStyleSheet("color: cyan;")
+        self.set_status(f"Calculating backgrounds for {len(spectrum_files)} spectra...", "cyan")
         
         backgrounds = calculate_backgrounds(spectrum_files, self.calibration_path)
         
@@ -3159,8 +2594,7 @@ class PhysicsApp(QMainWindow):
 
         # Determine mode name for logging
         mode_name = 'initial guess' if self.sequence_fitting_type == 0 else 'result as model'
-        self.log.setPlainText(f"Starting sequential fitting of {len(spectrum_files)} spectra (mode: {mode_name})...")
-        self.log.setStyleSheet("color: cyan;")
+        self.set_status(f"Starting sequential fitting of {len(spectrum_files)} spectra (mode: {mode_name})...", "cyan")
         
         # Start sequential fitting thread
         self.sequential_fitting_thread = SequentialFittingThread(
@@ -3210,25 +2644,25 @@ class PhysicsApp(QMainWindow):
     def _on_sequential_progress(self, index, total, spectrum_file, status):
         """Handle progress updates from sequential fitting"""
         if status == 'fitting':
-            self.log.setPlainText(
-                f"Sequential fitting [{index + 1}/{total}]: {os.path.basename(spectrum_file)}"
+            self.set_status(
+                f"Sequential fitting [{index + 1}/{total}]: {os.path.basename(spectrum_file)}",
+                "cyan",
             )
-            self.log.setStyleSheet("color: cyan;")
         elif status == 'saved':
-            self.log.setPlainText(
-                f"Saved [{index + 1}/{total}]: {os.path.basename(spectrum_file)}"
+            self.set_status(
+                f"Saved [{index + 1}/{total}]: {os.path.basename(spectrum_file)}",
+                "blue",
             )
-            self.log.setStyleSheet("color: blue;")
         elif status == 'failed':
-            self.log.setPlainText(
-                f"Failed [{index + 1}/{total}]: {os.path.basename(spectrum_file)}"
+            self.set_status(
+                f"Failed [{index + 1}/{total}]: {os.path.basename(spectrum_file)}",
+                "orange",
             )
-            self.log.setStyleSheet("color: orange;")
         elif status == 'error':
-            self.log.setPlainText(
-                f"Error [{index + 1}/{total}]: {os.path.basename(spectrum_file)}"
+            self.set_status(
+                f"Error [{index + 1}/{total}]: {os.path.basename(spectrum_file)}",
+                "red",
             )
-            self.log.setStyleSheet("color: red;")
     
     def _on_sequential_finished(self, summary):
         """Handle completion of sequential fitting"""
@@ -3241,18 +2675,17 @@ class PhysicsApp(QMainWindow):
         self.sequence_params = None
         
         if failed == 0:
-            self.log.setPlainText(f"Sequential fitting complete! All {total} spectra fitted and saved.")
-            self.log.setStyleSheet("color: green;")
+            self.set_status(f"Sequential fitting complete! All {total} spectra fitted and saved.", "green")
         else:
             error_summary = "\n".join([f"  - {os.path.basename(f)}: {e}" for f, e in errors[:5]])  # Show first 5 errors
             if len(errors) > 5:
                 error_summary += f"\n  ... and {len(errors) - 5} more errors"
             
-            self.log.setPlainText(
+            self.set_status(
                 f"Sequential fitting complete: {succeeded}/{total} succeeded, {failed} failed.\n"
-                f"Errors:\n{error_summary}"
+                f"Errors:\n{error_summary}",
+                "orange",
             )
-            self.log.setStyleSheet("color: orange;")
         self.inprogress = False
     
     def _save_sequential_result_files(self, spectrum_file):
@@ -3262,47 +2695,17 @@ class PhysicsApp(QMainWindow):
             save_dir = os.path.dirname(self.save_path.text())
             spectrum_basename = os.path.splitext(os.path.basename(spectrum_file))[0]
             base_path = os.path.join(save_dir, spectrum_basename)
-            
+
             # Create directory if needed
             if save_dir and not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            
-            # Get current results
-            parameters = self.results_table.current_parameters
-            errors = self.results_table.current_errors
-            model_list = self.results_table.current_model_list
-            model_colors = self.results_table.current_model_colors
-            parameter_names = self.results_table.current_parameter_names
-            chi2 = self.results_table.current_chi2
-            
-            # Determine save mode
-            param_file = base_path + '_param.txt'
-            mode = 'append' if os.path.exists(param_file) else 'new'
-            
-            # 1. Save parameters
-            self._save_parameters_file(param_file, parameters, errors, model_list, 
-                                      parameter_names, os.path.basename(spectrum_file), chi2, mode)
-            
-            # 2. Save graph data
-            result_txt_dst = base_path + '_graf.txt'
-            if self.last_fitting_data:
-                self._save_graf_file(result_txt_dst, self.last_fitting_data)
-            
-            # 3. Save combo image
-            result_png_src = os.path.join(self.dir_path, 'result.png')
-            table_image = self.results_table.render_table_to_image()
-            if os.path.exists(result_png_src):
-                self._save_combo_image_from_qimage(result_png_src, table_image, 
-                                                    base_path + '_combo.png')
-            
-            # 4. Copy SVG
-            result_svg_src = os.path.join(self.dir_path, 'result.svg')
-            result_svg_dst = base_path + '.svg'
-            if os.path.exists(result_svg_src):
-                shutil.copyfile(result_svg_src, result_svg_dst)
-            
+
+            # Append to an existing parameter file, otherwise start a new one
+            mode = 'append' if os.path.exists(base_path + '_param.txt') else 'new'
+            self._write_result_files(base_path, os.path.basename(spectrum_file), mode)
+
             print(f"[Sequential] Saved results for {spectrum_basename}")
-            
+
         except Exception as e:
             print(f"Error saving sequential result: {e}\n{traceback.format_exc()}")
     
@@ -3381,8 +2784,7 @@ class PhysicsApp(QMainWindow):
                 self.canvas.draw()
                 self.toolbar.push_current()
                 
-                self.log.setPlainText(f"Simultaneous fit completed! χ² = {chi2:.3f}{note_suffix}")
-                self.log.setStyleSheet("color: green;")
+                self.set_status(f"Simultaneous fit completed! χ² = {chi2:.3f}{note_suffix}", "green")
                 
             elif 'A' in result and 'B' in result and 'SPC_f' in result and 'FS' in result:
                 # Single spectrum fitting
@@ -3442,23 +2844,19 @@ class PhysicsApp(QMainWindow):
                 self.canvas.draw()
                 self.toolbar.push_current()
                 
-                self.log.setPlainText(f"Fit completed! χ² = {chi2:.3f}{note_suffix}")
-                self.log.setStyleSheet("color: green;")
+                self.set_status(f"Fit completed! χ² = {chi2:.3f}{note_suffix}", "green")
             else:
-                self.log.setPlainText(f"Fit completed! χ² = {chi2:.3f} (no plot data){note_suffix}")
-                self.log.setStyleSheet("color: green;")
+                self.set_status(f"Fit completed! χ² = {chi2:.3f} (no plot data){note_suffix}", "green")
                 
         except Exception as e:
             print(f"Error plotting result: {e}\n{traceback.format_exc()}")
-            self.log.setPlainText(f"Plot error: {e}")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status(f"Plot error: {e}", "orange")
     
     def on_fitting_finished(self, result):
         """Handle fitting completion"""
         try:
             if not result['success']:
-                self.log.setPlainText(f"Fitting failed: {result['message']}")
-                self.log.setStyleSheet("color: red;")
+                self.set_status(f"Fitting failed: {result['message']}", "red")
                 return
             
             # Read model configuration for results table
@@ -3500,28 +2898,24 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             error_msg = f"Error processing fit results: {e}\n{traceback.format_exc()}"
             print(error_msg)
-            self.log.setPlainText(f"Error processing fit results: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error processing fit results: {e}", "red")
         finally:
             self.inprogress = False
     
     def on_fitting_error(self, error_msg):
         """Handle fitting error"""
-        self.log.setPlainText(f"Fitting error: {error_msg}")
-        self.log.setStyleSheet("color: red;")
+        self.set_status(f"Fitting error: {error_msg}", "red")
         self.inprogress = False
     def save_result_pressed(self):
         """Save fitting results to file"""
         # Check if we have results to save
         if not hasattr(self.results_table, 'current_parameters') or self.results_table.current_parameters is None:
-            self.log.setPlainText("No results to save. Please run fitting first.")
-            self.log.setStyleSheet("color: red;")
+            self.set_status("No results to save. Please run fitting first.", "red")
             return
         
         # Check if save path is set
         if not self.save_path.text().strip():
-            self.log.setPlainText("Please specify save path")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Please specify save path", "orange")
             return
         
         # Check if file exists and ask user
@@ -3539,8 +2933,7 @@ class PhysicsApp(QMainWindow):
             )
             
             if reply == QMessageBox.StandardButton.Cancel:
-                self.log.setPlainText("Saving canceled")
-                self.log.setStyleSheet("color: orange;")
+                self.set_status("Saving canceled", "orange")
                 return
             elif reply == QMessageBox.StandardButton.Save:
                 mode = 'append'  # Append to parameter file
@@ -3555,8 +2948,7 @@ class PhysicsApp(QMainWindow):
         """Save fitting results with file chooser"""
         # Check if we have results to save
         if not hasattr(self.results_table, 'current_parameters') or self.results_table.current_parameters is None:
-            self.log.setPlainText("No results to save. Please run fitting first.")
-            self.log.setStyleSheet("color: red;")
+            self.set_status("No results to save. Please run fitting first.", "red")
             return
         
         # Open file dialog
@@ -3571,8 +2963,7 @@ class PhysicsApp(QMainWindow):
             self.save_path.setText(base_path)
             self._save_result_files('new')
         else:
-            self.log.setPlainText("Saving canceled")
-            self.log.setStyleSheet("color: orange;")
+            self.set_status("Saving canceled", "orange")
     
     def _save_result_files(self, mode):
         """
@@ -3581,63 +2972,59 @@ class PhysicsApp(QMainWindow):
         """
         try:
             base_path = self.save_path.text()
-            
+
             # Create directory if needed
             save_dir = os.path.dirname(base_path)
             if save_dir and not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            
-            # Get current results
-            parameters = self.results_table.current_parameters
-            errors = self.results_table.current_errors
-            model_list = self.results_table.current_model_list
-            model_colors = self.results_table.current_model_colors
-            parameter_names = self.results_table.current_parameter_names
-            chi2 = self.results_table.current_chi2
-            
-            # Get spectrum file name
-            if self.path_list:
-                spectrum_file = os.path.basename(self.path_list[0])
-            else:
-                spectrum_file = "unknown"
-            
-            # 1. Save parameters to CSV-like text file
-            param_file = base_path + '_param.txt'
-            self._save_parameters_file(param_file, parameters, errors, model_list, 
-                                      parameter_names, spectrum_file, chi2, mode)
-            
-            # 2. Save result graph data from fitting arrays
-            result_txt_dst = base_path + '_graf.txt'
-            if self.last_fitting_data:
-                self._save_graf_file(result_txt_dst, self.last_fitting_data)
-            
-            # 3. Save combo image (spectrum + table)
-            result_png_src = os.path.join(self.dir_path, 'result.png')
-            
-            # Render results table to image instead of loading from file
-            table_image = self.results_table.render_table_to_image()
-            
-            if os.path.exists(result_png_src):
-                self._save_combo_image_from_qimage(result_png_src, table_image, 
-                                                    base_path + '_combo.png')
-            
-            # 4. Copy SVG
-            result_svg_src = os.path.join(self.dir_path, 'result.svg')
-            result_svg_dst = base_path + '.svg'
-            if os.path.exists(result_svg_src):
-                shutil.copyfile(result_svg_src, result_svg_dst)
-            
+
+            spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
+            self._write_result_files(base_path, spectrum_file, mode)
+
             # Success message
             if mode == 'append':
-                self.log.setPlainText("Results appended to parameter file, others overwritten")
+                self.set_status("Results appended to parameter file, others overwritten", "green")
             else:
-                self.log.setPlainText("Results saved successfully")
-            self.log.setStyleSheet("color: green;")
-            
+                self.set_status("Results saved successfully", "green")
+
         except Exception as e:
             print(f"Error saving results: {e}\n{traceback.format_exc()}")
-            self.log.setPlainText(f"Error saving results: {e}")
-            self.log.setStyleSheet("color: red;")
+            self.set_status(f"Error saving results: {e}", "red")
+
+    def _write_result_files(self, base_path, spectrum_file, mode):
+        """Write the four result artifacts of the current fit next to *base_path*.
+
+        Shared by "Save result"/"Save result as" and by sequential fitting:
+        ``<base>_param.txt`` (parameters + errors; appended in 'append' mode),
+        ``<base>_graf.txt`` (the plotted curves), ``<base>_combo.png`` (figure +
+        rendered results table) and ``<base>.svg`` (copy of the last figure the
+        plot functions saved into the app directory).
+        """
+        # 1. Parameters + errors table
+        self._save_parameters_file(base_path + '_param.txt',
+                                   self.results_table.current_parameters,
+                                   self.results_table.current_errors,
+                                   self.results_table.current_model_list,
+                                   self.results_table.current_parameter_names,
+                                   spectrum_file,
+                                   self.results_table.current_chi2,
+                                   mode)
+
+        # 2. Graph data from the fitting arrays
+        if self.last_fitting_data:
+            self._save_graf_file(base_path + '_graf.txt', self.last_fitting_data)
+
+        # 3. Combo image (figure png rendered by the plot functions + table)
+        result_png_src = os.path.join(self.dir_path, 'result.png')
+        table_image = self.results_table.render_table_to_image()
+        if os.path.exists(result_png_src):
+            self._save_combo_image_from_qimage(result_png_src, table_image,
+                                               base_path + '_combo.png')
+
+        # 4. Copy SVG
+        result_svg_src = os.path.join(self.dir_path, 'result.svg')
+        if os.path.exists(result_svg_src):
+            shutil.copyfile(result_svg_src, base_path + '.svg')
     
     def _save_graf_file(self, filepath, fitting_data):
         """
@@ -3748,28 +3135,6 @@ class PhysicsApp(QMainWindow):
                 f.write('\t'.join(map(str, names)) + '\n')
                 # Write data
                 f.write(spectrum_file + '\t' + '\t'.join(map(str, values)) + '\n')
-    
-    def _save_combo_image(self, plot_path, table_path, output_path):
-        """Combine plot and table images and save"""
-        im1 = matplotlib.image.imread(plot_path)
-        im2 = matplotlib.image.imread(table_path)
-        
-        # Determine background color
-        bg_color = [0, 0, 0, 1] if self.BGcolor == 'k' else [1, 1, 1, 1]
-        
-        # Make widths match
-        if im2.shape[1] > im1.shape[1]:
-            # Pad im1
-            padding = np.array([[bg_color] * (im2.shape[1] - im1.shape[1])] * im1.shape[0], np.uint8)
-            im1 = np.concatenate((im1, padding), axis=1)
-        elif im2.shape[1] < im1.shape[1]:
-            # Pad im2
-            padding = np.array([[bg_color] * (im1.shape[1] - im2.shape[1])] * im2.shape[0], np.uint8)
-            im2 = np.concatenate((im2, padding), axis=1)
-        
-        # Stack vertically
-        combo_image = np.concatenate((im1, im2), axis=0)
-        matplotlib.image.imsave(output_path, combo_image)
     
     def _save_combo_image_from_qimage(self, plot_path, table_qimage, output_path):
         """Combine plot image file and table QImage and save"""

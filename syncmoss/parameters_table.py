@@ -4,12 +4,10 @@ import sys
 import numpy as np
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QCheckBox, QMenu, QWidgetAction,
-    QDialog, QListWidget, QDialogButtonBox, QMessageBox, QGridLayout, QComboBox,
-    QSpinBox, QTableWidget, QTableWidgetItem
 )
 from PySide6.QtCore import Qt, QRegularExpression, QEvent
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
-from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters
+from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters, contrast_text_color
 from syncmoss.spectrum_io import calculate_backgrounds
 from syncmoss.model_io import mod_len_def
 from syncmoss.Library_window import open_library_model_dialog
@@ -240,9 +238,9 @@ class ParametersTable(QWidget):
         color_btn.setFont(QFont('Arial', 12))
         color = self.main_window.model_colors[row]
         bg_color = color if color.startswith('#') else self.get_color_from_code(color)
-        text_color = 'black' if color in ['red', 'yellow', 'cyan', 'lime', 'darkorange', 'white', 'silver', 'lightgreen', 'pink'] or color.startswith('#') else 'white'
-        color_btn.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
-        # Add menu to color_btn
+        color_btn.setStyleSheet(f"background-color: {bg_color}; color: {contrast_text_color(color)};")
+        # Add menu to color_btn (menu order is deliberate; not the same order
+        # as constants.model_colors, which is the auto-assignment sequence)
         color_menu = QMenu(self)
         color_codes = ['blue', 'red', 'yellow', 'cyan', 'fuchsia', 'lime', 'darkorange', 'blueviolet', 'green', 'tomato', 'white', 'silver', 'lightgreen', 'pink']
         for code in color_codes:
@@ -384,12 +382,12 @@ class ParametersTable(QWidget):
                     else:  # Distr
                         allowed = prev_model not in ('baseline', 'Layer', 'Expression', 'None', '')
                     if not allowed:
-                        self.main_window.log.setPlainText(
+                        self.main_window.set_status(
                             f"'{opt}' cannot be placed after '{prev_model or 'nothing'}' "
                             f"(it must follow a "
-                            + ("'Distr'/'Corr'" if opt == 'Corr' else "fittable component") + ")."
+                            + ("'Distr'/'Corr'" if opt == 'Corr' else "fittable component") + ").",
+                            "orange",
                         )
-                        self.main_window.log.setStyleSheet("color: orange;")
                         return
                 self.select_model(r, opt)
                 return
@@ -490,13 +488,11 @@ class ParametersTable(QWidget):
         self.copied_model_name = model_name if model_name else str("None")
         self.copied_values = values
         self.copied_fixes = fixes
-        self.main_window.log.setPlainText(f"Copied model from row {row}: {self.copied_model_name}")
-        self.main_window.log.setStyleSheet("color: green;")
+        self.main_window.set_status(f"Copied model from row {row}: {self.copied_model_name}", "green")
 
     def paste_model_from_memory(self, row):
         if self.copied_model_name == str("None"):
-            self.main_window.log.setPlainText("Nothing is in the memory")
-            self.main_window.log.setStyleSheet("color: orange;")
+            self.main_window.set_status("Nothing is in the memory", "orange")
             return
 
         self.select_model(row, self.copied_model_name)
@@ -517,8 +513,7 @@ class ParametersTable(QWidget):
         if row < len(self.row_fix_locked) and self.row_fix_locked[row]:
             self._set_row_fix_states(row, [True] * numco)
 
-        self.main_window.log.setPlainText(f"Pasted model to row {row}: {self.copied_model_name}")
-        self.main_window.log.setStyleSheet("color: green;")
+        self.main_window.set_status(f"Pasted model to row {row}: {self.copied_model_name}", "green")
 
     def select_color(self, row, color):
         if row >= len(self.row_widgets):
@@ -527,8 +522,7 @@ class ParametersTable(QWidget):
         start_widget = row_widget.layout().itemAt(0).widget()
         color_btn = start_widget.layout().itemAt(0).widget()
         bg_color = self.get_color_from_code(color)
-        text_color = 'black' if color in ['red', 'yellow', 'cyan', 'lime', 'darkorange', 'white', 'silver', 'lightgreen', 'pink'] else 'white'
-        color_btn.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
+        color_btn.setStyleSheet(f"background-color: {bg_color}; color: {contrast_text_color(color)};")
         # Update main_window.model_colors
         if hasattr(self.main_window, 'model_colors') and row < len(self.main_window.model_colors):
             self.main_window.model_colors[row] = color
@@ -948,10 +942,10 @@ class ParametersTable(QWidget):
             try:
                 be_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'Be.txt'), delimiter='\t')
                 values = [str(be_param[i]) for i in range(9)]
-                self.main_window.log.setPlainText("Be.txt loaded successfully.")
+                self.main_window.set_status("Be.txt loaded successfully.")
             except:
                 values = ['0.048', '0.103', '-0.259', '0.098', '0.105', '90', '0', '-0.1880264375', '1.0']
-                self.main_window.log.setPlainText("Default Be values used. Could not load Be.txt.")
+                self.main_window.set_status("Default Be values used. Could not load Be.txt.")
             lowers = ['0', '', '', '0.098', '0', '-180', '-360', '-0.5', '0']
             uppers = ['', '', '', '', '', '180', '360', '1', '']
             fixes = [True] * 9
@@ -962,10 +956,10 @@ class ParametersTable(QWidget):
             try:
                 kb_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'KB.txt'), delimiter='\t')
                 values = [str(kb_param[i]) for i in range(9)]
-                self.main_window.log.setPlainText("KB.txt loaded successfully.")
+                self.main_window.set_status("KB.txt loaded successfully.")
             except:
                 values = ['0.065', '0.234', '0.37', '0.098', '0.373', '90', '0', '0', '1.0']
-                self.main_window.log.setPlainText("Default KB values used. Could not load KB.txt.")
+                self.main_window.set_status("Default KB values used. Could not load KB.txt.")
             lowers = ['0', '', '', '0.098', '0', '-180', '-360', '-0.5', '0']
             uppers = ['', '', '', '', '', '180', '360', '1', '']
             fixes = [True] * 9
@@ -1058,39 +1052,25 @@ class ParametersTable(QWidget):
                 upper_input.setText(upper)
                 fix_cb.setChecked(fix)
 
-        # Special fixed checkboxes for certain models
+        # Structural parameters (e.g. a Distr's target index or point count) are
+        # hard-locked: checked, disabled, with the "locked" indicator icon.
+        def _hard_lock_fix_checkbox(col):
+            if col < numco:
+                param_widget = self.row_widgets[row].layout().itemAt(col + 1).widget()
+                fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
+                fix_cb.setChecked(True)
+                fix_cb.setEnabled(False)
+                fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
+
         if model == 'Relax_MS':
-            i = len(names) - 1  # last 'S'
-            if i < numco:
-                param_widget = self.row_widgets[row].layout().itemAt(i+1).widget()
-                fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
-                fix_cb.setChecked(True)
-                fix_cb.setEnabled(False)
-                fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
+            _hard_lock_fix_checkbox(len(names) - 1)      # last 'S'
         elif model == 'ASM':
-            i = len(names) - 2  # one before last 'Num'
-            if i < numco:
-                param_widget = self.row_widgets[row].layout().itemAt(i+1).widget()
-                fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
-                fix_cb.setChecked(True)
-                fix_cb.setEnabled(False)
-                fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
+            _hard_lock_fix_checkbox(len(names) - 2)      # one before last 'Num'
         elif model == 'Distr':
-            for idx in [0, len(names)-2]:  # first 'par' and one before last 'Num'
-                if idx < numco:
-                    param_widget = self.row_widgets[row].layout().itemAt(idx+1).widget()
-                    fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
-                    fix_cb.setChecked(True)
-                    fix_cb.setEnabled(False)
-                    fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
+            for idx in [0, len(names) - 2]:              # first 'par' and 'Num'
+                _hard_lock_fix_checkbox(idx)
         elif model == 'Corr':
-            i = 0  # first 'par'
-            if i < numco:
-                param_widget = self.row_widgets[row].layout().itemAt(i+1).widget()
-                fix_cb = param_widget.layout().itemAt(0).layout().itemAt(1).widget()
-                fix_cb.setChecked(True)
-                fix_cb.setEnabled(False)
-                fix_cb.setStyleSheet(f"QCheckBox::indicator {{ width: 30px; height: 30px; image: url({_CBL2}); }}")
+            _hard_lock_fix_checkbox(0)                   # first 'par'
 
         self.row_params[row] = len(names)
 
@@ -1204,8 +1184,7 @@ class ParametersTable(QWidget):
         """Update baseline Ns parameter based on current spectrum background"""
         # Get the first spectrum path
         if not hasattr(self.main_window, 'path_list') or not self.main_window.path_list:
-            self.main_window.log.setPlainText("No spectrum loaded. Cannot update baseline.")
-            self.main_window.log.setStyleSheet("color: orange;")
+            self.main_window.set_status("No spectrum loaded. Cannot update baseline.", "orange")
             return
         
         # Calculate BG directly for the first spectrum
@@ -1213,8 +1192,7 @@ class ParametersTable(QWidget):
         backgrounds = calculate_backgrounds([first_spectrum], self.main_window.calibration_path)
         
         if not backgrounds or len(backgrounds) == 0:
-            self.main_window.log.setPlainText("Could not calculate background.")
-            self.main_window.log.setStyleSheet("color: red;")
+            self.main_window.set_status("Could not calculate background.", "red")
             return
         
         BG = backgrounds[0]
@@ -1258,8 +1236,7 @@ class ParametersTable(QWidget):
         
         # Update Ns value
         ns_value_input.setText(str(new_ns))
-        self.main_window.log.setPlainText(f"Baseline Ns updated to {new_ns} (BG={int(round(BG))})")
-        self.main_window.log.setStyleSheet("color: green;")
+        self.main_window.set_status(f"Baseline Ns updated to {new_ns} (BG={int(round(BG))})", "green")
     
     def get_current_colors(self):
         """Get current colors from all table rows (fresh read after delete/insert)"""
@@ -1480,47 +1457,5 @@ class ParametersTable(QWidget):
                         param_names.append(name_label.text())
                 
                 param_names_list.append(param_names)
-        
+
         return param_names_list
-    
-    def get_parameter_values(self):
-        """
-        Get all parameter values as a flat list.
-        
-        Returns:
-            list: List of float values for all parameters (baseline + models)
-        """
-        values = []
-        
-        # Baseline parameters (row 0)
-        baseline_row = self.row_widgets[0]
-        for j in range(1, number_of_baseline_parameters + 1):
-            param_widget = baseline_row.layout().itemAt(j).widget()
-            # Get value input (second widget in param layout)
-            value_input = param_widget.layout().itemAt(1).widget()
-            try:
-                values.append(float(value_input.text()))
-            except (ValueError, AttributeError):
-                values.append(0.0)
-        
-        # Model parameters (rows 1+)
-        for row_idx in range(1, len(self.row_widgets)):
-            row_widget = self.row_widgets[row_idx]
-            start_widget = row_widget.layout().itemAt(0).widget()
-            model_btn = start_widget.layout().itemAt(1).widget()
-            model_name = model_btn.text()
-            
-            if model_name != 'None':
-                LenM = mod_len_def(model_name, include_special=False) + 1
-                
-                for j in range(1, min(LenM, numco + 1)):
-                    if j < row_widget.layout().count():
-                        param_widget = row_widget.layout().itemAt(j).widget()
-                        # Get value input
-                        value_input = param_widget.layout().itemAt(1).widget()
-                        try:
-                            values.append(float(value_input.text()))
-                        except (ValueError, AttributeError):
-                            values.append(0.0)
-        
-        return values
