@@ -98,6 +98,27 @@ def test_full_model_has_no_empty_slots(physics_app):
     assert physics_app.check_user_expressions("Show model") is True
 
 
+def test_clean_model_leaves_no_stale_param_counts(physics_app):
+    """The 'Clean model' double-click clears rows via clear_row_params, which
+    must zero row_params in step with resetting the button to 'None'. Regression:
+    it reset only the button, so the next show/fit walked the now-empty fields of
+    a None row and flagged them as missing (red row) even though the model was
+    None. Manual delete never hit this because it pops row_params entirely.
+    """
+    pt = physics_app.params_table
+    pt.select_model(1, "Singlet")
+    pt.select_model(2, "Doublet")
+
+    physics_app.clean_model()
+
+    # Button and parameter count agree: cleared rows carry no active parameters.
+    assert pt.row_params[1] == 0
+    assert pt.row_params[2] == 0
+    # No phantom empty slots, so show/fit is not blocked.
+    assert pt.get_empty_parameter_slots() == []
+    assert physics_app.check_user_expressions("Show model") is True
+
+
 def test_delete_of_referenced_param_leaves_dangling_ref_intact(physics_app):
     pt = physics_app.params_table
     pt.select_model(1, "Singlet")        # indices 8..11

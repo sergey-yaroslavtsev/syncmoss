@@ -1160,6 +1160,12 @@ class ParametersTable(QWidget):
         start_widget = row_widget.layout().itemAt(0).widget()
         model_btn = start_widget.layout().itemAt(1).widget()
         model_btn.setText("None")
+        # Keep the active-parameter count in step with the "None" button, else a
+        # later show/fit (get_empty_parameter_slots) still walks the now-empty
+        # fields and flags them as missing. select_model captures old/new counts
+        # around this call, so zeroing here is safe for that path too.
+        if row < len(self.row_params):
+            self.row_params[row] = 0
         # Clear all parameter values
         for col in range(numco):
             param_widget = row_widget.layout().itemAt(col+1).widget()
