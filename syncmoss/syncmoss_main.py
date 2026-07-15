@@ -704,6 +704,7 @@ class PhysicsApp(QMainWindow):
         self.last_plot_data = None
         self.last_fitting_data = None
         self.models_description_window = None
+        self._fit_links_snapshot = {}
 
         self.setWindowTitle('SYNCMoss ESRF ID14')
         self.setGeometry(50, 50, 1600, 900)
@@ -1373,24 +1374,41 @@ class PhysicsApp(QMainWindow):
             parameter_names = self.results_table.current_parameter_names
             parameters = self.results_table.current_parameters
             errors = self.results_table.current_errors
-            
-            # Clear all model rows except baseline
+            expression_texts = getattr(self.results_table, 'expression_texts', {})
+            result_links = getattr(self.results_table, 'current_links', {})
+
+            if self.params_table.get_model_list() != model_list:
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Take Result As Model")
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setText(
+                    "Result model is different from current one. Current model will "
+                    "be overwritten. Continue?"
+                )
+                continue_btn = msg.addButton("Continue", QMessageBox.ButtonRole.AcceptRole)
+                msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                msg.exec()
+                if msg.clickedButton() is not continue_btn:
+                    self.set_status("Take result cancelled", "orange")
+                    return
+
+            # Rebuild table structure from result model.
             for row in range(1, len(self.params_table.row_widgets)):
                 self.params_table.clear_row_params(row)
-            
-            # Copy each model from results to parameters
-            param_index = 0
+
             for model_idx, model_name in enumerate(model_list):
-                row_idx = model_idx
-                
-                # Get model color
-                color = model_colors[model_idx] if model_idx < len(model_colors) else 'blue'
-                
-                # Select the model (skip for baseline - it's already there)
                 if model_name != 'baseline':
-                    self.params_table.select_model(row_idx, model_name)
-                    # Set the color (only for non-baseline rows)
-                    self.params_table.select_color(row_idx, color)
+                    self.params_table.select_model(model_idx, model_name)
+                    color = model_colors[model_idx] if model_idx < len(model_colors) else 'blue'
+                    self.params_table.select_color(model_idx, color)
+
+            # Copy parameter values and restore links captured at fit time when
+            # available.
+            # Expression texts are written in a second pass after all structure
+            # edits to prevent any internal index-shifting from touching them.
+            param_index = 0
+            pending_expression_updates = []  # (model_idx, col, text)
+            for model_idx, model_name in enumerate(model_list):
                 
                 # Get number of parameters for this model
                 num_params = len(parameter_names[model_idx]) if model_idx < len(parameter_names) else 0
@@ -1402,19 +1420,24 @@ class PhysicsApp(QMainWindow):
                     
                     # Get widgets (positional layout contract documented in
                     # model_io's module docstring)
-                    row_widget = self.params_table.row_widgets[row_idx]
+                    row_widget = self.params_table.row_widgets[model_idx]
                     param_widget = row_widget.layout().itemAt(col + 1).widget()
                     value_input = param_widget.layout().itemAt(1).widget()
                     top_layout = param_widget.layout().itemAt(0).layout()
                     fix_cb = top_layout.itemAt(1).widget()
                     
-                    # Check if this is an expression column for Distr/Corr/Expression
+                    # Expression placeholders carry no numeric value.
                     if model_name in ['Distr', 'Corr', 'Expression'] and col == num_params - 1:
-                        # Preserve the expression text (already set by select_model/auto_fill_params)
-                        # Use stored expression_texts from results if available
-                        if hasattr(self.results_table, 'expression_texts') and model_idx in self.results_table.expression_texts:
-                            value_input.setText(self.results_table.expression_texts[model_idx])
-                        # Skip numeric value for expression placeholder
+                        expr_text = expression_texts.get(model_idx)
+                        if expr_text is not None:
+                            pending_expression_updates.append((model_idx, col, expr_text))
+                        param_index += 1
+                        continue
+
+                    # Restore links captured at fit time, if available and model
+                    # layout index is present in the saved snapshot.
+                    if param_index in result_links:
+                        value_input.setText(result_links[param_index])
                         param_index += 1
                         continue
                     
@@ -1431,6 +1454,14 @@ class PhysicsApp(QMainWindow):
                             fix_cb.setChecked(False)
                     
                     param_index += 1
+
+            # Write equations last, after any model insert/delete operations,
+            # so p[...] indices stay exactly as they are in the result table.
+            for model_idx, col, expr_text in pending_expression_updates:
+                row_widget = self.params_table.row_widgets[model_idx]
+                param_widget = row_widget.layout().itemAt(col + 1).widget()
+                value_input = param_widget.layout().itemAt(1).widget()
+                value_input.setText(expr_text)
             
             self.set_status("Result copied to model", "green")
             
@@ -2555,6 +2586,9 @@ class PhysicsApp(QMainWindow):
                 self.inprogress = False
                 return
 
+            # Snapshot current parameter links (=[X,Y]) at fit start.
+            self._fit_links_snapshot = self.params_table.get_link_snapshot()
+
             spectrum_file = spectrum_files[0]
             self.set_status(f"Fitting spectrum: {os.path.basename(spectrum_file)}", "cyan")
 
@@ -2584,6 +2618,10 @@ class PhysicsApp(QMainWindow):
         
         # Initialize sequence_params for result mode (None for initial mode)
         self.sequence_params = None
+
+        # Snapshot links once at batch start so UI edits during fitting do not
+        # leak into the stored result-table metadata.
+        self._fit_links_snapshot = self.params_table.get_link_snapshot()
         
         # Calculate backgrounds for all spectra upfront
         self.set_status(f"Calculating backgrounds for {len(spectrum_files)} spectra...", "cyan")
@@ -2630,6 +2668,7 @@ class PhysicsApp(QMainWindow):
                 fix,
                 expression_texts
             )
+            self.results_table.current_links = dict(self._fit_links_snapshot)
             self.results_table.current_chi2 = chi2
             
             # Plot the result
@@ -2888,6 +2927,7 @@ class PhysicsApp(QMainWindow):
                 fix,
                 expression_texts
             )
+            self.results_table.current_links = dict(self._fit_links_snapshot)
             
             # Store chi2 for saving
             self.results_table.current_chi2 = chi2

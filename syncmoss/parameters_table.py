@@ -1465,3 +1465,38 @@ class ParametersTable(QWidget):
                 param_names_list.append(param_names)
 
         return param_names_list
+
+    def get_link_snapshot(self):
+        """Snapshot parameter-link fields (``=[X,Y]``) keyed by flat parameter index.
+
+        The flat index matches the parameter traversal used by read_model() and
+        the results table (baseline first, then each active model row in table
+        order, including special-model placeholder slots).
+
+        Returns:
+            dict[int, str]: ``{flat_param_index: '=[X,Y]'}`` for link fields.
+        """
+        links = {}
+        param_index = 0
+
+        for row_idx, row_widget in enumerate(self.row_widgets):
+            start_widget = row_widget.layout().itemAt(0).widget()
+            model_btn = start_widget.layout().itemAt(1).widget()
+            model_name = model_btn.text()
+            if row_idx > 0 and model_name == 'None':
+                continue
+
+            if row_idx == 0:
+                num_params = number_of_baseline_parameters
+            else:
+                num_params = mod_len_def(model_name, include_special=True)
+
+            for col in range(num_params):
+                param_widget = row_widget.layout().itemAt(col + 1).widget()
+                value_input = param_widget.layout().itemAt(1).widget()
+                text = value_input.text().strip()
+                if text.startswith('=['):
+                    links[param_index] = text
+                param_index += 1
+
+        return links

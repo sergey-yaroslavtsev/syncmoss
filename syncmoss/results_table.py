@@ -99,6 +99,7 @@ class ResultsTable(QWidget):
         self.current_model_colors = []
         self.current_parameter_names = []
         self.current_chi2 = 0.0
+        self.current_links = {}
         
         # Initialize layout
         layout = QVBoxLayout(self)
