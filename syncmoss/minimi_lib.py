@@ -80,14 +80,19 @@ from numba import njit
 # explicitly as ``np.<func>``.
 
 
-def _eval_expr(expr, p):
+def _eval_expr(expr, p, X=None):
     """Evaluate a user parameter-linking expression string (the ``Expr`` feature).
 
     ``p`` is the current parameter array, so the string may reference ``p[i]``;
     bare numpy functions (``sqrt``, ``exp``, ...) resolve through this module's
-    globals (the imports above). The expression text comes from the user, so this
-    is the one place where bare (non-``np.``) numpy names are intended."""
-    return eval(expr, globals(), {"p": p})
+    globals (the imports above). ``X`` is optional and is used by the
+    distribution/correlation plotter, where expressions may also reference the
+    distribution axis. The expression text comes from the user, so this is the
+    one place where bare (non-``np.``) numpy names are intended."""
+    locals_dict = {"p": p}
+    if X is not None:
+        locals_dict["X"] = X
+    return eval(expr, globals(), locals_dict)
 
 
 # =============================================================================

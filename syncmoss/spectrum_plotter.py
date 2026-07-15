@@ -3,6 +3,7 @@ import os
 import numpy as np
 from syncmoss.constants import model_colors, number_of_baseline_parameters
 from syncmoss.model_io import mod_len_def
+from syncmoss.minimi_lib import _eval_expr
 
 # Default theme (original dark mode colors)
 _DEFAULT_THEME = {
@@ -1112,9 +1113,9 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
         # Evaluate distribution expression
         try:
             X = X_discrete
-            Y_discrete = eval(Distri[Di_idx]) + 0 * X
+            Y_discrete = _eval_expr(Distri[Di_idx], p, X) + 0 * X
             X = X_smooth
-            Y_smooth = eval(Distri[Di_idx]) + 0 * X
+            Y_smooth = _eval_expr(Distri[Di_idx], p, X) + 0 * X
         except Exception as e:
             print(f"Error evaluating distribution expression: {e}")
             Di_idx += 1
@@ -1153,11 +1154,11 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
                 
                 try:
                     X = X_smooth
-                    YY_smooth = eval(Cor[Co_idx + Co_n]) + 0 * X
+                    YY_smooth = _eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
                     ax_corr.plot(YY_smooth, Y_smooth_norm, color='red', linewidth=1.5)
                     
                     X = X_discrete
-                    YY_discrete = eval(Cor[Co_idx + Co_n]) + 0 * X
+                    YY_discrete = _eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
                     ax_corr.plot(YY_discrete, Y_discrete_norm, marker='H', linestyle='', color=corr_dot_color, markersize=6)
                 except Exception as e:
                     print(f"Error evaluating correlation expression: {e}")
