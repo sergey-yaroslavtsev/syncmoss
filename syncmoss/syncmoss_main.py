@@ -356,7 +356,7 @@ class SequentialFittingThread(QThread):
 
 class ShowModelThread(QThread):
     """Thread for running show model calculation without blocking the UI"""
-    finished = Signal(object, object, object, object, object, object, object, object, object, str, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note, hires_diff
+    finished = Signal(object, object, object, object, object, object, object, object, object, str, object, object, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub
     error = Signal(str)
     
     def __init__(self, main_window, path_list, pool, velocity_range=15.0):
@@ -547,12 +547,12 @@ class ShowModelThread(QThread):
                 if no_spectrum_mode:
                     # Keep sectioned arrays for dedicated model-only plotting;
                     # the hires diff stays a per-section list to match.
-                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections)
+                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections, Distri_sub, Cor_sub)
                 else:
                     # Concatenate fitted spectrum and hires diff (plot splits them back)
                     SPC_f = np.concatenate(SPC_f_sections)
                     hires_diff = np.concatenate(hires_diff_sections) if hires_diff_sections else None
-                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff)
+                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub)
             else:
                 # Single spectrum case: full spectrum + convergence check
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
@@ -567,7 +567,7 @@ class ShowModelThread(QThread):
                     A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol)
 
                 # Emit with single list of subspectra
-                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff)
+                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub)
 
         except Exception as e:
             traceback.print_exc()
@@ -1796,9 +1796,14 @@ class PhysicsApp(QMainWindow):
         self.show_model_thread.error.connect(self.on_show_model_error)
         self.show_model_thread.start()
     
-    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None):
+    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None, Distri=None, Cor=None):
         """Handle show model completion"""
         try:
+            # Show-model is not a fit result: wipe stale fit table content so
+            # result-row clicks cannot affect the current model plot.
+            self.results_table.clear_table()
+            self.results_table.current_parameters = None
+
             # If we were showing a distribution, switch back to spectrum view
             if self._showing_distribution:
                 self._showing_distribution = False
@@ -1806,36 +1811,34 @@ class PhysicsApp(QMainWindow):
 
             # Get current colors from table (fresh read to handle delete/insert)
             current_colors = self.params_table.get_current_colors()
+
+            flat_p = p if not has_nbaseline else np.concatenate(p)
             
             # Store FS_pos for toggle functionality
             self.current_FS_pos = FS_pos
-            
-            # Plot model - use different function for synthetic/no-spectrum case
-            if B is None:
-                position_artists = plot_model_without_spectrum(
-                    self.figure, A, SPC_f, FS, FS_pos, p, current_colors,
-                    gridcolor=self.gridcolor, theme=self._theme, model=model,
-                    has_nbaseline=has_nbaseline, hires_diff=hires_diff
-                )
-            elif has_nbaseline:
-                # FS and FS_pos are already lists of lists (one list per spectrum section)
-                # p is already a list of parameter arrays (one per spectrum section)
-                position_artists = plot_model_with_nbaseline(self.figure, A, B, SPC_f, FS, FS_pos, p, model, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme, hires_diff=hires_diff)
-            else:
-                # FS and FS_pos are simple lists, p is a single array
-                position_artists = plot_model(self.figure, A, B, SPC_f, FS, FS_pos, p, current_colors, backgrounds, gridcolor=self.gridcolor, theme=self._theme, model=model, hires_diff=hires_diff)
-            
-            # Store position artists and enable toggle button
-            self.position_artists = position_artists if position_artists else []
-            if self.position_artists:
-                self.toolbar.toggle_positions_action.setEnabled(True)
-                self.toolbar.toggle_positions_action.setChecked(True)
-            else:
-                self.toolbar.toggle_positions_action.setEnabled(False)
-            
-            self._update_legend_toggle()
-            self.canvas.draw()
-            self.toolbar.push_current()
+
+            # Store show-model data so the distribution view can be opened here too
+            self.last_plot_data = {
+                'A': A,
+                'B': B,
+                'SPC_f': SPC_f,
+                'FS': FS,
+                'FS_pos': FS_pos,
+                'p': flat_p,
+                'model_colors': current_colors,
+                'chi2': None,
+                'filepath': self.path_list[0] if self.path_list else None,
+                'is_simultaneous': has_nbaseline,
+                'is_show_model': True,
+                'has_nbaseline': has_nbaseline,
+                'backgrounds': backgrounds,
+                'z_order': None,
+                'model': model,
+                'Distri': Distri or [],
+                'Cor': Cor or [],
+            }
+
+            self._plot_show_model_data(self.last_plot_data)
             
             note_suffix = f"\n{instrumental_note}" if instrumental_note else ""
             self.set_status("Model displayed successfully" + note_suffix, "green")
@@ -1844,6 +1847,43 @@ class PhysicsApp(QMainWindow):
             self.set_status(f"Error plotting model: {e}", "red")
         finally:
             self.inprogress = False
+
+    def _plot_show_model_data(self, data):
+        """Render a show-model dataset and refresh canvas/toolbar state."""
+        current_colors = data.get('model_colors', self.params_table.get_current_colors())
+        if data['B'] is None:
+            position_artists = plot_model_without_spectrum(
+                self.figure, data['A'], data['SPC_f'], data['FS'], data['FS_pos'],
+                data['p'], current_colors, gridcolor=self.gridcolor,
+                theme=self._theme, model=data.get('model'),
+                has_nbaseline=data.get('has_nbaseline', False),
+                hires_diff=data.get('hires_diff')
+            )
+        elif data.get('has_nbaseline', False):
+            position_artists = plot_model_with_nbaseline(
+                self.figure, data['A'], data['B'], data['SPC_f'], data['FS'],
+                data['FS_pos'], data['p'], data.get('model', []), current_colors,
+                data.get('backgrounds'), gridcolor=self.gridcolor,
+                theme=self._theme, hires_diff=data.get('hires_diff')
+            )
+        else:
+            position_artists = plot_model(
+                self.figure, data['A'], data['B'], data['SPC_f'], data['FS'],
+                data['FS_pos'], data['p'], current_colors, data.get('backgrounds'),
+                gridcolor=self.gridcolor, theme=self._theme,
+                model=data.get('model'), hires_diff=data.get('hires_diff')
+            )
+
+        self.position_artists = position_artists if position_artists else []
+        if self.position_artists:
+            self.toolbar.toggle_positions_action.setEnabled(True)
+            self.toolbar.toggle_positions_action.setChecked(True)
+        else:
+            self.toolbar.toggle_positions_action.setEnabled(False)
+
+        self._update_legend_toggle()
+        self.canvas.draw()
+        self.toolbar.push_current()
     
     def on_show_model_error(self, error_msg):
         """Handle show model error"""
@@ -2302,6 +2342,10 @@ class PhysicsApp(QMainWindow):
         Works for both single and simultaneous fitting.
         """
         try:
+            if self.results_table.current_parameters is None:
+                self.set_status("No fitting results to reorder", "orange")
+                return
+
             # Check if we have plot data
             if self.last_plot_data is None:
                 self.set_status("No plot data available. Please fit spectrum first.", "orange")
@@ -2384,6 +2428,10 @@ class PhysicsApp(QMainWindow):
             self.SP_DI.setText('Distribution')
 
         data = self.last_plot_data
+
+        if data.get('is_show_model'):
+            self._plot_show_model_data(data)
+            return
         
         if data['is_simultaneous']:
             # Simultaneous fitting - multiple spectra
