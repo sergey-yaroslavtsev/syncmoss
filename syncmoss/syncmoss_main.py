@@ -1824,7 +1824,8 @@ class PhysicsApp(QMainWindow):
                 'SPC_f': SPC_f,
                 'FS': FS,
                 'FS_pos': FS_pos,
-                'p': flat_p,
+                'p': p,
+                'p_flat': flat_p,
                 'model_colors': current_colors,
                 'chi2': None,
                 'filepath': self.path_list[0] if self.path_list else None,
@@ -2486,9 +2487,10 @@ class PhysicsApp(QMainWindow):
                 
                 parameter_names = self.params_table.get_parameter_names()
                 gridcolor = self.gridcolor
+                p_for_distribution = data.get('p_flat', data['p'])
                 
                 success = plot_distribution(
-                    self.figure, model, data['p'], Distri, Cor,
+                    self.figure, model, p_for_distribution, Distri, Cor,
                     parameter_names, gridcolor=gridcolor,
                     model_colors=data.get('model_colors'), theme=self._theme
                 )
