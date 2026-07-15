@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
+"""Automatic velocity calibration of a Moessbauer drive from an alpha-Fe spectrum.
+
 @author: YAROSLAVTSEV S
 
 The MIT license follows:
@@ -24,766 +25,919 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+--------------------------------------------------------------------------
+
+WHY THIS MODULE IS COMPLICATED
+==============================
+The calibration is fully automatic: the user only points at a raw file of a
+standard alpha-Fe absorber. NOTHING is preselected -- not the file format, not
+the drive waveform (sinusoidal or triangular), not the velocity amplitude,
+direction or phase, not the impurity content of the reference foil. Every one
+of those unknowns is detected from the data itself, which is why the pipeline
+has many steps. The steps, in order (mirrored by the STEP banners in
+:func:`Calibration`):
+
+1.  **Fit function** -- build the transmission-integral model of the alpha-Fe
+    spectrum for the measurement mode: SMS (synchrotron source, ``VVV == 3``,
+    multi-line instrumental function ``INS``) or CMS (conventional source,
+    ``VVV == 1``, single Gaussian width ``GCMS``).
+2.  **Load** the raw counts; seven file formats are auto-detected by extension
+    (.mca/.cmca/.ws5/.w98/.moe/.m1/.mcs).
+3.  **Phase detection** -- the recording is not synchronised with the drive, so
+    the channel at which the velocity sweep starts is unknown. It is found by
+    sliding the two half-sweeps against each other until they mirror-match.
+4.  **Reference model** -- alpha-Fe sextet with the six known line velocities;
+    ``Vel_start`` orients the sweep (up-down vs down-up).
+5.  **Coarse search** -- the velocity amplitude is unknown, so every pair of
+    sextet lines is hypothetically assigned to the two deepest absorption
+    minima; each hypothesis fixes the drive amplitude/offset, a quick fit
+    scores it, and the best chi-square wins. Done with the sinusoidal drive
+    model always, and additionally with the triangular (linear) model for CMS;
+    the waveform is then chosen by chi-square (SMS drives are always
+    sinusoidal).
+6.  **Iterative refinement** (4 rounds) -- fit the spectrum on the current
+    velocity axis, predict the channel of each of the 12 line occurrences
+    (6 lines x 2 half-sweeps), refit the drive-curve parameters to those
+    (channel, velocity) pairs, rebuild the axis.
+7.  **Distortion fit** -- the source-absorber solid angle changes with the
+    drive position, adding a parabolic count modulation that differs between
+    the half-sweeps; it is fitted from their difference.
+8.  **Final global fit** -- drive parameters, parabolic distortion, absorber
+    intensities (and, for SMS, the impurity components: a second sextet and
+    the Be-window doublet from ``Be.txt``) are all refined together.
+9.  **Folding** -- each velocity is visited twice per period; the two visits
+    are averaged onto a single velocity axis. For SMS the multi-line
+    instrumental function also shifts the apparent line positions; the
+    computed ``INS_shift`` corrects that.
+10. **Output** -- diagnostic figure ``calibr.png`` (SMS), a summary printout,
+    and ``Calibration.dat`` (velocity/counts table consumed by the rest of
+    SYNCmoss); the folded arrays are returned to the GUI.
+
+Parameter-vector layouts used throughout (``nbp`` = number_of_baseline_parameters = 8):
+
+* Spectrum model ``p`` / ``p00`` / ``pCAL`` -- ``[0..nbp-1]`` baseline
+  (``[0]`` count rate of half-sweep 1, ``[4]`` count rate of half-sweep 2 for
+  CMS), then one polarized Sextet block of 14:
+  ``T(+0) d(+1) e(+2) H(+3) L(+4) G(+5) theta_k(+6) phi_h(+7) A(+8) A_m(+9)
+  a+(+10) a-(+11) GH(+12) I13(+13)``.
+  ``theta_k=90, phi_h=0, A=0`` make the polarized Sextet identical to the old
+  scalar one (isotropic powder); ``A_m=0`` is also a no-op since
+  ``theta_k=90 -> n_z=0`` kills the Faraday term.
+* Drive-curve parameters ``ps`` (3): sinusoidal ``[amplitude, phase(rad),
+  source shift]``; triangular ``[v at ch 0, v at last ch, v step/channel]``.
+* Final-fit vector ``ps1`` / ``pS``: ``[0..2]`` drive curve, ``[3]`` global
+  intensity scale, ``[4..6]`` parabola of half-sweep 1 (centre, curvature,
+  offset), ``[7..8]`` parabola of half-sweep 2 (centre, curvature),
+  ``[9]`` main sextet intensity, ``[10]`` texture parameter A, then
+  ``[11]`` impurity sextet intensity (SMS) or ``[11..12]`` the two baseline
+  count rates (CMS).
 """
 
-import numpy as np
-import syncmoss.minimi_lib as mi
-import syncmoss.models as m5
-import multiprocessing as mp
-import matplotlib.pyplot as plt
 import os
-import platform
 import re
 import time
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+import syncmoss.minimi_lib as mi
+import syncmoss.models as m5
 from syncmoss.constants import number_of_baseline_parameters
+
+# Effective absorber thickness multiplier used for the CMS transmission integral
+# (the SMS one is passed in as MulCo, fitted by the instrumental-function step).
 MulCoCMS = 0.28
 
-def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start = 1, GCMS = 0.1):
-    """Fit the velocity calibration of a standard absorber spectrum.
+# alpha-Fe sextet line positions in mm/s -- the absolute velocity references
+# that the whole calibration is anchored to.
+ALPHA_FE_LINE_VELOCITIES = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
 
-    Loads the calibration spectrum ``Cal_file`` from ``dir_path`` and fits it.
-    ``VVV`` selects the experimental method: ``VVV == 1`` is a conventional source
-    (CMS / MS mode) and ``VVV == 3`` a synchrotron source (SMS). ``JN`` / ``x0`` /
-    ``MulCo`` configure the transmission integral; ``pool`` is the shared pool.
+# Hyperfine field of alpha-Fe (Tesla) and the T -> (outer line splitting, mm/s)
+# conversion factor for 57Fe: 33.04 T / 3.101 = 10.655 mm/s between lines 1 and 6.
+ALPHA_FE_FIELD = 33.04
+TESLA_PER_MMS = 3.101
 
-    The instrumental function differs by method: SMS uses the multi-line ``INS``
-    array (``#@INSexp``/``#@INSint``); CMS uses a SINGLE Gaussian width ``GCMS``
-    (the GUI GCMS box), passed to the ``Met==1`` transmission exactly as the CMS
-    fit does (``INS = [GCMS]``, ``MulCoCMS``). ``INS`` is ignored for CMS.
 
-    Used by syncmoss_main.py (CalibrationThread) to build the channel->velocity scale.
+# ========================================================================= #
+#  Raw-file loading                                                         #
+# ========================================================================= #
+
+def _load_raw_counts(path):
+    """Read a raw calibration spectrum and return its counts as a 1-D float array.
+
+    The format is auto-detected from the file extension, because the user never
+    tells us which spectrometer produced the file:
+
+    * ``.mca`` / ``.cmca`` -- SPEC-style text: counts follow an ``@A`` marker,
+      possibly wrapped over several lines, terminated by a ``#`` line.
+      ``.cmca`` is a circular buffer whose first/last channels may need
+      averaging; an odd trailing channel is dropped so the spectrum can be
+      split into two equal half-sweeps.
+    * ``.ws5`` / ``.w98`` -- WissEl text, one count per line (``#``/``<``
+      comment lines skipped).
+    * ``.moe`` -- like WissEl but header lines containing a ``.`` are skipped
+      (counts are integers).
+    * ``.m1`` -- multi-column text; counts are in column 5, first data row is
+      a header and skipped.
+    * ``.mcs`` / ``.Mcs`` -- binary: 256-byte header then uint32 counts.
+
+    Raises ValueError for an unrecognised extension.
+    """
+    path = str(path)
+    is_mca = path[-4:] == '.mca' or path[-5:] == '.cmca'
+    is_text_or_bin = (path[-4:] in ('.ws5', '.w98', '.moe', '.mcs', '.Mcs')
+                      or path[-3:] == '.m1')
+
+    if is_mca:
+        n_lines = len(open(path, 'r').readlines())
+        with open(path, 'r') as f:
+            blocks = []
+            n = 0          # index of the data block being collected
+            k = 0          # number of '@A' markers seen so far
+            for _ in range(0, n_lines):
+                for line in f:
+                    if line.startswith("@A"):
+                        k += 1
+                    if k > n and line.startswith("@A"):
+                        blocks.append(re.findall(r'[\d.]+', line[2:]))
+                    if k > n and line.startswith("#"):
+                        break
+                    if k > n and line.startswith("@A") == 0:
+                        blocks[n].extend(re.findall(r'[\d.]+', line[0:]))
+                n += 1
+        if path[-5:] == '.cmca':
+            # Circular buffer: if recording stopped mid-cycle one end channel is
+            # empty; average the two ends. (NOTE: kept verbatim from the original
+            # code -- the entries are still strings here, so the ``== 0`` tests
+            # never fire; do not "fix" without validating against real .cmca data.)
+            if ((blocks[0][-1] == 0 and blocks[0][0] != 0)
+                    or (blocks[0][0] == 0 and blocks[0][-1] != 0)):
+                end_avg = (blocks[0][-1] + blocks[0][0]) / 2
+                blocks[0][-1] = end_avg
+                blocks[0][0] = end_avg
+        if len(blocks[0]) % 2 == 1:
+            blocks[0] = blocks[0][:-1]
+        return np.array(blocks, dtype=float)[0]
+
+    if is_text_or_bin:
+        if path[-4:] == '.mcs' or path[-4:] == '.Mcs':
+            with open(path, mode='rb') as f:
+                f.read(256)  # skip the fixed-size binary header
+                counts = np.fromfile(f, dtype=np.uint32)
+            return np.array([counts], dtype=float)[0]
+
+        with open(path, 'r') as f:
+            values = []
+            k = 0
+            lines = (line.rstrip() for line in f)
+            lines = (line for line in lines if line)          # skip blank lines
+            for line in lines:
+                if line.startswith('#') or line.startswith('<'):
+                    continue                                   # column labels / headers
+                if path[-3:] == '.m1':
+                    while '  ' in line:
+                        line = line.replace('  ', ' ')
+                    column = line.split(' ')
+                    if k > 0:                                  # first data row is a header
+                        values.append(float(column[4]))
+                    k += 1
+                else:
+                    column = line.split()
+                    # .moe: header lines contain floats (with a '.'), counts are ints
+                    if path[-4:] != '.moe' or not ('.' in str(column[0])):
+                        values.append(float(column[0]))
+                k += 1
+        return np.array([values], dtype=float)[0]
+
+    raise ValueError(
+        f"unsupported calibration file type: {path!r} "
+        "(expected .mca, .cmca, .ws5, .w98, .moe, .m1 or .mcs)")
+
+
+# ========================================================================= #
+#  Geometry helpers (pure functions)                                        #
+# ========================================================================= #
+
+def _detect_phase_offset(half1, half2):
+    """Find the phase offset (in channels of the full spectrum) between the
+    velocity drive and the recording.
+
+    The two half-sweeps traverse the same velocities in opposite directions,
+    so with zero phase ``half1`` equals ``half2`` reversed. The recording,
+    however, starts at an arbitrary point of the drive period; this slides the
+    halves against each other (both directions) and takes the shift with the
+    best mirror match (minimal mean absolute difference). The result seeds the
+    drive-curve phase in the coarse search -- without it the line-position
+    hypotheses of step 5 would systematically miss.
+    """
+    best = np.sum(np.abs(half1 - half2[::-1])) / len(half1)
+    phase = 0
+    for i in range(1, int(len(half1) / 2)):
+        trial = np.sum(np.abs(half1[i:] - half2[i:][::-1])) / len(half1[i:])
+        if trial <= best:
+            best = trial
+            phase = -i
+    if phase == 0:
+        for i in range(1, int(len(half1) / 2)):
+            trial = np.sum(np.abs(half1[:-i] - half2[:-i][::-1])) / len(half1[:-i])
+            if trial <= best:
+                best = trial
+                phase = i
+    return -phase * 2
+
+
+def _deepest_line_channels(counts):
+    """Channels of the two deepest absorption minima in the first half-sweep.
+
+    The coarse search (step 5) needs two anchor points to hypothesise a drive
+    amplitude. The deepest minima of the first and second quarter of the
+    spectrum are (for alpha-Fe) two of the six sextet lines -- which two is
+    unknown, hence the pair loop in the caller. If the same minimal count
+    occurs in several channels the first occurrence inside the quarter is used.
+    """
+    quarter = int(len(counts) / 4)
+    ch1_candidates = np.where(counts == min(counts[:quarter]))[0]
+    ch_min1 = int(ch1_candidates[-1])
+    for c in ch1_candidates:
+        if c < quarter:
+            ch_min1 = int(c)
+            break
+    ch2_candidates = np.where(counts == min(counts[quarter:2 * quarter]))[0]
+    ch_min2 = int(ch2_candidates[-1])
+    for c in ch2_candidates:
+        if quarter <= c < 2 * quarter:
+            ch_min2 = int(c)
+            break
+    return ch_min1, ch_min2
+
+
+def _parabola(x, p):
+    """``p[1]*(p[0]-x)**2 + p[2]`` -- the solid-angle count distortion model."""
+    return p[1] * (p[0] - x) ** 2 + p[2]
+
+
+def _subtract_distortion(counts, channels, pS):
+    """Remove the fitted parabolic distortion from the raw counts.
+
+    Each half-sweep has its own parabola (``pS[4..6]`` and ``pS[7..8]``, the
+    second one sharing no offset); used for the diagnostic plot only.
+    """
+    half = int(len(channels) / 2)
+    flat = np.array([float(0)] * len(channels))
+    flat[:half] = counts[:half] - pS[5] * (channels[:half] - pS[4]) ** 2 - pS[6]
+    flat[half:] = counts[half:] - pS[8] * (channels[half:] - pS[7]) ** 2
+    return flat
+
+
+# ========================================================================= #
+#  Folding the two half-sweeps onto one velocity axis                       #
+# ========================================================================= #
+
+def _fold_sinusoidal(v_axis, counts, fit_curve, source_shift):
+    """Fold a sinusoidal-drive spectrum: average the two visits of each velocity.
+
+    A sinusoidal sweep turns around inside the channel range, so the fold
+    points (velocity extrema) generally do NOT sit exactly at the ends/middle
+    of the spectrum. ``n1``/``n2`` locate the matching turnaround channels
+    (via the channel closest to the source velocity ``source_shift`` and its
+    mirror in the second half); the spectrum then splits into three segments
+    (before n1 / after n2 / between), each folded onto itself.
+
+    Returns ``(v_folded, data_folded, fit_folded, fold_residual, n1, n2)``
+    where ``fold_residual`` (difference of the two visits) should be pure
+    noise if the calibration is right -- it is plotted as a diagnostic.
+    """
+    n = len(v_axis)
+    half = int(n / 2)
+    min1 = np.abs(v_axis[:half] - source_shift).argmin()
+    min2 = np.abs(v_axis[half:] - v_axis[min1]).argmin() + half
+
+    if min1 == (n - 1 - min2):
+        n1, n2 = 0, n - 1
+    elif min1 > (n - 1 - min2):
+        n1, n2 = min1 - (n - min2) + 1, n - 1
+    else:
+        n1, n2 = 0, min2 + min1
+
+    # Segment before n1 folded onto itself
+    x_1h = (v_axis[:int(n1 / 2)] + v_axis[n1 - int(n1 / 2):n1][::-1]) / 2
+    spc_1h = counts[:int(n1 / 2)] + counts[n1 - int(n1 / 2):n1][::-1]
+    fit_1h = fit_curve[:int(n1 / 2)] + fit_curve[n1 - int(n1 / 2):n1][::-1]
+    delt_1h = counts[:int(n1 / 2)] - counts[n1 - int(n1 / 2):n1][::-1]
+
+    # Segment after n2 folded onto itself
+    x_2h = (v_axis[n2 + 1:n2 + int((n - 1 - n2) / 2) + 1][::-1]
+            + v_axis[n - int((n - 1 - n2) / 2):n]) / 2
+    spc_2h = (counts[n2 + 1:n2 + int((n - 1 - n2) / 2) + 1][::-1]
+              + counts[n - int((n - 1 - n2) / 2):n])
+    fit_2h = (fit_curve[n2 + 1:n2 + int((n - 1 - n2) / 2) + 1][::-1]
+              + fit_curve[n - int((n - 1 - n2) / 2):n])
+    delt_2h = (counts[n2 + 1:n2 + int((n - 1 - n2) / 2) + 1][::-1]
+               - counts[n - int((n - 1 - n2) / 2):n])
+
+    # Central segment n1..n2 folded onto itself
+    x_3h = (v_axis[n1:n1 + int((n2 - n1 + 1) / 2)]
+            + v_axis[n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]) / 2
+    spc_3h = (counts[n1:n1 + int((n2 - n1 + 1) / 2)]
+              + counts[n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1])
+    fit_3h = (fit_curve[n1:n1 + int((n2 - n1 + 1) / 2)]
+              + fit_curve[n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1])
+    delt_3h = (counts[n1:n1 + int((n2 - n1 + 1) / 2)]
+               - counts[n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1])
+
+    v_folded = np.concatenate((np.concatenate((x_1h, x_2h)), x_3h))
+    data_folded = np.concatenate((np.concatenate((spc_1h, spc_2h)), spc_3h))
+    fit_folded = np.concatenate((np.concatenate((fit_1h, fit_2h)), fit_3h))
+    fold_residual = np.concatenate((np.concatenate((delt_1h, delt_2h)), delt_3h))
+    return v_folded, data_folded, fit_folded, fold_residual, n1, n2
+
+
+def _fold_triangular(v_axis, counts, fit_curve, pS):
+    """Fold a triangular-drive spectrum.
+
+    The two linear ramps may not reach the same extreme velocity (``pS[0]`` vs
+    ``pS[1]``); the channels outside the common velocity range are discarded
+    (``n1``/``n2`` mark the usable window) and the remaining pairs are averaged
+    symmetrically from the ends inward.
+
+    Returns ``(v_folded, data_folded, fit_folded, fold_residual, n1, n2)``.
+    """
+    n = len(v_axis)
+    half = int(n / 2)
+    if pS[0] * pS[2] == pS[1] * pS[2]:
+        min1, min2 = 0, n - 1
+    elif pS[0] * pS[2] > pS[1] * pS[2]:
+        min1 = np.abs(v_axis[:half] - pS[1]).argmin()
+        min2 = n - 1
+    else:
+        min1 = 0
+        min2 = np.abs(v_axis[half:] - pS[0]).argmin() + half
+    n1, n2 = min1, min2
+    n_cut = 2 * (n1 + (n - 1 - n2))          # channels dropped from both ends
+
+    # int() also swallows a possibly odd number of remaining points.
+    n_fold = int((n - n_cut) / 2)
+    i = np.arange(n_fold)
+    v_folded = (v_axis[n1 + i] + v_axis[n2 - i]) / 2
+    data_folded = counts[n1 + i] + counts[n2 - i]
+    fit_folded = fit_curve[n1 + i] + fit_curve[n2 - i]
+    fold_residual = counts[n1 + i] - counts[n2 - i]
+    return v_folded, data_folded, fit_folded, fold_residual, n1, n2
+
+
+# ========================================================================= #
+#  Output                                                                   #
+# ========================================================================= #
+
+def _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded):
+    """Write ``Calibration.dat``: the folded velocity/counts table.
+
+    The header line records the drive waveform (``sin``/``lin``) and the fold
+    window ``n1 n2`` so that measurement spectra recorded with the same drive
+    can be folded identically (see spectrum_io.load_spectrum).
+    """
+    rpath = os.path.join(str(dir_path), 'Calibration.dat')
+    with open(rpath, "w") as f:
+        f.write(str('#') + '\t' + str('lin ') * (method == 1)
+                + str('sin ') * (method == 0)
+                + '\t' + str(n1) + '\t' + str(n2) + '\n')
+        for i in range(0, int(len(v_folded))):
+            f.write(str(v_folded[i]) + '\t' + str(data_folded[i]) + '\n')
+        f.write('\n')
+
+
+def _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve, flat_counts,
+                              v_axis, v_folded, data_folded, fold_residual,
+                              pS, baseline, method, n1, n2):
+    """Save ``calibr.png``: raw data + fit vs channel, folded halves vs velocity,
+    the fold residual, and the key numbers (amplitude, distortion, impurity)."""
+    fig, ax = plt.subplots(dpi=300)
+    plt.plot(channels, counts, 'm')
+    plt.plot(channels, final_curve, 'b')
+    plt.plot(channels, counts - final_curve + 0.9 * min(counts), 'lime')
+    offset = max(counts) - min(flat_counts) + 10 * np.sqrt(max(counts))
+    half = int(len(channels) / 2)
+    plt.plot(channels[:half] * 2, (counts + offset)[:half][::-1],
+             'r', linestyle='None', marker='o', markersize=2)
+    plt.plot(channels[:half] * 2, (counts + offset)[half:],
+             'yellow', linestyle='None', marker='o', markersize=2)
+    sax = ax.twiny()
+    ax.get_yaxis().set_ticks([])
+    ax.set_xlabel('channel', color='m')
+    sax.set_xlabel('Velocity, mm/s', color='r')
+    half_f = int(len(flat_counts) / 2)
+    sax.plot(v_axis[:half_f], (flat_counts + 2 * offset)[:half_f],
+             'r', linestyle='None', marker='o', markersize=2)
+    sax.plot(v_axis[half_f:], (flat_counts + 2 * offset)[half_f:],
+             'yellow', linestyle='None', marker='o', markersize=2)
+    sax.plot(v_folded, fold_residual + 4 * offset, 'lime')
+    sax.plot(v_folded, data_folded / 2 + 2 * offset, 'm', marker='o', markersize=1)
+
+    ax.text(0, max(counts) + 4 * np.sqrt(max(counts)),
+            'Va = %.3f mm/s' % pS[0], color='w', fontsize=8)
+    ax.text(len(channels) / 2, max(counts) + 4 * np.sqrt(max(counts)),
+            'ΔN0 = %.1f ' % (abs(pS[6]) / (baseline + pS[6] * (1 + np.sign(pS[6])) / 2) * 100) + '%',
+            color='w', fontsize=8, horizontalalignment='center')
+    ax.text(len(channels), max(counts) + 4 * np.sqrt(max(counts)),
+            'impurity %.1f ' % (pS[11] / (pS[9] + pS[11]) * 100) + '%',
+            color='w', fontsize=8, horizontalalignment='right')
+    ax.text(len(channels) / 2, max(counts) + 10 * np.sqrt(max(counts)),
+            str('lin ') * (method == 1) + str('sin ') * (method == 0)
+            + str(n1) + str(' ') + str(n2),
+            color='r', fontsize=8, horizontalalignment='center')
+
+    fig.savefig(os.path.join(dir_path, 'calibr.png'), bbox_inches='tight')
+    plt.close()
+
+
+# ========================================================================= #
+#  Main entry point                                                         #
+# ========================================================================= #
+
+def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, GCMS=0.1):
+    """Fit the velocity calibration of a standard alpha-Fe absorber spectrum.
+
+    Loads the calibration spectrum ``Cal_file``, auto-detects everything about
+    the measurement (see the module docstring for the step-by-step pipeline)
+    and writes ``Calibration.dat`` + ``calibr.png`` into ``dir_path``.
+
+    Used by syncmoss_main.py (CalibrationThread) to build the
+    channel -> velocity scale.
+
+    Args:
+        dir_path: Writable directory holding ``Be.txt`` and receiving
+            ``Calibration.dat`` / ``calibr.png``.
+        Cal_file: Path of the raw calibration spectrum (format by extension).
+        pool: Shared multiprocessing pool for the transmission integral.
+        VVV: Experimental method -- ``1`` conventional source (CMS / MS mode),
+            ``3`` synchrotron source (SMS).
+        INS: SMS multi-line instrumental function (``#@INSexp``); ignored for
+            CMS, which uses a single Gaussian of width ``GCMS`` instead.
+        JN: Number of integration nodes for the transmission integral.
+        x0: SMS instrumental-function shift (``#@INSint``); unused for CMS.
+        MulCo: SMS effective-thickness multiplier (``#@INSint``); CMS uses the
+            module constant ``MulCoCMS``.
+        Vel_start: Sweep orientation: ``1`` velocity starts at its maximum
+            (down-up), ``0`` at its minimum (up-down).
+        GCMS: Gaussian instrumental linewidth for CMS (the GUI GCMS box).
 
     Returns:
-        tuple ``(A, B, C)`` - the calibration arrays consumed by the caller.
+        tuple ``(v_folded, data_folded, fit_folded)`` -- the folded velocity
+        axis (mm/s), the folded experimental counts and the folded fit curve.
     """
-    print('VVV = ', VVV)
+    print('experimental method VVV =', VVV)
+    nbp = number_of_baseline_parameters
+    counts = _load_raw_counts(Cal_file)
+    n_ch = len(counts)
+    channels = np.linspace(0, n_ch - 1, n_ch)          # 0, 1, ..., n_ch-1 as floats
+    half1 = counts[:int(n_ch / 2)]
+    half2 = counts[int(n_ch / 2):]
+    if len(half2) > len(half1):                        # odd channel count
+        half2 = half2[1:]
+
+    # --------------------------------------------------------------------- #
+    # STEP 1: transmission-integral fit function for the measurement mode.  #
+    # The closures below deliberately LATE-BIND ``model``, ``Norm`` and     #
+    # ``JN``: those are reassigned further down (final model with impurity  #
+    # components, finer integration grid) and ``fit_func`` must pick the    #
+    # current values up at call time.                                       #
+    # --------------------------------------------------------------------- #
+    model = ['Sextet']
+    pNorm = np.array([float(0)] * nbp)
+    pNorm[0] = 1
     if VVV == 1:
-        Li_Lo = 1
         # CMS instrumental function is a single Gaussian width (GCMS), NOT the
         # multi-line SMS INS array; Met==1 expects exactly one width.
         INS = np.array([float(GCMS)])
-        pNorm = np.array([float(0)] * number_of_baseline_parameters)
-        pNorm[0] = 1
-        Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, 0.0, MulCoCMS, INS, [0], [0], Met=1)[0]
-        def func(x, p):
-            return m5.TI(x, p, model, JN, pool, 0.0, MulCoCMS, INS, [], [], Met=1, Norm=Norm)
-            # return m5.PV(x, p, model, pool)
-        INS_shift = 0
+        Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, 0.0,
+                     MulCoCMS, INS, [0], [0], Met=1)[0]
 
-    if VVV == 3:
-        Li_Lo = 2
-        pNorm = np.array([float(0)] * number_of_baseline_parameters)
-        pNorm[0] = 1
-        # JN = 32
-        Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, x0, MulCo, INS, [0], [0])[0]
-        def func(x, p):
+        def fit_func(x, p):
+            return m5.TI(x, p, model, JN, pool, 0.0, MulCoCMS, INS, [], [],
+                         Met=1, Norm=Norm)
+
+        INS_shift = 0
+    elif VVV == 3:
+        Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, x0,
+                     MulCo, INS, [0], [0])[0]
+
+        def fit_func(x, p):
             return m5.TI(x, p, model, JN, pool, x0, MulCo, INS, [], [], Norm=Norm)
+
+        # The multi-line instrumental function displaces the apparent line
+        # positions by the intensity-weighted sum of the squared line shifts;
+        # the folded velocity axis is corrected by this at the very end.
         INS_shift = 0
-        for i in range (0, int((len(INS))/3)):
-            INS_shift += INS[i*3 + 1] * INS[i*3 + 2]**2
+        for i in range(0, int(len(INS) / 3)):
+            INS_shift += INS[i * 3 + 1] * INS[i * 3 + 2] ** 2
+    else:
+        raise ValueError(f"unknown experimental method VVV={VVV!r} (expected 1 or 3)")
 
-
-    def lin_cal(x, p):
-        H1, H2 = [], []
-        for i in range(0, len(x)):
-            if x[i] <= int(len(xn2)/2):
-                H1.append(p[0] - p[2]*x[i])
-            else:
-                H2.append(p[1] - p[2]*(len(xn2)-1-x[i]))
-        H1 = np.array(H1)
-        H2 = np.array(H2)
-        # print(H1, H2)
-        H = np.concatenate((H1, H2), axis=0)
-        # H1 = p[0] - p[2]*x[:int(len(x)/2)]
-        # H2 = p[1] - p[2]*x[:int(len(x)/2)]
-        # H = np.concatenate((H2, H1[::-1]),axis=0)
-        return H
-    def lin_cal_fin2(x, p):
-        # pCAL2 = pCAL
-        # pCAL2[number_of_baseline_parameters] = p[9]
-        # pCAL2[number_of_baseline_parameters + 11] = p[10]
-        # H1 = p[0] - p[2] * x[:int(len(x) / 2)]
-        # H2 = p[1] - p[2] * x[:int(len(x) / 2)]
-        # Hx1 = np.concatenate((np.array([float(1)]*len(H1)),np.array([float(0)]*len(H2))), axis=0)
-        # Hx2 = np.concatenate((np.array([float(0)]*len(H1)),np.array([float(1)]*len(H2))), axis=0)
-        # Hx = np.concatenate((H2, H1[::-1]), axis=0)
-        # H = p[3]*func(Hx, pCAL2) + (p[5]*(p[4]-xn2)**2 + p[6])*Hx2 + (p[8]*(p[7]-xn2)**2)*Hx1
-
-        pCAL2 = pCAL
-        pCAL2[number_of_baseline_parameters] = p[9] # intensity of main (only) component
-        # pCAL2[12] = p[10] # asymmetry parameter
-        H1, H2 = [], []
-        for i in range(0, len(x)):
-            if x[i] <= int(len(xn2) / 2):
-                H1.append(p[0] - p[2] * x[i])
-            else:
-                H2.append(p[1] - p[2] * (len(xn2) - 1 - x[i]))
-        H1 = np.array(H1)
-        H2 = np.array(H2)
-        Hx1 = np.concatenate((np.array([float(1)] * len(H1)), np.array([float(0)] * len(H2))), axis=0)
-        Hx2 = np.concatenate((np.array([float(0)] * len(H1)), np.array([float(1)] * len(H2))), axis=0)
-        Hx = np.concatenate((H1, H2), axis=0)
-        if min(Hx) > -2.95 and max(Hx) < 2.95:
-            p[10] = 0.0 # tiny velocity range: texture undefined -> isotropic (A=0)
-        # p[10] is the Sextet texture order parameter A (index 8 in the polarized
-        # layout: T,d,e,H,L,G,theta_k,phi_h,A,...); A=0 is the isotropic powder.
-        pCAL2[number_of_baseline_parameters + 8] = p[10]  # texture order parameter A
-        pCAL2[0] = p[11]
-        if p[12] > p[11]*10:
-            p[12] = p[11]*10
-        pCAL2[4] = p[12] # * pCAL2[0]
-        H = func(Hx, pCAL2) + (p[5] * (p[4] - xn2) ** 2 + p[6]) * Hx1 + (p[8] * (p[7] - xn2) ** 2) * Hx2
-        # H = func(Hx, pCAL2) + (p[5] * (p[4] - xn2) ** 2 + p[6]) * np.sign(abs(Hx-Hx2)) + (p[8] * (p[7] - xn2) ** 2) * np.sign(abs(Hx-Hx1))
-        # H = p[3] * func(Hx, pCAL2) + (p[5] * (p[4] - xn2) ** 2 + p[6]) * Hx2 + (p[8] * (p[7] - xn2) ** 2) * Hx1
-
-        return H
+    # --------------------------------------------------------------------- #
+    # Drive-curve models (channel -> velocity) and the final-fit model.     #
+    #                                                                       #
+    # sin_cal / lin_cal map channel numbers to velocities for a sinusoidal  #
+    # resp. triangular drive. *_fin2 are the models of the FINAL global     #
+    # fit: raw counts as a function of channel = transmission integral on   #
+    # the drive curve + per-half-sweep parabolic distortion.                #
+    #                                                                       #
+    # WARNING (deliberate, load-bearing side effects):                      #
+    #   * ``pCAL2 = pCAL`` is an ALIAS -- the *_fin2 models write the       #
+    #     fitted intensities/texture into the shared ``pCAL`` array.        #
+    #   * They also clamp entries of the optimiser's own vector ``p`` in    #
+    #     place (texture reset for tiny velocity ranges, baseline-2 clamp), #
+    #     which steers minimi_hi away from unphysical regions.              #
+    # --------------------------------------------------------------------- #
 
     def sin_cal(x, p):
-        H = p[0] / np.pi * len(xn2) * np.sin(np.pi / len(xn2)) * np.cos(p[1] + np.pi / len(xn2) * (2 * x + 1)) + p[2]
-        return H
+        """Velocity at channel x for a sinusoidal drive.
+
+        p = [amplitude (mm/s), phase (rad), source shift (mm/s)]. The
+        len/pi*sin(pi/len) factor averages the sine over one channel width.
+        """
+        return (p[0] / np.pi * n_ch * np.sin(np.pi / n_ch)
+                * np.cos(p[1] + np.pi / n_ch * (2 * x + 1)) + p[2])
+
+    def lin_cal(x, p):
+        """Velocity at channel x for a triangular drive: two mirrored linear
+        ramps. p = [v at channel 0, v at the last channel, v step/channel].
+        """
+        return np.where(x <= int(n_ch / 2),
+                        p[0] - p[2] * x,
+                        p[1] - p[2] * (n_ch - 1 - x))
+
     def sin_cal_fin2(x, p):
-        pCAL2 = pCAL
-        pCAL2[number_of_baseline_parameters] = p[9] # intensity of main component
-
+        """Final-fit model for the sinusoidal drive (see ps1 layout in the
+        module docstring for the meaning of p)."""
+        pCAL2 = pCAL                                   # ALIAS: writes into pCAL
+        pCAL2[nbp] = p[9]                              # main sextet intensity
         if VVV == 3:
-            # second Sextet intensity: index nbp + 14 in the polarized layout
-            # (baseline 8 + first Sextet 14 -> second Sextet starts at nbp+14).
-            pCAL2[number_of_baseline_parameters + 14] = p[11] # intensity of impurity
-        Hx = p[0] / np.pi * len(xn2) * np.sin(np.pi / len(xn2)) * np.cos(p[1] + np.pi / len(xn2) * (2 * x + 1)) + p[2]
+            # second Sextet (impurity) intensity: baseline(8) + first
+            # Sextet(14) -> the second Sextet block starts at nbp+14.
+            pCAL2[nbp + 14] = p[11]
+        Hx = (p[0] / np.pi * n_ch * np.sin(np.pi / n_ch)
+              * np.cos(p[1] + np.pi / n_ch * (2 * x + 1)) + p[2])
         if min(Hx) > -2.95 and max(Hx) < 2.95:
-            p[10] = 0.0  # tiny velocity range: texture undefined -> isotropic (A=0)
-            # print('very small velocity range - texture could not be defined')
-        # p[10] is the Sextet texture order parameter A (index 8 in the layout).
-        pCAL2[number_of_baseline_parameters + 8] = p[10]  # texture order parameter A
+            p[10] = 0.0    # tiny velocity range: texture undefined -> isotropic
+        pCAL2[nbp + 8] = p[10]                         # texture order parameter A
         if VVV == 1:
-            pCAL2[0] = p[11]
+            pCAL2[0] = p[11]                           # baseline of half-sweep 1
             if p[12] > p[11] * 10:
-                p[12] = p[11] * 10
-            pCAL2[4] = p[12]  # * pCAL2[0]
-        Hx1 = np.concatenate((Hx[:int(len(x)/2)],Hx[:int(len(x)/2)]), axis = 0)
-        Hx2 = np.concatenate((Hx[int(len(x)/2):],Hx[int(len(x)/2):]), axis = 0)
-        H = p[3]*func(Hx, pCAL2) + (p[5]*(p[4]-xn2)**2 + p[6])*np.sign(abs(Hx-Hx2)) + (p[8]*(p[7]-xn2)**2)*np.sign(abs(Hx-Hx1))
-        # H = p[3]*TI(Hx, pCAL2, model, 64, -0.01, 3) + (p[5]*(p[4]-xn2)**2 + (p[8]*(p[7]+int(len(xn2)/2))**2 - p[5]*(p[4]+int(len(xn2)/2))**2))*np.sign(abs(Hx.real-Hx2)) + (p[8]*(p[7]-xn2)**2)*np.sign(abs(Hx.real-Hx1))
-        return H
-    def fix(y, x, p):
-        Hx = np.array([float(0)]*len(x))
-        for i in range(0, int(len(x) / 2)):
-            Hx[i] = y[i] - p[5]*(x[i]-p[4])**2 - p[6] #- p[6]
-            # Hx[i] = y[i] - p[5] * (x[i] - p[4]) ** 2 - (p[8]*(p[7]+p[0])**2 - p[5]*(p[4]+p[0])**2)
-        for i in range(int(len(x) / 2), len(x)):
-            Hx[i] = y[i] - p[8]*(x[i]-p[7])**2 #- p[9]
-            # Hx[i] = y[i] - p[8]*(x[i]-p[7])**2 + (p[8] * (p[7] + p[0]) ** 2 - p[5] * (p[4] + p[0]) ** 2)
-        return Hx
-    a = np.array([0, 1.9 ,1.1, 3.4])
-    value = 2.1
-    idx = (np.abs(a - value)).argmin()
+                p[12] = p[11] * 10                     # keep baseline 2 sane
+            pCAL2[4] = p[12]                           # baseline of half-sweep 2
+        half = int(len(x) / 2)
+        # Velocity of the same channel in the OTHER half-sweep: sign(|Hx-Hx1|)
+        # masks the parabola of half 1 to half 2 and vice versa.
+        Hx1 = np.concatenate((Hx[:half], Hx[:half]), axis=0)
+        Hx2 = np.concatenate((Hx[half:], Hx[half:]), axis=0)
+        return (p[3] * fit_func(Hx, pCAL2)
+                + (p[5] * (p[4] - channels) ** 2 + p[6]) * np.sign(abs(Hx - Hx2))
+                + (p[8] * (p[7] - channels) ** 2) * np.sign(abs(Hx - Hx1)))
 
-    PA = str(Cal_file)
-    if PA[-4:] == '.mca' or PA[-5:] == '.cmca':
-        LS = len(open(PA, 'r').readlines())
-        with open(PA, 'r') as fi:
-            id = []
-            n = 0
-            k = 0
-            for i in range(0, LS):
-                for ln in fi:
-                    if ln.startswith("@A"):
-                        k += 1
-                    if k > n and ln.startswith("@A"):
-                        id.append(re.findall(r'[\d.]+', ln[2:]))
-                    if k > n and ln.startswith("#"):
-                        break
-                    if k > n and ln.startswith("@A") == 0:
-                        id[n].extend(re.findall(r'[\d.]+', ln[0:]))
-                n += 1
-        if PA[-5:] == '.cmca':
-            if (id[0][-1] == 0 and id[0][0] != 0) or (id[0][0] == 0 and id[0][-1] != 0):
-                id_half = (id[0][-1] + id[0][0]) / 2
-                id[0][-1] = id_half
-                id[0][0] = id_half
-        if len(id[0])%2 == 1:
-            id[0] = id[0][:-1]
-        id = np.array(id, dtype=float)
+    def lin_cal_fin2(x, p):
+        """Final-fit model for the triangular drive (CMS only)."""
+        pCAL2 = pCAL                                   # ALIAS: writes into pCAL
+        pCAL2[nbp] = p[9]                              # main sextet intensity
+        first = x <= int(n_ch / 2)
+        Hx = np.where(first, p[0] - p[2] * x, p[1] - p[2] * (n_ch - 1 - x))
+        # Indicators of the two half-sweeps (x is always the sorted channel
+        # axis here, so elementwise selection == the original concatenation).
+        Hx1 = np.where(first, 1.0, 0.0)
+        Hx2 = 1.0 - Hx1
+        if min(Hx) > -2.95 and max(Hx) < 2.95:
+            p[10] = 0.0    # tiny velocity range: texture undefined -> isotropic
+        pCAL2[nbp + 8] = p[10]                         # texture order parameter A
+        pCAL2[0] = p[11]                               # baseline of half-sweep 1
+        if p[12] > p[11] * 10:
+            p[12] = p[11] * 10                         # keep baseline 2 sane
+        pCAL2[4] = p[12]                               # baseline of half-sweep 2
+        return (fit_func(Hx, pCAL2)
+                + (p[5] * (p[4] - channels) ** 2 + p[6]) * Hx1
+                + (p[8] * (p[7] - channels) ** 2) * Hx2)
 
-        xn = np.linspace(0, len(id[0]) / 2 - 1, int(len(id[0]) / 2))
-        xn2 = np.linspace(0, len(id[0]) - 1, int(len(id[0])))
-        y1 = id[0][:int(len(id[0]) / 2)]
-        y2 = id[0][int(len(id[0]) / 2):]
-        y_ch = y1 * 2
-
-    if PA[-4:] == '.ws5' or PA[-4:] == '.w98' or PA[-4:] == '.moe' or PA[-3:] == '.m1' or PA[-4:] == '.mcs' or PA[-4:] == '.Mcs':
-        if PA[-4:] == '.mcs' or PA[-4:] == '.Mcs':
-            f = open(PA, mode='rb')
-            id = []
-            entete1 = f.read(256)
-            array = np.fromfile(f, dtype=np.uint32)
-            print(len(array))
-            id.append(array)
-            f.close()
-        else:
-            with open(PA, 'r') as catalog:
-                id = []
-                id.append([])
-                # id[0].append(float(1))
-                # id[0].append(float(2))
-                # print(id)
-                k = 0
-                lines = (line.rstrip() for line in catalog)
-                lines = (line for line in lines if line)  # skipping white lines
-                for line in lines:
-                    if not (line.startswith('#') or line.startswith('<')):  # skipping column labels
-                        if PA[-3:] == '.m1':
-                            while '  ' in line:
-                                line = line.replace('  ', ' ')
-                            column = line.split(' ')
-                            x = float(column[4])
-                            if k > 0:
-                                id[0].append(x)
-                            k += 1
-                        else:
-                            column = line.split()
-                            x = float(column[0])
-                            if PA[-4:] != '.moe' or not ('.' in str(column[0])):
-                                id[0].append(x)
-                        k += 1
-            # if len(id[0]) % 2 == 1:
-            #     id[0] = id[0][:-1]
-        id = np.array(id, dtype=float)
-
-        xn = np.linspace(0, len(id[0]) / 2 - 1, int(len(id[0]) / 2))
-        xn2 = np.linspace(0, len(id[0]) - 1, int(len(id[0])))
-        y1 = id[0][:int(len(id[0]) / 2)]
-        y2 = id[0][int(len(id[0]) / 2):]
-        if len(y2) > len(y1):
-            y2 = y2[1:]
-        y_ch = y1 * 2
-
-
-    # detecting dephase
-    chi2_tmp = np.sum(np.abs(y1-y2[::-1]))/len(y1)
-    phase0 = 0
-    for i in range(1, int(len(y1)/2)):
-        chi2_tmp_n = np.sum(np.abs(y1[i:]-y2[i:][::-1]))/len(y1[i:])
-        if chi2_tmp_n <= chi2_tmp:
-            chi2_tmp = chi2_tmp_n
-            phase0 = -i
-        # else:
-        #     break
-    if phase0 == 0:
-        for i in range(1, int(len(y1)/2)):
-            chi2_tmp_n = np.sum(np.abs(y1[:-i] - y2[:-i][::-1])) / len(y1[:-i])
-            if chi2_tmp_n <= chi2_tmp:
-                chi2_tmp = chi2_tmp_n
-                phase0 = i
-            # else:
-            #     break
-    phase0 = - phase0 * 2
+    # --------------------------------------------------------------------- #
+    # STEP 3: phase between the drive and the recording.                    #
+    # --------------------------------------------------------------------- #
+    phase0 = _detect_phase_offset(half1, half2)
     print('PHASE  ', phase0)
 
-
-    model = ['Sextet']
-    # Sextet block is the polarized layout: I, d, e, H, L, G, theta_k=90, phi_h=0,
-    # A=0 (isotropic texture -> identical to the old scalar sextet), A_m=0 (no net
-    # magnetisation; also a no-op here since theta_k=90 -> n_z=0), a+, a-, GH, I13.
-    p00 = np.array([(max(id[0]) - 2 * np.sqrt(max(id[0])))*(1-0.4*(VVV==1)), 0, 0, 0, (max(id[0]) - 2 * np.sqrt(max(id[0])))*(0.4*(VVV==1)), 0, 0, 0, 8, 0.0, 0, 33.04, 0.098, 0.0, 90, 0, 0, 0, 0, 0, 0, 3])
-    sex0 = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
+    # --------------------------------------------------------------------- #
+    # STEP 4: alpha-Fe reference model, start values and bounds.            #
+    # --------------------------------------------------------------------- #
+    # Baseline guess: max counts minus 2 sigma; CMS splits it 60/40 between
+    # the two half-sweep count rates (indices 0 and 4).
+    baseline_guess = max(counts) - 2 * np.sqrt(max(counts))
+    p00 = np.array([baseline_guess * (1 - 0.4 * (VVV == 1)), 0, 0, 0,
+                    baseline_guess * (0.4 * (VVV == 1)), 0, 0, 0,
+                    # Sextet: T   d  e  H(T)             L      G  th ph A ...
+                    8, 0.0, 0, ALPHA_FE_FIELD, 0.098, 0.0, 90, 0, 0, 0, 0, 0, 0, 3])
     bounds = np.array([[-np.inf] * len(p00), [np.inf] * len(p00)], dtype=float)
-    bounds[0][number_of_baseline_parameters+1] = -0.05
-    bounds[1][number_of_baseline_parameters+1] = 0.05
-    bounds[0][number_of_baseline_parameters+3] = 32.54
-    bounds[1][number_of_baseline_parameters+3] = 33.54
-    if Vel_start == 1:
-        sex0 = sex0[::-1]
+    bounds[0][nbp + 1] = -0.05                         # isomer shift d
+    bounds[1][nbp + 1] = 0.05
+    bounds[0][nbp + 3] = 32.54                         # hyperfine field H (33.04 +/- 0.5 T)
+    bounds[1][nbp + 3] = 33.54
 
+    # The six reference line velocities, oriented by the sweep direction.
+    # This FIRST orientation is the only place Vel_start acts: it propagates
+    # into the coarse-search axis and from there into everything else.
+    line_v = np.copy(ALPHA_FE_LINE_VELOCITIES)
+    if Vel_start == 1:
+        line_v = line_v[::-1]
+
+    # Parameters held fixed during the coarse search / refinement fits
+    # (minimi_hi convention). Coarse: H free within bounds, linewidth L fixed.
+    # Refinement: H fixed at the reference, L free.
+    fix_coarse = np.array([1, 2, 3, 1 + int(VVV), 5, 6, 7,
+                           nbp + 2, nbp + 4, nbp + 5, nbp + 6, nbp + 7,
+                           nbp + 8, nbp + 9, nbp + 10, nbp + 11, nbp + 12, nbp + 13])
+    fix_refine = np.array([1, 2, 3, 1 + int(VVV), 5, 6, 7,
+                           nbp + 2, nbp + 3, nbp + 4, nbp + 6, nbp + 7,
+                           nbp + 8, nbp + 9, nbp + 10, nbp + 11, nbp + 12, nbp + 13])
+
+    # --------------------------------------------------------------------- #
+    # STEP 5a: coarse search, sinusoidal drive (both SMS and CMS).          #
+    # Hypothesis: sextet lines (i, j) sit in the two deepest minima; that   #
+    # fixes amplitude+shift analytically, a short fit scores the hypothesis.#
+    # --------------------------------------------------------------------- #
+    ch_min1, ch_min2 = _deepest_line_channels(counts)
+    print('channels of minimum ', ch_min1, ch_min2)
     start_time = time.time()
-    if VVV == 3 or VVV == 1:
-        ch_m = int(np.where(id[0] == min(id[0][5:-5]))[0][0])
-        # ch_m1 = int(np.where(id[0] == min(id[0][:int(len(id[0]) / 4)]))[0][0])
-        # ch_m2 = int(np.where(id[0] == min(id[0][int(len(id[0]) / 4):int(len(id[0]) / 2)]))[0][0])
-        ch_m1_arr = (np.where(id[0] == min(id[0][:int(len(id[0]) / 4)]))[0])
-        ch_m1 = int(ch_m1_arr[-1])
-        for i in range(0, len(ch_m1_arr)):
-            if ch_m1_arr[i] < int(len(id[0]) / 4):
-                ch_m1 = int(ch_m1_arr[i])
-                # print(ch_m1)
-                break
-        ch_m2_arr = (np.where(id[0] == min(id[0][int(len(id[0]) / 4):int(len(id[0]) / 2)]))[0])
-        ch_m2 = int(ch_m2_arr[-1])
-        for i in range(0, len(ch_m2_arr)):
-            if ch_m2_arr[i] >= int(len(id[0]) / 4) and ch_m2_arr[i] < int(len(id[0]) / 2):
-                ch_m2 = int(ch_m2_arr[i])
-                # print(ch_m2)
-                break
-        hi_m = np.array([float(10000)] * 30)
-        hi_c = 10000
-        hi_sin = hi_c
-        k = 0
-        print('channels of minimum ', ch_m1, ch_m2)
+    chi2_sin = 10000.0
+    for i in range(0, 6):
+        for j in range(i + 1, 6):
+            Vel_max_m = ((line_v[i] - line_v[j]) * np.pi / n_ch / np.sin(np.pi / n_ch)
+                         / (np.cos(np.pi / n_ch * (2 * ch_min1 + 1))
+                            - np.cos(np.pi / n_ch * (2 * ch_min2 + 1))))
+            shift_m = line_v[i] - (Vel_max_m / np.pi * n_ch * np.sin(np.pi / n_ch)
+                                   * np.cos(np.pi / n_ch * (2 * ch_min1 + 1)
+                                            + (np.pi / n_ch * phase0)))
+            x_try = sin_cal(channels, [Vel_max_m, (np.pi / n_ch * phase0), shift_m])
+            res = mi.minimi_hi(fit_func, x_try, counts, p00, fix=fix_coarse,
+                               bounds=bounds, MI=3, MI2=5)
+            if res[2] <= chi2_sin:
+                chi2_sin = res[2]
+                Vel_max_sin = Vel_max_m
+                shift = shift_m
+                p_sin = res[0]
+    print('best sinusoidal hypothesis:', Vel_max_sin, shift, chi2_sin)
+    x_sin = sin_cal(channels, [Vel_max_sin, (np.pi / n_ch * phase0), shift])
+
+    method = 0                       # 0 = sinusoidal, 1 = triangular (linear)
+    x = x_sin
+    p0 = p_sin
+    Vel_max = Vel_max_sin
+    cal, cal_fin2 = sin_cal, sin_cal_fin2
+    print('coarse sinusoidal search took', time.time() - start_time, 'seconds')
+
+    # --------------------------------------------------------------------- #
+    # STEP 5b (CMS only): coarse search with a triangular drive, then pick  #
+    # the waveform by chi-square. Conventional drives can run either        #
+    # waveform and the user does not tell us which. The phase acts per half #
+    # sweep here, hence phase0/2.                                           #
+    # --------------------------------------------------------------------- #
+    if VVV == 1:
+        lin_phase = phase0 / 2
+        chi2_lin = 10000.0
         for i in range(0, 6):
             for j in range(i + 1, 6):
-                # sex0[i] = p[0] / np.pi * len(xn2) * np.sin(np.pi / len(xn2)) * np.cos(np.pi / len(xn2) * (2 * ch_m1 + 1)) + p[2]
-                # sex0[j] = p[0] / np.pi * len(xn2) * np.sin(np.pi / len(xn2)) * np.cos(np.pi / len(xn2) * (2 * ch_m2 + 1)) + p[2]
-                Vel_max_m = (sex0[i] - sex0[j]) * np.pi / len(xn2) / np.sin(np.pi / len(xn2)) / (np.cos(np.pi / len(xn2) * (2 * ch_m1 + 1)) - np.cos(np.pi / len(xn2) * (2 * ch_m2 + 1)))
-                # print((sex0[i] - sex0[j]), len(xn2), np.cos(np.pi / len(xn2)))
-                shift_m = sex0[i] - Vel_max_m / np.pi * len(xn2) * np.sin(np.pi / len(xn2)) * np.cos(np.pi / len(xn2) * (2 * ch_m1 + 1) + (np.pi / len(xn2) * phase0))
-                x = sin_cal(xn2, [Vel_max_m, (np.pi / len(xn2) * phase0), shift_m])  # p[1] mean different on method
-                # A and I1/I3 are 12th and 16th parameters.
-                res = mi.minimi_hi(func, x, id[0], p00, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+4, number_of_baseline_parameters+5, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10, number_of_baseline_parameters+11, number_of_baseline_parameters+12, number_of_baseline_parameters+13]), bounds=bounds, MI=3, MI2=5) # int(11*(VVV==3)+1), int(15*(VVV==3)+1)
-                # if res[2] < 10000:
-                hi_m[k] = res[2]
-                hi_c = hi_m[k]
-                # print(Vel_max_m, shift_m, hi_c)
-                if all(hi_m >= hi_c) == True:
-                    Vel_max_sin = Vel_max_m
-                    shift = shift_m
-                    p_sin = res[0]
-                    hi_sin = hi_c
-                k += 1
-        print(Vel_max_sin,shift, hi_sin)
-        x_sin = sin_cal(xn2, [Vel_max_sin, (np.pi / len(xn2) * phase0), shift])
-
-        # fig = plt.figure(dpi=300)
-        # plt.plot(x_sin, id[0])
-        # plt.plot(x_sin, func(x_sin, p_sin))
-        # # plt.show()
-        # fig.savefig(r"C:\Users\yaroslav\Downloads\test_sin.png", bbox_inches='tight')
-        # plt.close()
-
-        method = 0
-        x = x_sin
-        p0 = p_sin
-        Vel_max = Vel_max_sin
-
-        def cal(x, p):
-            return sin_cal(x, p)
-
-        def cal_fin2(x, p):
-            return sin_cal_fin2(x, p)
-    print('first sin takes', time.time() - start_time, 'seconds')
-
-    if VVV == 1:
-        phase0 = phase0/2
-        # ch_m1 = int(np.where(id[0] == min(id[0][:int(len(id[0])/4)]))[0][0])
-        # ch_m2 = int(np.where(id[0] == min(id[0][int(len(id[0])/4):int(len(id[0])/2)]))[0][0])
-        ch_m1_arr = (np.where(id[0] == min(id[0][:int(len(id[0]) / 4)]))[0])
-        ch_m1 = int(ch_m1_arr[-1])
-        for i in range(0, len(ch_m1_arr)):
-            if ch_m1_arr[i] < int(len(id[0]) / 4):
-                ch_m1 = int(ch_m1_arr[i])
-                print(ch_m1)
-                break
-        ch_m2_arr = (np.where(id[0] == min(id[0][int(len(id[0]) / 4):int(len(id[0]) / 2)]))[0])
-        ch_m2 = int(ch_m2_arr[-1])
-        for i in range(0, len(ch_m2_arr)):
-            if ch_m2_arr[i] >= int(len(id[0]) / 4) and ch_m2_arr[i] < int(len(id[0]) / 2):
-                ch_m2 = int(ch_m2_arr[i])
-                print(ch_m2)
-                break
-        hi_m_lin = np.array([float(10000)] * 30)
-        hi_c = 10000
-        hi_lin = hi_c
-        k = 0
-        for i in range(0, 6):
-            for j in range(i+1, 6):
-                velocity_step_m = -(sex0[j]-sex0[i])/(ch_m2-ch_m1)
-                Vel_max_m = sex0[i] + velocity_step_m*ch_m1
-                x = lin_cal(xn2, [Vel_max_m, Vel_max_m-velocity_step_m*phase0, velocity_step_m])  # p[1] mean different on method
-                res = mi.minimi_hi(func, x, id[0], p00, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+4, number_of_baseline_parameters+5, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10, number_of_baseline_parameters+11, number_of_baseline_parameters+12, number_of_baseline_parameters+13]), bounds=bounds, MI=3, MI2=5)
-                # if res[2] < 10000:
-                hi_m_lin[k] = res[2]
-                hi_c = hi_m_lin[k]
-                #print(Vel_max_m, velocity_step_m, hi_m_lin[k])
-                if all(hi_m_lin >= hi_c) == True:
+                velocity_step_m = -(line_v[j] - line_v[i]) / (ch_min2 - ch_min1)
+                Vel_max_m = line_v[i] + velocity_step_m * ch_min1
+                x_try = lin_cal(channels, [Vel_max_m,
+                                           Vel_max_m - velocity_step_m * lin_phase,
+                                           velocity_step_m])
+                res = mi.minimi_hi(fit_func, x_try, counts, p00, fix=fix_coarse,
+                                   bounds=bounds, MI=3, MI2=5)
+                if res[2] <= chi2_lin:
+                    chi2_lin = res[2]
                     Vel_max_lin = Vel_max_m
                     velocity_step = velocity_step_m
                     p_lin = res[0]
-                    hi_lin = hi_c
-                k += 1
-        print(Vel_max_lin,velocity_step, hi_lin)
-        x_lin = lin_cal(xn2, [Vel_max_lin, Vel_max_lin-velocity_step*phase0, velocity_step])
-        phase0 = phase0 * 2
-        # fig = plt.figure(dpi=300)
-        # plt.plot(x_lin, id[0])
-        # plt.plot(x_lin, func(x_lin, p_lin))
-        # # plt.show()
-        # # "C:\Users\yaroslav\Downloads"
-        # fig.savefig(r"C:\Users\yaroslav\Downloads\test_lin.png", bbox_inches='tight')
-        # plt.close()
+        print('best triangular hypothesis:', Vel_max_lin, velocity_step, chi2_lin)
+        x_lin = lin_cal(channels, [Vel_max_lin,
+                                   Vel_max_lin - velocity_step * lin_phase,
+                                   velocity_step])
 
-        method = 1
-        x = x_lin
-        p0 = p_lin
-        Vel_max = Vel_max_lin
-
-        def cal(x, p):
-            return lin_cal(x, p)
-
-        def cal_fin2(x, p):
-            return lin_cal_fin2(x, p)
-
-    if VVV == 1:
-        if hi_sin <= hi_lin: #  and shift < 1.0
-            method = 0
-            x = x_sin
-            p0 = p_sin
-            Vel_max = Vel_max_sin
-            def cal(x, p):
-                return sin_cal(x, p)
-            def cal_fin2(x, p):
-                return sin_cal_fin2(x, p)
+        if chi2_sin <= chi2_lin:
             print('sinus mode')
         else:
             method = 1
             x = x_lin
             p0 = p_lin
             Vel_max = Vel_max_lin
-            phase0 = phase0 / 2
-            def cal(x, p):
-                return lin_cal(x, p)
-            def cal_fin2(x, p):
-                return lin_cal_fin2(x, p)
+            cal, cal_fin2 = lin_cal, lin_cal_fin2
             print('triangular mode')
 
-    p0[number_of_baseline_parameters+1] = 0
-    p0[number_of_baseline_parameters+3] = 33.04
+    # --------------------------------------------------------------------- #
+    # STEP 6: iterative refinement (4 rounds). Fit the spectrum on the      #
+    # current axis; from the fitted sextet predict WHERE (which channel)    #
+    # each of the 12 line occurrences must sit; refit the drive-curve       #
+    # parameters to those (channel, velocity) pairs; rebuild the axis.      #
+    # This bootstraps the axis far more robustly than fitting everything    #
+    # at once, because each round only trusts the line POSITIONS.           #
+    # --------------------------------------------------------------------- #
+    p0[nbp + 1] = 0                                    # reset isomer shift
+    p0[nbp + 3] = ALPHA_FE_FIELD                       # reset hyperfine field
     print('method ', method)
     print(p0)
-    # x = sin_cal(xn2, [Vel_max, 0 * np.pi / len(xn2), 0.68])
-    # x = sin_cal(xn2, [Vel_max, 0 * np.pi / len(xn2), 0.68])  # p[1] mean different on method
-    p00 = np.copy(p0)
     start_time = time.time()
-    for i in range(0, 4):
-        p = mi.minimi_hi(func, x, id[0], p0, fix=np.array([1, 2, 3, 1+int(VVV), 5, 6, 7, number_of_baseline_parameters+2, number_of_baseline_parameters+3, number_of_baseline_parameters+4, number_of_baseline_parameters+6, number_of_baseline_parameters+7, number_of_baseline_parameters+8, number_of_baseline_parameters+9, number_of_baseline_parameters+10, number_of_baseline_parameters+11, number_of_baseline_parameters+12, number_of_baseline_parameters+13]), MI=3, MI2=5)[0] # int(15*(VVV==3)+1)  int(11*(VVV==3)+1)
-        # print(p)
-        sex0 = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123, -5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
+    for it in range(0, 4):
+        p = mi.minimi_hi(fit_func, x, counts, p0, fix=fix_refine, MI=3, MI2=5)[0]
+        # 12 reference velocities: the 6 lines, seen once per half-sweep.
         # No reversal is needed here even for Vel_start == 1: the velocity
-        # direction is already encoded in the calibrated axis `x` (built from the
-        # block-1 sex0, which IS reversed for Vel_start == 1). Below, each
-        # reference velocity sex0[k] is paired with the channel ps0x[k] located by
-        # argmin on that oriented axis, so the pairing is correct in either
-        # direction. (A vestigial `if Vel_start == 1: sex0[::-1]` lived here; it
-        # was a no-op, and actually reversing sex0 would break this pairing.)
-        ps0x = np.array([float(0)]*12)
-        V = number_of_baseline_parameters
-        x1 = x[:int(len(x)/2)]
-        x2 = x[int(len(x)/2):]
-        p[V+3] = p[V+3] / 3.101
-        # Sextet outer-line shift a+ is index V+10 and inner shift a- is V+11 in
-        # the polarized layout (T,d,e,H,L,G,theta_k,phi_h,A,A_m,a+,a-,GH,I13).
-        ps0x[0]  = (np.abs(x1 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 10])).argmin()
-        ps0x[1]  = (np.abs(x1 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        ps0x[2]  = (np.abs(x1 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
-        ps0x[3]  = (np.abs(x1 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        ps0x[4]  = (np.abs(x1 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
-        ps0x[5]  = (np.abs(x1 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 10])).argmin()
-        ps0x[6]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 10])).argmin()
-        ps0x[7]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        ps0x[8]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
-        ps0x[9]  = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        ps0x[10] = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
-        ps0x[11] = int(len(x)/2) + (np.abs(x2 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 10])).argmin()
-        p[V + 3] = p[V + 3] * 3.101
-        j = 0
-        for k in range(0, 12):
-            # if ps0x[j] == 0 or ps0x[j] == len(x)-1 or ps0x[j] == len(x1)-1 or ps0x[j] == len(x1) or ps0x[j] == len(x1)-2 or ps0x[j] == len(x) - 2:
-            if ps0x[j] < 5 or (ps0x[j] > len(x1)-1-5 and ps0x[j] < len(x1)+5) or ps0x[j] > len(x) - 1 - 5:
-                ps0x = np.delete(ps0x, j)
-                sex0 = np.delete(sex0, j)
-                j = j-1
-            j += 1
-        # print(ps0x)
-        if i == 0:
-            if method == 0:
-                ps = mi.minimi_hi(sin_cal, ps0x, sex0, p0=np.array([Vel_max, (np.pi / len(xn2) * phase0), shift]), tau0=1)[0]
-            if method == 1:
-                ps = mi.minimi_hi(lin_cal, ps0x, sex0, p0=np.array([Vel_max, Vel_max-velocity_step*phase0, velocity_step]), tau0=1)[0]
-            # print(ps)
-        else:
-            ps = mi.minimi_hi(cal, ps0x, sex0, p0=ps, eps = 10**-40)[0]
-            # print(ps)
-        x = cal(xn2, ps)
-        p0 = np.copy(p)
-        p0[7] = 0
-    print('first ps takes', time.time() - start_time, 'seconds')
-    # plt.figure(dpi=300)
-    # plt.plot(x, id[0])
-    # plt.plot(x, func(x, p0))
-    # plt.show()
-    # plt.close()
+        # direction is already encoded in the calibrated axis `x` (built from
+        # the oriented `line_v`). Each reference velocity ref_v[k] is paired
+        # with the channel predicted_ch[k] located by argmin on that oriented
+        # axis, so the pairing is correct in either direction. (A vestigial
+        # `if Vel_start == 1: sex0[::-1]` no-op lived here historically;
+        # actually reversing would break the pairing.)
+        ref_v = np.tile(ALPHA_FE_LINE_VELOCITIES, 2)
+        predicted_ch = np.array([float(0)] * 12)
+        V = nbp
+        x1 = x[:int(len(x) / 2)]
+        x2 = x[int(len(x) / 2):]
+        # H in mm/s of outer-line half-splitting; a+ (V+10) and a- (V+11) are
+        # the outer/inner line-shift corrections, alternating sign per line.
+        p[V + 3] = p[V + 3] / TESLA_PER_MMS
+        predicted_ch[0] = (np.abs(x1 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 10])).argmin()
+        predicted_ch[1] = (np.abs(x1 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[2] = (np.abs(x1 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[3] = (np.abs(x1 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[4] = (np.abs(x1 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[5] = (np.abs(x1 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 10])).argmin()
+        predicted_ch[6] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 10])).argmin()
+        predicted_ch[7] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[8] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[9] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[10] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[11] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 10])).argmin()
+        p[V + 3] = p[V + 3] * TESLA_PER_MMS
 
+        # Discard lines that fell within 5 channels of the spectrum edges or
+        # of the fold point -- their argmin is saturated, not a real position.
+        n_half = len(x1)
+        keep = ~((predicted_ch < 5)
+                 | ((predicted_ch > n_half - 1 - 5) & (predicted_ch < n_half + 5))
+                 | (predicted_ch > len(x) - 1 - 5))
+        predicted_ch = predicted_ch[keep]
+        ref_v = ref_v[keep]
+
+        if it == 0:
+            if method == 0:
+                ps = mi.minimi_hi(sin_cal, predicted_ch, ref_v,
+                                  p0=np.array([Vel_max, (np.pi / n_ch * phase0), shift]),
+                                  tau0=1)[0]
+            if method == 1:
+                ps = mi.minimi_hi(lin_cal, predicted_ch, ref_v,
+                                  p0=np.array([Vel_max, Vel_max - velocity_step * lin_phase,
+                                               velocity_step]),
+                                  tau0=1)[0]
+        else:
+            ps = mi.minimi_hi(cal, predicted_ch, ref_v, p0=ps, eps=10 ** -40)[0]
+        x = cal(channels, ps)
+        p0 = np.copy(p)
+        p0[7] = 0                                      # reset last baseline parameter
+    print('refinement loop took', time.time() - start_time, 'seconds')
+
+    # --------------------------------------------------------------------- #
+    # STEP 7 (SMS): redo the normalisation on a finer integration grid for  #
+    # the final fit (fit_func late-binds JN and Norm).                      #
+    # --------------------------------------------------------------------- #
     if VVV == 3:
         JN = 64
-        Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, x0, MulCo, INS, [0], [0])[0]
+        Norm = m5.TI(np.array([float(1000)]), pNorm, [], JN, pool, x0,
+                     MulCo, INS, [0], [0])[0]
 
-    # Polarized Sextet block (theta_k=90, phi_h=0, A=0 -> isotropic == old scalar;
-    # A_m=0 right after A, a no-op here since theta_k=90 -> n_z=0 kills the Faraday term).
-    pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0, 8.2, 0, 0, 33.04, 0.098, 0.0, 90, 0, 0, 0, 0, 0, 0, 3])
-    ps1 = np.append(ps, 1)
+    ps1 = np.append(ps, 1)                             # ps1[3]: global intensity scale
 
-    def parabolic(x, p):
-        H = p[1]*(p[0]-x)**2+p[2]
-        return H
-    y2 = y2[::-1]
+    # --------------------------------------------------------------------- #
+    # STEP 8: parabolic count distortion. The solid angle seen by the       #
+    # detector varies with drive position, modulating the count rate as a   #
+    # parabola with opposite sign in the two half-sweeps; fitting           #
+    # half1 - reversed(half2) isolates exactly that asymmetry.              #
+    # --------------------------------------------------------------------- #
     start_time = time.time()
-    parab = mi.minimi_hi(parabolic, xn2[:int(len(xn2)/2)], y1-y2+y1[0], p0=[int(len(xn2)/4), 5, y1[int(len(y1) / 2)]-y2[int(len(y2) / 2)]+y1[0]])[0]
-    print('parabola takes', time.time() - start_time, 'seconds')
-    parab[2] = parab[2] - y1[0]
-    y2 = y2[::-1]
+    half2_rev = half2[::-1]
+    parab = mi.minimi_hi(_parabola, channels[:int(n_ch / 2)],
+                         half1 - half2_rev + half1[0],
+                         p0=[int(n_ch / 4), 5,
+                             half1[int(len(half1) / 2)] - half2_rev[int(len(half2_rev) / 2)] + half1[0]])[0]
+    print('parabola fit took', time.time() - start_time, 'seconds')
+    parab[2] = parab[2] - half1[0]
 
-    ps1[-1] = 1
-    ps1 = np.append(ps1, parab[0])
-    ps1 = np.append(ps1, parab[1] / 2)
-    ps1 = np.append(ps1, parab[2])
-    ps1 = np.append(ps1, parab[0] + int(len(xn2)/2))
-    ps1 = np.append(ps1, (-1)*parab[1] / 2)
+    # Split the fitted asymmetry into the two per-half parabolas of ps1.
+    ps1 = np.append(ps1, parab[0])                     # ps1[4]: centre, half 1
+    ps1 = np.append(ps1, parab[1] / 2)                 # ps1[5]: curvature, half 1
+    ps1 = np.append(ps1, parab[2])                     # ps1[6]: offset, half 1
+    ps1 = np.append(ps1, parab[0] + int(n_ch / 2))     # ps1[7]: centre, half 2
+    ps1 = np.append(ps1, (-1) * parab[1] / 2)          # ps1[8]: curvature, half 2
 
-    # test_par1 = np.array([parab[0]                 , parab[1] / 2, parab[2]])
-    # test_par2 = np.array([parab[0]+ int(len(xn2)/2),-parab[1] / 2, 0])
-    # fig = plt.figure(dpi=300)
-    # plt.plot(xn2[:int(len(xn2)/2)], p0[0]+p0[3] + parabolic(xn2[:int(len(xn2)/2)], test_par1), 'r')
-    # plt.plot(xn2[int(len(xn2)/2):], p0[0]+p0[3] + parabolic(xn2[int(len(xn2)/2):], test_par2), 'r')
-    # plt.plot(xn2, id[0], 'm')
-    # fig.savefig(r"C:\Users\yaroslav\Downloads\test_parab.png", bbox_inches='tight')
-    # plt.close()
-
+    # --------------------------------------------------------------------- #
+    # STEP 9: final model. SMS reference foils show a second (impurity)     #
+    # sextet and the Be-window doublet (parameters from Be.txt); CMS keeps  #
+    # the single sextet but frees both half-sweep count rates.              #
+    # --------------------------------------------------------------------- #
     if method == 0:
         if VVV == 3:
             model = ['Sextet', 'Sextet', 'Doublet']
-
             try:
-                Be_param = np.genfromtxt(os.path.join(dir_path, 'Be.txt'), delimiter='\t', skip_footer=0)
-                print('file was read')
-            except:
-                Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
+                Be_param = np.genfromtxt(os.path.join(dir_path, 'Be.txt'),
+                                         delimiter='\t', skip_footer=0)
+                print('Be.txt was read')
+            except Exception:
+                Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0,
+                                     0.427037824, 1])
                 print('COULD NOT READ Be.txt')
-            # baseline(8) + two polarized Sextets(14 each, theta_k=90/phi_h=0/A=0/A_m=0)
-            # + the Be impurity Doublet (9-value polarized layout, read from Be.txt).
+            # baseline(8) + two polarized Sextets(14 each) + Be Doublet(9).
             pCAL = np.array([p[0], 0, 0, 0, 0, 0, 0, 0,
                              8.08, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 0, 3,
                              0.451, -0.041, 0.003, 30.88, 0.098, 0.1, 90, 0, 0, 0, 0, 0, 0, 3])
             pCAL = np.concatenate((pCAL, Be_param))
         if VVV == 1:
-            # model = ['Sextet', 'Sextet']
-            # pCAL = np.array([p[0], 0, 0, p[3], 0, 0, 8.08, 0, 0, 33.04, 0.098, 0, 0.5, 0, 0, 0, 3, 0.0, -0.041, 0.003, 30.88, 0.098, 0.1, 0.5, 0, 0, 0, 3])#, 0.048, 0.103, -0.259, 0.098, 0.105, 0.265, 1])
             model = ['Sextet']
-            pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0, 8.08, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 0, 3])
+            pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0,
+                             8.08, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 0, 3])
             print('background ', pCAL[0], pCAL[4], ps1[3])
-
     if method == 1:
         model = ['Sextet']
         pCAL = p0
-        pCAL[number_of_baseline_parameters+13] = 3   # I1/I3 (index 13 in polarized layout)
-        pCAL[number_of_baseline_parameters+5] = 0    # G
+        pCAL[nbp + 13] = 3                             # I1/I3 line-intensity ratio
+        pCAL[nbp + 5] = 0                              # Gaussian broadening G
         print('background ', pCAL[0], pCAL[4], ps1[3])
 
-
-    xT = cal(xn2, ps1)
-
-    ps1 = np.append(ps1, 8)      # ps1[9]:  main-component intensity I
-    ps1 = np.append(ps1, 0)      # ps1[10]: texture order parameter A (0 = isotropic)
+    ps1 = np.append(ps1, 8)                            # ps1[9]:  main sextet intensity
+    ps1 = np.append(ps1, 0)                            # ps1[10]: texture parameter A
     if VVV == 3:
-        ps1 = np.append(ps1, 0.5)  # ps1[11]: impurity (second Sextet) intensity
+        ps1 = np.append(ps1, 0.5)                      # ps1[11]: impurity intensity
     if VVV == 1:
-
+        # Free both half-sweep count rates, starting from a 60/40 split of the
+        # fitted total; rescale the intensity guess accordingly.
         tot = (pCAL[0] + pCAL[4])
-        ps1[9] = pCAL[number_of_baseline_parameters] * pCAL[0] / tot / 3 * 5
+        ps1[9] = pCAL[nbp] * pCAL[0] / tot / 3 * 5
         pCAL[0] = tot * 0.6
         pCAL[4] = tot * 0.4
-        ps1 = np.append(ps1, pCAL[0])
-        ps1 = np.append(ps1, pCAL[4])
+        ps1 = np.append(ps1, pCAL[0])                  # ps1[11]: count rate, half 1
+        ps1 = np.append(ps1, pCAL[4])                  # ps1[12]: count rate, half 2
         print('baseline ', ps1[11], ps1[12])
 
     print('parameter set after preliminary fit ', ps1)
-    print('model parameteres after preliminary fit ', pCAL)
-    time.sleep(1)
+    print('model parameters after preliminary fit ', pCAL)
 
-    # tmpy = cal_fin2(xn2, ps1)
-    # fig = plt.figure(dpi=300)
-    # plt.plot(xn2, tmpy, 'r')
-    # plt.plot(xn2, id[0], 'm')
-    # plt.plot(xn2, id[0] - tmpy + min(id[0]) - max(id[0] - tmpy), 'b')
-    # fig.savefig(r"C:\Users\yaroslav\Downloads\test_calibr1.png", bbox_inches='tight')
-    # plt.close()
-
-
+    # --------------------------------------------------------------------- #
+    # STEP 10: final global fit -- drive curve + distortion + intensities.  #
+    # --------------------------------------------------------------------- #
     start_time = time.time()
-    res = mi.minimi_hi(cal_fin2, xn2, (id[0]), p0=ps1, MI=20, MI2=20, eps=10**-6)
+    res = mi.minimi_hi(cal_fin2, channels, counts, p0=ps1, MI=20, MI2=20, eps=10 ** -6)
     if abs(res[0][0]) < 2.95:
         print('very small velocity range - texture could not be defined')
-    print('model parameteres ', pCAL)
+    print('model parameters ', pCAL)
     print('variable parameters ', res[0])
     print('hi2 ', res[2])
-    print('main minimization takes', time.time() - start_time, 'seconds')
-    # print('hihi')
-    time.sleep(2)
+    print('main minimization took', time.time() - start_time, 'seconds')
     pS = res[0]
-    hi2 = res[2]
-    xT = cal(xn2, pS)
+    v_axis = cal(channels, pS)                         # final channel -> velocity map
 
-    # tmpy = cal_fin2(xn2, res[0])
-    # fig = plt.figure(dpi=300)
-    # ax = fig.add_subplot(111)
-    # ax2 = ax.twinx()
-    # ax.plot(xn2, tmpy, 'r')
-    # ax.plot(xn2, id[0], 'm')
-    # ax.plot(xn2, id[0]-tmpy + min(id[0])-max(id[0]-tmpy), 'b')
-    # ax2.plot(xn2, xT, 'y')
-    # ax2.plot([xn2[0], xn2[-1]], [pS[0], pS[0]], 'cyan')
-    # ax2.plot([xn2[0], xn2[-1]], [pS[1], pS[1]], 'lime')
-    # ax2.plot([xn2[0], xn2[-1]], [pS[0] - int(len(xn2) / 2) * pS[2], pS[0] - int(len(xn2) / 2) * pS[2]], 'cyan')
-    # ax2.plot([xn2[0], xn2[-1]], [pS[1] - (int(len(xn2)) / 2 -1) * pS[2], pS[1] - (int(len(xn2) / 2)-1) * pS[2]], 'lime')
-    # fig.savefig(r"C:\Users\yaroslav\Downloads\test_calibr2.png", bbox_inches='tight')
-    # plt.close()
-    # print(xT)
-
-
+    # Fold the fitted global scale into the count rates so pS[3] == 1 from
+    # here on (the folded outputs must be in true count units).
     pCAL[0] = pCAL[0] * pS[3]
     if VVV == 1:
         pCAL[4] = pCAL[4] * pS[3]
-        # pS[12] = pS[12] * pS[3]
     pS[3] = 1
 
-    spc = fix(id[0], xn2, pS)
-    tmp = cal_fin2(xn2, pS)
+    flat_counts = _subtract_distortion(counts, channels, pS)
+    final_curve = cal_fin2(channels, pS)
 
+    # --------------------------------------------------------------------- #
+    # STEP 11: fold the two half-sweeps onto one velocity axis and apply    #
+    # the instrumental line-shift correction.                               #
+    # --------------------------------------------------------------------- #
     if method == 0:
-        min1 = np.abs(xT[:int(len(xT) / 2)]-pS[2]).argmin()
-        min2 = np.abs(xT[int(len(xT) / 2):] - xT[min1]).argmin() + int(len(xT)/2)
-
-        if min1 == (len(xT)-1-min2):
-            n1, n2 = 0, len(xT)-1
-        elif min1 > (len(xT)-1-min2):
-            n1, n2 = min1 - (len(xT)-min2) + 1, len(xT) - 1
-        elif min1 < (len(xT)-1-min2):
-            n1, n2 = 0, min2+min1
-
-        x_1h = (xT[:int(n1 / 2)] + xT[n1 - int(n1 / 2):n1][::-1]) / 2
-        spc_1h = id[0][:int(n1 / 2)] + id[0][n1 - int(n1 / 2):n1][::-1]
-        fit_1h = tmp[:int(n1 / 2)] + tmp[n1 - int(n1 / 2):n1][::-1]
-        delt_1h = id[0][:int(n1 / 2)] - id[0][n1 - int(n1 / 2):n1][::-1]
-
-        x_2h = (xT[n2+1:n2 + int((len(xT) - 1 - n2) / 2)+1][::-1] + xT[len(xT) - int((len(xT) - 1 - n2) / 2):len(xT)]) / 2
-        spc_2h = id[0][n2+1:n2 + int((len(xT) - 1 - n2) / 2)+1][::-1] + id[0][len(xT) - int((len(xT) - 1 - n2) / 2):len(xT)]
-        fit_2h = tmp[n2+1:n2 + int((len(xT) - 1 - n2) / 2)+1][::-1] + tmp[len(xT) - int((len(xT) - 1 - n2) / 2):len(xT)]
-        delt_2h = id[0][n2+1:n2 + int((len(xT) - 1 - n2) / 2)+1][::-1] - id[0][len(xT) - int((len(xT) - 1 - n2) / 2):len(xT)]
-
-        x_3h = (xT[n1:n1 + int((n2 - n1 + 1) / 2)] + xT[n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]) / 2
-        spc_3h = id[0][n1:n1 + int((n2 - n1 + 1) / 2)] + id[0][n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]
-        fit_3h = tmp[n1:n1 + int((n2 - n1 + 1) / 2)] + tmp[n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]
-        delt_3h = id[0][n1:n1 + int((n2 - n1 + 1) / 2)] - id[0][n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]
-
-        delt_4h = id[0][n1+1:n1 + int((n2 - n1 + 1) / 2)+1] - id[0][n2 - int((n2 - n1 + 1) / 2) + 1:n2 + 1][::-1]
-
-        delt_5h = id[0][n1:n1 + int((n2 - n1 + 1) / 2)] - id[0][n2 - int((n2 - n1 + 1) / 2):n2][::-1]
-
-        # plt.figure(dpi=300)
-        # plt.plot(x_3h, delt_3h, color='r')
-        # plt.plot(x_3h, delt_4h, color='b')
-        # plt.plot(x_3h, delt_5h, color='m')
-        # plt.show()
-
-        xT2 = np.concatenate((np.concatenate((x_1h, x_2h)), x_3h))
-        spc2 = np.concatenate((np.concatenate((spc_1h, spc_2h)), spc_3h))
-        spc3 = np.concatenate((np.concatenate((fit_1h, fit_2h)), fit_3h))
-        delt = np.concatenate((np.concatenate((delt_1h, delt_2h)), delt_3h))
-        print(n1, n2, len(xT2))
-        # plt.figure(dpi=300)
-        # plt.plot(xT2, spc2)
-        # plt.show()
-
+        v_folded, data_folded, fit_folded, fold_residual, n1, n2 = \
+            _fold_sinusoidal(v_axis, counts, final_curve, pS[2])
+        print(n1, n2, len(v_folded))
     if method == 1:
-        if pS[0] * pS[2] == pS[1] * pS[2]:
-            min1 = 0
-            min2 = int(len(xT))-1
-        elif pS[0] * pS[2] > pS[1] * pS[2]:
-            min1 = np.abs(xT[:int(len(xT) / 2)] - pS[1]).argmin()
-            min2 = int(len(xT))-1
-        elif pS[0] * pS[2] < pS[1] * pS[2]:
-            min1 = 0
-            min2 = np.abs(xT[int(len(xT) / 2):] - pS[0]).argmin() + int(len(xT)/2)
-        n1, n2 = min1, min2
-        n_sh = 2 * (n1 + (int(len(xT))-1-n2))
+        v_folded, data_folded, fit_folded, fold_residual, n1, n2 = \
+            _fold_triangular(v_axis, counts, final_curve, pS)
+    v_folded = v_folded + INS_shift
 
-        # xT2 = np.array([float(0)] * int((n2-n1+1) / 2))
-        # spc2 = np.array([float(0)] * int((n2-n1+1) / 2))
-        # spc3 = np.array([float(0)] * int((n2-n1+1) / 2))
-        # delt = np.array([float(0)] * int((n2-n1+1) / 2))
-        # for i in range(0, int((n2-n1+1) / 2)): # for i in range(0, int(len(xT) / 2) - min1):
-        #     xT2[i] = (xT[n1 + i] + xT[n2 - i]) / 2
-        #     spc2[i] = id[0][n1 + i] + id[0][n2 - i]
-        #     spc3[i] = tmp[n1 + i] + tmp[n2 - i]
-        #     delt[i] = id[0][n1 + i] - id[0][n2 - i]
-
-        xT2 = np.array([float(0)] * int((len(xT) - n_sh)/2)) # int((len(xT) - n_sh)/2) - to take into account odd number of points # (511 - 2)/2 = 254,5 -> int = 254
-        spc2 = np.array([float(0)] * int((len(xT) - n_sh)/2))
-        spc3 = np.array([float(0)] * int((len(xT) - n_sh)/2))
-        delt = np.array([float(0)] * int((len(xT) - n_sh)/2))
-        for i in range(0, int((len(xT) - n_sh)/2)):
-            xT2[i] = (xT[n1 + i] + xT[n2 - i]) / 2
-            spc2[i] = id[0][n1 + i] + id[0][n2 - i]
-            spc3[i] = tmp[n1 + i] + tmp[n2 - i]
-            delt[i] = id[0][n1 + i] - id[0][n2 - i]
-
-    xT2 = xT2 + INS_shift
-
-    if VVV == 3: #method == 0
-        # plt.rcParams['axes.facecolor'] = '(0, 0, 0)'
-        # plt.rcParams['figure.facecolor'] = '(0, 0, 0)'
-        # plt.rcParams['axes.labelcolor'] = 'w'
-        # plt.rcParams['axes.edgecolor'] = 'w'
-        # plt.rcParams['xtick.color'] = 'w'
-        # plt.rcParams['ytick.color'] = 'w'
-        fig, ax = plt.subplots(dpi=300)
-        plt.plot(xn2, (id[0]), 'm')
-        plt.plot(xn2, cal_fin2(xn2, pS), 'b')
-        plt.plot(xn2, id[0] - tmp + 0.9 * min(id[0]), 'lime')
-        plt.plot(xn2[:int(len(xn2)/2)]*2, (id[0] + max(id[0]) - min(spc) + 10 * np.sqrt(max(id[0])))[:int(len(id[0])/2)][::-1], 'r', linestyle = 'None', marker = 'o', markersize = 2)
-        plt.plot(xn2[:int(len(xn2)/2)]*2, (id[0] + max(id[0]) - min(spc) + 10 * np.sqrt(max(id[0])))[int(len(id[0])/2):], 'yellow', linestyle = 'None', marker = 'o', markersize = 2)
-        sax = ax.twiny()
-        ax.get_yaxis().set_ticks([])
-        ax.set_xlabel('channel', color='m')
-        sax.set_xlabel('Velocity, mm/s', color='r')
-        sax.plot(xT[:int(len(spc)/2)], (spc + 2*(max(id[0]) - min(spc) + 10 * np.sqrt(max(id[0]))))[:int(len(spc)/2)], 'r', linestyle = 'None', marker = 'o', markersize = 2)
-        sax.plot(xT[int(len(spc)/2):], (spc + 2*(max(id[0]) - min(spc) + 10 * np.sqrt(max(id[0]))))[int(len(spc)/2):], 'yellow', linestyle = 'None', marker = 'o', markersize = 2)
-        sax.plot(xT2, delt + 4*(max(id[0]) - min(spc) + 10 * np.sqrt(max(id[0]))), 'lime')
-        sax.plot(xT2, spc2/2 + 2*(max(id[0]) - min(spc) + 10 * np.sqrt(max(id[0]))), 'm', marker = 'o', markersize = 1)
-
-
-
-        ax.text(0, max(id[0])+4*np.sqrt(max(id[0])), 'Va = %.3f mm/s' % pS[0], color='w', fontsize=8)
-        ax.text(len(xn2)/2, max(id[0]) + 4 * np.sqrt(max(id[0])), 'ΔN0 = %.1f ' %(abs(pS[6]) /  (pCAL[0] + pS[6]*(1+np.sign(pS[6])) / 2) * 100) +'%', color='w', fontsize=8, horizontalalignment='center')
-        ax.text(len(xn2), max(id[0]) + 4 * np.sqrt(max(id[0])), 'impurity %.1f ' %(pS[11]/(pS[9]+pS[11])*100) +'%', color='w', fontsize=8, horizontalalignment='right')
-
-        ax.text(len(xn2)/2, max(id[0]) + 10 * np.sqrt(max(id[0])), str('lin ')*(method==1) + str('sin ')*(method==0) + str(n1) + str(' ') + str(n2), color='r', fontsize=8, horizontalalignment='center')
-
-        fig.savefig(os.path.join(dir_path, 'calibr.png'), bbox_inches='tight')
-        plt.close()
-
+    # --------------------------------------------------------------------- #
+    # STEP 12: diagnostics and output files.                                #
+    # --------------------------------------------------------------------- #
+    if VVV == 3:
+        _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve,
+                                  flat_counts, v_axis, v_folded, data_folded,
+                                  fold_residual, pS, pCAL[0], method, n1, n2)
         print('Shift due to instrumental function ', INS_shift)
-        print('Velocity range: ', min(xT2), ' to ', max(xT2), 'mm/s, absolute shift ', (max(xT2)+min(xT2))/2  )
+        print('Velocity range: ', min(v_folded), ' to ', max(v_folded),
+              'mm/s, absolute shift ', (max(v_folded) + min(v_folded)) / 2)
         print('Velocity amplitude is', pS[0], 'mm/s')
         print('Source shift is', pS[2], 'mm/s')
-        print('difference of N0:', abs(pS[6]) /  (pCAL[0] + pS[6]*(1+np.sign(pS[6])) / 2) * 100, '%')
-        print('impurity is', pS[11]/(pS[9]+pS[11])*100, '%')
-        print('maximum deviation is ', max(np.abs(spc2-spc3)), 'or ',  max(np.abs(spc2-spc3))/pCAL[0], '%')
-        # if VVV == 3:
+        print('difference of N0:',
+              abs(pS[6]) / (pCAL[0] + pS[6] * (1 + np.sign(pS[6])) / 2) * 100, '%')
+        print('impurity is', pS[11] / (pS[9] + pS[11]) * 100, '%')
+        print('maximum deviation is ', max(np.abs(data_folded - fit_folded)),
+              'or ', max(np.abs(data_folded - fit_folded)) / pCAL[0], '%')
         print('Texture parameter is', pS[10], 'should be 0 for isotropic')
 
+    _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded)
 
-    if platform.system() == 'Windows':
-        rpath = str(dir_path) + str('\\\\Calibration.dat')
-    else:
-        rpath = str(dir_path) + str('/Calibration.dat')
-
-    f = open(rpath, "w")
-    f.write(str('#') + '\t' + str('lin ')*(method==1) + str('sin ')*(method==0) + '\t' + str(n1) + '\t' + str(n2) + '\n')
-    for i in range(0, int(len(xT2))):
-        f.write(str(xT2[i]) + '\t' + str(spc2[i]) + '\n')
-    f.write('\n')
-    f.close()
-
-    pCAL2 = pCAL
-    pCAL2[number_of_baseline_parameters] = pS[9]
-    pCAL2[number_of_baseline_parameters + 8] = pS[11]
-
-    return(xT2, spc2, spc3)
+    return (v_folded, data_folded, fit_folded)

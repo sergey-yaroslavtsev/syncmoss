@@ -69,7 +69,8 @@ def _run_calibration(mca, vel_start, vvv, jn=32):
         pool.close()
         pool.join()
         shutil.rmtree(work, ignore_errors=True)
-    return np.asarray(A, dtype=float)
+    return (np.asarray(A, dtype=float), np.asarray(B, dtype=float),
+            np.asarray(C, dtype=float))
 
 
 @pytest.fixture(scope="module")
@@ -88,9 +89,20 @@ def golden():
 
 @pytest.mark.parametrize("vel_start", [0, 1])
 def test_sms_velocity_axis_is_finite(sms_results, vel_start):
-    v = sms_results[vel_start]
+    v = sms_results[vel_start][0]
     assert v.size == 512
     assert np.all(np.isfinite(v))
+
+
+@pytest.mark.parametrize("vel_start", [0, 1])
+def test_sms_folded_spectrum_and_fit(sms_results, vel_start):
+    """The folded data (B) and folded fit (C) must be consistent: same length
+    as the velocity axis, finite, and the fit must actually describe the data
+    (the committed reference runs deviate by <4.5% of the peak counts)."""
+    v, data, fit = sms_results[vel_start]
+    assert data.size == v.size and fit.size == v.size
+    assert np.all(np.isfinite(data)) and np.all(np.isfinite(fit))
+    assert float(np.max(np.abs(data - fit))) < 0.10 * float(np.max(data))
 
 
 @pytest.mark.parametrize("vel_start", [0, 1])
@@ -100,7 +112,7 @@ def test_sms_matches_golden(sms_results, golden, vel_start):
     A wrong Sextet/Doublet parameter offset would shift the fitted line positions
     by >0.5 mm/s, so the tight span/endpoint tolerance guards those offsets.
     """
-    v = sms_results[vel_start]
+    v = sms_results[vel_start][0]
     ref = golden[str(vel_start)]
     assert v.size == ref["n"]
     assert float(v.max() - v.min()) == pytest.approx(ref["v_span"], abs=0.05)
@@ -114,7 +126,7 @@ def test_sms_matches_golden(sms_results, golden, vel_start):
 def test_sms_velocity_direction_reverses(sms_results, vel_start):
     """Vel_start flips the sweep direction, so the two axes are mirror-like:
     the span matches but the (min, max) endpoints swap sign roughly."""
-    v0, v1 = sms_results[0], sms_results[1]
+    v0, v1 = sms_results[0][0], sms_results[1][0]
     assert float(v0.max() - v0.min()) == pytest.approx(float(v1.max() - v1.min()), abs=0.05)
 
 
@@ -132,15 +144,24 @@ _CMS_TRUE_VMAX = 6.0
 
 
 def test_cms_velocity_axis_is_finite(cms_result):
-    assert cms_result.size > 0
-    assert np.all(np.isfinite(cms_result))
+    v = cms_result[0]
+    assert v.size > 0
+    assert np.all(np.isfinite(v))
+
+
+def test_cms_folded_spectrum_and_fit(cms_result):
+    """Folded data (B) and fit (C) consistency for the CMS/linear path."""
+    v, data, fit = cms_result
+    assert data.size == v.size and fit.size == v.size
+    assert np.all(np.isfinite(data)) and np.all(np.isfinite(fit))
+    assert float(np.max(np.abs(data - fit))) < 0.10 * float(np.max(data))
 
 
 def test_cms_recovers_linear_drive_amplitude(cms_result):
     """CMS uses a single Gaussian instrumental width (GCMS); the linear-drive
     spectrum must be calibrated to ~2 * vmax, guarding both the CMS instrumental
     handling and the Sextet parameter offsets on the linear-fit path."""
-    v = cms_result
+    v = cms_result[0]
     span = float(v.max() - v.min())
     assert span == pytest.approx(2 * _CMS_TRUE_VMAX, abs=1.0), (
         f"recovered CMS velocity span {span:.3f} mm/s far from expected {2 * _CMS_TRUE_VMAX}"
