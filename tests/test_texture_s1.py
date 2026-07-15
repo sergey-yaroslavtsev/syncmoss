@@ -9,8 +9,10 @@ uniaxial texture order parameter. These tests pin the physics of that term:
   * it is a purely thick, off-axis observable -- it vanishes for the axis along
     the beam-perpendicular readout is unaffected in the thin limit, and it does
     nothing when the axis lies in the polarization plane (theta_k = 90, n_z = 0);
-  * only |S1| is measurable from a single homogeneous layer (its sign conjugates
-    the cross-section, which the intensity readout cannot see);
+  * the SIGN of A_m is observable for a polarized (SMS) beam once the dispersive
+    (Kramers--Kronig) part is included -- S1 -> -S1 is no longer a pure complex
+    conjugation of the non-Hermitian cross-section -- but stays invisible to an
+    unpolarized (CMS, half-trace) beam;
   * A_m = 0 (the default) restores the exact random-powder limit at A = 0.
 
 Pure NumPy/Numba path (TImod called directly), like test_polarization.
@@ -39,15 +41,19 @@ _MODELS = {
 _FARADAY_MODELS = sorted(_MODELS)
 
 
-def _compute(model, params):
+def _compute(model, params, mett=0):
+    # Pin the complex-Voigt method/sign to the shipping defaults so these tests
+    # are independent of any developer switch of models.COMPLEX_VOIGT_METHOD.
+    m5.COMPLEX_VOIGT_METHOD = 'pseudo'
+    m5.DISPERSION_SIGN = +1.0
     return np.asarray(
         m5.TImod(_E, np.array(params, float), np.array([model]), _E, 0.0, 1.0,
-                 np.array([]), [], [], Met=-1, Mett=0),
+                 np.array([]), [], [], Met=-1, Mett=mett),
         dtype=float,
     )
 
 
-def _spec(model, am=0.0, theta=None, a_tex=None, thickness=None):
+def _spec(model, am=0.0, theta=None, a_tex=None, thickness=None, mett=0):
     base, thidx, aidx, amidx = _MODELS[model]
     p = list(base)
     p[amidx] = am
@@ -57,7 +63,7 @@ def _spec(model, am=0.0, theta=None, a_tex=None, thickness=None):
         p[aidx] = a_tex
     if thickness is not None:
         p[0] = thickness
-    return _compute(model, p)
+    return _compute(model, p, mett=mett)
 
 
 # --- the S1 = A_m * sqrt((1 + 2A)/3) parametrisation itself -------------------
@@ -111,13 +117,26 @@ def test_am_changes_offaxis_thick_spectrum(model):
 
 
 @pytest.mark.parametrize("model", _FARADAY_MODELS)
-def test_only_magnitude_of_am_is_observable(model):
-    """Reversing A_m conjugates the cross-section matrix; the intensity readout is
-    invariant under conjugation, so only |S1| is measurable from one layer."""
-    y_plus = _spec(model, am=0.7, theta=40.0)
-    y_minus = _spec(model, am=-0.7, theta=40.0)
-    assert np.allclose(y_plus, y_minus, rtol=1e-9, atol=1e-11), (
-        f"{model}: the sign of A_m must not be observable for a single layer"
+def test_am_sign_observable_for_sms_not_cms(model):
+    """The sign of A_m and the beam polarization.
+
+    In the absorption-only (Hermitian) model reversing A_m simply conjugated the
+    cross-section, so only |S1| was ever measurable. With the dispersive
+    (Kramers--Kronig) completion the cross-section is complex non-Hermitian and
+    S1 -> -S1 is no longer a pure conjugation, so the SIGN of A_m becomes a real
+    observable -- but only for a POLARIZED (SMS, Mett=0) beam. An UNPOLARIZED
+    (CMS, Mett=1) beam is read out as the half-trace, which stays invariant under
+    conjugation, so it still cannot see the sign (an unpolarized beam has no
+    handedness to couple to the magnetisation direction)."""
+    sms_plus = _spec(model, am=0.7, theta=40.0, mett=0)
+    sms_minus = _spec(model, am=-0.7, theta=40.0, mett=0)
+    assert np.max(np.abs(sms_plus - sms_minus)) > 1e-3, (
+        f"{model}: with dispersion the sign of A_m must be observable for a polarized SMS beam"
+    )
+    cms_plus = _spec(model, am=0.7, theta=40.0, mett=1)
+    cms_minus = _spec(model, am=-0.7, theta=40.0, mett=1)
+    assert np.allclose(cms_plus, cms_minus, rtol=1e-9, atol=1e-11), (
+        f"{model}: the sign of A_m must NOT be observable for an unpolarized CMS beam"
     )
 
 

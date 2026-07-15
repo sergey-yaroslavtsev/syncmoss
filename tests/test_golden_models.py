@@ -32,7 +32,14 @@ def _compute(model, params):
     Met=-1 is the per-energy ("recursive") entry point: V starts at 0 (no
     baseline) and E is taken verbatim, so the model parameters start at index 0.
     Mett=0 selects the single-line (SMS, Ham_mono) Hamiltonian path.
+
+    The complex-Voigt method and dispersion sign are pinned here to the shipping
+    defaults so the golden values are reproducible regardless of any developer
+    switch of ``models.COMPLEX_VOIGT_METHOD`` (e.g. while comparing 'wofz' vs
+    'pseudo'); the golden file was generated with exactly these settings.
     """
+    m5.COMPLEX_VOIGT_METHOD = 'pseudo'
+    m5.DISPERSION_SIGN = +1.0
     return np.asarray(
         m5.TImod(_E, np.array(params, float), np.array(model), _E, 0.0, 1.0,
                  np.array([]), [], [], Met=-1, Mett=0),
