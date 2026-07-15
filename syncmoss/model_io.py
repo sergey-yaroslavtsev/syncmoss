@@ -87,7 +87,7 @@ def load_model(main_window):
     file_path, _ = QFileDialog.getOpenFileName(
         main_window,
         "Pick a model...",
-        main_window.dir_path,
+        main_window.workfolder,
         "Model files (*.mdl);;All files (*.*)"
     )
 
