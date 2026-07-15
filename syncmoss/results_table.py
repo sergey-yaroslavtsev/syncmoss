@@ -381,7 +381,7 @@ class ResultsTable(QWidget):
             self.buttons[base_row].setStyleSheet(f"background-color: {color}; color: {text_color};")
             
             # Row 1: Intensity percentage (or model name for baseline/Nbaseline)
-            if model_name in ['baseline', 'Nbaseline', 'Distr', 'Corr', 'Expression', 'Variables']:
+            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables']:
                 self.buttons[base_row + 1].setText('')  # Empty for baseline/Nbaseline
             elif self.buttons[base_row + 1].text() == 'Impurity':
                 pass
@@ -393,7 +393,7 @@ class ResultsTable(QWidget):
             self.buttons[base_row + 1].setStyleSheet(f"background-color: {color}; color: {text_color};")
             
             # Row 2: Intensity error (or model name for baseline/Nbaseline)
-            if model_name in ['baseline', 'Nbaseline', 'Distr', 'Corr', 'Expression', 'Variables']:
+            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables']:
                 self.buttons[base_row + 2].setText('')  # Empty for baseline/Nbaseline
             elif self.buttons[base_row + 2].text() == 'no %':
                 pass
@@ -435,7 +435,7 @@ class ResultsTable(QWidget):
                 continue
             
             # Skip models without T parameter
-            if model_name in ['Distr', 'Corr', 'Expression', 'Variables']:
+            if model_name in ['Layer', 'Distr', 'Corr', 'Expression', 'Variables']:
                 param_index += len(param_names)
                 continue
             

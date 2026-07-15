@@ -15,7 +15,7 @@ _DEFAULT_THEME = {
     'legend_textcolor': 'white',
 }
 
-_NON_SUBSPECTRUM_MODELS = {'Distr', 'Corr', 'Expression', 'Variables'}
+_NON_SUBSPECTRUM_MODELS = {'Distr', 'Corr', 'Expression', 'Variables', 'Layer'}
 
 
 def _tc(theme):

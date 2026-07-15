@@ -2287,7 +2287,7 @@ class PhysicsApp(QMainWindow):
             model_list = self.params_table.get_model_list()
             
             # Special models that don't produce individual subspectra
-            non_subspectrum_models = {'Nbaseline', 'Distr', 'Corr', 'Expression', 'Variables'}
+            non_subspectrum_models = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables'}
             
             # Skip special models when counting subspectra
             # Count how many actual subspectra appear before this component
