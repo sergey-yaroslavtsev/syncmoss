@@ -1822,6 +1822,7 @@ class PhysicsApp(QMainWindow):
                 'A': A,
                 'B': B,
                 'SPC_f': SPC_f,
+                'hires_diff': hires_diff,
                 'FS': FS,
                 'FS_pos': FS_pos,
                 'p': p,
