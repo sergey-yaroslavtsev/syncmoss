@@ -899,7 +899,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S3 = Sig - eps + a2 - mun * (gex + ggr) / 2 * H
                 S4 = Sig - eps - a2 + mun * (gex + ggr) / 2 * H
                 SET.append([S1, S2, S3, S4, S5, S6])
-                V += 14
+                V += 15   # ASM: +1 for the cycloid-plane angle omega (no effect on positions)
             if model[i] == 'Layer':
                 SET.append([])
                 V += 0
@@ -959,7 +959,7 @@ def mod_pos(p, model, INS, Met=0):
             for j in range(MV, len(model)):
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
-                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14 * (model[j] == 'ASM')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')

@@ -2041,12 +2041,21 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 # with the radiation h held fixed); each modulation point is a
                 # sextet whose 2x2 matrix is built from the LOCAL moment
                 # direction, and the matrices are averaged over the modulation.
-                # Geometry: (theta_h, phi_h) is the cycloid (anharmonicity) axis
-                # n in the lab frame (beam k = z, h = x); the moment swings in
-                # the plane spanned by n and the in-plane part of h, with polar
-                # angle theta where cos^2(theta) = co. The cycloid samples both
-                # senses of the moment, so the magneto-optical term averages out
-                # and the symmetric Delta m = +/-1 matrix is used.
+                # Geometry: (theta_k, phi_h) is the easy (anharmonicity) axis u
+                # in the lab frame (beam k = z, h = x); the NEW angle omega orients
+                # the cycloid PLANE about u by choosing the second in-plane axis v.
+                # The moment swings in the (u, v) plane with polar angle theta where
+                # cos^2(theta) = co. Each sample point is averaged over the mirror
+                # pair (+/- v): psi and -psi are equally populated in the ideal
+                # cycloid and the symmetric matrices are even under m -> -m, so this
+                # two-point average turns the quarter-period sum into an EXACT
+                # full-period average (it also cancels the u-v cross terms that the
+                # old single-direction sampling retained -- a correction, not a
+                # regression). The cycloid samples both senses of the moment, so the
+                # magneto-optical term averages out and the symmetric Delta m = +/-1
+                # matrix is used. Old fits use omega = omega_0(theta_k, phi_h) =
+                # degrees(arctan2(-sin(phi_h), cos(theta_k) * cos(phi_h))), the
+                # transverse-to-u part of h (=90 in the degenerate u || h case).
                 I = abs(p[V])
                 sigm = p[V + 1] * MulCo
                 eps_m = p[V + 2] * MulCo
@@ -2061,33 +2070,47 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 Atex = p[V + 11]                 # uniaxial (fiber) texture order parameter
                 Num = int(abs(p[V + 12]))
                 I13 = p[V + 13]
+                om = p[V + 14]                   # cycloid-plane angle about the easy axis, deg
                 co, v1, v2, v3, v4, v5, v6 = ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m_asm, Num)
                 Nn = len(co)
                 Aeff = 0.5
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
-                nx, ny, nz = _axis_xyz(th, ph)
-                ex, ey, ez = 1.0 - nx * nx, -nx * ny, -nx * nz   # h - (h.n) n, with h = x
-                en = (ex * ex + ey * ey + ez * ez) ** 0.5
-                if en < 1e-9:                                    # h parallel to the axis
-                    ex, ey, ez, en = 0.0, 1.0, 0.0, 1.0
-                ex, ey = ex / en, ey / en
+                # easy (anharmonicity) axis u at (theta_k, phi_h)
+                ux, uy, uz = _axis_xyz(th, ph)
+                # spherical tangent vectors at (th, ph): e_theta, e_phi (both
+                # perpendicular to u). Only the transverse (x, y) parts are used,
+                # as the merged matrices carry no Faraday term; e_theta, e_phi
+                # exist at every (th, ph), so no degenerate fallback is needed.
+                thr = th / 180.0 * np.pi
+                phr = ph / 180.0 * np.pi
+                etx, ety = np.cos(thr) * np.cos(phr), np.cos(thr) * np.sin(phr)   # e_theta
+                epx, epy = -np.sin(phr), np.cos(phr)                             # e_phi
+                # second in-plane axis v, one angle omega about u
+                omr = om / 180.0 * np.pi
+                vx = np.cos(omr) * etx + np.sin(omr) * epx
+                vy = np.cos(omr) * ety + np.sin(omr) * epy
                 add = np.zeros((len(E), 2, 2), dtype=complex)
                 for j in range(0, Nn):
                     cphi = np.sqrt(abs(co[j]))
                     sphi = np.sqrt(max(0.0, 1.0 - co[j]))
-                    mxj = cphi * nx + sphi * ex
-                    myj = cphi * ny + sphi * ey
-                    Md1 = _texture_blend(_mhat_dm1_sym(mxj, myj), Atex)
-                    Mpi = _texture_blend(_mhat_dm0(mxj, myj), Atex)
+                    # mirror pair (+/- v) about the easy axis; the symmetric
+                    # matrices are even under m -> -m, so this two-point average
+                    # IS the exact full-period average (see the branch comment).
+                    mxa, mya = cphi * ux + sphi * vx, cphi * uy + sphi * vy
+                    mxb, myb = cphi * ux - sphi * vx, cphi * uy - sphi * vy
+                    Md1 = _texture_blend(0.5 * (_mhat_dm1_sym(mxa, mya)
+                                                + _mhat_dm1_sym(mxb, myb)), Atex)
+                    Mpi = _texture_blend(0.5 * (_mhat_dm0(mxa, mya)
+                                                + _mhat_dm0(mxb, myb)), Atex)
                     add += (I1 * (Voight_c(WL, WG, E - v1[j]) + Voight_c(WL, WG, E - v6[j]))[:, None, None] * Md1[None, :, :]
                             + I2 * (Voight_c(WL, WG, E - v2[j]) + Voight_c(WL, WG, E - v5[j]))[:, None, None] * Mpi[None, :, :]
                             + I3 * (Voight_c(WL, WG, E - v3[j]) + Voight_c(WL, WG, E - v4[j]))[:, None, None] * Md1[None, :, :]) / Nn
                 add = Kpref * add
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 14
+                V += 15
             if model[i] == 'Layer':
                 # Physical layer boundary (no parameters). Within a layer the
                 # cross-sections add (into Smat); between layers the beam
@@ -2140,7 +2163,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                     k -= 1
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
-                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 14*(model[k]=='ASM')\
+                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM')\
                            + 14*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
 
                 model_d = np.array([model[k:i]] * Num).flatten()
@@ -2378,7 +2401,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             for j in range(MV, len(model)):
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
-                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 14*(model[j]=='ASM')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')

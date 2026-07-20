@@ -25,7 +25,7 @@ _MERGED = {
     'MDGD':        (14, 17, 10),
     'Relax_MS':    (9, 11, 5),
     'Relax_2S':    (11, 14, 8),
-    'ASM':         (12, 14, 9),
+    'ASM':         (12, 15, 9),
     'Hamilton_mc': (11, 12, None),
 }
 
@@ -109,6 +109,34 @@ def test_upgrade_pre_am_polarized_inserts_am_after_a(model):
     assert groups[a_idx + 1][0] == '0'                # A_m = 0 inserted right after A
     assert groups[a_idx + 1][1:3] == ['-1', '1']      # A_m bounds [-1, 1]
     assert float(groups[a_idx + 2][0]) == a_idx + 1   # the old next param shifted by one
+
+
+def test_upgrade_asm_scalar_appends_omega_at_degenerate_default():
+    # Scalar (12) -> polarized: theta_k=90/phi_h=0 inserted, so the appended
+    # cycloid-plane angle omega = omega_0(90, 0) = 90 (degenerate u || h fallback).
+    out = legacy.upgrade_mdl_row('ASM', _row(range(12)))
+    groups = [out[i * 5:i * 5 + 5] for i in range(len(out) // 5)]
+    assert len(groups) == 15 == mod_len_def('ASM', include_special=False)
+    assert float(groups[-1][0]) == pytest.approx(90.0)     # omega = omega_0(90, 0)
+    assert groups[-1][1:3] == ['-360', '360']              # omega bounds
+
+
+def test_upgrade_asm_pre_omega_polarized_appends_omega0():
+    # Pre-omega polarized (14) -> new (15): omega appended = omega_0(theta_k, phi_h)
+    # read from the row (here a tilted axis), everything else kept in place.
+    vals = list(range(14))
+    vals[9], vals[10] = 30.0, 40.0                         # theta_k, phi_h
+    out = legacy.upgrade_mdl_row('ASM', _row(vals))
+    groups = [out[i * 5:i * 5 + 5] for i in range(len(out) // 5)]
+    assert len(groups) == 15
+    assert float(groups[13][0]) == 13                      # I13 (old last param) kept
+    assert float(groups[-1][0]) == pytest.approx(legacy._asm_omega0(30.0, 40.0))
+
+
+def test_upgrade_asm_is_noop_for_new_layout():
+    # A 15-param ASM row is already current -> returned unchanged.
+    row = _row(range(15), pad_to=16)
+    assert legacy.upgrade_mdl_row('ASM', row) == row
 
 
 def test_upgrade_mdl_row_is_noop_for_new_layout():

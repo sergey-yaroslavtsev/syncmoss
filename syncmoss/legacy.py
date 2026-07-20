@@ -27,7 +27,12 @@ The upgrade applies the SAME transform the presets/data files were converted wit
     gain a magnetic polar-order parameter ``A_m = 0`` immediately after ``A``
     (unmagnetised, so the sigma+- lines keep their Faraday-averaged form, matching
     pre-A_m files);
-  * ``Hamilton_mc`` had no asymmetry -- it only gains a trailing ``alpha_k = 0``.
+  * ``Hamilton_mc`` had no asymmetry -- it only gains a trailing ``alpha_k = 0``;
+  * ``ASM`` additionally gained a trailing cycloid-plane angle ``omega`` (both from
+    the pre-merge scalar layout AND from the pre-omega polarized layout). It is
+    appended set to ``omega_0(theta_k, phi_h)`` -- the angle that reproduces the
+    old (plane-contains-h) geometry, up to the exact full-period symmetrization
+    that the new ASM applies (see :func:`_asm_omega0` and ``models.TImod``).
 
 The asymmetry->texture map ``f`` is the cubic through the three points the old
 scalar defaults map onto in the new parametrisation:
@@ -43,6 +48,8 @@ component after an upgraded one, so cross-component constraint references
 one acknowledged imperfection of the legacy path.
 """
 from __future__ import annotations
+
+import math
 
 
 def a_scalar_to_texture(a):
@@ -69,7 +76,11 @@ _MERGED = {
     'MDGD':        {'old': 14, 'asym': 10, 'am': True, 'poly': 16, 'a_idx': 12},
     'Relax_MS':    {'old': 9,  'asym': 5},
     'Relax_2S':    {'old': 11, 'asym': 8,  'am': True, 'poly': 13, 'a_idx': 10},
-    'ASM':         {'old': 12, 'asym': 9},
+    # ASM gained a trailing cycloid-plane angle omega. ``trail`` marks the append;
+    # ``trail_poly`` is the pre-omega polarized count and ``th_idx``/``ph_idx`` the
+    # theta_k/phi_h slots in that layout, used to seed omega = omega_0(th, ph).
+    'ASM':         {'old': 12, 'asym': 9, 'trail': True, 'trail_poly': 14,
+                    'th_idx': 9, 'ph_idx': 10},
     'Hamilton_mc': {'old': 11, 'asym': None},
 }
 
@@ -80,11 +91,51 @@ _PHI_H_BOUNDS = ('-360', '360')
 _A_TEX_BOUNDS = ('-0.5', '1')
 _A_M_BOUNDS = ('-1', '1')
 _ALPHA_K_BOUNDS = ('-360', '360')
+_OMEGA_BOUNDS = ('-360', '360')
 
 
 def _fmt(x):
     """Format a float back into a model-file field without noise."""
     return '%.10g' % float(x)
+
+
+def _asm_omega0(theta_deg, phi_deg):
+    """Cycloid-plane angle ``omega`` that reproduces the pre-omega ASM geometry.
+
+    The old ASM built the cycloid's second in-plane axis as the transverse-to-u
+    part of the radiation h = x, which corresponds to
+    ``omega_0 = atan2(-sin(phi_h), cos(theta_k) * cos(phi_h))``. In the degenerate
+    case u || h (theta_k = 90, phi_h = 0 or 180) the old code fell back to e = y,
+    i.e. ``omega_0 = 90 deg``. See the ``ASM`` branch of ``models.TImod``.
+    """
+    thr = math.radians(theta_deg)
+    phr = math.radians(phi_deg)
+    y = -math.sin(phr)
+    x = math.cos(thr) * math.cos(phr)
+    if abs(x) < 1e-9 and abs(y) < 1e-9:
+        return 90.0
+    return math.degrees(math.atan2(y, x))
+
+
+def _append_trailing(model_name, info, groups):
+    """Append any trailing parameter a model gained after the polarized merge.
+
+    Currently only ``ASM``, which gained the cycloid-plane angle ``omega`` at the
+    very end. ``omega`` is seeded to ``omega_0(theta_k, phi_h)`` so the upgraded
+    row reproduces the old (plane-contains-h) geometry as closely as the exact
+    full-period symmetrization the new ASM applies allows. A non-numeric angle
+    (a constraint / expression reference) falls back to the degenerate 90 deg.
+    """
+    if not info.get('trail'):
+        return groups
+    if model_name == 'ASM':
+        try:
+            om = _asm_omega0(float(groups[info['th_idx']][0]),
+                             float(groups[info['ph_idx']][0]))
+        except (ValueError, TypeError, IndexError):
+            om = 90.0
+        groups = groups + [[_fmt(om), _OMEGA_BOUNDS[0], _OMEGA_BOUNDS[1], '', 'True']]
+    return groups
 
 
 def normalize_legacy_model_name(name):
@@ -158,6 +209,9 @@ def upgrade_mdl_row(model_name, row_data):
             # Faraday-averaged sigma, i.e. the pre-A_m behaviour).
             am = [am_group] if info.get('am') else []
             upgraded = real_groups[:asym] + [theta, phi, new_a] + am + real_groups[asym + 1:]
+        # ASM: append the trailing cycloid-plane angle omega (= omega_0 for the
+        # theta_k/phi_h just inserted -> 90 deg for the degenerate default).
+        upgraded = _append_trailing(model_name, info, upgraded)
         return [field for g in upgraded for field in g]
 
     if info.get('am') and real == info['poly']:
@@ -165,6 +219,12 @@ def upgrade_mdl_row(model_name, row_data):
         # insert A_m = 0 right after A; everything else keeps its place.
         a_idx = info['a_idx']
         upgraded = real_groups[:a_idx + 1] + [am_group] + real_groups[a_idx + 1:]
+        return [field for g in upgraded for field in g]
+
+    if info.get('trail') and real == info['trail_poly']:
+        # Pre-omega POLARIZED ASM row (has theta_k/phi_h/A but no omega): append
+        # omega = omega_0(theta_k, phi_h); everything else keeps its place.
+        upgraded = _append_trailing(model_name, info, real_groups)
         return [field for g in upgraded for field in g]
 
     return row_data                        # already new layout (or unexpected)

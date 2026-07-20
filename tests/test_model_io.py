@@ -24,7 +24,7 @@ EXPECTED_PARAM_COUNTS = {
     "Relax_2S": 14,
     "Average_H": 11,
     "Relax_MS": 11,
-    "ASM": 14,
+    "ASM": 15,
     "Hamilton_mc": 12,
     "Hamilton_pc": 9,
     "Variables": numco,                       # 15

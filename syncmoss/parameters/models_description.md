@@ -167,11 +167,24 @@ Parameters:
 - L: Lorentzian width.
 - G: Gaussian width.
 - m: elliptic/anharmonicity parameter.
-- $\theta_k$: modulation-axis polar angle.
-- $\varphi_h$: modulation-axis azimuth.
+- $\theta_k$: easy (anharmonicity) axis polar angle.
+- $\varphi_h$: easy (anharmonicity) axis azimuth.
 - A: uniaxial texture order parameter.
 - Num: number of sampling points over one modulation period.
 - I13: intensity-ratio control between outer and inner groups.
+- $\omega$: cycloid-plane angle about the easy axis. $(\theta_k, \varphi_h)$ fix
+  the easy (anharmonicity) axis $\mathbf{u}$, which always lies IN the plane the
+  moment rotates in. $\omega$ picks the second in-plane axis
+  $\mathbf{v} = \cos\omega\,\mathbf{e}_\theta + \sin\omega\,\mathbf{e}_\varphi$
+  (rotation of $\mathbf{v}$ around $\mathbf{u}$), so the rotation plane is
+  $\mathrm{span}(\mathbf{u}, \mathbf{v})$ and its normal is
+  $\mathbf{n}_c = \mathbf{u}\times\mathbf{v}$. Thus $\omega$ steers the
+  plane-normal direction, but the normal is constrained perpendicular to
+  $\mathbf{u}$ (it sweeps the cone about $\mathbf{u}$ as $\omega$ varies) — it is
+  the single remaining orientation degree of freedom once $\mathbf{u}$ is fixed.
+  $\omega = \omega_0(\theta_k, \varphi_h) =
+  \operatorname{atan2}(-\sin\varphi_h,\ \cos\theta_k\cos\varphi_h)$ reproduces the
+  former plane-contains-$h$ geometry ($=90°$ in the degenerate $\mathbf{u}\parallel h$ case).
 
 ### Average_H (legacy/advanced)
 Field-averaging model retained for compatibility.

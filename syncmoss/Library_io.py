@@ -39,7 +39,7 @@ MODEL_PARAMETER_NAMES = {
 	'Hamilton_pc': ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °'],
 	'Relax_MS': ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'R', 'alfa', 'S'],
 	'Relax_2S': ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'Ω12', 'P1/P2'],
-	'ASM': ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13'],
+	'ASM': ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13', 'ω, °'],
 	'Be': ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1'],
 	'KB_nano': ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1'],
 	'Variables': [f'V{i + 1}' for i in range(numco)],

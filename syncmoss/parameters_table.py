@@ -930,11 +930,11 @@ class ParametersTable(QWidget):
             uppers = ['', '', '', '', '', '', '', '', '180', '360', '1', '1', '', '']
             fixes = [False, False, False, False, False, False, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, A_m locked by default
         elif model == 'ASM':
-            names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13']
-            values = ['1.0', '0.0', '0.0', '0.0', '30.0', '5.0', '0.098', '0.1', '0.1', theta_default, '0.0', '0', '25', '3.0']
-            lowers = ['0', '', '', '', '', '', '0.098', '0', '-1', '-180', '-360', '-0.5', '7', '0']
-            uppers = ['', '', '', '', '', '', '', '', '1', '180', '360', '1', '', '']
-            fixes = [False, False, False, False, False, False, True, False, False, True, True, True, True, False]  # theta_k, phi_h, A locked by default
+            names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13', 'ω, °']
+            values = ['1.0', '0.0', '0.0', '0.0', '30.0', '5.0', '0.098', '0.1', '0.1', theta_default, '0.0', '0', '25', '3.0', '90']
+            lowers = ['0', '', '', '', '', '', '0.098', '0', '-1', '-180', '-360', '-0.5', '7', '0', '-360']
+            uppers = ['', '', '', '', '', '', '', '', '1', '180', '360', '1', '', '', '360']
+            fixes = [False, False, False, False, False, False, True, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, omega locked by default
         elif model == 'Be':
             # Impurity preset based on the polarized Doublet, loaded from Be.txt
             # (9-value polarized layout: T, d, e, L, G, theta_k, phi_h, A, G2/G1).
@@ -1065,7 +1065,7 @@ class ParametersTable(QWidget):
         if model == 'Relax_MS':
             _hard_lock_fix_checkbox(len(names) - 1)      # last 'S'
         elif model == 'ASM':
-            _hard_lock_fix_checkbox(len(names) - 2)      # one before last 'Num'
+            _hard_lock_fix_checkbox(len(names) - 3)      # 'Num' (now followed by I13, ω)
         elif model == 'Distr':
             for idx in [0, len(names) - 2]:              # first 'par' and 'Num'
                 _hard_lock_fix_checkbox(idx)
