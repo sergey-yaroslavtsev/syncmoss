@@ -25,9 +25,10 @@ EXPECTED_PARAM_COUNTS = {
     "Average_H": 11,
     "Relax_MS": 11,
     "ASM": 15,
+    "S/C_DW": 27,
     "Hamilton_mc": 12,
     "Hamilton_pc": 9,
-    "Variables": numco,                       # 15
+    "Variables": numco,                       # 26
     "Nbaseline": number_of_baseline_parameters,  # 8
     "Layer": 0,
 }

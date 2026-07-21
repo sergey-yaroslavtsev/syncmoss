@@ -900,6 +900,27 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S4 = Sig - eps - a2 + mun * (gex + ggr) / 2 * H
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 15   # ASM: +1 for the cycloid-plane angle omega (no effect on positions)
+            if model[i] == 'S/C_DW':
+                # Representative sextet at the BASE (mean) field H0: the density
+                # wave sweeps positions around this, so the markers show the
+                # unmodulated sextet. Same signed-field position kernel as
+                # SDW_thick_terms (with all harmonics = 0), no MulCo here.
+                d0 = p[V + 1]
+                eps0 = p[V + 2]
+                H0 = p[V + 3]
+                KdH = p[V + 10]
+                KeH = p[V + 11]
+                dl = d0 + KdH * H0
+                ep = eps0 + KeH * H0
+                H = H0 / E0_J * c
+                S1 = dl + ep + mun * (3 * gex - ggr) / 2 * H
+                S6 = dl + ep - mun * (3 * gex - ggr) / 2 * H
+                S2 = dl - ep + mun * (gex - ggr) / 2 * H
+                S5 = dl - ep - mun * (gex - ggr) / 2 * H
+                S3 = dl - ep - mun * (gex + ggr) / 2 * H
+                S4 = dl - ep + mun * (gex + ggr) / 2 * H
+                SET.append([S1, S2, S3, S4, S5, S6])
+                V += 27
             if model[i] == 'Layer':
                 SET.append([])
                 V += 0
@@ -959,7 +980,7 @@ def mod_pos(p, model, INS, Met=0):
             for j in range(MV, len(model)):
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
-                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM') + 27 * (model[j] == 'S/C_DW')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')

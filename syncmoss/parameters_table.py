@@ -29,7 +29,7 @@ MODEL_OPTIONS = [
     # polarized fittable models (each reduces to its former scalar form at
     # texture A = 0; SMS uses the full polarized readout, CMS the half-trace)
     'Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S',
-    'Hamilton_mc', 'Hamilton_pc', 'ASM',
+    'Hamilton_mc', 'Hamilton_pc', 'ASM', 'S/C_DW',
     # presets / structural / utility
     'Be', 'KB_nano', 'Layer', 'Distr', 'Corr',
     'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline',
@@ -935,6 +935,19 @@ class ParametersTable(QWidget):
             lowers = ['0', '', '', '', '', '', '0.098', '0', '-1', '-180', '-360', '-0.5', '7', '0', '-360']
             uppers = ['', '', '', '', '', '', '', '', '1', '180', '360', '1', '', '', '360']
             fixes = [False, False, False, False, False, False, True, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, omega locked by default
+        elif model == 'S/C_DW':
+            # Spin/charge density wave (SpectrRelax SDW/CDW layout, 27 slots):
+            # I, base delta/eps, base field H0, widths, spin-axis (theta_k,
+            # phi_h), texture A, magnetic polar order A_m, the field->shift
+            # correlations KdH/KeH, CDW phase Phi, 8 odd field harmonics
+            # (h1..h15), 4 even shift harmonics (d2..d8), sample points Num,
+            # ratio I13. Unused harmonics stay fitted-fixed at 0. A_m behaves as
+            # in the Sextet model (Faraday polar order). See models.SDW_thick_terms.
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H0, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'KδH', 'KεH', 'Φ, °', 'h1, T', 'h3, T', 'h5, T', 'h7, T', 'h9, T', 'h11, T', 'h13, T', 'h15, T', 'd2, mm/s', 'd4, mm/s', 'd6, mm/s', 'd8, mm/s', 'Num', 'I13']
+            values = ['1.0', '0.0', '0.0', '30.0', '0.098', '0.1', theta_default, '0.0', '0', '0', '0.0', '0.0', '0.0', '5.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '50', '3.0']
+            lowers = ['0', '', '', '', '0.098', '0', '-180', '-360', '-0.5', '-1', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '8', '0']
+            uppers = ['', '', '', '', '', '', '180', '360', '1', '1', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, False, True, True, True, True, True, True, True, True, True, True, True, True, False]  # theta_k, phi_h, A, A_m, Num and all optional harmonics/correlations locked by default
         elif model == 'Be':
             # Impurity preset based on the polarized Doublet, loaded from Be.txt
             # (9-value polarized layout: T, d, e, L, G, theta_k, phi_h, A, G2/G1).
@@ -1066,6 +1079,8 @@ class ParametersTable(QWidget):
             _hard_lock_fix_checkbox(len(names) - 1)      # last 'S'
         elif model == 'ASM':
             _hard_lock_fix_checkbox(len(names) - 3)      # 'Num' (now followed by I13, ω)
+        elif model == 'S/C_DW':
+            _hard_lock_fix_checkbox(len(names) - 2)      # 'Num' (followed by I13)
         elif model == 'Distr':
             for idx in [0, len(names) - 2]:              # first 'par' and 'Num'
                 _hard_lock_fix_checkbox(idx)

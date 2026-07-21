@@ -186,6 +186,43 @@ Parameters:
   \operatorname{atan2}(-\sin\varphi_h,\ \cos\theta_k\cos\varphi_h)$ reproduces the
   former plane-contains-$h$ geometry ($=90°$ in the degenerate $\mathbf{u}\parallel h$ case).
 
+### S/C_DW
+Spin/charge density wave. The spin AXIS is fixed at $(\theta_k, \varphi_h)$;
+only the scalar hyperfine parameters (signed field magnitude, isomer shift,
+quadrupole shift) are modulated along the wave, sampled at Num points over one
+period and averaged as a thick (polarized) sextet. The field keeps its SIGN, so
+a reversed moment automatically swaps the line positions within the (1,6) and
+(3,4) pairs. Follows the SpectrRelax SDW/CDW parameter list.
+
+Parameters (in table order):
+- T: effective thickness.
+- $\delta$: base isomer shift $\delta_0$.
+- $\varepsilon$: base quadrupole shift $\varepsilon_0$.
+- H0: base hyperfine field.
+- L: Lorentzian width.
+- G: Gaussian width.
+- $\theta_k$: spin-axis polar angle (beam frame).
+- $\varphi_h$: spin-axis azimuth.
+- A: uniaxial texture order parameter.
+- A_m: magnetic polar-order parameter (as in the Sextet model) that scales the
+  resolved $\sigma^\pm$ Faraday term.
+- $K_\delta H$: isomer-shift–field correlation (mm/s per field unit).
+- $K_\varepsilon H$: quadrupole–field correlation (mm/s per field unit).
+- $\Phi$: CDW phase (deg).
+- h1, h3, …, h15: eight odd SDW field harmonics (field units); unused ones stay 0.
+- d2, d4, d6, d8: four even CDW isomer-shift harmonics (mm/s); unused ones stay 0.
+- Num: number of sampling points over one wave period.
+- I13: intensity-ratio control between outer and inner groups.
+
+The resolved $\sigma^\pm$ (Faraday) matrices are kept per site (never the merged
+symmetric form). Whether the Faraday term survives the modulation is set by the
+WAVE, independently of A_m: for a balanced wave (H0 = 0 and
+$K_\varepsilon H = K_\delta H = 0$) the $+$/$-$ sites are populated equally and
+the Faraday contributions cancel exactly for any A_m; a non-zero base field H0
+(or field correlation) leaves a real, A_m-scaled, thickness-dependent Faraday
+signal. With all wave parameters zero and H0 $\ne$ 0 the model reduces to a
+single (Sextet-equivalent) sextet at the same A_m.
+
 ### Average_H (legacy/advanced)
 Field-averaging model retained for compatibility.
 

@@ -1660,6 +1660,51 @@ def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m, Num):
     return (co, v1, v2, v3, v4, v5, v6)
 
 
+def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
+    """Per-point line positions for a spin/charge density wave (SDW/CDW).
+
+    Fixed spin axis (only scalar hyperfine parameters vary along the wave); H
+    carries its SIGN (Matsnev & Rusakov 2014, Eqs. 1-3, 8-10 with a+- = 0: the
+    angle between H and the EFG axis is constant, so the quadrupole geometry
+    factor is absorbed into eps0/KeH). Returns the six line positions sampled at
+    ``Num`` points over one full period.
+
+    ``hodd`` holds the 8 odd SDW field harmonics (k = 1, 3, ..., 15); ``dev``
+    the 4 even CDW isomer-shift harmonics (k = 2, 4, 6, 8). ``KeH``/``KdH``
+    couple the UNCONVERTED field (same unit as the H0 input) to the quadrupole
+    and isomer shifts, so the conversion ``H = H / E0_J * c`` is applied only
+    AFTER those couplings -- matching ASM_thick_terms and SpectrRelax's SDW/CDW
+    convention. ``endpoint=False`` avoids double-counting psi = 0 = lambda.
+
+    Signs are those of ``ASM_thick_terms`` with a1 = a2 = 0. A sign change of H
+    swaps v1 <-> v6 and v3 <-> v4, which -- with the FIXED sigma+-/pi matrix
+    assignment used in the S/C_DW branch of TImod -- reproduces the physical
+    helicity swap of a reversed moment automatically. Do NOT take abs(H).
+    """
+    psi = np.linspace(0.0, 2.0 * np.pi, int(Num), endpoint=False)
+    H = H0 + 0.0 * psi
+    for i, hk in enumerate(hodd):                    # k = 1, 3, 5, ...
+        if hk != 0.0:
+            H = H + hk * np.sin((2 * i + 1) * psi)
+    ph_r = phi_deg / 180.0 * np.pi
+    # the isomer shift is a scalar (s-electron density) and the quadrupole shift is a lattice/EFG property
+    # neither knows the direction of the moment, only its magnitude.
+    absH = np.abs(H)
+    dl = d0 + KdH * absH
+    for i, dk in enumerate(dev):                     # k = 2, 4, 6, 8
+        if dk != 0.0:
+            dl = dl + dk * np.sin((2 * (i + 1)) * psi + ph_r)
+    ep = eps0 + KeH * absH
+    H = H / E0_J * c                                 # same conversion as ASM_thick_terms
+    v1 = dl + ep + mun * (3 * gex - ggr) / 2 * H
+    v6 = dl + ep - mun * (3 * gex - ggr) / 2 * H
+    v2 = dl - ep + mun * (gex - ggr) / 2 * H
+    v5 = dl - ep - mun * (gex - ggr) / 2 * H
+    v3 = dl - ep - mun * (gex + ggr) / 2 * H
+    v4 = dl - ep + mun * (gex + ggr) / 2 * H
+    return (v1, v2, v3, v4, v5, v6)
+
+
 def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.98, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False):
         # SCR = np.array(x_exp)
         SCR = x_exp
@@ -2111,6 +2156,77 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 15
+            if model[i] == 'S/C_DW':
+                # Spin/charge density wave, polarized (thick). The spin AXIS is
+                # FIXED at (theta_k, phi_h); only the SCALAR hyperfine parameters
+                # (signed field H, isomer shift, quadrupole shift) are modulated
+                # along the wave. Unlike ASM the 2x2 matrices are therefore the
+                # plain Sextet ones evaluated ONCE and hoisted out of the
+                # modulation loop; only the six line positions vary per point.
+                #
+                # The field carries its SIGN (SDW_thick_terms does NOT take
+                # abs(H)): a sign change of H swaps v1<->v6 and v3<->v4 while the
+                # matrix assignment ({1,4}->sigma-, {3,6}->sigma+, {2,5}->pi)
+                # stays fixed, reproducing the helicity swap of a reversed moment.
+                #
+                # A_m is a fit parameter, EXACTLY the Sextet branch's magnetic
+                # polar-order parameter: each site carries the resolved sigma+-
+                # Faraday term A_m*sqrt((1+2A)/3)*i*mz*J2 (do NOT use the merged
+                # _mhat_dm1_sym). Whether that term survives the modulation is set
+                # by the WAVE, independently of A_m's value: for a BALANCED wave
+                # (H0 = 0 and KeH = KdH = 0, pure odd harmonics) the positions pair
+                # up as v1(psi+pi) = v6(psi) etc., so L1 == L6 and L3 == L4 and the
+                # +/- Faraday cancels EXACTLY for any A_m. With a non-zero base
+                # field H0 (the usual case) or a field-shift correlation KeH/KdH
+                # the wave is offset, L1 != L6, and a real (A_m-scaled),
+                # thickness-dependent Faraday signal remains. EDGE CASE: all
+                # harmonics = KeH = KdH = 0 with H0 != 0 gives constant positions,
+                # i.e. a single sextet reproducing the 'Sextet' branch at the same
+                # (delta, eps, H0, widths, theta_k, phi_h, A, A_m, I13).
+                I    = abs(p[V]);        d0  = p[V + 1] * MulCo
+                eps0 = p[V + 2] * MulCo; H0  = p[V + 3] * MulCo
+                WL   = abs(p[V + 4]) * MulCo
+                WG   = abs(p[V + 5]) * MulCo
+                th   = p[V + 6];   ph = p[V + 7];   Atex = p[V + 8];  Am = p[V + 9]
+                KdH  = p[V + 10];  KeH = p[V + 11]
+                phi  = p[V + 12]                                    # CDW phase Phi [deg]
+                hodd = [p[V + 13 + k] * MulCo for k in range(8)]    # h1, h3, ..., h15
+                dev  = [p[V + 21 + k] * MulCo for k in range(4)]    # d2, d4, d6, d8
+                Num  = max(int(abs(p[V + 25])), 1);  I13 = p[V + 26]
+
+                v1, v2, v3, v4, v5, v6 = SDW_thick_terms(d0, eps0, KeH, H0, hodd,
+                                                         phi, KdH, dev, Num)
+                Aeff = 0.5                       # isotropic weights; orientation lives
+                I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)   # in the matrices
+                I2 = I * 2 * Aeff / (8 - 4 * Aeff)
+                I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
+
+                # Matrices EXACTLY as in the 'Sextet' branch at (th, ph), texture
+                # Atex, magnetic polar order A_m: resolved sigma-/sigma+ (Faraday
+                # included) and pi -- NOT the merged _mhat_dm1_sym.
+                mx, my, mz = _axis_xyz(th, ph)
+                Msig = _texture_blend(_mhat_dm1_sym(mx, my), Atex)       # symmetric (quadratic) sigma part
+                Mfar = 1.5 * _texture_s1(Atex, Am) * 1j * mz * _J2       # +/- Faraday (magneto-optical) term
+                Msp = Msig + Mfar                                        # sigma+ (Delta m = +1): lines 3, 6
+                Msm = Msig - Mfar                                        # sigma- (Delta m = -1): lines 1, 4
+                Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)            # pi (Delta m = 0): lines 2, 5
+
+                # Positions vary, matrices don't: sum the six averaged line
+                # shapes, then multiply by the fixed matrices once. (Vectorising
+                # as E[:, None] - v[None, :] is an equivalent speedup; the loop is
+                # kept for parity with the ASM branch and bounded memory.)
+                Nn = float(len(v1))
+                L1 = L2 = L3 = L4 = L5 = L6 = 0.0
+                for j in range(int(Nn)):
+                    L1 = L1 + Voight_c(WL, WG, E - v1[j]);  L6 = L6 + Voight_c(WL, WG, E - v6[j])
+                    L2 = L2 + Voight_c(WL, WG, E - v2[j]);  L5 = L5 + Voight_c(WL, WG, E - v5[j])
+                    L3 = L3 + Voight_c(WL, WG, E - v3[j]);  L4 = L4 + Voight_c(WL, WG, E - v4[j])
+                add = Kpref * (I1 * ((L1 / Nn)[:, None, None] * Msm + (L6 / Nn)[:, None, None] * Msp)
+                             + I2 * ((L2 + L5) / Nn)[:, None, None] * Mpi
+                             + I3 * ((L3 / Nn)[:, None, None] * Msp + (L4 / Nn)[:, None, None] * Msm))
+                Smat_t = add if Smat is None else Smat + add
+                CHt = CH
+                V += 27
             if model[i] == 'Layer':
                 # Physical layer boundary (no parameters). Within a layer the
                 # cross-sections add (into Smat); between layers the beam
@@ -2163,7 +2279,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                     k -= 1
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
-                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM')\
+                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='S/C_DW')\
                            + 14*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
 
                 model_d = np.array([model[k:i]] * Num).flatten()
@@ -2401,7 +2517,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             for j in range(MV, len(model)):
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
-                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='S/C_DW')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')

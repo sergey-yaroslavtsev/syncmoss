@@ -46,6 +46,19 @@ def _prepare(app, path):
     load_model_from_path(app, path)
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(app)
     p = np.array(p, dtype=float)
+    # The .mdl encodes constraint SOURCES (``=[index, factor]``) as ABSOLUTE flat
+    # parameter indices. In these fixtures every such source is an Expression
+    # output, and the Expressions sit just after the ``Variables`` container --
+    # whose width is ``numco``. So those indices were valid for the numco in
+    # effect when the file was written and shift whenever numco changes (e.g. the
+    # widening to 26 for the S/C_DW model). Re-point each source at the ACTUAL
+    # Expression slot ``NExpr`` (which read_model derives from the current model
+    # lengths), so the test adapts to the model layout instead of the raw numbers
+    # baked into the file. read_model appends both lists in row order, so the
+    # k-th constraint targets the k-th Expression here.
+    con2 = np.array(con2, dtype=float)
+    if len(NExpr) and len(con2) == len(NExpr):
+        con2 = np.array(NExpr, dtype=float)
     ns = vars(m5)
     for i in range(len(NExpr)):
         p[int(NExpr[i])] = eval(Expr[i], ns, {"p": p})     # noqa: S307 - model-defined expressions

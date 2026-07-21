@@ -1,6 +1,6 @@
 # Constants
 numro = 50   # max number of model rows in the parameters/results tables
-numco = 17   # max number of parameter columns per row
+numco = 27   # max number of parameter columns per row (27 = the S/C_DW slot count)
 
 # Number of baseline parameters
 number_of_baseline_parameters = 8

@@ -44,7 +44,7 @@ def mod_len_def(mod, include_special=True):
     base_params = int(
         4 * (mod == 'Singlet') + 9 * (mod == 'Doublet') + 14 * (mod == 'Sextet') +
         14 * (mod == 'Sextet(rough)') + 14 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
-        11 * (mod == 'Relax_MS') + 15 * (mod == 'ASM') + 12 * (mod == 'Hamilton_mc') +
+        11 * (mod == 'Relax_MS') + 15 * (mod == 'ASM') + 27 * (mod == 'S/C_DW') + 12 * (mod == 'Hamilton_mc') +
         9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 17 * (mod == 'MDGD') +
         number_of_baseline_parameters * (mod == 'Nbaseline')  # Nbaseline has baseline parameters
         # 'Layer' has 0 parameters (handled by the default for unknown names).
