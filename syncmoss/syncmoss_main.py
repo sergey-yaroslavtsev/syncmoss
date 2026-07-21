@@ -3141,24 +3141,26 @@ class PhysicsApp(QMainWindow):
             baseline = np.zeros_like(A)
         
         # Get model names for actually plotted subspectra only.
-        # Keep save output aligned with plotting filters.
+        # Keep save output aligned with plotting filters. 'Layer' is a boundary
+        # marker that draws no curve of its own (FS has no entry for it), so it
+        # is excluded here just like Nbaseline/Distr/Corr/Expression/Variables.
         if hasattr(self.results_table, 'current_model_list') and len(self.results_table.current_model_list) > 1:
-            excluded = {'baseline', 'Nbaseline', 'Distr', 'Corr', 'Expression', 'Variables'}
+            excluded = {'baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables'}
             model_names = [m for m in self.results_table.current_model_list if m not in excluded]
         else:
             model_names = [f'Submodel{i+1}' for i in range(len(FS))]
-        
+
         # Pad model_names if needed
         while len(model_names) < len(FS):
             model_names.append(f'Submodel{len(model_names)+1}')
-        
+
         # Create data columns: A, B, Baseline, SPC_f, then each subspectrum
         data_columns = [A, B, baseline, SPC_f]
         data_columns.extend(FS)
-        
+
         # Transpose to row format
         data_array = np.column_stack(data_columns)
-        
+
         # Build header
         header = 'Velocity\tData\tBaseline\tFit\t' + '\t'.join(model_names[:len(FS)])
         
