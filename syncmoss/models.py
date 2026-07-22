@@ -2119,7 +2119,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                     + I3 * (B5[:, None, None] * Msp[None, :, :] + B6[:, None, None] * Msm[None, :, :]))
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
-                V += 13
+                V += 14
             if model[i] == 'Hamilton_mc':
                 I = abs(p[V])
                 delt = p[V + 1] * MulCo

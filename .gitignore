@@ -154,3 +154,8 @@ syncmoss/models_full_old.py
 verify_minimi.py
 bench_coldstart.py
 minimi_optimization_notes.txt
+
+# S/C_DW grid-vs-direct / physics-invariant checks: kept local-only. The tracked
+# suite still covers the model end-to-end via the S/C_DW golden case, plus its
+# param-count and locked-angle checks (test_model_io / test_thick_gui).
+tests/test_sdw_grid.py
