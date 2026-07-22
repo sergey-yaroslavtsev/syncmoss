@@ -1,0 +1,15 @@
+#@Chemical composition (Mg,Fe,Al)SiO3 perovskite
+#@Temperature (K) 295
+#@Pressure (GPa) 100.0
+#@External field (T) 0.0
+#@DOI 10.1002/2016GL069836
+#@Comment Same phase at lower-mantle pressure; Fe stays HIGH-SPIN in A-site; Fe2+ QS becomes extremely large. Values approximate.
+#@Comment Ref: Lin et al. (2016) Geophys. Res. Lett. 43, 6952 (high pressure, laser-annealed).
+#@Comment Source: canonical
+#@Comment   Fe3+ A-site (HS) [doublet]: I=0.8, CS=0.5, QS/2=0.5, width=fit
+#@Comment   Fe2+ A-site (HS) [doublet]: I=0.2, CS=1.1, QS/2=2, width=fit
+baseline	Doublet	Doublet
+red	red	blue
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.8	0			False	0.5				False	0.5				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.25]	0			False	1.1				False	2				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

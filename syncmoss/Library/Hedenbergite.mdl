@@ -1,0 +1,13 @@
+#@Chemical composition CaFeSi2O6
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.2138/am.2013.4333
+#@Comment Ca-Fe clinopyroxene endmember; Fe2+ on M1.
+#@Comment Ref: Dyar et al. (2013) Am. Mineral. 98, 1105 (synthetic Ca-Mg-Fe pyroxenes).
+#@Comment Source: canonical
+#@Comment   Fe2+ M1 [doublet]: I=1, CS=1.19, QS/2=1.05, width=fit
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	1.19				False	1.05				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

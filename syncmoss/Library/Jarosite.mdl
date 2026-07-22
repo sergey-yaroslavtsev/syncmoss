@@ -1,0 +1,13 @@
+#@Chemical composition KFe3(SO4)2(OH)6
+#@Temperature (K) 80
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1016/j.chemgeo.2011.03.008
+#@Comment Fe3+ with characteristically large QS. Orders magnetically below ~65 K.
+#@Comment Ref: Majzlan et al. (2011) Chem. Geol. 284, 296 (Table 5, 80 K).
+#@Comment Source: measured
+#@Comment   Fe3+ (VI) [doublet]: I=1, CS=0.49, QS/2=0.62, width=0.36
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.49				False	0.62				False	0.36	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

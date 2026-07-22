@@ -1,0 +1,13 @@
+#@Chemical composition NaFeSi2O6
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.3390/min9070444
+#@Comment Na-Fe3+ clinopyroxene endmember; single sharp Fe3+ (M1) doublet.
+#@Comment Ref: Minerals 9, 444 (2019); high-crystallinity synthetic aegirine reference, vs alpha-Fe.
+#@Comment Source: measured
+#@Comment   Fe3+ M1 [doublet]: I=1, CS=0.393, QS/2=0.142, width=fit
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.393				False	0.142				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

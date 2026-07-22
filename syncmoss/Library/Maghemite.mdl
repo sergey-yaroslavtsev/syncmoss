@@ -1,0 +1,15 @@
+#@Chemical composition gamma-Fe2O3
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.3390/magnetochemistry11120107
+#@Comment Both sites Fe3+; sextets nearly overlap (~50 T), often fitted as one broad sextet. Ideal octa:tetra=5:3.
+#@Comment Ref: Muftakhetdinova et al. (2025) Magnetochemistry 11, 107.
+#@Comment Source: canonical
+#@Comment   Fe3+ octahedral [sextet]: I=0.625, CS=0.35, QS/2=0, Bhf=50 T, width=fit
+#@Comment   Fe3+ tetrahedral [sextet]: I=0.375, CS=0.23, QS/2=0, Bhf=50 T, width=fit
+baseline	Sextet	Sextet
+red	red	blue
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.625	0			False	0.35				False	0				False	50				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.6]	0			False	0.23				False	0				False	50				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False

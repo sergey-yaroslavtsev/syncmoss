@@ -1,0 +1,17 @@
+#@Chemical composition Fe3(PO4)2.8H2O
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1515/pac-2016-1102
+#@Comment Fe2+ on single (A) and paired (B) octahedra, ideal 1:2; oxidizes readily -> minor Fe3+ (blue->green). 'Blue ochre' pigment.
+#@Comment Ref: Pure Appl. Chem. (2017) 10.1515/pac-2016-1102; synthetic vivianite at RT (widths 0.26-0.52).
+#@Comment Source: canonical
+#@Comment   Fe2+ A (single oct.) [doublet]: I=0.3, CS=1.19, QS/2=1.23, width=fit
+#@Comment   Fe2+ B (paired oct.) [doublet]: I=0.6, CS=1.19, QS/2=1.56, width=fit
+#@Comment   Fe3+ (oxidized) [doublet]: I=0.1, CS=0.43, QS/2=0.275, width=fit
+baseline	Doublet	Doublet	Doublet
+red	red	blue	cyan
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.3	0			False	1.19				False	1.23				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,2]	0			False	1.19				False	1.56				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.333]	0			False	0.43				False	0.275				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

@@ -1,0 +1,13 @@
+#@Chemical composition FeP
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.48550/arXiv.1509.06953
+#@Comment Single Fe site; formal Fe3+ (covalent bonding). Catalysis (hydrotreating) / phosphide materials.
+#@Comment Ref: arXiv:1509.06953; FeP above TN (~120 K), single narrow doublet, vs alpha-Fe.
+#@Comment Source: measured
+#@Comment   Fe [doublet]: I=1, CS=0.31, QS/2=0.285, width=0.31
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.31				False	0.285				False	0.31	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

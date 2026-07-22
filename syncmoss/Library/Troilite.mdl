@@ -1,0 +1,13 @@
+#@Chemical composition FeS
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1524/zkri.1966.123.6.443
+#@Comment Single magnetic sextet; RT field ~31 T. cs converted from stainless-steel reference (~-0.09).
+#@Comment Ref: Ono, Ito & Fujita (1966) Z. Kristallogr. 123, 443 (source: 32.8 T @0 K, delta 0.86 vs stainless steel).
+#@Comment Source: canonical
+#@Comment   Fe2+ [sextet]: I=1, CS=0.75, QS/2=0.075, Bhf=31 T, width=fit
+baseline	Sextet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.75				False	0.075				False	31				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False

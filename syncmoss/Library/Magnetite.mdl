@@ -1,0 +1,15 @@
+#@Chemical composition Fe3O4
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.3390/ma15155214
+#@Comment Above Verwey transition (~120 K). Ideal tetra:octa area = 1:2. B-site = fast-hopping Fe2.5+.
+#@Comment Ref: Nayak (2022) Materials 15, 5214 (states established stoichiometric-magnetite values).
+#@Comment Source: measured
+#@Comment   Fe3+ tetrahedral (A) [sextet]: I=0.3333, CS=0.26, QS/2=0, Bhf=49 T, width=fit
+#@Comment   Fe2.5+ octahedral (B) [sextet]: I=0.6667, CS=0.67, QS/2=0, Bhf=46 T, width=fit
+baseline	Sextet	Sextet
+red	red	blue
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.3333	0			False	0.26				False	0				False	49				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,2]	0			False	0.67				False	0				False	46				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False

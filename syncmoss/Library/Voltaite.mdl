@@ -1,0 +1,15 @@
+#@Chemical composition K2Fe2+5Fe3+4(SO4)12.18H2O
+#@Temperature (K) 80
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1016/j.chemgeo.2011.03.008
+#@Comment Mixed valence; Fe2+-dominated at this composition.
+#@Comment Ref: Majzlan et al. (2011) Chem. Geol. 284, 296 (Table 5, sample IMJ-05, 80 K).
+#@Comment Source: measured
+#@Comment   Fe3+ [doublet]: I=0.44, CS=0.59, QS/2=0.13, width=0.36
+#@Comment   Fe2+ [doublet]: I=0.56, CS=1.42, QS/2=1.345, width=0.45
+baseline	Doublet	Doublet
+red	red	blue
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.44	0			False	0.59				False	0.13				False	0.36	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,1.273]	0			False	1.42				False	1.345				False	0.45	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

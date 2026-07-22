@@ -1,0 +1,13 @@
+#@Chemical composition FeS2 (orthorhombic)
+#@Temperature (K) 298
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1016/0016-7037(82)90028-X
+#@Comment Distinguished from pyrite by smaller quadrupole splitting.
+#@Comment Ref: Evans et al. (1982) Geochim. Cosmochim. Acta 46, 761 (mean of 12 marcasites).
+#@Comment Source: measured
+#@Comment   Fe (low-spin) [doublet]: I=1, CS=0.277, QS/2=0.2515, width=fit
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.277				False	0.2515				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

@@ -1,0 +1,17 @@
+#@Chemical composition Fe7S8 / Fe1-xS
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1524/zkri.1966.123.6.443
+#@Comment Non-stoichiometric; ~3 sextets with site-dependent fields (APPROXIMATE here). Splitting depends on x/ordering.
+#@Comment Ref: Ono, Ito & Fujita (1966) Z. Kristallogr. 123, 443 (three sextets, ~equal intensity).
+#@Comment Source: canonical
+#@Comment   Fe site 1 (approx) [sextet]: I=0.3333, CS=0.68, QS/2=0, Bhf=30.5 T, width=fit
+#@Comment   Fe site 2 (approx) [sextet]: I=0.3333, CS=0.68, QS/2=0, Bhf=27.5 T, width=fit
+#@Comment   Fe site 3 (approx) [sextet]: I=0.3333, CS=0.68, QS/2=0, Bhf=24 T, width=fit
+baseline	Sextet	Sextet	Sextet
+red	red	blue	cyan
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.3333	0			False	0.68				False	0				False	30.5				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,1]	0			False	0.68				False	0				False	27.5				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,1]	0			False	0.68				False	0				False	24				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False

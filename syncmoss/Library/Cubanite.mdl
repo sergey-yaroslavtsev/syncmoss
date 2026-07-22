@@ -1,0 +1,13 @@
+#@Chemical composition CuFe2S3
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1039/j19680001697
+#@Comment Orthorhombic; rapid Fe2+/Fe3+ electron exchange (formal Fe2.5+). cs approximate.
+#@Comment Ref: J. Chem. Soc. A (1968) 1697; cubanite, Bhf 332 kOe (=33.2 T) at RT.
+#@Comment Source: canonical
+#@Comment   Fe (Fe2.5+, approx cs) [sextet]: I=1, CS=0.55, QS/2=0, Bhf=33.2 T, width=fit
+baseline	Sextet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.55				False	0				False	33.2				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False

@@ -1,0 +1,17 @@
+#@Chemical composition (Ca,Mg,Fe)2Si2O6
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.2138/am.2013.4333
+#@Comment Fe2+ on M1/M2 + commonly minor Fe3+. QS varies systematically with composition.
+#@Comment Ref: Dyar et al. (2013) Am. Mineral. 98, 1105 (synthetic Ca-Mg-Fe pyroxenes).
+#@Comment Source: canonical
+#@Comment   Fe2+ M1 [doublet]: I=0.55, CS=1.15, QS/2=1.45, width=fit
+#@Comment   Fe2+ M2 [doublet]: I=0.35, CS=1.15, QS/2=1.025, width=fit
+#@Comment   Fe3+ [doublet]: I=0.1, CS=0.35, QS/2=0.35, width=fit
+baseline	Doublet	Doublet	Doublet
+red	red	blue	cyan
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.55	0			False	1.15				False	1.45				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.636]	0			False	1.15				False	1.025				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.182]	0			False	0.35				False	0.35				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

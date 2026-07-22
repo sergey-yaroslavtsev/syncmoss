@@ -1,0 +1,13 @@
+#@Chemical composition FeSO4.H2O
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.2138/am.2013.4604
+#@Comment Ferrous monohydrate sulfate; single Fe2+ doublet.
+#@Comment Ref: Dyar et al. (2013) Am. Mineral. 98, 1943 (Mossbauer parameters of Fe sulfate minerals).
+#@Comment Source: measured
+#@Comment   Fe2+ (VI) [doublet]: I=1, CS=1.28, QS/2=1.4, width=fit
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	1.28				False	1.4				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

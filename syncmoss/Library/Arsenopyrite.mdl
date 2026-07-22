@@ -1,0 +1,17 @@
+#@Chemical composition FeAsS
+#@Temperature (K) 298
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.3749/canmin.50.2.471
+#@Comment Low-spin Fe; dominant site A + two minor sites. Common in gold ores.
+#@Comment Ref: Can. Mineral. 50, 471 (2012); stoichiometric FeAsS, fitted with three doublets.
+#@Comment Source: measured
+#@Comment   Fe site A [doublet]: I=0.822, CS=0.24, QS/2=0.56, width=fit
+#@Comment   Fe site B [doublet]: I=0.085, CS=0.25, QS/2=0.345, width=fit
+#@Comment   Fe site C [doublet]: I=0.093, CS=0.26, QS/2=0.745, width=fit
+baseline	Doublet	Doublet	Doublet
+red	red	blue	cyan
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.822	0			False	0.24				False	0.56				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.103]	0			False	0.25				False	0.345				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.113]	0			False	0.26				False	0.745				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

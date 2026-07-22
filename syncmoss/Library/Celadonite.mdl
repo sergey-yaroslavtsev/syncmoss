@@ -1,0 +1,19 @@
+#@Chemical composition K(Mg,Fe2+)(Fe3+,Al)Si4O10(OH)2
+#@Temperature (K) 300
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1007/BF00223320
+#@Comment Dioctahedral mica; dominant M2 Fe3+ + minor dehydroxylated Fe3+ + Fe2+. Intensities approximate.
+#@Comment Ref: Sherman & Vergo (1988) Phys. Chem. Minerals (celadonite, 10-400 K).
+#@Comment Source: measured
+#@Comment   Fe3+ M2 (cis-OH) [doublet]: I=0.68, CS=0.4, QS/2=0.2, width=fit
+#@Comment   Fe3+ (dehydroxylated) [doublet]: I=0.08, CS=0.4, QS/2=0.6, width=fit
+#@Comment   Fe2+ site 1 [doublet]: I=0.12, CS=1.1, QS/2=0.85, width=fit
+#@Comment   Fe2+ site 2 [doublet]: I=0.12, CS=1.1, QS/2=1.35, width=fit
+baseline	Doublet	Doublet	Doublet	Doublet
+red	red	blue	cyan	yellow
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.68	0			False	0.4				False	0.2				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.118]	0			False	0.4				False	0.6				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.176]	0			False	1.1				False	0.85				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.176]	0			False	1.1				False	1.35				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

@@ -1,0 +1,13 @@
+#@Chemical composition theta-Fe3C
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1038/srep26184
+#@Comment Ferromagnetic; usually fitted as one (or two close) sextet.
+#@Comment Ref: Fang et al. (2016) Sci. Rep. 6, 26184 (experiment + DFT).
+#@Comment Source: canonical
+#@Comment   Fe [sextet]: I=1, CS=0.18, QS/2=0, Bhf=20.6 T, width=fit
+baseline	Sextet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.18				False	0				False	20.6				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False

@@ -1,0 +1,13 @@
+#@Chemical composition gamma-FeNi (low-moment)
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.3390/min11060614
+#@Comment Paramagnetic low-spin fcc Fe-Ni; single line.
+#@Comment Ref: Oshtrakh et al. (2021) Minerals 11, 614 (Part II).
+#@Comment Source: measured
+#@Comment   gamma-FeNi [singlet]: I=1, CS=0.07, QS/2=0, width=fit
+baseline	Singlet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.07				False	0.098	0.098			True	0.1	0			False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

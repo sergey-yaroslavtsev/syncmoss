@@ -1,0 +1,13 @@
+#@Chemical composition Ca2(Al,Fe3+)3Si3O12(OH)
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.3390/min12020238
+#@Comment Fe3+ in distorted M3 octahedron -> large QS. Very common in metamorphic rocks.
+#@Comment Ref: Minerals 12, 238 (2022); natural epidote/clinozoisite Mossbauer.
+#@Comment Source: measured
+#@Comment   Fe3+ M3 [doublet]: I=1, CS=0.35, QS/2=1, width=fit
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.35				False	1				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

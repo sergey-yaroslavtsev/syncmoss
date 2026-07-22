@@ -1,0 +1,15 @@
+#@Chemical composition Fe4[Fe(CN)6]3 (idealized)
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.48550/arXiv.2601.03313
+#@Comment Two Fe environments: high-spin Fe3+ (N-coordinated) and low-spin Fe2+ (C-coordinated); both ~singlets. Ideal Fe3+:Fe2+ = 4:3.
+#@Comment Ref: arXiv:2601.03313 (ammonium ferric ferrocyanide; delta vs alpha-Fe at RT).
+#@Comment Source: measured
+#@Comment   Fe3+ high-spin (N6) [singlet]: I=0.571, CS=0.408, QS/2=0, width=fit
+#@Comment   Fe2+ low-spin (C6) [singlet]: I=0.429, CS=-0.146, QS/2=0, width=fit
+baseline	Singlet	Singlet
+red	red	blue
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.571	0			False	0.408				False	0.098	0.098			True	0.1	0			False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.751]	0			False	-0.146				False	0.098	0.098			True	0.1	0			False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

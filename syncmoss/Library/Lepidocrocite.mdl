@@ -1,0 +1,13 @@
+#@Chemical composition gamma-FeOOH
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1351/pac200375060801
+#@Comment Paramagnetic at RT (TN~77 K) -> doublet at RT and 80 K.
+#@Comment Ref: Kuzmann, Nagy & Vertes (2003) Pure Appl. Chem. 75, 801 (IUPAC Technical Report).
+#@Comment Source: canonical
+#@Comment   Fe3+ (VI) [doublet]: I=1, CS=0.37, QS/2=0.265, width=fit
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	0.37				False	0.265				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

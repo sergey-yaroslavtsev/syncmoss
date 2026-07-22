@@ -1,0 +1,17 @@
+#@Chemical composition Fe2+Fe3+4(SO4)6(OH)2.20H2O
+#@Temperature (K) 80
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.1016/j.chemgeo.2011.03.008
+#@Comment Two Fe3+ sites + minor Fe2+.
+#@Comment Ref: Majzlan et al. (2011) Chem. Geol. 284, 296 (Table 5, sample IM-05, 80 K).
+#@Comment Source: measured
+#@Comment   Fe3+ site 1 [doublet]: I=0.44, CS=0.53, QS/2=0.4, width=0.26
+#@Comment   Fe3+ site 2 [doublet]: I=0.45, CS=0.53, QS/2=0.19, width=0.26
+#@Comment   Fe2+ [doublet]: I=0.11, CS=1.38, QS/2=1.595, width=0.25
+baseline	Doublet	Doublet	Doublet
+red	red	blue	cyan
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+0.44	0			False	0.53				False	0.4				False	0.26	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,1.023]	0			False	0.53				False	0.19				False	0.26	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+=[8,0.25]	0			False	1.38				False	1.595				False	0.25	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

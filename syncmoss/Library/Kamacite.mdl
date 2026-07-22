@@ -1,0 +1,13 @@
+#@Chemical composition alpha-Fe(Ni)
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.3390/min11060614
+#@Comment bcc Fe-Ni alloy (<~7 at% Ni). Heff 332.2 kOe -> 33.2 T.
+#@Comment Ref: Oshtrakh et al. (2021) Minerals 11, 614 (Part II).
+#@Comment Source: measured
+#@Comment   alpha-Fe(Ni) [sextet]: I=1, CS=-0.002, QS/2=0, Bhf=33.2 T, width=fit
+baseline	Sextet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	-0.002				False	0				False	33.2				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	0	-1	1		True	0.0				True	0.0				True	0.0	0			True	3.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False

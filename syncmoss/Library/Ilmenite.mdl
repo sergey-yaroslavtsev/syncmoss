@@ -1,0 +1,13 @@
+#@Chemical composition FeTiO3
+#@Temperature (K) 295
+#@Pressure (GPa) 0.0
+#@External field (T) 0.0
+#@DOI 10.2138/am-2016-5262
+#@Comment Paramagnetic at RT (AFM below ~58 K).
+#@Comment Ref: Van Alboom et al. (2016) Am. Mineral. 101, 1387 (T = 5-900 K; ThetaM=350 K).
+#@Comment Source: measured
+#@Comment   Fe2+ (VI) [doublet]: I=1, CS=1.06, QS/2=0.35, width=fit
+baseline	Doublet
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	0				True	0				True	0				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1	0			False	1.06				False	0.35				False	0.098	0.098			True	0.1	0			False	90	-180	180		True	0.0	-360	360		True	0	-0.5	1		True	1.0	0			True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
