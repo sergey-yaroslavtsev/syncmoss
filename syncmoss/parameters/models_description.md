@@ -189,10 +189,10 @@ Parameters:
 ### S/C_DW
 Spin/charge density wave. The spin AXIS is fixed at $(\theta_k, \varphi_h)$;
 only the scalar hyperfine parameters (signed field magnitude, isomer shift,
-quadrupole shift) are modulated along the wave, sampled at Num points over one
-period and averaged as a thick (polarized) sextet. The field keeps its SIGN, so
-a reversed moment automatically swaps the line positions within the (1,6) and
-(3,4) pairs. Follows the SpectrRelax SDW/CDW parameter list.
+quadrupole shift) are modulated along the wave, sampled at a fixed number of
+phase points over one period and averaged as a thick (polarized) sextet. The
+field keeps its SIGN, so a reversed moment automatically swaps the line positions
+within the (1,6) and (3,4) pairs. Follows the SpectrRelax SDW/CDW parameter list.
 
 Parameters (in table order):
 - T: effective thickness.
@@ -211,8 +211,17 @@ Parameters (in table order):
 - $\Phi$: CDW phase (deg).
 - h1, h3, …, h15: eight odd SDW field harmonics (field units); unused ones stay 0.
 - d2, d4, d6, d8: four even CDW isomer-shift harmonics (mm/s); unused ones stay 0.
-- Num: number of sampling points over one wave period.
+- N/Γ: grid resolution — the number of grid steps per line width used to bin the
+  wave positions. This is the accuracy↔speed knob (larger = finer grid = more
+  Voigt evaluations = more accurate = slower; error ~ 1/(N/Γ)). Default 4.
 - I13: intensity-ratio control between outer and inner groups.
+
+The wave-phase sampling count (the former ``Num``) is **not** settable: it is
+fixed internally at ``models.SDW_NUM = 2000``. Its cost is cheap O(Num)
+arithmetic and, because the positions are binned onto the grid, it does not drive
+the (Voigt) cost — 2000 is set high enough that the spectrum is converged for any
+reasonable wave, so there is nothing to tune. The single accuracy↔speed knob is
+therefore the grid resolution N/Γ above.
 
 The resolved $\sigma^\pm$ (Faraday) matrices are kept per site (never the merged
 symmetric form). Whether the Faraday term survives the modulation is set by the

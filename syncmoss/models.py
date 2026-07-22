@@ -1611,7 +1611,7 @@ def relax_MS_thick(S, x, I, Sig, eps, Hv, W, R, alfa):
     I3 = I * 1 * (1 - Ah) / (8 - 4 * Ah)
     return (2 * tmp1 * I1, 2 * tmp2 * I2, 2 * tmp3 * I3)
 
-
+@njit(cache=True)
 def relax_MS_thick_c(S, x, I, Sig, eps, Hv, W, R, alfa):
     """Complex counterpart of ``relax_MS_thick``: same three Delta-m group
     profiles at the isotropic weights, but each is the COMPLEX line shape
@@ -1659,31 +1659,23 @@ def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m, Num):
 
     return (co, v1, v2, v3, v4, v5, v6)
 
+@njit(cache=True)
+def SDW_thick_terms_direct(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
+    """Six SDW/CDW line positions at ``Num`` wave phases (direct/reference form).
 
-def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
-    """Per-point line positions for a spin/charge density wave (SDW/CDW).
-
-    Fixed spin axis (only scalar hyperfine parameters vary along the wave); H
-    carries its SIGN (Matsnev & Rusakov 2014, Eqs. 1-3, 8-10 with a+- = 0: the
-    angle between H and the EFG axis is constant, so the quadrupole geometry
-    factor is absorbed into eps0/KeH). Returns the six line positions sampled at
-    ``Num`` points over one full period.
-
-    ``hodd`` holds the 8 odd SDW field harmonics (k = 1, 3, ..., 15); ``dev``
-    the 4 even CDW isomer-shift harmonics (k = 2, 4, 6, 8). ``KeH``/``KdH``
-    couple the UNCONVERTED field (same unit as the H0 input) to the quadrupole
-    and isomer shifts, so the conversion ``H = H / E0_J * c`` is applied only
-    AFTER those couplings -- matching ASM_thick_terms and SpectrRelax's SDW/CDW
-    convention. ``endpoint=False`` avoids double-counting psi = 0 = lambda.
-
-    Signs are those of ``ASM_thick_terms`` with a1 = a2 = 0. A sign change of H
-    swaps v1 <-> v6 and v3 <-> v4, which -- with the FIXED sigma+-/pi matrix
-    assignment used in the S/C_DW branch of TImod -- reproduces the physical
-    helicity swap of a reversed moment automatically. Do NOT take abs(H).
+    Fixed spin axis; only the scalar hyperfine parameters vary along the wave.
+    Zeeman positions carry the SIGNED field; the KeH/KdH shift correlations use
+    |H| (isomer/quadrupole shift tracks magnitude, not sign). Signs and the
+    field->velocity conversion follow ASM_thick_terms / SpectrRelax (Matsnev &
+    Rusakov 2014, Eqs. 1-3, 8-10, a+- = 0). ``hodd`` (8 odd field harmonics) and
+    ``dev`` (4 even shift harmonics) are float64 arrays; ``psi`` is built with
+    ``arange`` (== ``linspace(0, 2*pi, Num, endpoint=False)``, numba-friendly).
     """
-    psi = np.linspace(0.0, 2.0 * np.pi, int(Num), endpoint=False)
+    n = int(Num)
+    psi = np.arange(n) * (2.0 * np.pi / n)
     H = H0 + 0.0 * psi
-    for i, hk in enumerate(hodd):                    # k = 1, 3, 5, ...
+    for i in range(len(hodd)):                       # k = 1, 3, 5, ...
+        hk = hodd[i]
         if hk != 0.0:
             H = H + hk * np.sin((2 * i + 1) * psi)
     ph_r = phi_deg / 180.0 * np.pi
@@ -1691,18 +1683,95 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
     # neither knows the direction of the moment, only its magnitude.
     absH = np.abs(H)
     dl = d0 + KdH * absH
-    for i, dk in enumerate(dev):                     # k = 2, 4, 6, 8
+    for i in range(len(dev)):                         # k = 2, 4, 6, 8
+        dk = dev[i]
         if dk != 0.0:
             dl = dl + dk * np.sin((2 * (i + 1)) * psi + ph_r)
     ep = eps0 + KeH * absH
-    H = H / E0_J * c                                 # same conversion as ASM_thick_terms
-    v1 = dl + ep + mun * (3 * gex - ggr) / 2 * H
-    v6 = dl + ep - mun * (3 * gex - ggr) / 2 * H
-    v2 = dl - ep + mun * (gex - ggr) / 2 * H
-    v5 = dl - ep - mun * (gex - ggr) / 2 * H
-    v3 = dl - ep - mun * (gex + ggr) / 2 * H
-    v4 = dl - ep + mun * (gex + ggr) / 2 * H
+    Hc = H / E0_J * c                                 # same conversion as ASM_thick_terms
+    v1 = dl + ep + mun * (3 * gex - ggr) / 2 * Hc
+    v6 = dl + ep - mun * (3 * gex - ggr) / 2 * Hc
+    v2 = dl - ep + mun * (gex - ggr) / 2 * Hc
+    v5 = dl - ep - mun * (gex - ggr) / 2 * Hc
+    v3 = dl - ep - mun * (gex + ggr) / 2 * Hc
+    v4 = dl - ep + mun * (gex + ggr) / 2 * Hc
     return (v1, v2, v3, v4, v5, v6)
+
+
+# Fixed wave-phase sampling count (positions per period) for S/C_DW. Not a fit
+# parameter: the grid binning keeps it off the Voigt count, so it is set high
+# enough to be converged for any wave (~4e-5 even for a pathological all-harmonics
+# wave). The accuracy<->speed knob is the per-component grid resolution 'N/Γ'
+# (table slot), passed to SDW_thick_terms as ``steps``.
+SDW_NUM = 2000
+
+
+@njit(cache=True)
+def _bin_positions(vk, dg, norm):
+    """Linear-deposit positions ``vk`` onto a uniform grid of step ``dg``.
+
+    Returns ``(centres, weights)``: each point is split between its two nearest
+    grid nodes (piecewise-linear density estimate), weights summing to
+    ``len(vk)/norm``. Degenerate input (all equal) -> a single node. Explicit
+    loop (numba-friendly; ``np.bincount(minlength=)`` is unsupported under njit).
+    """
+    lo = np.min(vk)
+    hi = np.max(vk)
+    span = hi - lo
+    if span <= 0.0 or dg <= 0.0:
+        centres = np.empty(1, dtype=np.float64)
+        centres[0] = lo
+        weights = np.empty(1, dtype=np.float64)
+        weights[0] = len(vk) / norm
+        return centres, weights
+    nbins = int(np.ceil(span / dg)) + 1
+    centres = lo + dg * np.arange(nbins)
+    weights = np.zeros(nbins)
+    inv = 1.0 / dg
+    for j in range(len(vk)):
+        x = (vk[j] - lo) * inv
+        i0 = int(np.floor(x))
+        if i0 < 0:
+            i0 = 0
+        elif i0 > nbins - 2:
+            i0 = nbins - 2
+        frac = x - i0
+        weights[i0] += 1.0 - frac
+        weights[i0 + 1] += frac
+    return centres, weights / norm
+
+
+@njit(cache=True)
+def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, MulCo, steps):
+    """Grid-binned line positions + weights for the S/C_DW branch.
+
+    Same positions as :func:`SDW_thick_terms_direct`, but each line's ``Num``
+    positions are binned onto a per-line grid of step ``dg = width / steps`` so
+    the caller evaluates the Voigt once per node -- the Voigt count follows
+    span/width, NOT ``Num``. ``width`` = max(WL, WG) (WG is often 0, so min would
+    give dg=0) floored at the natural line width (0.098), MulCo-scaled like the
+    positions. ``steps`` is the per-component grid resolution. The full period is
+    always binned (H0/KeH/KdH correlate the six lines, so it cannot be folded).
+    Returns ``(grids, weights)`` -- two 6-tuples of float64 arrays (the six
+    lines' grids have DIFFERENT lengths, so they cannot be one 2-D array); each
+    weight vector sums to 1.
+    """
+    v = SDW_thick_terms_direct(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num)
+    width = abs(WL)
+    if abs(WG) > width:
+        width = abs(WG)
+    natural = 0.098 * MulCo          # natural Lorentzian width (WL default), MulCo-scaled
+    if width < natural:
+        width = natural
+    dg = width / steps
+    norm = float(len(v[0]))
+    g1, w1 = _bin_positions(v[0], dg, norm)
+    g2, w2 = _bin_positions(v[1], dg, norm)
+    g3, w3 = _bin_positions(v[2], dg, norm)
+    g4, w4 = _bin_positions(v[3], dg, norm)
+    g5, w5 = _bin_positions(v[4], dg, norm)
+    g6, w6 = _bin_positions(v[5], dg, norm)
+    return (g1, g2, g3, g4, g5, g6), (w1, w2, w3, w4, w5, w6)
 
 
 def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.98, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False):
@@ -2190,12 +2259,15 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 th   = p[V + 6];   ph = p[V + 7];   Atex = p[V + 8];  Am = p[V + 9]
                 KdH  = p[V + 10];  KeH = p[V + 11]
                 phi  = p[V + 12]                                    # CDW phase Phi [deg]
-                hodd = [p[V + 13 + k] * MulCo for k in range(8)]    # h1, h3, ..., h15
-                dev  = [p[V + 21 + k] * MulCo for k in range(4)]    # d2, d4, d6, d8
-                Num  = max(int(abs(p[V + 25])), 1);  I13 = p[V + 26]
+                hodd = np.array([p[V + 13 + k] * MulCo for k in range(8)])   # h1, h3, ..., h15
+                dev  = np.array([p[V + 21 + k] * MulCo for k in range(4)])   # d2, d4, d6, d8
+                steps = max(abs(p[V + 25]), 1.0);  I13 = p[V + 26]   # slot 25: grid steps per line width
 
-                v1, v2, v3, v4, v5, v6 = SDW_thick_terms(d0, eps0, KeH, H0, hodd,
-                                                         phi, KdH, dev, Num)
+                # The settable accuracy<->speed knob is 'steps' (grid resolution,
+                # per component, from the table). Num (wave-phase sampling) is
+                # fixed internally at SDW_NUM -- cheap and converged for any wave.
+                grids, wts = SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi, KdH, dev,
+                                             SDW_NUM, WL, WG, MulCo, steps)
                 Aeff = 0.5                       # isotropic weights; orientation lives
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)   # in the matrices
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
@@ -2211,19 +2283,18 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 Msm = Msig - Mfar                                        # sigma- (Delta m = -1): lines 1, 4
                 Mpi = _texture_blend(_mhat_dm0(mx, my), Atex)            # pi (Delta m = 0): lines 2, 5
 
-                # Positions vary, matrices don't: sum the six averaged line
-                # shapes, then multiply by the fixed matrices once. (Vectorising
-                # as E[:, None] - v[None, :] is an equivalent speedup; the loop is
-                # kept for parity with the ASM branch and bounded memory.)
-                Nn = float(len(v1))
-                L1 = L2 = L3 = L4 = L5 = L6 = 0.0
-                for j in range(int(Nn)):
-                    L1 = L1 + Voight_c(WL, WG, E - v1[j]);  L6 = L6 + Voight_c(WL, WG, E - v6[j])
-                    L2 = L2 + Voight_c(WL, WG, E - v2[j]);  L5 = L5 + Voight_c(WL, WG, E - v5[j])
-                    L3 = L3 + Voight_c(WL, WG, E - v3[j]);  L4 = L4 + Voight_c(WL, WG, E - v4[j])
-                add = Kpref * (I1 * ((L1 / Nn)[:, None, None] * Msm + (L6 / Nn)[:, None, None] * Msp)
-                             + I2 * ((L2 + L5) / Nn)[:, None, None] * Mpi
-                             + I3 * ((L3 / Nn)[:, None, None] * Msp + (L4 / Nn)[:, None, None] * Msm))
+                # Positions vary, matrices don't: each line shape is the Voigt
+                # summed over its GRID nodes weighted by the binned wave-position
+                # density (weights already sum to 1 -> the wave average). The
+                # Voigt count is the grid size, independent of Num.
+                def _line_shape(g, w):
+                    return (Voight_c(WL, WG, E[:, None] - g[None, :]) * w[None, :]).sum(axis=1)
+                L1 = _line_shape(grids[0], wts[0]);  L2 = _line_shape(grids[1], wts[1])
+                L3 = _line_shape(grids[2], wts[2]);  L4 = _line_shape(grids[3], wts[3])
+                L5 = _line_shape(grids[4], wts[4]);  L6 = _line_shape(grids[5], wts[5])
+                add = Kpref * (I1 * (L1[:, None, None] * Msm + L6[:, None, None] * Msp)
+                             + I2 * (L2 + L5)[:, None, None] * Mpi
+                             + I3 * (L3[:, None, None] * Msp + L4[:, None, None] * Msm))
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 27
