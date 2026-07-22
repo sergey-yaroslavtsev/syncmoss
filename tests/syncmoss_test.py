@@ -69,19 +69,30 @@ def _parse_bg_color(stylesheet: str):
     return match.group(1).strip() if match else None
 
 
-def _use_temp_calibration(window) -> None:
-    """Point the window at a throw-away copy of Calibration.dat.
+def _redirect_params_to_tmp(window, tmp_dir=None) -> None:
+    """Point the window's parameter directory at a throw-away copy.
 
-    Showing/fitting a spectrum re-calibrates and rewrites the spectrum file in
-    place; the smoke test uses the bundled Calibration.dat as the spectrum, so
-    without this it would mutate the installed/tracked data file.
+    The smoke flow both shows/fits the bundled Calibration.dat AND refines the
+    instrumental function (step 2), which rewrites ``INSexp.txt`` / ``INSint.txt``
+    in ``params_dir`` (and re-calibrating rewrites Calibration.dat in place). Left
+    on the real ``parameters/`` folder, those tracked data files would be mutated
+    and show up as spurious modifications on every commit. Copying the whole
+    parameters folder into a temp dir and repointing ``params_dir`` +
+    ``calibration_path`` there keeps the repo clean while all the parameter files
+    the fit reads (Be.txt, GCMS.txt, ...) remain available.
+
+    ``tmp_dir`` is used when given (e.g. pytest's ``tmp_path``, auto-cleaned);
+    otherwise a fresh temp dir is created (``--test`` in source / frozen runs).
     """
-    src = window.calibration_path
-    if src and os.path.exists(src):
+    src = window.params_dir
+    if not src or not os.path.isdir(src):
+        return
+    if tmp_dir is None:
         tmp_dir = tempfile.mkdtemp(prefix="syncmoss_smoke_")
-        dst = os.path.join(tmp_dir, "Calibration.dat")
-        shutil.copy2(src, dst)
-        window.calibration_path = dst
+    dst = os.path.join(str(tmp_dir), "parameters")
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+    window.params_dir = dst
+    window.calibration_path = os.path.join(dst, "Calibration.dat")
 
 
 class _TestRunner:
@@ -275,7 +286,7 @@ def run_gui_smoke() -> int:
 
     app = QApplication.instance() or QApplication(sys.argv)
     window = PhysicsApp(pool=pool)
-    _use_temp_calibration(window)
+    _redirect_params_to_tmp(window)
     window.show()
 
     runner = _TestRunner(app, window)
@@ -303,11 +314,10 @@ def test_gui_open_and_fit(qapp, tmp_path):
     """
     pool = ThreadPool(processes=2)
     window = PhysicsApp(pool=pool)
-    # Operate on a temp copy so the fit never rewrites the tracked Calibration.dat.
-    if os.path.exists(window.calibration_path):
-        tmp_copy = os.path.join(str(tmp_path), "Calibration.dat")
-        shutil.copy2(window.calibration_path, tmp_copy)
-        window.calibration_path = tmp_copy
+    # Operate on a temp copy of the whole parameters folder so neither the fit
+    # nor the instrumental refinement (step 2) rewrites the tracked data files
+    # (Calibration.dat, INSexp.txt, INSint.txt).
+    _redirect_params_to_tmp(window, tmp_path)
     try:
         window.show()
         runner = _TestRunner(qapp, window)

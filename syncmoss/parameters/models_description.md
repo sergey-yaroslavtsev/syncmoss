@@ -192,7 +192,7 @@ only the scalar hyperfine parameters (signed field magnitude, isomer shift,
 quadrupole shift) are modulated along the wave, sampled at a fixed number of
 phase points over one period and averaged as a thick (polarized) sextet. The
 field keeps its SIGN, so a reversed moment automatically swaps the line positions
-within the (1,6) and (3,4) pairs. Follows the SpectrRelax SDW/CDW parameter list.
+within the (1,6) and (3,4) pairs. Similar to the SpectrRelax SDW/CDW parameter list.
 
 Parameters (in table order):
 - T: effective thickness.
