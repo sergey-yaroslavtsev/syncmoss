@@ -31,6 +31,62 @@ def redirect_calibration_to_tmp(window, tmp_dir):
     return window.calibration_path
 
 
+# Guarantee the test process actually terminates. Head-less ("offscreen") Qt plus
+# the widgets/canvases and worker threads the GUI tests spin up can leave a
+# native/non-daemon resource alive that blocks interpreter shutdown, so `pytest`
+# finishes running and REPORTING every test yet the process never exits (the
+# "infinite waiting" noted for this suite — it makes a plain `pytest tests/` look
+# hung and forced the foreground / read-the-progress-bar workaround). We record
+# the status in sessionfinish and force-exit in `pytest_unconfigure`, which runs
+# AFTER the terminal summary + any failure tracebacks are printed but BEFORE the
+# interpreter-shutdown hang — so nothing is ever hidden and the real status is
+# preserved. Skipped under xdist workers and active pytest-cov so their own
+# finalization (IPC / .coverage writing) is never cut short (CI unaffected).
+_FORCE_EXIT_STATUS = {}
+
+
+def pytest_sessionfinish(session, exitstatus):
+    _FORCE_EXIT_STATUS["code"] = int(exitstatus)
+
+
+def pytest_unconfigure(config):
+    code = _FORCE_EXIT_STATUS.get("code")
+    if code is None:
+        return
+    if hasattr(config, "workerinput"):
+        return  # xdist worker: leave IPC/teardown to xdist
+    if config.pluginmanager.hasplugin("pytest_cov") and getattr(config.option, "cov_source", None):
+        return  # coverage active: let atexit combine/write .coverage
+
+    import os
+    import faulthandler
+    import multiprocessing as mp
+
+    try:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+    except Exception:
+        pass
+
+    # Terminate any lingering multiprocessing pool/workers first, so the force
+    # exit below cannot orphan them (orphaned pool processes are a known hazard
+    # in this project). Then disable faulthandler so os._exit — which we use to
+    # step over the headless-Qt interpreter-shutdown hang — does not print a
+    # (harmless) stack dump of the still-live threads.
+    for child in mp.active_children():
+        try:
+            child.terminate()
+        except Exception:
+            pass
+    faulthandler.disable()
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 @pytest.fixture(scope="session")
 def qapp():
     """A single QApplication shared by every GUI test in the session.

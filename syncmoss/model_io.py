@@ -44,15 +44,21 @@ def mod_len_def(mod, include_special=True):
     base_params = int(
         4 * (mod == 'Singlet') + 9 * (mod == 'Doublet') + 14 * (mod == 'Sextet') +
         14 * (mod == 'Sextet(rough)') + 14 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
-        11 * (mod == 'Relax_MS') + 15 * (mod == 'ASM') + 27 * (mod == 'S/C_DW') + 12 * (mod == 'Hamilton_mc') +
+        11 * (mod == 'Relax_MS') + 15 * (mod == 'ASM') + 27 * (mod == 'SCDW') + 12 * (mod == 'Hamilton_mc') +
         9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 17 * (mod == 'MDGD') +
         number_of_baseline_parameters * (mod == 'Nbaseline')  # Nbaseline has baseline parameters
         # 'Layer' has 0 parameters (handled by the default for unknown names).
     )
     
     if include_special:
-        base_params += 5 * (mod == 'Distr') + 2 * (mod == 'Corr') + 1 * (mod == 'Expression')
-    
+        # 'Recon' keeps a CONSTANT footprint of 7 flat slots regardless of Num:
+        # par, L, R, Num, D_dif, D_dif2 and a single weight-vector placeholder.
+        # The Num free reconstruction weights ride in a parallel list (like a
+        # Distr's PDF string in Distri), so parameter counting / =[links] / p[i]
+        # expressions never shift with Num. See read_model's 'Recon' branch.
+        base_params += (5 * (mod == 'Distr') + 2 * (mod == 'Corr') + 1 * (mod == 'Expression')
+                        + 7 * (mod == 'Recon'))
+
     return base_params
 
 
@@ -532,6 +538,29 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
     return True
 
 
+def parse_recon_weights(text, num):
+    """Parse a 'Recon' weight-vector text field into a length-``num`` float array.
+
+    The reconstruction weights of a 'Recon' model are stored as a comma- (or
+    whitespace-) separated list of ``Num`` non-negative numbers in the model
+    row's trailing text column (mirroring how a Distr's PDF string is stored).
+    An empty / unparsable / wrong-length field falls back to a uniform
+    distribution of length ``num`` — the natural starting guess for a fit. The
+    physics core normalises the vector, so the absolute scale here is irrelevant.
+    """
+    num = max(1, int(num))
+    if text is not None and str(text).strip():
+        try:
+            parts = [float(v) for v in str(text).replace(';', ',').replace(' ', ',').split(',') if v.strip() != '']
+            if len(parts) == num:
+                arr = np.array(parts, dtype=float)
+                if np.all(np.isfinite(arr)):
+                    return arr
+        except Exception:
+            pass
+    return np.full(num, 1.0 / num, dtype=float)
+
+
 def read_model(main_window):
     """
     Read model parameters from the parameters table.
@@ -544,7 +573,8 @@ def read_model(main_window):
         main_window: The main PhysicsApp window instance
 
     Returns:
-        tuple: (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN)
+        tuple: (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN,
+                Recon, ReconN)
             - model: list of model names
             - p: numpy array of parameters
             - con1, con2, con3: constraint arrays
@@ -553,6 +583,11 @@ def read_model(main_window):
             - Expr: expressions
             - NExpr: expression indices
             - DistriN: distribution indices
+            - Recon: list of reconstruction weight arrays (one per 'Recon' model,
+                     in table order) — the free fit values of the distribution
+                     shape, held alongside p exactly like Distri holds PDF strings
+            - ReconN: flat-array indices of the single weight-vector placeholder
+                      slot of each 'Recon' (force-fixed by the fit, like DistriN)
     """
     
     model = []
@@ -565,6 +600,8 @@ def read_model(main_window):
     Expr = []
     NExpr = np.array([], dtype=int)
     DistriN = np.array([], dtype=float)
+    Recon = []
+    ReconN = np.array([], dtype=float)
 
     def _field_text(row_widget, item_idx):
         """Text of the value QLineEdit in the row's item_idx-th param widget."""
@@ -640,7 +677,26 @@ def read_model(main_window):
             cor_text = _field_text(row_widget, 2) if 2 < row_widget.layout().count() else ''
             Cor.append(cor_text)
 
-    return (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN)
+        elif model_name == 'Recon':
+            # Reconstruction: 6 numeric control params (par, L, R, Num, D_dif,
+            # D_dif2) followed by a single weight-vector placeholder slot. The
+            # Num free reconstruction weights are stored as a text vector in the
+            # 7th column and travel in the parallel Recon list (like a Distr's PDF
+            # string in Distri); the placeholder keeps the flat count fixed at 7.
+            for j in range(1, 7):
+                if j < row_widget.layout().count():
+                    _append_param(_field_text(row_widget, j))
+            num_text = _field_text(row_widget, 4) if 4 < row_widget.layout().count() else ''
+            try:
+                num = int(float(num_text)) if str(num_text).strip() else 1
+            except ValueError:
+                num = 1
+            p = np.append(p, 0)                                # weight-vector placeholder slot
+            weights_text = _field_text(row_widget, 7) if 7 < row_widget.layout().count() else ''
+            Recon.append(parse_recon_weights(weights_text, num))
+            ReconN = np.append(ReconN, len(p) - 1)
+
+    return (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN)
 
 
 def read_bounds_and_fix(main_window, p_len):
@@ -716,7 +772,7 @@ def validate_user_expressions(main_window):
     import syncmoss.minimi_lib as mi
     import syncmoss.models as m5
 
-    model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(main_window)
+    model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
     X = np.linspace(-1.0, 1.0, 8)
     rows = main_window.params_table.get_expression_rows()
     problems = []

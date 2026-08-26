@@ -68,6 +68,83 @@ def _substitute_p_refs(expr_text, p):
     return STR
 
 
+# --- Recon (distribution reconstruction) fit support ------------------------
+# The Num reconstruction weights of every 'Recon' model are the free fit values
+# of the distribution shape. They occupy a single fixed placeholder slot in the
+# canonical p (so counting/links/expressions never shift), and their values live
+# in the parallel Recon list. For the fit they are EXPANDED onto the tail of a
+# scalar working vector the minimiser varies, and their smoothness is enforced by
+# Tikhonov "restrictions" appended as regularization pseudo-observation rows (see
+# minimi_lib.minimi_hi's n_reg). The D_dif/D_dif2 knobs in [0,1] map to an
+# internal penalty weight lambda = D/(1-D+eps): finite everywhere (D=1 reachable),
+# 0 when D=0 (free distribution), ~1e6 when D=1 (effectively forces a flat /
+# straight-line channel density). lambda is scaled by REG_SCALE below so the same
+# D behaves consistently regardless of the spectrum's count level.
+_RECON_EPS = 1e-6
+
+
+def _recon_lambda(d):
+    """Map a regularization knob D in [0,1] to a finite internal penalty weight."""
+    d = min(max(float(d), 0.0), 1.0)
+    return d / (1.0 - d + _RECON_EPS)
+
+
+def recon_fit_layout(model, p):
+    """Locate every 'Recon' block in the flat p.
+
+    Returns ``(infos, n_weights)`` where each info is a dict with the block's
+    ``off`` (flat index of its first slot), ``num`` (grid size), ``d1``/``d2``
+    (the D_dif/D_dif2 knobs), ``re`` (its index into the parallel Recon list) and
+    ``wstart`` (offset of its weights within the appended weight tail). Walks the
+    model with mod_len_def, so it is correct across Nbaseline sections.
+    """
+    infos = []
+    V = number_of_baseline_parameters
+    re = 0
+    wstart = 0
+    for name in model:
+        if name == 'Recon':
+            num = max(1, int(round(float(p[V + 3]))))
+            infos.append({'off': int(V), 'num': num,
+                          'd1': float(p[V + 4]), 'd2': float(p[V + 5]),
+                          're': re, 'wstart': wstart})
+            wstart += num
+            re += 1
+        V += mod_len_def(name, include_special=True)
+    return infos, wstart
+
+
+def _recon_penalty_length(infos):
+    """Number of regularization pseudo-observation rows the infos produce."""
+    n = 0
+    for info in infos:
+        num = info['num']
+        n += max(0, num - 1)      # first-difference rows
+        n += max(0, num - 2)      # second-difference rows
+    return n
+
+
+def _recon_penalty_rows(weight_tail, infos, reg_scale):
+    """Build the stacked √λ·(finite difference of the normalized density) rows.
+
+    Operates on the CHANNEL density g = w/Σw (scale-invariant) so D behaves the
+    same regardless of the weight normalization; ``reg_scale`` makes the penalty
+    commensurate with the data sum-of-squares. Zero λ (D=0) yields zero rows that
+    leave the fit unconstrained.
+    """
+    rows = []
+    for info in infos:
+        num = info['num']
+        w = np.asarray(weight_tail[info['wstart']:info['wstart'] + num], dtype=float)
+        s = np.sum(w)
+        g = w / s if s != 0 else np.full(num, 1.0 / num)
+        if num >= 2:
+            rows.append(np.sqrt(_recon_lambda(info['d1']) * reg_scale) * (g[1:] - g[:-1]))
+        if num >= 3:
+            rows.append(np.sqrt(_recon_lambda(info['d2']) * reg_scale) * (g[2:] - 2.0 * g[1:-1] + g[:-2]))
+    return np.concatenate(rows) if rows else np.array([], dtype=float)
+
+
 def create_subspectra(model, Distri, Cor, p):
     """
     Create subspectra from full model by splitting into individual components.
@@ -138,6 +215,17 @@ def create_subspectra(model, Distri, Cor, p):
             Co += 1
             continue
 
+        if model_name == 'Recon':
+            # 7 slots (par, L, R, Num, D_dif, D_dif2, weight placeholder) appended
+            # to the PREVIOUS component, exactly like Distr. No expression string —
+            # the reconstruction weights travel in the parallel Recon list, sliced
+            # per component in compute_component_curves via the 'Recon' marker count.
+            for _ in range(7):
+                Ps[-1] = np.append(Ps[-1], p[V])
+                V += 1
+            Psm[-1].append(model_name)
+            continue
+
         # Ordinary spectral component: it is computed standalone on top of the
         # shared baseline parameters, followed by its own parameter slots.
         ps = np.array(p[:number_of_baseline_parameters], dtype=float)
@@ -150,13 +238,14 @@ def create_subspectra(model, Distri, Cor, p):
     return (Ps, Psm, Distri_t, Cor_t, Di, Co)
 
 
-def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol):
+def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol, Recon=None):
     """Compute the plotted curve and line positions for each subspectrum.
 
     Takes the per-component parameter sets from :func:`create_subspectra` and
     runs the transmission integral / position calculation for each, slicing the
-    (already substituted) Distri/Cor texts to the entries belonging to that
-    component. Shared by the fit and by "Show model".
+    (already substituted) Distri/Cor texts — and the ``Recon`` weight arrays —
+    to the entries belonging to that component. Shared by the fit and by "Show
+    model".
 
     Returns:
         tuple: (FS, FS_pos) — lists with one entry per component.
@@ -165,19 +254,23 @@ def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_param
     FS_pos = []
     DiEn = 0
     CoEn = 0
+    ReEn = 0
     for i in range(len(Ps)):
-        DiSt, CoSt = DiEn, CoEn
+        DiSt, CoSt, ReSt = DiEn, CoEn, ReEn
         DiEn += Psm[i].count('Distr')
         CoEn += Psm[i].count('Corr')
+        ReEn += Psm[i].count('Recon')
         # The [0] placeholder is never read (the slice is empty exactly when
-        # the component has no Distr/Corr); it just keeps TI's signature happy.
+        # the component has no Distr/Corr/Recon); it just keeps TI's signature happy.
         distri_slice = Distri_t[DiSt:DiEn] if DiEn > DiSt else [0]
         cor_slice = Cor_t[CoSt:CoEn] if CoEn > CoSt else [0]
+        recon_slice = list(Recon[ReSt:ReEn]) if (Recon is not None and ReEn > ReSt) else [0]
 
         FS.append(m5.TI(A, Ps[i], Psm[i], JN, pool,
                         method_params['x0'], method_params['MulCo'],
                         method_params['INS'], distri_slice, cor_slice,
-                        Met=method_params['Met'], Norm=method_params['Norm'], pol=pol))
+                        Met=method_params['Met'], Norm=method_params['Norm'], pol=pol,
+                        Recon=recon_slice))
         FS_pos.append(mod_pos(Ps[i], Psm[i], method_params['INS'], Met=method_params['Met']))
     return FS, FS_pos
 
@@ -208,7 +301,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         instrumental_note = ''
 
         # Read model configuration using the full read_model function
-        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model_full(app)
+        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model_full(app)
 
         p = np.array(p, dtype=float)
         
@@ -321,10 +414,11 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             print(f"[Fitting] Simultaneous - model_separate: {model_separate}")
             print(f"[Fitting] Simultaneous - begining_spc: {begining_spc}")
 
-            # Per-section slices of the Distri/Cor expression lists (used after the
+            # Per-section slices of the Distri/Cor/Recon lists (used after the
             # fit to rebuild each section's sub-spectra for plotting)
             distr_bounds = np.cumsum([0] + [ms.count('Distr') for ms in model_separate])
             corr_bounds = np.cumsum([0] + [ms.count('Corr') for ms in model_separate])
+            recon_bounds = np.cumsum([0] + [ms.count('Recon') for ms in model_separate])
 
             def section_parameters(p_full, idx):
                 if idx < len(begining_spc) - 1:
@@ -336,9 +430,9 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         if not is_simultaneous or uniform_method:
             # Uniform instrumental settings: a single TI call over the whole model
             # (TI splits Nbaseline sections internally) — the original code path.
-            def func(x, p):
+            def func(x, p, recon=Recon):
                 return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
-                             Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol)
+                             Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol, Recon=recon)
         else:
             # Dedicated per-section instrumental parameters (e.g. mixing CMS and
             # SMS): TI receives one value per section as lists. The full model and
@@ -351,17 +445,20 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             met_list = [mp_i['Met'] for mp_i in method_params_list]
             norm_list = [mp_i['Norm'] for mp_i in method_params_list]
 
-            def func(x, p):
+            def func(x, p, recon=Recon):
                 return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
-                             Distri, Cor, Met=met_list, Norm=norm_list, pol=pol)
+                             Distri, Cor, Met=met_list, Norm=norm_list, pol=pol, Recon=recon)
 
         # Box bounds and user-fixed parameters straight from the table
         bounds, fix = read_bounds_and_fix(app, len(p))
 
-        # Add automatic fixes for constraints, distribution expressions, and expression models
+        # Add automatic fixes for constraints, distribution expressions, expression
+        # models and Recon weight-vector placeholder slots (the real weights are
+        # free and appended to the working vector below, not fixed here).
         fix = np.concatenate((fix, con1.astype(int)), axis=0) if len(con1) > 0 else fix
         fix = np.concatenate((fix, DistriN.astype(int)), axis=0) if len(DistriN) > 0 else fix
         fix = np.concatenate((fix, NExpr.astype(int)), axis=0) if len(NExpr) > 0 else fix
+        fix = np.concatenate((fix, ReconN.astype(int)), axis=0) if len(ReconN) > 0 else fix
         fix = np.unique(fix)
 
         # Set up constraints from con1, con2, con3
@@ -377,56 +474,106 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         else:
             confu = np.array([[-1], [-1], [-1]])
         
+        # --- Recon (distribution reconstruction) fit expansion --------------
+        # Every 'Recon' contributes Num FREE weights. They are appended to the TAIL
+        # of the working vector the minimiser varies (the canonical head keeps its
+        # fixed 7 Recon slots, so links / p[i] expressions / counters are untouched)
+        # with a >=0 lower bound, and their smoothness "restrictions" enter as
+        # Tikhonov pseudo-observation rows (n_reg) that participate in the LM step
+        # but not in the reported chi-square / covariance. When there is no Recon,
+        # func_fit/A_fit/B_fit/p0_fit collapse to the original inputs (n_reg == 0),
+        # so this path is byte-identical to the previous behaviour.
+        recon_infos, n_weights = recon_fit_layout(model, p)
+        base_len = len(p0)
+        if recon_infos:
+            def _rebuild_recon(pw):
+                rl = list(Recon)
+                for info in recon_infos:
+                    s = base_len + info['wstart']
+                    rl[info['re']] = np.asarray(pw[s:s + info['num']], dtype=float)
+                return rl
+
+            init_w = np.concatenate([
+                (np.asarray(Recon[info['re']], dtype=float).ravel()
+                 if np.asarray(Recon[info['re']]).ravel().size == info['num']
+                 else np.full(info['num'], 1.0 / info['num']))
+                for info in recon_infos])
+            p0_fit = np.concatenate([p0, init_w])
+            bounds_fit = np.concatenate(
+                (bounds, np.array([[0.0] * n_weights, [np.inf] * n_weights])), axis=1)
+            n_reg = _recon_penalty_length(recon_infos)
+            reg_scale = float(np.sum((np.asarray(B, dtype=float) - np.mean(B)) ** 2)) or 1.0
+            A_fit = np.concatenate([np.asarray(A, dtype=float), np.zeros(n_reg)])
+            B_fit = np.concatenate([np.asarray(B, dtype=float), np.zeros(n_reg)])
+
+            def func_fit(_x, pw):
+                spec = np.asarray(func(A, pw[:base_len], _rebuild_recon(pw)), dtype=float)
+                pen = _recon_penalty_rows(pw[base_len:], recon_infos, reg_scale)
+                return np.concatenate([spec, pen])
+        else:
+            func_fit, A_fit, B_fit, p0_fit, bounds_fit, n_reg = func, A, B, p0, bounds, 0
+
         # Perform minimization
         tau0 = 10 ** -3
         eps = 10 ** -6
-        
+
         print('[Fitting] Starting minimization...')
         print(f'[Fitting] Initial parameters: {p}')
         print(f'[Fitting] Model: {model}')
         print(f'[Fitting] Fixed parameters (indices): {fix}')
         print(f'[Fitting] Constraints (confu): {confu}')
-        
-        p, er, hi2, covariance_matrix = mi.minimi_hi(
-            func, A, B, p0,
+
+        pfit, er, hi2, covariance_matrix = mi.minimi_hi(
+            func_fit, A_fit, B_fit, p0_fit,
             fix=fix,
             confu=confu,
-            bounds=bounds,
+            bounds=bounds_fit,
             Expr=Expr,
             NExpr=NExpr,
             MI=20,
             MI2=10,
             nu0=2.618,
             tau0=tau0,
-            eps=eps
+            eps=eps,
+            n_reg=n_reg
         )
         if hi2 > 1.25:
             print('hi2 is too high let me try to continue')
-            pO, erO, hi2O = p, er, hi2
-            p, er, hi2, covariance_matrix = mi.minimi_hi(
-                func,  A, B, p, 
+            pO, erO, hi2O = pfit, er, hi2
+            pfit, er, hi2, covariance_matrix = mi.minimi_hi(
+                func_fit,  A_fit, B_fit, pfit,
                 fix = fix,
                 confu=confu,
-                bounds = bounds,
+                bounds = bounds_fit,
                 Expr = Expr,
                 NExpr = NExpr,
                 MI=20,
                 MI2=10,
                 nu0=2.618,
                 tau0=tau0,
-                eps=eps
+                eps=eps,
+                n_reg=n_reg
             )
-            if np.array_equal(p, pO) == True:
+            if np.array_equal(pfit, pO) == True:
                 if len(er) == 1:
-                    p, er, hi2 = pO, erO, hi2O
+                    pfit, er, hi2 = pO, erO, hi2O
                 print('It was real end')
 
+        # Map the working vector back to the canonical p (head) and write the
+        # fitted reconstruction weights into the parallel Recon list IN PLACE, so
+        # func()'s default `recon=Recon` (and the plotting/result path below) use
+        # the fitted distribution. When there is no Recon this is a plain identity.
+        p = np.asarray(pfit[:base_len], dtype=float)
+        er = np.asarray(er[:base_len], dtype=float) if np.ndim(er) and len(er) >= base_len else er
+        for info in recon_infos:
+            s = base_len + info['wstart']
+            Recon[info['re']] = np.asarray(pfit[s:s + info['num']], dtype=float)
 
         print(f'[Fitting] Fitted parameters: {p}')
         print(f'[Fitting] Errors: {er}')
         print(f'[Fitting] Chi-squared: {hi2}')
         print(f'[Fitting] Covariance matrix shape: {covariance_matrix.shape}')
-        
+
         # Calculate fitted spectrum for plotting
         SPC_f = func(A, p)
         
@@ -456,23 +603,25 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 mp_i = method_params_list[NumSpc]
                 d_slice = list(Distri_substituted[distr_bounds[NumSpc]:distr_bounds[NumSpc + 1]])
                 c_slice = list(Cor_substituted[corr_bounds[NumSpc]:corr_bounds[NumSpc + 1]])
+                r_slice = list(Recon[recon_bounds[NumSpc]:recon_bounds[NumSpc + 1]])
                 d_arg = d_slice if len(d_slice) > 0 else [0]
                 c_arg = c_slice if len(c_slice) > 0 else [0]
+                r_arg = r_slice if len(r_slice) > 0 else [0]
                 SPC_f_separate = m5.TI(A_list[NumSpc], p_separate, model_separate[NumSpc], JN, pool,
                                        mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
                                        d_arg, c_arg,
-                                       Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol)
+                                       Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol, Recon=r_arg)
                 SPC_f_list.append(SPC_f_separate)
 
                 # High-resolution convergence check for this section (cyan line)
                 hires_diff_list.append(hires_model_diff(
                     pool, JN, A_list[NumSpc], p_separate, model_separate[NumSpc],
-                    mp_i, SPC_f_separate, d_arg, c_arg, pol=pol))
+                    mp_i, SPC_f_separate, d_arg, c_arg, pol=pol, Recon=r_arg))
 
                 Ps, Psm, Distri_t, Cor_t, _, _ = create_subspectra(
                     model_separate[NumSpc], d_slice, c_slice, p_separate)
                 FS, FS_pos = compute_component_curves(
-                    A_list[NumSpc], Ps, Psm, Distri_t, Cor_t, JN, pool, mp_i, pol)
+                    A_list[NumSpc], Ps, Psm, Distri_t, Cor_t, JN, pool, mp_i, pol, Recon=r_slice)
                 FS_list.append(FS)
                 FS_pos_list.append(FS_pos)
 
@@ -500,17 +649,18 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'Cor': list(Cor_save),  # Correlation expressions (original)
                 'Distri_substituted': list(Distri_substituted),
                 'Cor_substituted': list(Cor_substituted),
+                'Recon': [np.asarray(w, dtype=float) for w in Recon],  # fitted reconstruction weights
                 'instrumental_note': instrumental_note,
             }
 
         else:
             # Single spectrum: decompose into subspectra and compute each curve
             Ps, Psm, Distri_t, Cor_t, _, _ = create_subspectra(model, Distri, Cor, p)
-            FS, FS_pos = compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, mp0, pol)
+            FS, FS_pos = compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, mp0, pol, Recon=Recon)
 
             # High-resolution convergence check (cyan line). Uses the same
             # instrumental settings and Distri/Cor as func(), so it matches SPC_f.
-            hires_diff = hires_model_diff(pool, JN, A, p, model, mp0, SPC_f, Distri, Cor, pol=pol)
+            hires_diff = hires_model_diff(pool, JN, A, p, model, mp0, SPC_f, Distri, Cor, pol=pol, Recon=Recon)
 
             return {
                 'success': True,
@@ -534,6 +684,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'Cor': list(Cor),  # Correlation expressions (original)
                 'Distri_substituted': list(Distri_t),  # Distribution expressions (substituted)
                 'Cor_substituted': list(Cor_t),  # Correlation expressions (substituted)
+                'Recon': [np.asarray(w, dtype=float) for w in Recon],  # fitted reconstruction weights
                 'instrumental_note': instrumental_note,
             }
     

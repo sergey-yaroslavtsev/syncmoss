@@ -40,7 +40,7 @@ MODEL_PARAMETER_NAMES = {
 	'Relax_MS': ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'R', 'alfa', 'S'],
 	'Relax_2S': ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'Ω12', 'P1/P2'],
 	'ASM': ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13', 'ω, °'],
-	'S/C_DW': ['T', 'δ, mm/s', 'ε, mm/s', 'H0, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'KδH', 'KεH', 'Φ, °', 'h1, T', 'h3, T', 'h5, T', 'h7, T', 'h9, T', 'h11, T', 'h13, T', 'h15, T', 'd2, mm/s', 'd4, mm/s', 'd6, mm/s', 'd8, mm/s', 'N/Γ', 'I13'],
+	'SCDW': ['T', 'δ, mm/s', 'ε, mm/s', 'H0, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'KδH', 'KεH', 'Φ, °', 'h1, T', 'h3, T', 'h5, T', 'h7, T', 'h9, T', 'h11, T', 'h13, T', 'h15, T', 'd2, mm/s', 'd4, mm/s', 'd6, mm/s', 'd8, mm/s', 'N/Γ', 'I13'],
 	'Be': ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1'],
 	'KB_nano': ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1'],
 	'Variables': [f'V{i + 1}' for i in range(numco)],
@@ -49,6 +49,7 @@ MODEL_PARAMETER_NAMES = {
 	'Average_H': ['T', 'δ, mm/s', 'ε, mm/s', 'Hin, T', 'L, mm/s', 'G, mm/s', 'Hex, T', 'K', 'J', 'θ, °', 'N'],
 	'Distr': ['par', 'L', 'R', 'Num', 'Probability density function'],
 	'Corr': ['par', 'Dependency function'],
+	'Recon': ['par', 'L', 'R', 'Num', 'D_dif', 'D_dif2', 'weights'],
 	'Layer': [],
 }
 

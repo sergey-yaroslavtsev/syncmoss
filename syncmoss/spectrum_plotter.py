@@ -16,7 +16,7 @@ _DEFAULT_THEME = {
     'legend_textcolor': 'white',
 }
 
-_NON_SUBSPECTRUM_MODELS = {'Distr', 'Corr', 'Expression', 'Variables', 'Layer'}
+_NON_SUBSPECTRUM_MODELS = {'Distr', 'Corr', 'Recon', 'Expression', 'Variables', 'Layer'}
 
 
 def _tc(theme):
@@ -1033,13 +1033,13 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
     return result_svg, result_png, position_artists
 
 
-def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colors=None, gridcolor='gray', theme=None):
+def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colors=None, gridcolor='gray', theme=None, Recon=None):
     """
     Plot distribution probability densities and correlations on the figure.
-    
+
     Parameters:
     - figure: matplotlib Figure object
-    - model: list of model names (full model including Distr/Corr)
+    - model: list of model names (full model including Distr/Corr/Recon)
     - p: fitted parameter array
     - Distri: list of distribution expressions (already substituted)
     - Cor: list of correlation expressions (already substituted)
@@ -1047,17 +1047,23 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
     - model_colors: list of colors per model row (for dot markers)
     - gridcolor: color for grid lines
     - theme: theme dict for colors
-    
+    - Recon: list of reconstruction weight arrays (one per 'Recon' model, in table
+             order); a Recon plots its free weights as the density (no smooth curve)
+
     Returns:
     - True if distribution was plotted, False if no distribution found
     """
     tc = _tc(theme)
     figure.clear()
     figure.patch.set_facecolor(tc['figure_facecolor'])
-    
+    Recon = list(Recon) if Recon is not None else []
+
     model_np = np.array(model)
-    distr_indices = np.where(model_np == 'Distr')[0]
-    
+    # A parametric Distr and a model-independent Recon are both distributions to
+    # draw; keep the indices sorted so the correlation-grouping sentinel logic and
+    # the per-row Di_idx/Re_idx cursors below stay aligned with table order.
+    distr_indices = np.where((model_np == 'Distr') | (model_np == 'Recon'))[0]
+
     if len(distr_indices) == 0:
         return False
     
@@ -1084,8 +1090,10 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
     
     Di_idx = 0  # index into Distri list
     Co_idx = 0  # index into Cor list
-    
+    Re_idx = 0  # index into Recon weight list
+
     for j in range(num_distr):
+        is_recon = (model[int(Distri_D[j])] == 'Recon')
         n_corr = corr_counts[j]
         # Total columns for this row: 1 (distribution) + n_corr (correlations)
         # Use GridSpec for flexible subplot sizing
@@ -1105,32 +1113,49 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
         else:
             ax = figure.add_subplot(num_distr, total_cols, j * total_cols + 1)
         
-        # X range from distribution parameters
+        # X range from distribution parameters (par, L, R, Num share the same
+        # first four slots for Distr and Recon)
         n_points = int(p[Vnum + 3])
         X_discrete = np.linspace(p[Vnum + 1], p[Vnum + 2], n_points)
         X_smooth = np.linspace(p[Vnum + 1], p[Vnum + 2], 1024)
-        
-        # Evaluate distribution expression
-        try:
-            X = X_discrete
-            Y_discrete = _eval_expr(Distri[Di_idx], p, X) + 0 * X
-            X = X_smooth
-            Y_smooth = _eval_expr(Distri[Di_idx], p, X) + 0 * X
-        except Exception as e:
-            print(f"Error evaluating distribution expression: {e}")
-            Di_idx += 1
-            continue
-        
-        # Normalize
-        S = Y_smooth.sum()
-        if S == 0:
-            S = 1
-        Y_smooth_norm = Y_smooth / S
-        Y_discrete_norm = Y_discrete / S
-        
-        # Plot: smooth curve in BLUE, discrete dots in parent model color
-        ax.plot(X_smooth, Y_smooth_norm, color='blue', linewidth=1.5)
-        ax.plot(X_discrete, Y_discrete_norm, marker='h', linestyle='', color=dot_color, markersize=6)
+
+        if is_recon:
+            # Recon: the density is the free weight vector over channels 0..Num-1
+            # (no analytic form / smooth curve). Normalise by the weight sum.
+            try:
+                w = np.asarray(Recon[Re_idx], dtype=float).ravel()
+                if w.size != n_points:
+                    w = np.full(n_points, 1.0 / max(1, n_points))
+            except (IndexError, ValueError, TypeError):
+                w = np.full(n_points, 1.0 / max(1, n_points))
+            S = w.sum() or 1.0
+            Y_discrete_norm = w / S
+            Y_smooth_norm = None
+            # Stems + hexagon markers (blue stems like the Distr curve colour).
+            ax.vlines(X_discrete, 0.0, Y_discrete_norm, color='blue', linewidth=1.0)
+            ax.plot(X_discrete, Y_discrete_norm, marker='h', linestyle='', color=dot_color, markersize=6)
+        else:
+            # Evaluate distribution expression
+            try:
+                X = X_discrete
+                Y_discrete = _eval_expr(Distri[Di_idx], p, X) + 0 * X
+                X = X_smooth
+                Y_smooth = _eval_expr(Distri[Di_idx], p, X) + 0 * X
+            except Exception as e:
+                print(f"Error evaluating distribution expression: {e}")
+                Di_idx += 1
+                continue
+
+            # Normalize
+            S = Y_smooth.sum()
+            if S == 0:
+                S = 1
+            Y_smooth_norm = Y_smooth / S
+            Y_discrete_norm = Y_discrete / S
+
+            # Plot: smooth curve in BLUE, discrete dots in parent model color
+            ax.plot(X_smooth, Y_smooth_norm, color='blue', linewidth=1.5)
+            ax.plot(X_discrete, Y_discrete_norm, marker='h', linestyle='', color=dot_color, markersize=6)
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
         ax.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=0.5)
         _style_axis(ax, tc)
@@ -1153,10 +1178,11 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
                 corr_dot_color = _get_model_color(int(Corr_D[k]))
                 
                 try:
-                    X = X_smooth
-                    YY_smooth = _eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
-                    ax_corr.plot(YY_smooth, Y_smooth_norm, color='red', linewidth=1.5)
-                    
+                    if Y_smooth_norm is not None:
+                        X = X_smooth
+                        YY_smooth = _eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
+                        ax_corr.plot(YY_smooth, Y_smooth_norm, color='red', linewidth=1.5)
+
                     X = X_discrete
                     YY_discrete = _eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
                     ax_corr.plot(YY_discrete, Y_discrete_norm, marker='H', linestyle='', color=corr_dot_color, markersize=6)
@@ -1171,13 +1197,94 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
                 ax_corr.set_xlabel(corr_xlabel, color=tc['axes_text_color'])
                 
                 Co_n += 1
-        
-        Di_idx += 1
+
+        if is_recon:
+            Re_idx += 1
+        else:
+            Di_idx += 1
         Co_idx += Co_n
-    
+
     figure.tight_layout()
     figure.canvas.draw()
     return True
+
+
+def distribution_curves(model, p, Distri, Cor, Recon=None):
+    """Return the distribution / correlation curves for the graf result file.
+
+    Mirrors :func:`plot_distribution`'s extraction but returns the raw data instead
+    of drawing it: a list of ``(column_name, values)`` pairs in model order, ready
+    to append as extra columns. For each distribution marker it emits an x/y pair
+    (``Distr_x_N``/``Distr_y_N`` for a parametric PDF, ``Recon_x_N``/``Recon_y_N``
+    for a reconstructed weight vector), followed by an x/y pair for every
+    correlation attached to it (``Corr_x_N``/``Corr_y_N``: the correlated-parameter
+    values vs the parent density). x is the discrete grid over ``[L, R]``; y is the
+    normalized density (weights for a Recon). Returns ``[]`` when the model has no
+    distributions.
+    """
+    Recon = list(Recon) if Recon is not None else []
+    Distri = list(Distri) if Distri is not None else []
+    Cor = list(Cor) if Cor is not None else []
+    model_np = np.array(model)
+    distr_indices = np.where((model_np == 'Distr') | (model_np == 'Recon'))[0]
+    if len(distr_indices) == 0:
+        return []
+    boundaries = np.append(distr_indices, len(model_np) * 2)
+    corr_indices = np.where(model_np == 'Corr')[0]
+
+    columns = []
+    Di_idx = Co_idx = Re_idx = 0
+    d_count = r_count = c_count = 0
+    for j in range(len(distr_indices)):
+        idx = int(distr_indices[j])
+        is_recon = (model[idx] == 'Recon')
+
+        Vnum = number_of_baseline_parameters
+        for k in range(idx):
+            Vnum += mod_len_def(model[k], include_special=True)
+        n_points = max(1, int(p[Vnum + 3]))
+        X = np.linspace(p[Vnum + 1], p[Vnum + 2], n_points)
+
+        if is_recon:
+            try:
+                y = np.asarray(Recon[Re_idx], dtype=float).ravel()
+                if y.size != n_points:
+                    y = np.full(n_points, 1.0 / n_points)
+            except (IndexError, ValueError, TypeError):
+                y = np.full(n_points, 1.0 / n_points)
+            Re_idx += 1
+            S = y.sum() or 1.0
+            y = y / S
+            r_count += 1
+            columns.append((f'Recon_x_{r_count}', X))
+            columns.append((f'Recon_y_{r_count}', y))
+        else:
+            try:
+                y = _eval_expr(Distri[Di_idx], p, X) + 0.0 * X
+                S = np.nansum(y)
+                if S == 0:
+                    S = 1.0
+                y = y / S
+            except Exception:
+                y = np.full(n_points, np.nan)
+            Di_idx += 1
+            d_count += 1
+            columns.append((f'Distr_x_{d_count}', X))
+            columns.append((f'Distr_y_{d_count}', y))
+
+        # Correlations attached to this distribution (contiguous, in model order).
+        for k in range(len(corr_indices)):
+            ci = int(corr_indices[k])
+            if boundaries[j] < ci < boundaries[j + 1]:
+                try:
+                    xx = _eval_expr(Cor[Co_idx], p, X) + 0.0 * X
+                except Exception:
+                    xx = np.full(n_points, np.nan)
+                Co_idx += 1
+                c_count += 1
+                columns.append((f'Corr_x_{c_count}', xx))
+                columns.append((f'Corr_y_{c_count}', y))
+    return columns
 
 
 def _parent_component_xlabel(model, distr_model_idx, parameter_names, suffix, fallback):

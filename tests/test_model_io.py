@@ -25,7 +25,7 @@ EXPECTED_PARAM_COUNTS = {
     "Average_H": 11,
     "Relax_MS": 11,
     "ASM": 15,
-    "S/C_DW": 27,
+    "SCDW": 27,
     "Hamilton_mc": 12,
     "Hamilton_pc": 9,
     "Variables": numco,                       # 26
@@ -43,7 +43,7 @@ def test_mod_len_def_base_models(model_name, expected):
 
 @pytest.mark.parametrize(
     "model_name,special_count",
-    [("Distr", 5), ("Corr", 2), ("Expression", 1)],
+    [("Distr", 5), ("Corr", 2), ("Expression", 1), ("Recon", 7)],
 )
 def test_mod_len_def_special_models(model_name, special_count):
     # Special models only contribute parameters when include_special is True.

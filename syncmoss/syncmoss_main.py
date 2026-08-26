@@ -86,7 +86,7 @@ from syncmoss.spectrum_io import (
 from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
     plot_distribution, plot_calibration, plot_model, plot_model_with_nbaseline,
-    plot_spectrum, plot_model_without_spectrum, calculate_z_order,
+    plot_spectrum, plot_model_without_spectrum, calculate_z_order, distribution_curves,
 )
 from syncmoss.instrumental_io import (
     instrumental,
@@ -354,9 +354,29 @@ class SequentialFittingThread(QThread):
         })
 
 
+def _recon_weight_texts(model_list, recon_weights):
+    """Serialize fitted 'Recon' weight vectors into ``{component_index: text}``,
+    keyed by position in ``model_list`` (0 = baseline). Merged into the results
+    table's ``expression_texts`` so the reconstructed distribution is shown in the
+    weight column and "Take result as model" round-trips it back to the table.
+    Recon models are matched to ``recon_weights`` in table order.
+    """
+    texts = {}
+    if not recon_weights:
+        return texts
+    re = 0
+    for idx, name in enumerate(model_list):
+        if name == 'Recon':
+            if re < len(recon_weights):
+                w = np.asarray(recon_weights[re], dtype=float).ravel()
+                texts[idx] = ','.join(f'{v:.6g}' for v in w)
+            re += 1
+    return texts
+
+
 class ShowModelThread(QThread):
     """Thread for running show model calculation without blocking the UI"""
-    finished = Signal(object, object, object, object, object, object, object, object, object, str, object, object, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub
+    finished = Signal(object, object, object, object, object, object, object, object, object, str, object, object, object, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon
     error = Signal(str)
     
     def __init__(self, main_window, path_list, pool, velocity_range=15.0):
@@ -370,7 +390,7 @@ class ShowModelThread(QThread):
     def run(self):
         try:
             # Read model from parameter table
-            model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(self.main_window)
+            model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(self.main_window)
             no_spectrum_mode = len(self.path_list) == 0
             
             # Validate Nbaseline count matches number of spectra
@@ -485,6 +505,7 @@ class ShowModelThread(QThread):
                 Distri_sub, Cor_sub = fitting_io.create_subspectra(model, Distri, Cor, p)[2:4]
             distr_bounds = np.cumsum([0] + [ms.count('Distr') for ms in model_sections])
             corr_bounds = np.cumsum([0] + [ms.count('Corr') for ms in model_sections])
+            recon_bounds = np.cumsum([0] + [ms.count('Recon') for ms in model_sections])
 
             if num_nbaseline > 0:
                 # Find parameter boundaries for each section: the first section
@@ -521,53 +542,55 @@ class ShowModelThread(QThread):
                     A_section = A_list[spc_idx]
                     d_slice = Distri_sub[distr_bounds[spc_idx]:distr_bounds[spc_idx + 1]]
                     c_slice = Cor_sub[corr_bounds[spc_idx]:corr_bounds[spc_idx + 1]]
+                    r_slice = list(Recon[recon_bounds[spc_idx]:recon_bounds[spc_idx + 1]])
                     d_arg = d_slice if len(d_slice) > 0 else [0]
                     c_arg = c_slice if len(c_slice) > 0 else [0]
+                    r_arg = r_slice if len(r_slice) > 0 else [0]
 
                     # Calculate fitted spectrum for this section
                     SPC_f_section = TI(A_section, p_section, model_sections[spc_idx], JN, pool,
                                        mp_section['x0'], mp_section['MulCo'],
                                        mp_section['INS'], d_arg, c_arg,
-                                       Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol)
+                                       Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol, Recon=r_arg)
                     SPC_f_sections.append(SPC_f_section)
 
                     # High-resolution convergence check for this section (cyan line)
                     hires_diff_sections.append(hires_model_diff(
                         pool, JN, A_section, p_section, model_sections[spc_idx],
-                        mp_section, SPC_f_section, d_arg, c_arg, pol=pol))
+                        mp_section, SPC_f_section, d_arg, c_arg, pol=pol, Recon=r_arg))
 
                     # Subspectra of this section (shared decomposition with the fit)
                     Ps, Psm, Distri_t, Cor_t, _, _ = fitting_io.create_subspectra(
                         model_sections[spc_idx], d_slice, c_slice, p_section)
                     FS, FS_pos = fitting_io.compute_component_curves(
-                        A_section, Ps, Psm, Distri_t, Cor_t, JN, pool, mp_section, pol)
+                        A_section, Ps, Psm, Distri_t, Cor_t, JN, pool, mp_section, pol, Recon=r_slice)
                     FS_all.append(FS)
                     FS_pos_all.append(FS_pos)
 
                 if no_spectrum_mode:
                     # Keep sectioned arrays for dedicated model-only plotting;
                     # the hires diff stays a per-section list to match.
-                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections, Distri_sub, Cor_sub)
+                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections, Distri_sub, Cor_sub, Recon)
                 else:
                     # Concatenate fitted spectrum and hires diff (plot splits them back)
                     SPC_f = np.concatenate(SPC_f_sections)
                     hires_diff = np.concatenate(hires_diff_sections) if hires_diff_sections else None
-                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub)
+                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon)
             else:
                 # Single spectrum case: full spectrum + convergence check
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
-                           method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
+                           method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon)
 
                 hires_diff = hires_model_diff(pool, JN, A, p, model, method_params,
-                                              SPC_f, Distri, Cor, pol=pol)
+                                              SPC_f, Distri, Cor, pol=pol, Recon=Recon)
 
                 # Subspectra (shared decomposition with the fit)
                 Ps, Psm, Distri_t, Cor_t, _, _ = fitting_io.create_subspectra(model, Distri, Cor, p)
                 FS, FS_pos = fitting_io.compute_component_curves(
-                    A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol)
+                    A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol, Recon=Recon)
 
                 # Emit with single list of subspectra
-                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub)
+                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon)
 
         except Exception as e:
             traceback.print_exc()
@@ -1426,8 +1449,8 @@ class PhysicsApp(QMainWindow):
                     top_layout = param_widget.layout().itemAt(0).layout()
                     fix_cb = top_layout.itemAt(1).widget()
                     
-                    # Expression placeholders carry no numeric value.
-                    if model_name in ['Distr', 'Corr', 'Expression'] and col == num_params - 1:
+                    # Expression / weight-vector placeholders carry no numeric value.
+                    if model_name in ['Distr', 'Corr', 'Recon', 'Expression'] and col == num_params - 1:
                         expr_text = expression_texts.get(model_idx)
                         if expr_text is not None:
                             pending_expression_updates.append((model_idx, col, expr_text))
@@ -1796,7 +1819,7 @@ class PhysicsApp(QMainWindow):
         self.show_model_thread.error.connect(self.on_show_model_error)
         self.show_model_thread.start()
     
-    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None, Distri=None, Cor=None):
+    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None, Distri=None, Cor=None, Recon=None):
         """Handle show model completion"""
         try:
             # Show-model is not a fit result: wipe stale fit table content so
@@ -1838,6 +1861,7 @@ class PhysicsApp(QMainWindow):
                 'model': model,
                 'Distri': Distri or [],
                 'Cor': Cor or [],
+                'Recon': Recon or [],
             }
 
             self._plot_show_model_data(self.last_plot_data)
@@ -2364,7 +2388,7 @@ class PhysicsApp(QMainWindow):
             model_list = self.params_table.get_model_list()
             
             # Special models that don't produce individual subspectra
-            non_subspectrum_models = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables'}
+            non_subspectrum_models = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
             
             # Skip special models when counting subspectra
             # Count how many actual subspectra appear before this component
@@ -2473,7 +2497,8 @@ class PhysicsApp(QMainWindow):
             model = data.get('model', [])
             Distri = data.get('Distri', [])
             Cor = data.get('Cor', [])
-            
+            Recon = data.get('Recon', [])
+
             if self._showing_distribution:
                 # Switch back to spectrum view
                 self._showing_distribution = False
@@ -2481,19 +2506,21 @@ class PhysicsApp(QMainWindow):
                 self._replot_with_custom_order()
                 self.set_status("Showing spectrum", "green")
             else:
-                # Switch to distribution view
-                if not Distri:
+                # Switch to distribution view. A parametric Distr contributes a PDF
+                # string; a Recon contributes a free-weight vector — either one is a
+                # distribution to show.
+                if not Distri and 'Recon' not in (model or []):
                     self.set_status("No distribution in the model", "orange")
                     return
-                
+
                 parameter_names = self.params_table.get_parameter_names()
                 gridcolor = self.gridcolor
                 p_for_distribution = data.get('p_flat', data['p'])
-                
+
                 success = plot_distribution(
                     self.figure, model, p_for_distribution, Distri, Cor,
                     parameter_names, gridcolor=gridcolor,
-                    model_colors=data.get('model_colors'), theme=self._theme
+                    model_colors=data.get('model_colors'), theme=self._theme, Recon=Recon
                 )
                 
                 if success:
@@ -2702,13 +2729,14 @@ class PhysicsApp(QMainWindow):
             model_colors = self.params_table.get_current_colors()
             parameter_names = self.params_table.get_parameter_names()
             expression_texts = self.params_table.get_expression_texts()
-            
+            expression_texts = {**expression_texts, **_recon_weight_texts(model_list, result.get('Recon', []))}
+
             fitted_parameters = result['parameters']
             errors = result['errors']
             chi2 = result['chi2']
             covariance_matrix = result['covariance_matrix']
             fix = result.get('fix', np.array([], dtype=int))
-            
+
             self.results_table.fill_table(
                 fitted_parameters,
                 model_list,
@@ -2840,10 +2868,11 @@ class PhysicsApp(QMainWindow):
                     'model': result.get('model', []),
                     'Distri': result.get('Distri_substituted', []),
                     'Cor': result.get('Cor_substituted', []),
+                    'Recon': result.get('Recon', []),
                 }
                 self._showing_distribution = False
                 self.SP_DI.setText('Distribution')
-                
+
                 # Store fitting data for graf.txt saving
                 self.last_fitting_data = {
                     'A': result['A_list'],  # List of arrays
@@ -2909,10 +2938,11 @@ class PhysicsApp(QMainWindow):
                     'model': result.get('model', []),
                     'Distri': result.get('Distri_substituted', []),
                     'Cor': result.get('Cor_substituted', []),
+                    'Recon': result.get('Recon', []),
                 }
                 self._showing_distribution = False
                 self.SP_DI.setText('Distribution')
-                
+
                 result_svg, result_png, position_artists = plot_fitting_result(
                     self.figure, result['A'], result['B'], result['SPC_f'], result['FS'],
                     FS_pos, fitted_parameters, model_colors, chi2, result['spectrum_file'],
@@ -2954,7 +2984,8 @@ class PhysicsApp(QMainWindow):
             model_colors = self.params_table.get_current_colors()
             parameter_names = self.params_table.get_parameter_names()
             expression_texts = self.params_table.get_expression_texts()
-            
+            expression_texts = {**expression_texts, **_recon_weight_texts(model_list, result.get('Recon', []))}
+
             # Extract results
             fitted_parameters = result['parameters']
             errors = result['errors']
@@ -3116,7 +3147,44 @@ class PhysicsApp(QMainWindow):
         result_svg_src = os.path.join(self.dir_path, 'result.svg')
         if os.path.exists(result_svg_src):
             shutil.copyfile(result_svg_src, base_path + '.svg')
-    
+
+        # 5. Distributions image (all Distr/Corr/Recon curves in one PNG), only
+        #    when the model has a distribution. No separate SVG.
+        self._save_distributions_png(base_path + '_distributions.png')
+
+    def _save_distributions_png(self, filepath):
+        """Render every distribution/correlation (Distr, Corr, Recon) into one PNG.
+
+        Reuses :func:`plot_distribution` (the same view as the Distribution toggle)
+        on a stand-alone Agg figure. Writes nothing when the model has no
+        distribution; failures are logged but never block the other result files.
+        """
+        data = getattr(self, 'last_plot_data', None)
+        if not data:
+            return
+        model = data.get('model', []) or []
+        Distri = data.get('Distri', []) or []
+        if not Distri and 'Recon' not in model:
+            return  # no distribution to draw
+        try:
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+            fig = Figure(figsize=(10, 6))
+            FigureCanvasAgg(fig)
+            ok = plot_distribution(
+                fig, model, data.get('p_flat', data.get('p')),
+                Distri, data.get('Cor', []),
+                self.params_table.get_parameter_names(),
+                model_colors=data.get('model_colors'),
+                gridcolor=self.gridcolor, theme=self._theme,
+                Recon=data.get('Recon', []),
+            )
+            if ok:
+                fig.savefig(filepath, dpi=150, facecolor=fig.get_facecolor())
+        except Exception as e:
+            print(f"Error saving distributions png: {e}\n{traceback.format_exc()}")
+
     def _save_graf_file(self, filepath, fitting_data):
         """
         Save graph data to text file with columns: A (velocity), B (data), Baseline, SPC_f (fit), model1, model2, ...
@@ -3145,7 +3213,7 @@ class PhysicsApp(QMainWindow):
         # marker that draws no curve of its own (FS has no entry for it), so it
         # is excluded here just like Nbaseline/Distr/Corr/Expression/Variables.
         if hasattr(self.results_table, 'current_model_list') and len(self.results_table.current_model_list) > 1:
-            excluded = {'baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables'}
+            excluded = {'baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
             model_names = [m for m in self.results_table.current_model_list if m not in excluded]
         else:
             model_names = [f'Submodel{i+1}' for i in range(len(FS))]
@@ -3156,14 +3224,40 @@ class PhysicsApp(QMainWindow):
 
         # Create data columns: A, B, Baseline, SPC_f, then each subspectrum
         data_columns = [A, B, baseline, SPC_f]
+        column_names = ['Velocity', 'Data', 'Baseline', 'Fit'] + model_names[:len(FS)]
         data_columns.extend(FS)
 
-        # Transpose to row format
-        data_array = np.column_stack(data_columns)
+        # Append distribution / correlation curves as extra x/y column pairs
+        # (Distr_x_N/Distr_y_N, Corr_x_N/Corr_y_N, Recon_x_N/Recon_y_N in model
+        # order). Their length is the grid size Num, generally != the spectrum
+        # length, so every column is padded with NaN to a common row count. Only
+        # for a single spectrum (A is a 1-D array); guarded so a failure here never
+        # blocks the rest of the graf file.
+        try:
+            data = getattr(self, 'last_plot_data', None)
+            if data is not None and np.ndim(A) == 1:
+                curves = distribution_curves(
+                    data.get('model', []), data.get('p_flat', data.get('p')),
+                    data.get('Distri', []), data.get('Cor', []), data.get('Recon', []))
+                for name, values in curves:
+                    column_names.append(name)
+                    data_columns.append(np.asarray(values, dtype=float))
+        except Exception as e:
+            print(f"[graf] could not add distribution columns: {e}")
+
+        # Pad every column to the longest length with NaN, then stack.
+        n_rows = max(len(np.atleast_1d(c)) for c in data_columns)
+        padded = []
+        for c in data_columns:
+            c = np.asarray(c, dtype=float).ravel()
+            if len(c) < n_rows:
+                c = np.concatenate([c, np.full(n_rows - len(c), np.nan)])
+            padded.append(c)
+        data_array = np.column_stack(padded)
 
         # Build header
-        header = 'Velocity\tData\tBaseline\tFit\t' + '\t'.join(model_names[:len(FS)])
-        
+        header = '\t'.join(column_names)
+
         # Save with tab separation
         np.savetxt(filepath, data_array, delimiter='\t', fmt='%.6e',
                    header=header, comments='')
@@ -3186,18 +3280,25 @@ class PhysicsApp(QMainWindow):
             for param_name in param_names:
                 # Add parameter name
                 names.append(param_name)
-                if param_idx < len(parameters):
+                if model_name == 'Recon' and param_name == 'weights':
+                    # The reconstruction weight vector is not a scalar parameter
+                    # (it is stored with the model / shown in the Distribution plot);
+                    # write a placeholder 1 so the column stays aligned.
+                    values.append(1)
+                elif param_idx < len(parameters):
                     values.append(parameters[param_idx])
                 else:
                     values.append('')
-                
+
                 # Add error name and value
                 names.append(f'd_{param_name}')
-                if errors is not None and param_idx < len(errors):
+                if model_name == 'Recon' and param_name == 'weights':
+                    values.append('nan')
+                elif errors is not None and param_idx < len(errors):
                     values.append(errors[param_idx])
                 else:
                     values.append('nan')
-                
+
                 param_idx += 1
         
         # Add chi2

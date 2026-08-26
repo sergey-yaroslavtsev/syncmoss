@@ -186,7 +186,7 @@ Parameters:
   \operatorname{atan2}(-\sin\varphi_h,\ \cos\theta_k\cos\varphi_h)$ reproduces the
   former plane-contains-$h$ geometry ($=90°$ in the degenerate $\mathbf{u}\parallel h$ case).
 
-### S/C_DW
+### SCDW
 Spin/charge density wave. The spin AXIS is fixed at $(\theta_k, \varphi_h)$;
 only the scalar hyperfine parameters (signed field magnitude, isomer shift,
 quadrupole shift) are modulated along the wave, sampled at a fixed number of

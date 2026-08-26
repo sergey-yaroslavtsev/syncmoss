@@ -368,7 +368,7 @@ def subtract_model_from_spectrum(main_window):
         B = B_list[0]
 
         # Read current model and parameters
-        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(main_window)
+        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
 
         if len(model) == 0:
             main_window.set_status("No model defined - nothing to subtract", "orange")
@@ -403,7 +403,7 @@ def subtract_model_from_spectrum(main_window):
             SPC_f = TI(A, p, model, JN, main_window.pool,
                          method_params['x0'], method_params['MulCo'],
                          method_params['INS'], Distri, Cor,
-                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol)
+                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon)
         except Exception as e:
             main_window.set_status(f"Error calculating model spectrum: {e}", "red")
             return

@@ -1,4 +1,4 @@
-"""Grid optimisation of the S/C_DW (spin/charge density wave) line shapes.
+"""Grid optimisation of the SCDW (spin/charge density wave) line shapes.
 
 ``models.SDW_thick_terms`` bins each line's ``Num`` wave positions onto a grid
 tied to the Voigt width, so the Voigt count is Num-independent. It must match the

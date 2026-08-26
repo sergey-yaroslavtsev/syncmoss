@@ -900,7 +900,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S4 = Sig - eps - a2 + mun * (gex + ggr) / 2 * H
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 15   # ASM: +1 for the cycloid-plane angle omega (no effect on positions)
-            if model[i] == 'S/C_DW':
+            if model[i] == 'SCDW':
                 # Representative sextet at the BASE (mean) field H0: the density
                 # wave sweeps positions around this, so the markers show the
                 # unmodulated sextet. Same signed-field position kernel as
@@ -939,6 +939,14 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
             if model[i] == 'Corr':
                 SET.append([])
                 V += 2
+            if model[i] == 'Recon':
+                # Reconstructed distribution: like Distr, the base component has no
+                # single line set (it is spread over the grid), so drop its markers
+                # and keep SET index-aligned; skip the 7 fixed Recon slots.
+                del SET[-1]
+                SET.append([])
+                SET.append([])
+                V += 7
             if model[i] == 'Nbaseline':
                 break
 
@@ -980,9 +988,9 @@ def mod_pos(p, model, INS, Met=0):
             for j in range(MV, len(model)):
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
-                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM') + 27 * (model[j] == 'S/C_DW')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM') + 27 * (model[j] == 'SCDW')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
-                    + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
+                    + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
                 if model[j] == 'Distr':

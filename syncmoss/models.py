@@ -1698,7 +1698,7 @@ def SDW_thick_terms_direct(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
     return (v1, v2, v3, v4, v5, v6)
 
 
-# Fixed wave-phase sampling count (positions per period) for S/C_DW. Not a fit
+# Fixed wave-phase sampling count (positions per period) for SCDW. Not a fit
 # parameter: the grid binning keeps it off the Voigt count, so it is set high
 # enough to be converged for any wave (~4e-5 even for a pathological all-harmonics
 # wave). The accuracy<->speed knob is the per-component grid resolution 'N/Γ'
@@ -1743,7 +1743,7 @@ def _bin_positions(vk, dg, norm):
 
 @njit(cache=True)
 def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, MulCo, steps):
-    """Grid-binned line positions + weights for the S/C_DW branch.
+    """Grid-binned line positions + weights for the SCDW branch.
 
     Same positions as :func:`SDW_thick_terms_direct`, but each line's ``Num``
     positions are binned onto a per-line grid of step ``dg = width / steps`` so
@@ -1774,7 +1774,7 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
     return (g1, g2, g3, g4, g5, g6), (w1, w2, w3, w4, w5, w6)
 
 
-def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.98, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False):
+def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.98, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0):
         # SCR = np.array(x_exp)
         SCR = x_exp
         N = np.array([float(0)]*len(SCR))
@@ -2225,7 +2225,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 15
-            if model[i] == 'S/C_DW':
+            if model[i] == 'SCDW':
                 # Spin/charge density wave, polarized (thick). The spin AXIS is
                 # FIXED at (theta_k, phi_h); only the SCALAR hyperfine parameters
                 # (signed field H, isomer shift, quadrupole shift) are modulated
@@ -2340,26 +2340,34 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 # kk = []
                 Dk = 0
                 Ck = 0
+                Rk = 0
 
-                while model[k] == 'Distr' or model[k] == 'Corr':
+                while model[k] == 'Distr' or model[k] == 'Corr' or model[k] == 'Recon':
                     if model[k] == 'Distr':
                         # kk.append(k)
                         Dk += 1
                     if model[k] == 'Corr':
                         Ck += 1
+                    if model[k] == 'Recon':
+                        Rk += 1
                     k -= 1
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
-                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='S/C_DW')\
+                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='SCDW')\
                            + 14*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+
+                # Total flat slots from the base component through every preceding
+                # distribution marker (Corr=2, Distr=5, Recon=7 each): the base
+                # amplitude sits at p[V-Prev] and pN is reshaped as (Prev, Num).
+                Prev = Vnum + Ck*2 + Dk*5 + Rk*7
 
                 model_d = np.array([model[k:i]] * Num).flatten()
                 # print('distr model', model_d, str(Distri[Di]))
                 # print(Vnum, k, i)
 
-                pN = np.reshape(np.ravel(np.array([p[V-Vnum-Ck*2-Dk*5:V]]*Num), order='F'), (Vnum+Ck*2+Dk*5, Num))
+                pN = np.reshape(np.ravel(np.array([p[V-Prev:V]]*Num), order='F'), (Prev, Num))
 
-                pN[0] = ge * p[V-Vnum-Ck*2-Dk*5]
+                pN[0] = ge * p[V-Prev]
 
                 pN[int(p[V])] = X
                 V += 5
@@ -2373,13 +2381,13 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                         # Ck += 1 # CHECK!!!!!!!
                     else:
                         break
-                pN = np.reshape(np.ravel(pN, order='F'), (Num, Vnum+Ck*2+Dk*5)).flatten()
+                pN = np.reshape(np.ravel(pN, order='F'), (Num, Prev)).flatten()
 
                 MultiDistr = 0
                 for j in range(i+1, len(model)):
                     if model[j] != 'Corr':
                         # print(str('it is MULTIDIMENTIONAL!')*(model[j] == 'Distr') + str('it is single!')*(model[j] != 'Distr'))
-                        MultiDistr = 1*(model[j] == 'Distr')
+                        MultiDistr = 1*(model[j] == 'Distr' or model[j] == 'Recon')
                         break
 
 
@@ -2401,17 +2409,20 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 # contribution from the previous loop iteration is removed first.
                 if MultiDistr == 0:
                     # print('Dk =', Dk, ' Ck =', Ck)
-                    if len(O)==0 and Dk!=0:
+                    if len(O)==0 and (Dk!=0 or Rk!=0):
                         O = p
                     # CHt = CH * (TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[Di-Dk:Di]]*Num).flatten(), np.array([Cor[Co-Ck:Co]]*Num).flatten(), Met = -1, Mett = Mett, O=O))
                     mDk = 0
                     mCk = 0
+                    mRk = 0
                     for mk in range(0, k):
                         if model[mk] == 'Distr':
                             mDk += 1
                         if model[mk] == 'Corr':
                             mCk += 1
-                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol)
+                        if model[mk] == 'Recon':
+                            mRk += 1
+                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[mRk:mRk+Rk])*Num)
                     CHt = CH * CH_in                                  # scalar (thin) part multiplies in, as before
                     if Smat_in is not None:                          # thick part joins the CURRENT layer's Smat
                         Smat_t = Smat_in if Smat is None else Smat + Smat_in
@@ -2419,6 +2430,87 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                     CHt = CH
                 Di += 1
                 # print('Distri proceed')
+
+            if model[i] == 'Recon':
+                # Model-independent reconstruction. Identical replication machinery
+                # to 'Distr', except the per-channel density `ge` is the vector of
+                # FREE fit weights held in the parallel Recon list (like a Distr's
+                # PDF string in Distri) rather than an evaluated PDF expression.
+                # Recon's 7 flat slots are par, L, R, Num, D_dif, D_dif2 and a single
+                # weight-vector placeholder; only par/L/R/Num are read here --
+                # D_dif/D_dif2 are fit-side smoothness regularisation and never enter
+                # the forward spectrum, and the weights arrive numerically via Recon.
+                Num = int(p[V + 3])
+                CH = CHold
+                Smat = Smat_old
+                Smat_t = Smat
+                X = np.linspace(np.array(p[V+1]), np.array(p[V+2]), Num)
+                ge = np.asarray(Recon[Re], dtype=float).flatten()
+                ge = ge / np.sum(ge, axis=0)
+                k = i-1
+                Dk = 0
+                Ck = 0
+                Rk = 0
+
+                while model[k] == 'Distr' or model[k] == 'Corr' or model[k] == 'Recon':
+                    if model[k] == 'Distr':
+                        Dk += 1
+                    if model[k] == 'Corr':
+                        Ck += 1
+                    if model[k] == 'Recon':
+                        Rk += 1
+                    k -= 1
+
+                Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
+                           + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='SCDW')\
+                           + 14*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+
+                Prev = Vnum + Ck*2 + Dk*5 + Rk*7
+
+                model_d = np.array([model[k:i]] * Num).flatten()
+
+                pN = np.reshape(np.ravel(np.array([p[V-Prev:V]]*Num), order='F'), (Prev, Num))
+
+                pN[0] = ge * p[V-Prev]
+
+                pN[int(p[V])] = X
+                V += 7
+
+                for j in range(1, len(model)-i):
+                    if model[i+j] == 'Corr':
+                        pN[int(p[V])] = eval(str(Cor[Co])) + 0*X
+                        V += 2
+                        Co += 1
+                    else:
+                        break
+                pN = np.reshape(np.ravel(pN, order='F'), (Num, Prev)).flatten()
+
+                MultiDistr = 0
+                for j in range(i+1, len(model)):
+                    if model[j] != 'Corr':
+                        MultiDistr = 1*(model[j] == 'Distr' or model[j] == 'Recon')
+                        break
+
+                if MultiDistr == 0:
+                    if len(O)==0 and (Dk!=0 or Rk!=0):
+                        O = p
+                    mDk = 0
+                    mCk = 0
+                    mRk = 0
+                    for mk in range(0, k):
+                        if model[mk] == 'Distr':
+                            mDk += 1
+                        if model[mk] == 'Corr':
+                            mCk += 1
+                        if model[mk] == 'Recon':
+                            mRk += 1
+                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[mRk:mRk+Rk])*Num)
+                    CHt = CH * CH_in
+                    if Smat_in is not None:
+                        Smat_t = Smat_in if Smat is None else Smat + Smat_in
+                else:
+                    CHt = CH
+                Re += 1
 
             if model[i] == 'Nbaseline':
                 break
@@ -2497,7 +2589,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
         return(CH)
 
 
-def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=0.98):  # num - number of Gausians # PS - spc, p - InsFun
+def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=0.98, Recon=[0]):  # num - number of Gausians # PS - spc, p - InsFun
     """Compute the Mossbauer transmission spectrum (full transmission integral).
 
     Integrates the per-energy model ``TImod`` over the source line shape using
@@ -2530,7 +2622,10 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
 
     D = (E[1] - E[0])
     if model.count('Nbaseline') == 0:
-        H = pool.starmap(TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol) for Ex in E])
+        # Recon travels after the default-valued middle args (Mett,O,Di,Co,V,
+        # return_layer_matrix) so the parallel weight list reaches every TImod
+        # worker positionally (starmap cannot pass keywords).
+        H = pool.starmap(TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon) for Ex in E])
         H = np.array(H, dtype=object).sum(axis=0)
 
         # Ht = np.array([[float(0)] * len(x_exp)] * JN)
@@ -2543,6 +2638,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         Hc = H * N0 / Norm * D + (p[4] + p[7] * p[4]/10**2 * x_exp + p[6] * p[4] / 10 ** 4 * ((-1) * p[5] + x_exp) ** 2)
     else:
         Di, Co, V, MV = 0, 0, 0, 0
+        Re = 0
         Hc = []
         step_sign = np.sign(x_exp[1]-x_exp[0])
         x_separate = []
@@ -2577,7 +2673,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
             N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
             V = V + number_of_baseline_parameters
-            H = pool.starmap(TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V) for Ex in E])
+            H = pool.starmap(TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V, False, Recon, Re) for Ex in E])
             # Di = H[0][1]
             # Co = H[0][2]
             # V = H[0][3]
@@ -2588,15 +2684,17 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             for j in range(MV, len(model)):
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
-                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='S/C_DW')\
+                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='SCDW')\
                     + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
-                    + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') \
+                    + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
                 if model[j] == 'Distr':
                     Di += 1
                 if model[j] == 'Corr':
                     Co += 1
+                if model[j] == 'Recon':
+                    Re += 1
                 if model[j] == 'Nbaseline':
                     break
             # print('finally V is equal to ', V)

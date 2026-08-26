@@ -323,8 +323,13 @@ class ResultsTable(QWidget):
             # Fill values for this component
             for col in range(min(num_params, numco)):
                 if param_index < len(parameters):
-                    # Check if this is an expression column
-                    if model_name in ['Distr', 'Corr'] and col == num_params - 1:
+                    # Check if this is an expression / weight-vector column
+                    if model_name == 'Recon' and col == num_params - 1:
+                        # The reconstruction weight vector is not printed here (it is
+                        # viewed in the Distribution plot); the value still lives in
+                        # self.expression_texts so "take result as model" round-trips it.
+                        self.labels[value_row][col].setText('(see Distribution)')
+                    elif model_name in ['Distr', 'Corr'] and col == num_params - 1:
                         # Show expression text for Distr/Corr
                         if component in self.expression_texts:
                             self.labels[value_row][col].setText(self.expression_texts[component])
@@ -382,7 +387,7 @@ class ResultsTable(QWidget):
             self.buttons[base_row].setStyleSheet(f"background-color: {color}; color: {text_color};")
             
             # Row 1: Intensity percentage (or model name for baseline/Nbaseline)
-            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables']:
+            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables']:
                 self.buttons[base_row + 1].setText('')  # Empty for baseline/Nbaseline
             elif self.buttons[base_row + 1].text() == 'Impurity':
                 pass
@@ -394,7 +399,7 @@ class ResultsTable(QWidget):
             self.buttons[base_row + 1].setStyleSheet(f"background-color: {color}; color: {text_color};")
             
             # Row 2: Intensity error (or model name for baseline/Nbaseline)
-            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Expression', 'Variables']:
+            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables']:
                 self.buttons[base_row + 2].setText('')  # Empty for baseline/Nbaseline
             elif self.buttons[base_row + 2].text() == 'no %':
                 pass
@@ -436,7 +441,7 @@ class ResultsTable(QWidget):
                 continue
             
             # Skip models without T parameter
-            if model_name in ['Layer', 'Distr', 'Corr', 'Expression', 'Variables']:
+            if model_name in ['Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables']:
                 param_index += len(param_names)
                 continue
             
@@ -560,8 +565,8 @@ class ResultsTable(QWidget):
             # Fill errors for this component
             for col in range(min(num_params, numco)):
                 if error_index < len(errors):
-                    if model_name in ['Distr', 'Corr', 'Expression'] and col == num_params - 1:
-                        # Expression column
+                    if model_name in ['Distr', 'Corr', 'Recon', 'Expression'] and col == num_params - 1:
+                        # Expression / weight-vector column
                         if model_name == 'Expression':
                             # Show propagated error for the expression
                             _, calc_error = self._evaluate_expression_with_error(component)
@@ -664,7 +669,10 @@ class ResultsTable(QWidget):
         if not self.model_list:
             return
 
-        # Map model names to their number of parameters
+        # Map model names to their number of parameters. 'Recon' is intentionally
+        # absent: its trailing weight column is not spanned into a long line — the
+        # reconstruction is shown in the Distribution plot, and its results cell is
+        # just a short "(see Distribution)" marker.
         special_models = {
             'Expression': 1,
             'Corr': 2,

@@ -80,6 +80,62 @@ def test_corr_requires_distr_or_corr(physics_app):
     assert _model_name(pt, 3) == 'Corr'
 
 
+def test_recon_after_component_is_allowed(physics_app):
+    pt = physics_app.params_table
+    pt.select_model(1, 'Sextet')
+    btn = _model_btn(pt, 2)
+    pt.select_model_by_button('Recon', btn)
+    assert _model_name(pt, 2) == 'Recon'
+    # Recon shows its 7 fixed control slots (par, L, R, Num, D_dif, D_dif2, weights).
+    assert pt.row_params[2] == 7
+
+
+def test_recon_after_baseline_is_blocked(physics_app):
+    pt = physics_app.params_table
+    btn = _model_btn(pt, 1)             # row 1, previous row is the baseline
+    pt.select_model_by_button('Recon', btn)
+    assert _model_name(pt, 1) == 'None'  # not entered
+
+
+def test_corr_after_recon_is_allowed(physics_app):
+    pt = physics_app.params_table
+    pt.select_model(1, 'Sextet')
+    btn2 = _model_btn(pt, 2)
+    pt.select_model_by_button('Recon', btn2)
+    assert _model_name(pt, 2) == 'Recon'
+    btn3 = _model_btn(pt, 3)
+    pt.select_model_by_button('Corr', btn3)
+    assert _model_name(pt, 3) == 'Corr'   # Corr may correlate onto a Recon
+
+
+def test_recon_weight_column_hidden(physics_app):
+    """The reconstruction weight vector is managed internally (fitted + shown in
+    the Distribution plot), so the row shows only the 6 controls: the trailing
+    weights column exists (fixed flat slot, round-trips) but is hidden."""
+    pt = physics_app.params_table
+    pt.select_model(1, 'Sextet')
+    pt.select_model_by_button('Recon', _model_btn(pt, 2))
+    assert _model_name(pt, 2) == 'Recon'
+    row_layout = pt.row_widgets[2].layout()
+    # cols 0..5 (par, L, R, Num, D_dif, D_dif2) visible; col 6 (weights) hidden.
+    for col in range(6):
+        assert row_layout.itemAt(col + 1).widget().isHidden() is False, f"col {col} should be visible"
+    assert row_layout.itemAt(7).widget().isHidden() is True  # weights column hidden
+
+
+def test_recon_num_and_reg_locked_by_default(physics_app):
+    """par/Num/D_dif/D_dif2 are structural and hard-locked; L/R stay free."""
+    pt = physics_app.params_table
+    pt.select_model(1, 'Sextet')
+    btn = _model_btn(pt, 2)
+    pt.select_model_by_button('Recon', btn)
+    # cols: 0 par, 1 L, 2 R, 3 Num, 4 D_dif, 5 D_dif2, 6 weights
+    for col in (0, 3, 4, 5):
+        assert _fix_cb(pt, 2, col).isChecked(), f"Recon col {col} should be locked"
+    assert _fix_cb(pt, 2, 1).isChecked() is False   # L free
+    assert _fix_cb(pt, 2, 2).isChecked() is False   # R free
+
+
 # Orientation/texture parameters each polarized model carries that are FIXED by
 # default, as {param column: label}; the user unticks the box to refine them.
 # (theta_k, phi_h replace the former scalar asymmetry and are followed by the
@@ -95,7 +151,7 @@ _THICK_LOCKED_ANGLES = {
     'Relax_2S':    {8: 'θk, °', 9: 'φh, °', 10: 'A', 11: 'A_m'},
     'Hamilton_mc': {11: 'αk, °'},
     'ASM':         {9: 'θk, °', 10: 'φh, °', 11: 'A', 14: 'ω, °'},
-    'S/C_DW':      {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'A_m'},
+    'SCDW':        {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'A_m'},
 }
 
 

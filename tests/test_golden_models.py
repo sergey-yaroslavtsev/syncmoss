@@ -40,7 +40,7 @@ def _compute(model, params):
     """
     m5.COMPLEX_VOIGT_METHOD = 'pseudo'
     m5.DISPERSION_SIGN = +1.0
-    # (S/C_DW grid resolution is now the per-component 'N/Γ' param -> baked into
+    # (SCDW grid resolution is now the per-component 'N/Γ' param -> baked into
     # the golden's params[25], so the result is deterministic without a global.)
     return np.asarray(
         m5.TImod(_E, np.array(params, float), np.array(model), _E, 0.0, 1.0,

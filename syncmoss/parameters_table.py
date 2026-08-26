@@ -29,9 +29,9 @@ MODEL_OPTIONS = [
     # polarized fittable models (each reduces to its former scalar form at
     # texture A = 0; SMS uses the full polarized readout, CMS the half-trace)
     'Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S',
-    'Hamilton_mc', 'Hamilton_pc', 'ASM', 'S/C_DW',
+    'Hamilton_mc', 'Hamilton_pc', 'ASM', 'SCDW',
     # presets / structural / utility
-    'Be', 'KB_nano', 'Layer', 'Distr', 'Corr',
+    'Be', 'KB_nano', 'Layer', 'Distr', 'Corr', 'Recon',
     'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline',
     'Copy', 'Paste'
 ]
@@ -263,7 +263,7 @@ class ParametersTable(QWidget):
             'Nbaseline': '#224477',
             'Library': "#319B00",
             'Expression': '#5599cc', 'Variables': '#5599cc',
-            'Distr': '#774488', 'Corr': '#774488',
+            'Distr': '#774488', 'Corr': '#774488', 'Recon': '#774488',
             'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
             'Layer': '#2a8a8a',
         }
@@ -368,24 +368,25 @@ class ParametersTable(QWidget):
                 if opt == 'Paste':
                     self.paste_model_from_memory(r)
                     return
-                # Distr/Corr attach to the PRECEDING component, so they cannot
+                # Distr/Corr/Recon attach to the PRECEDING component, so they cannot
                 # follow the baseline, a Layer marker, an Expression, or an empty
-                # row. Corr is stricter: it may only follow a Distr/Corr. If the
-                # placement is invalid, do nothing (the row stays as it was).
-                if opt in ('Distr', 'Corr'):
+                # row. Corr is stricter: it may only follow a Distr/Corr/Recon
+                # (the distribution it correlates onto). Recon places like Distr.
+                # If the placement is invalid, do nothing (the row stays as it was).
+                if opt in ('Distr', 'Corr', 'Recon'):
                     prev_model = ''
                     if r > 0:
                         prev_start = self.row_widgets[r - 1].layout().itemAt(0).widget()
                         prev_model = prev_start.layout().itemAt(1).widget().text()
                     if opt == 'Corr':
-                        allowed = prev_model in ('Distr', 'Corr')
-                    else:  # Distr
+                        allowed = prev_model in ('Distr', 'Corr', 'Recon')
+                    else:  # Distr / Recon
                         allowed = prev_model not in ('baseline', 'Layer', 'Expression', 'None', '')
                     if not allowed:
                         self.main_window.set_status(
                             f"'{opt}' cannot be placed after '{prev_model or 'nothing'}' "
                             f"(it must follow a "
-                            + ("'Distr'/'Corr'" if opt == 'Corr' else "fittable component") + ").",
+                            + ("'Distr'/'Corr'/'Recon'" if opt == 'Corr' else "fittable component") + ").",
                             "orange",
                         )
                         return
@@ -663,7 +664,7 @@ class ParametersTable(QWidget):
                 param_widget = row_widget.layout().itemAt(col + 1).widget()
                 value_input = param_widget.layout().itemAt(1).widget()
                 if col < self.row_params[row]:
-                    if model in ['Distr', 'Corr', 'Expression'] and col == self.row_params[row] - 1:
+                    if model in ['Distr', 'Corr', 'Recon', 'Expression'] and col == self.row_params[row] - 1:
                         value_input.setValidator(None)
                     else:
                         validator_value = QRegularExpressionValidator(QRegularExpression(r'^(-?\d+(\.\d+)?|=\[\d+,-?\d+(\.\d+)?\])$'))
@@ -692,9 +693,17 @@ class ParametersTable(QWidget):
             self.update_distr_corr_highlights()
 
             # Apply expression expansion for Distr/Corr/Expression models
+            # (their trailing column holds a free-text PDF/dependency/expression).
             if model in ['Distr', 'Corr', 'Expression']:
                 last_col = self.row_params[row] - 1  # 0-based last meaningful column
                 self._apply_expression_expansion(row, last_col)
+            elif model == 'Recon':
+                # The reconstruction weight vector is managed internally (the fit
+                # determines it; it is viewed in the Distribution plot), so it is
+                # NOT shown as an editable row field. Keep its fixed flat slot
+                # (row_params is unchanged) but hide the trailing weights column so
+                # the row shows only the 6 controls (par, L, R, Num, D_dif, D_dif2).
+                self._hide_recon_weight_column(row)
             elif model == 'Layer':
                 # Layer has no parameters; show it as one long, locked box
                 # (red lock), purely cosmetic, like the expanded field of Distr.
@@ -723,15 +732,16 @@ class ParametersTable(QWidget):
             model_btn = start_widget.layout().itemAt(1).widget()
             model_name = model_btn.text()
             
-            if model_name in ['Distr', 'Corr']:
-                # Find the last non-Distr/non-Corr model before this row
+            if model_name in ['Distr', 'Corr', 'Recon']:
+                # Find the last non-distribution model before this row (the base
+                # fittable component a Distr/Corr/Recon chain attaches to).
                 target_row = None
                 for search_row in range(row - 1, -1, -1):
                     prev_row_widget = self.row_widgets[search_row]
                     prev_start = prev_row_widget.layout().itemAt(0).widget()
                     prev_model_btn = prev_start.layout().itemAt(1).widget()
                     prev_model = prev_model_btn.text()
-                    if prev_model not in ['Distr', 'Corr']:
+                    if prev_model not in ['Distr', 'Corr', 'Recon']:
                         target_row = search_row
                         break
                 
@@ -849,14 +859,14 @@ class ParametersTable(QWidget):
         # Check reference validity
         self.check_reference(input_widget)
         
-        # If this is a Distr/Corr model and we're changing the 'par' parameter (col 0)
+        # If this is a Distr/Corr/Recon model and we're changing the 'par' parameter (col 0)
         # update the grey frame highlights
         if row < len(self.row_widgets) and col == 0:
             row_widget = self.row_widgets[row]
             start_widget = row_widget.layout().itemAt(0).widget()
             model_btn = start_widget.layout().itemAt(1).widget()
             model_name = model_btn.text()
-            if model_name in ['Distr', 'Corr']:
+            if model_name in ['Distr', 'Corr', 'Recon']:
                 self.update_distr_corr_highlights()
 
     def check_reference(self, input):
@@ -935,7 +945,7 @@ class ParametersTable(QWidget):
             lowers = ['0', '', '', '', '', '', '0.098', '0', '-1', '-180', '-360', '-0.5', '7', '0', '-360']
             uppers = ['', '', '', '', '', '', '', '', '1', '180', '360', '1', '', '', '360']
             fixes = [False, False, False, False, False, False, True, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, omega locked by default
-        elif model == 'S/C_DW':
+        elif model == 'SCDW':
             # Spin/charge density wave (SpectrRelax SDW/CDW layout, 27 slots):
             # I, base delta/eps, base field H0, widths, spin-axis (theta_k,
             # phi_h), texture A, magnetic polar order A_m, the field->shift
@@ -1042,6 +1052,16 @@ class ParametersTable(QWidget):
             lowers = ['1', '']
             uppers = ['', '']
             fixes = [True, True]
+        elif model == 'Recon':
+            # Reconstructor of the distribution: par/L/R/Num as for Distr, then two
+            # smoothness regularization knobs D_dif (1st derivative) and D_dif2 (2nd
+            # derivative) in [0,1] (0 = free, 1 = maximally smooth), then the free
+            # weight vector (left empty -> a uniform start is used; the fit fills it).
+            names = ['par', 'L', 'R', 'Num', 'D_dif', 'D_dif2', 'weights']
+            values = ['1', '0', '1', '20', '0', '0', '']  # par depends on previous
+            lowers = ['1', '', '', '1', '0', '0', '']
+            uppers = ['', '', '', '1000', '1', '1', '']
+            fixes = [True, False, False, True, True, True, True]
         elif model == 'Layer':
             # Layer boundary marker: no parameters.
             self.row_params[row] = 0
@@ -1081,13 +1101,16 @@ class ParametersTable(QWidget):
             _hard_lock_fix_checkbox(len(names) - 1)      # last 'S'
         elif model == 'ASM':
             _hard_lock_fix_checkbox(len(names) - 3)      # 'Num' (now followed by I13, ω)
-        elif model == 'S/C_DW':
+        elif model == 'SCDW':
             _hard_lock_fix_checkbox(len(names) - 2)      # 'N/Γ' grid resolution (followed by I13)
         elif model == 'Distr':
             for idx in [0, len(names) - 2]:              # first 'par' and 'Num'
                 _hard_lock_fix_checkbox(idx)
         elif model == 'Corr':
             _hard_lock_fix_checkbox(0)                   # first 'par'
+        elif model == 'Recon':
+            for idx in [0, 3, 4, 5]:                     # 'par', 'Num', 'D_dif', 'D_dif2'
+                _hard_lock_fix_checkbox(idx)
 
         self.row_params[row] = len(names)
 
@@ -1132,6 +1155,19 @@ class ParametersTable(QWidget):
         bounds_layout = param_widget.layout().itemAt(2).layout()
         bounds_layout.itemAt(0).widget().setReadOnly(True)
         bounds_layout.itemAt(1).widget().setReadOnly(True)
+
+    def _hide_recon_weight_column(self, row):
+        """Hide a Recon row's trailing weight-vector column.
+
+        The column still exists (it holds the serialized weights so they round-trip
+        through .mdl save/load and carry the fitted reconstruction), and its flat
+        p-slot is still counted in ``row_params`` — it is only made invisible so the
+        visible row shows just the six control parameters. The reconstruction itself
+        is viewed in the Distribution plot.
+        """
+        weight_col = self.row_params[row] - 1  # last Recon slot = weights
+        if 0 <= weight_col < numco:
+            self.row_widgets[row].layout().itemAt(weight_col + 1).widget().setVisible(False)
 
     def _restore_normal_columns(self, row):
         """
@@ -1342,10 +1378,15 @@ class ParametersTable(QWidget):
                     param_widget = row_widget.layout().itemAt(2).widget()
                     value_input = param_widget.layout().itemAt(1).widget()
                     texts[component_idx] = value_input.text()
+                elif model_name == 'Recon':
+                    param_widget = row_widget.layout().itemAt(7).widget()
+                    value_input = param_widget.layout().itemAt(1).widget()
+                    texts[component_idx] = value_input.text()
         return texts
 
-    # Column (layout index) of the free-text expression field per model type.
-    _EXPRESSION_COLUMNS = {'Expression': 1, 'Distr': 5, 'Corr': 2}
+    # Column (layout index) of the free-text field per model type: an Expression /
+    # PDF / dependency string, or (Recon) the reconstruction weight vector.
+    _EXPRESSION_COLUMNS = {'Expression': 1, 'Distr': 5, 'Corr': 2, 'Recon': 7}
 
     def get_expression_rows(self):
         """
@@ -1356,7 +1397,7 @@ class ParametersTable(QWidget):
                   table order — the same order read_model() collects the
                   Expr/Distri/Cor lists in.
         """
-        rows = {'Expression': [], 'Distr': [], 'Corr': []}
+        rows = {'Expression': [], 'Distr': [], 'Corr': [], 'Recon': []}
         for row_idx in range(1, len(self.row_widgets)):
             row_widget = self.row_widgets[row_idx]
             start_widget = row_widget.layout().itemAt(0).widget()

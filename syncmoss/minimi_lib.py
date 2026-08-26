@@ -307,7 +307,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
               confu=np.array([[-1], [-1], [0]], dtype=float),
               bounds=np.array([[], []], dtype=float), Expr=[],
               NExpr=np.array([], dtype=int), MI=10, MI2=20, nu0=2.618,
-              tau0=0.001, eps=10 ** -10, fixCH=0):
+              tau0=0.001, eps=10 ** -10, fixCH=0, n_reg=0):
     """Levenberg-Marquardt least-squares fit of ``model_func(x_exp, params)`` to ``y_exp``.
 
     Optimised twin of the previous ``minimi_lib_old.minimi_hi`` — identical signature
@@ -317,6 +317,15 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     parameters (``fix``), linear parameter coupling (``confu``), box ``bounds``
     and linked expressions (``Expr`` evaluated into the ``NExpr`` indices).
     ``MI`` / ``MI2`` cap the outer/inner iterations; ``eps`` is the tolerance.
+
+    ``n_reg`` (default 0, fully backward compatible) is the number of TRAILING
+    rows of ``y_exp`` / the model output that are Tikhonov-style regularization
+    pseudo-observations rather than real data (used by the ``Recon`` distribution
+    reconstruction). Those rows participate normally in the LM step, gradient and
+    Hessian (that is how the penalty pulls the fit), but are EXCLUDED from the
+    reported reduced chi-square, the degrees of freedom and the parameter
+    covariance — the latter also avoids a divide-by-≈0 in the ``jac / model``
+    weighting when a penalty residual is driven to zero.
 
     Returns:
         tuple ``(params, errors, chi2_red, covariance)`` - fitted parameters,
@@ -330,6 +339,10 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     x_exp = np.array(x_exp, dtype=float)
     y_exp = np.array(y_exp, dtype=float)
     fix_orig = np.copy(fix)                   # remember the user's original fixes
+    # Number of REAL data rows (the trailing ``n_reg`` rows are regularization
+    # pseudo-observations). Used for every reported/statistical quantity; the LM
+    # step itself still uses all rows. n_reg == 0 reproduces the original path.
+    n_data = len(y_exp) - int(n_reg)
 
     # Some SYNCmoss models (e.g. models.TI) return an ``object``-dtype array. The
     # numba kernels need real float64, so wrap the user model once to coerce every
@@ -552,9 +565,9 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
 
                 # Convergence test 4: chi-square barely changed between steps.
                 if accepted_any != 0:
-                    dof = (len(y_exp) - len(params) + len(fix) + len(inactive))
-                    if np.sum(chi_old ** 2 / (np.abs(y_exp) + 1)) / dof \
-                            - np.sum(chi ** 2 / (np.abs(y_exp) + 1)) / dof < eps:
+                    dof = (n_data - len(params) + len(fix) + len(inactive))
+                    if np.sum(chi_old[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1)) / dof \
+                            - np.sum(chi[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1)) / dof < eps:
                         stop_code = 4
                         damping_scale = tau0
                         damping_growth = nu0
@@ -611,7 +624,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     # ----------------------------------------------------------------------- #
     # 4) Final reduced chi-square                                             #
     # ----------------------------------------------------------------------- #
-    chi2_red = np.sum(chi ** 2 / (np.abs(y_exp) + 1)) / (len(y_exp) - len(params) + len(fix) + len(inactive))
+    chi2_red = np.sum(chi[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1)) / (n_data - len(params) + len(fix) + len(inactive))
 
     # ----------------------------------------------------------------------- #
     # 5) Parameter covariance and 1-sigma errors                              #
@@ -621,7 +634,10 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     # two dense matmuls; (jac / model_trial) broadcasts the same weighting at
     # O(N_data*N_param) cost and is algebraically identical.
     if stop_code != 1:
-        curvature = np.matmul(jac / model_trial, jac_T)
+        # Real-data rows only: the Poisson-style 1/model weighting is meaningless
+        # for regularization pseudo-observations (and a zero penalty residual would
+        # divide by ~0). jac is (n_free, n_rows); slice its data columns.
+        curvature = np.matmul(jac[:, :n_data] / model_trial[:n_data], jac_T[:n_data, :])
         curvature = np.ascontiguousarray(curvature, dtype=np.float64)
         try:
             try:
@@ -641,8 +657,8 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             print('numpy error! parameters errors could not be found')
             errors = np.array([float(0)] * len(params))
         # Scale errors by the reduced chi-square (so they reflect fit quality).
-        errors = np.sqrt(np.sum(chi ** 2 / (np.abs(y_exp) + 1))
-                         / (len(y_exp) - len(params) + len(fix) + len(inactive))) * errors
+        errors = np.sqrt(np.sum(chi[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1))
+                         / (n_data - len(params) + len(fix) + len(inactive))) * errors
     else:
         errors = np.array([0])
         covariance = np.array([[0.0]])
@@ -674,7 +690,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
         if nudge_failed == 0:
             params, errors, chi2_red, covariance = minimi_hi(
                 model_func, x_exp, y_exp, params, fix_orig, confu, bounds,
-                Expr, NExpr, np.maximum(int(MI / 2), 1), MI2, nu0, tau0, eps, 1)
+                Expr, NExpr, np.maximum(int(MI / 2), 1), MI2, nu0, tau0, eps, 1, n_reg)
             if np.all(params == params_bak):
                 errors = errors_bak
 

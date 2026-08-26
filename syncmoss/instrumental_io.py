@@ -260,7 +260,7 @@ HIRES_INTEGRATION_FACTOR = 4
 
 
 def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
-                     Distri=[0], Cor=[0], pol=0.98):
+                     Distri=[0], Cor=[0], pol=0.98, Recon=[0]):
     """High-resolution convergence check: (model at JN*4) - (model at JN).
 
     ``SPC_f`` is the already-computed model at the displayed ``JN`` (so it is
@@ -276,7 +276,7 @@ def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
     SPC_hi = m5.TI(
         A, p, model, JN_hi, pool,
         method_params['x0'], method_params['MulCo'], method_params['INS'],
-        Distri, Cor, Met=method_params['Met'], Norm=norm_hi, pol=pol,
+        Distri, Cor, Met=method_params['Met'], Norm=norm_hi, pol=pol, Recon=Recon,
     )
     return SPC_hi - SPC_f
 
@@ -518,7 +518,7 @@ def instrumental(app, ref, mode=0, pool=None):
     
     # Read model if mode == 1
     if mode == 1:
-        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN = read_model(app)
+        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(app)
 
         # Apply expressions in the same namespace the fit uses (bare numpy
         # names + p); a plain eval() here would miss those names.
@@ -532,10 +532,13 @@ def instrumental(app, ref, mode=0, pool=None):
         # Box bounds and user-fixed parameters straight from the table
         bounds, fix = read_bounds_and_fix(app, len(p))
 
-        # Add constraint and distribution indices to fix
+        # Add constraint, distribution and reconstruction placeholder indices to
+        # fix (during an instrumental-function fit the model params, including the
+        # Recon weights, are held fixed — only the INS parameters vary).
         fix = np.concatenate((fix, con1), axis=0)
         fix = np.concatenate((fix, DistriN), axis=0)
         fix = np.concatenate((fix, NExpr), axis=0)
+        fix = np.concatenate((fix, ReconN), axis=0)
         fix = np.unique(fix)
         
         bounds = np.concatenate((bounds, bounds0), axis=1)
@@ -546,10 +549,10 @@ def instrumental(app, ref, mode=0, pool=None):
         
         if CMS_ch == 0:
             def INSSS(x_exp, p):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor)
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon)
         if CMS_ch == 1:
             def INSSS(x_exp, p):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Distri, Cor, Met=1)
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Distri, Cor, Met=1, Recon=Recon)
     
     # CMS_ch could not be equal to 1 here
     # Not meaningful to use ESRF standard single line absorber for CMS
