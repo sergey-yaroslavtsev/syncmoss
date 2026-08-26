@@ -44,21 +44,13 @@ from numpy import linalg as LA
 # from numpy.linalg import inv
 from numpy import abs
 from syncmoss.constants import number_of_baseline_parameters, numco
+# 57Fe physics constants (see constants.py for values, sources and the note on
+# how `mun` is derived from the alpha-Fe standard). Imported into this module's
+# namespace because the njit kernels below read them as globals; the markers
+# drawn from here therefore share one definition with the spectra in models.py.
+from syncmoss.constants import (
+    E0_J, c, ggr, gex, mun, TESLA_PER_MMS, LINE_RATIO_25, LINE_RATIO_34)
 # import matplotlib.pyplot as plt
-
-G = 4.7 * 10 ** -9  # natural width in eV*10**-9 # 4.7 value from Ralf Rohlsberger
-# Flm = 0.4                  # Lamb Mossbauer factor for source
-E0 = 14412  # energy of resonance
-E0_J = E0 * 1.602176634 * 10**-19
-c = 2.99792458 * 10 ** 11  # speed of light at mm/s
-d = 0.005  # area density
-# ro = 7880                # density
-Fa = 0.54676  # fraction of resonance absorption
-etto = 1  # percent of 57Fe
-sigma = 2.464 * 10 ** -22  # max resonance cross section
-mun = 5.050783699*10**-27
-ggr = 0.18121
-gex = -0.10353
 
 T = 1
 
@@ -479,10 +471,10 @@ def Ham_poly(Q, Hhf, etto, phi, tet):
 #     Num = len(H)
 #     X, H = np.meshgrid(X, H)
 #     S1 = (-1) * (Sig - H / 2 + eps) * MulCo + X
-#     S2 = (-1) * (Sig - 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
-#     S3 = (-1) * (Sig - 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-#     S4 = (-1) * (Sig + 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-#     S5 = (-1) * (Sig + 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
+#     S2 = (-1) * (Sig - LINE_RATIO_25 * H / 2 - eps) * MulCo + X
+#     S3 = (-1) * (Sig - LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+#     S4 = (-1) * (Sig + LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+#     S5 = (-1) * (Sig + LINE_RATIO_25 * H / 2 - eps) * MulCo + X
 #     S6 = (-1) * (Sig + H / 2 + eps) * MulCo + X
 #
 #     PDF = np.sin(alf)
@@ -527,10 +519,10 @@ def Average(X, MulCo, Sig, eps, H, Ep, L, G, alf):
     N = len(H)
     X, H = meshgrid(X, H)
     S1 = (-1) * (Sig - H / 2 + eps) * MulCo + X
-    S2 = (-1) * (Sig - 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
-    S3 = (-1) * (Sig - 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-    S4 = (-1) * (Sig + 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-    S5 = (-1) * (Sig + 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
+    S2 = (-1) * (Sig - LINE_RATIO_25 * H / 2 - eps) * MulCo + X
+    S3 = (-1) * (Sig - LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+    S4 = (-1) * (Sig + LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+    S5 = (-1) * (Sig + LINE_RATIO_25 * H / 2 - eps) * MulCo + X
     S6 = (-1) * (Sig + H / 2 + eps) * MulCo + X
 
     PDF = np.sin(alf)
@@ -652,10 +644,10 @@ def Angles_min(tet, N, K, J, Hin, Hex, X, L, G, eps, Sig):
 
     X, H = meshgrid(X, H)
     S1 = (-1) * (Sig - H / 2 + eps) + X
-    S2 = (-1) * (Sig - 3.0760 / 5.3123 * H / 2 - eps) + X
-    S3 = (-1) * (Sig - 0.8397 / 5.3123 * H / 2 - eps) + X
-    S4 = (-1) * (Sig + 0.8397 / 5.3123 * H / 2 - eps) + X
-    S5 = (-1) * (Sig + 3.0760 / 5.3123 * H / 2 - eps) + X
+    S2 = (-1) * (Sig - LINE_RATIO_25 * H / 2 - eps) + X
+    S3 = (-1) * (Sig - LINE_RATIO_34 * H / 2 - eps) + X
+    S4 = (-1) * (Sig + LINE_RATIO_34 * H / 2 - eps) + X
+    S5 = (-1) * (Sig + LINE_RATIO_25 * H / 2 - eps) + X
     S6 = (-1) * (Sig + H / 2 + eps) + X
 
     PDF = np.sin(alf)
@@ -688,8 +680,8 @@ def relax_MS(S, x, I, Sig, eps, Hv, W, Ah, R, alfa):
     M33 = insert1D(M33, len(numb) - 1, (W - M11[-1]))
 
     M441 = (D2A(x, len(numb)).transpose(1,0) - Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig - eps)
-    M442 = (D2A(x, len(numb)).transpose(1,0) - 3.0760 / 5.3123 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
-    M443 = (D2A(x, len(numb)).transpose(1,0) - 0.8397 / 5.3123 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
+    M442 = (D2A(x, len(numb)).transpose(1,0) - LINE_RATIO_25 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
+    M443 = (D2A(x, len(numb)).transpose(1,0) - LINE_RATIO_34 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
 
     V1 = np.array([[float(0)] * len(M33)] * len(x))
     V2 = np.array([[float(0)] * len(M33)] * len(x))
@@ -793,12 +785,12 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 V += 4
                 SET.append([S])
             if model[i] == 'Sextet(rough)':
-                HH = p[V + 3] / 3.101
+                HH = p[V + 3] / TESLA_PER_MMS
                 S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 6]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 7]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 7]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 7]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 7]
+                S2 = (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2]) - p[V + 7]
+                S3 = (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2]) + p[V + 7]
+                S4 = (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2]) - p[V + 7]
+                S5 = (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2]) + p[V + 7]
                 S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 6]
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 14
@@ -822,49 +814,49 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 SET.append([S1, S2])
                 V += 9
             if model[i] == 'Sextet':
-                HH = p[V + 3] / 3.101
+                HH = p[V + 3] / TESLA_PER_MMS
                 S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 10]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 11]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 11]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 11]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 11]
+                S2 = (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2]) - p[V + 11]
+                S3 = (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2]) + p[V + 11]
+                S4 = (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2]) - p[V + 11]
+                S5 = (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2]) + p[V + 11]
                 S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 10]
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 14
             if model[i] == 'MDGD':
-                HH = p[V + 3] / 3.101
+                HH = p[V + 3] / TESLA_PER_MMS
                 S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 14]
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 15]
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 15]
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) - p[V + 15]
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) + p[V + 15]
+                S2 = (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2]) - p[V + 15]
+                S3 = (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2]) + p[V + 15]
+                S4 = (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2]) - p[V + 15]
+                S5 = (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2]) + p[V + 15]
                 S6 = (p[V + 1] + HH / 2 + p[V + 2]) - p[V + 14]
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 17
             if model[i] == 'Relax_MS':
-                HH = float(p[V + 3]) / 3.1098
+                HH = float(p[V + 3]) / TESLA_PER_MMS
                 S1 = (p[V + 1] - HH / 2 + p[V + 2])
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2])
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2])
+                S2 = (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2])
+                S3 = (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2])
+                S4 = (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2])
+                S5 = (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2])
                 S6 = (p[V + 1] + HH / 2 + p[V + 2])
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 11
             if model[i] == 'Relax_2S':
-                HH = float(p[V + 3]) / 3.1098
+                HH = float(p[V + 3]) / TESLA_PER_MMS
                 S1 = (p[V + 1] - HH / 2 + p[V + 2])
-                S2 = (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2])
-                S3 = (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S4 = (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2])
-                S5 = (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2])
+                S2 = (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2])
+                S3 = (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2])
+                S4 = (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2])
+                S5 = (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2])
                 S6 = (p[V + 1] + HH / 2 + p[V + 2])
-                HH2 = float(p[V + 6]) / 3.1098
+                HH2 = float(p[V + 6]) / TESLA_PER_MMS
                 S12 = (p[V + 4] - HH2 / 2 + p[V + 5])
-                S22 = (p[V + 4] - 3.0760 / 5.3123 * HH2 / 2 - p[V + 5])
-                S32 = (p[V + 4] - 0.8397 / 5.3123 * HH2 / 2 - p[V + 5])
-                S42 = (p[V + 4] + 0.8397 / 5.3123 * HH2 / 2 - p[V + 5])
-                S52 = (p[V + 4] + 3.0760 / 5.3123 * HH2 / 2 - p[V + 5])
+                S22 = (p[V + 4] - LINE_RATIO_25 * HH2 / 2 - p[V + 5])
+                S32 = (p[V + 4] - LINE_RATIO_34 * HH2 / 2 - p[V + 5])
+                S42 = (p[V + 4] + LINE_RATIO_34 * HH2 / 2 - p[V + 5])
+                S52 = (p[V + 4] + LINE_RATIO_25 * HH2 / 2 - p[V + 5])
                 S62 = (p[V + 4] + HH2 / 2 + p[V + 5])
                 SET.append([S1, S2, S3, S4, S5, S6, S12, S22, S32, S42, S52, S62])
                 V += 14

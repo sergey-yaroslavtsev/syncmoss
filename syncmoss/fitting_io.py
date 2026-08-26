@@ -17,6 +17,7 @@ import syncmoss.minimi_lib as mi
 from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_bounds_and_fix
 from syncmoss.models_positions import mod_pos
+from syncmoss.constants import SMS_POL_DEFAULT
 from syncmoss.spectrum_io import load_spectrum
 from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
@@ -377,7 +378,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         # when the "use instrumental function from .dat file" option is enabled;
         # otherwise the UI-selected method with the internal values is used.
         JN = int(app.JN0)
-        pol = float(getattr(app, 'SMS_pol', 0.98))  # SMS beam polarization degree
+        pol = float(getattr(app, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
         use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
         files_for_ins = list(spectrum_files) if is_simultaneous else [spectrum_file]
 

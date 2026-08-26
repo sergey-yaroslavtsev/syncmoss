@@ -72,7 +72,8 @@ import syncmoss.minimi_lib as mi
 import syncmoss.fitting_io as fitting_io
 from syncmoss.models import TI
 from syncmoss.Calibration import Calibration
-from syncmoss.constants import model_colors, number_of_baseline_parameters
+from syncmoss.constants import (model_colors, number_of_baseline_parameters,
+                               SMS_POL_DEFAULT)
 from syncmoss.parameters_table import ParametersTable
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
@@ -464,7 +465,7 @@ class ShowModelThread(QThread):
             
             # Get experimental method parameters
             JN = int(self.main_window.jn0_input.text())
-            pol = float(getattr(self.main_window, 'SMS_pol', 0.98))  # SMS beam polarization degree
+            pol = float(getattr(self.main_window, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
 
             pool = self.pool
 
@@ -935,14 +936,14 @@ class PhysicsApp(QMainWindow):
         # a hidden store edited via the "Set polarization" dialog in the Supp
         # menu. Its value is mirrored into self.SMS_pol and passed to TI as the
         # ``pol`` argument, which forwards it into the transmission-integral
-        # workers. Default 0.98 (a realistic synchrotron/SMS beam).
-        self.polarization_input = QLineEdit("0.98", self)
+        # workers. Default from constants.SMS_POL_DEFAULT.
+        self.polarization_input = QLineEdit(str(SMS_POL_DEFAULT), self)
         pol_validator = QDoubleValidator(0.0, 1.0, 6, self)
         pol_validator.setNotation(QDoubleValidator.Notation.StandardNotation)
         pol_validator.setLocale(QLocale(QLocale.Language.C))
         self.polarization_input.setValidator(pol_validator)
         self.polarization_input.hide()
-        self.SMS_pol = 0.98
+        self.SMS_pol = SMS_POL_DEFAULT
 
         # File chooser
         file_layout = QVBoxLayout()
@@ -1690,7 +1691,7 @@ class PhysicsApp(QMainWindow):
             try:
                 self.SMS_pol = float(self.polarization_input.text())
             except (ValueError, AttributeError):
-                self.SMS_pol = 0.98
+                self.SMS_pol = SMS_POL_DEFAULT
 
             instrumental_int_path = os.path.join(self.params_dir, 'INSint.txt')
             self.MulCo, self.x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)

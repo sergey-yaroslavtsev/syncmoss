@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 import re
 from syncmoss.models import TI
 from syncmoss.model_io import read_model
+from syncmoss.constants import SMS_POL_DEFAULT
 import syncmoss.minimi_lib as mi
 # NOTE: instrumental_io is imported lazily inside functions below — it imports
 # load_spectrum from this module, so a top-level import here would be circular.
@@ -392,7 +393,7 @@ def subtract_model_from_spectrum(main_window):
         # (#@GCMS or #@INSexp/#@INSint) when that option is enabled, otherwise the
         # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
-        pol = float(getattr(main_window, 'SMS_pol', 0.98))  # SMS beam polarization degree
+        pol = float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
         from syncmoss.instrumental_io import resolve_instrumental_for_file, compute_norm
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)

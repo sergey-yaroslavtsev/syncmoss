@@ -102,20 +102,27 @@ import numpy as np
 
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
-from syncmoss.constants import number_of_baseline_parameters
+from syncmoss.constants import (number_of_baseline_parameters, ALPHA_FE_FIELD,
+                                TESLA_PER_MMS, LINE_RATIO_25, LINE_RATIO_34,
+                                NAT_WIDTH)
 
 # Effective absorber thickness multiplier used for the CMS transmission integral
 # (the SMS one is passed in as MulCo, fitted by the instrumental-function step).
 MulCoCMS = 0.28
 
-# alpha-Fe sextet line positions in mm/s -- the absolute velocity references
-# that the whole calibration is anchored to.
-ALPHA_FE_LINE_VELOCITIES = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
-
-# Hyperfine field of alpha-Fe (Tesla) and the T -> (outer line splitting, mm/s)
-# conversion factor for 57Fe: 33.04 T / 3.101 = 10.655 mm/s between lines 1 and 6.
-ALPHA_FE_FIELD = 33.04
-TESLA_PER_MMS = 3.101
+# alpha-Fe sextet line positions in mm/s -- the velocity references the whole
+# calibration is anchored to. Computed from the experimental hyperfine field and
+# the g-factor line ratios, spelled with the SAME arithmetic as the 'Sextet' model
+# (H / TESLA_PER_MMS, then LINE_RATIO_* * HH / 2), so the reference targets of
+# step 6 and the model that predicts their channels agree bit-for-bit.
+_ALPHA_FE_HH = ALPHA_FE_FIELD / TESLA_PER_MMS       # full line 1 <-> 6 splitting
+ALPHA_FE_LINE_VELOCITIES = np.array(
+    [-_ALPHA_FE_HH / 2,
+     -LINE_RATIO_25 * _ALPHA_FE_HH / 2,
+     -LINE_RATIO_34 * _ALPHA_FE_HH / 2,
+     LINE_RATIO_34 * _ALPHA_FE_HH / 2,
+     LINE_RATIO_25 * _ALPHA_FE_HH / 2,
+     _ALPHA_FE_HH / 2])
 
 
 # ========================================================================= #
@@ -630,12 +637,12 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     p00 = np.array([baseline_guess * (1 - 0.4 * (VVV == 1)), 0, 0, 0,
                     baseline_guess * (0.4 * (VVV == 1)), 0, 0, 0,
                     # Sextet: T   d  e  H(T)             L      G  th ph A ...
-                    8, 0.0, 0, ALPHA_FE_FIELD, 0.098, 0.0, 90, 0, 0, 0, 0, 0, 0, 3])
+                    8, 0.0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0.0, 90, 0, 0, 0, 0, 0, 0, 3])
     bounds = np.array([[-np.inf] * len(p00), [np.inf] * len(p00)], dtype=float)
     bounds[0][nbp + 1] = -0.05                         # isomer shift d
     bounds[1][nbp + 1] = 0.05
-    bounds[0][nbp + 3] = 32.54                         # hyperfine field H (33.04 +/- 0.5 T)
-    bounds[1][nbp + 3] = 33.54
+    bounds[0][nbp + 3] = ALPHA_FE_FIELD - 0.5          # hyperfine field H (+/- 0.5 T)
+    bounds[1][nbp + 3] = ALPHA_FE_FIELD + 0.5
 
     # The six reference line velocities, oriented by the sweep direction.
     # This FIRST orientation is the only place Vel_start acts: it propagates
@@ -759,16 +766,16 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         # the outer/inner line-shift corrections, alternating sign per line.
         p[V + 3] = p[V + 3] / TESLA_PER_MMS
         predicted_ch[0] = (np.abs(x1 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 10])).argmin()
-        predicted_ch[1] = (np.abs(x1 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        predicted_ch[2] = (np.abs(x1 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
-        predicted_ch[3] = (np.abs(x1 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        predicted_ch[4] = (np.abs(x1 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[1] = (np.abs(x1 - (p[V + 1] - LINE_RATIO_25 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[2] = (np.abs(x1 - (p[V + 1] - LINE_RATIO_34 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[3] = (np.abs(x1 - (p[V + 1] + LINE_RATIO_34 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[4] = (np.abs(x1 - (p[V + 1] + LINE_RATIO_25 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
         predicted_ch[5] = (np.abs(x1 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 10])).argmin()
         predicted_ch[6] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - p[V + 3] / 2 + p[V + 2]) - p[V + 10])).argmin()
-        predicted_ch[7] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        predicted_ch[8] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
-        predicted_ch[9] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + 0.8397 / 5.3123 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
-        predicted_ch[10] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + 3.0760 / 5.3123 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[7] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - LINE_RATIO_25 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[8] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] - LINE_RATIO_34 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
+        predicted_ch[9] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + LINE_RATIO_34 * p[V + 3] / 2 - p[V + 2]) + p[V + 11])).argmin()
+        predicted_ch[10] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + LINE_RATIO_25 * p[V + 3] / 2 - p[V + 2]) - p[V + 11])).argmin()
         predicted_ch[11] = int(len(x) / 2) + (np.abs(x2 - (p[V + 1] + p[V + 3] / 2 + p[V + 2]) + p[V + 10])).argmin()
         p[V + 3] = p[V + 3] * TESLA_PER_MMS
 
@@ -844,18 +851,18 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
                                          delimiter='\t', skip_footer=0)
                 print('Be.txt was read')
             except Exception:
-                Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0,
+                Be_param = np.array([0.057, 0.066, -0.261, NAT_WIDTH, 0.375, 90, 0,
                                      0.427037824, 1])
                 print('COULD NOT READ Be.txt')
             # baseline(8) + two polarized Sextets(14 each) + Be Doublet(9).
             pCAL = np.array([p[0], 0, 0, 0, 0, 0, 0, 0,
-                             8.08, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 0, 3,
-                             0.451, -0.041, 0.003, 30.88, 0.098, 0.1, 90, 0, 0, 0, 0, 0, 0, 3])
+                             8.08, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3,
+                             0.451, -0.041, 0.003, 30.88, NAT_WIDTH, 0.1, 90, 0, 0, 0, 0, 0, 0, 3])
             pCAL = np.concatenate((pCAL, Be_param))
         if VVV == 1:
             model = ['Sextet']
             pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0,
-                             8.08, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 0, 3])
+                             8.08, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3])
             print('background ', pCAL[0], pCAL[4], ps1[3])
     if method == 1:
         model = ['Sextet']

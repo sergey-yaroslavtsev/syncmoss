@@ -6,7 +6,8 @@ import os
 import time
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
-from syncmoss.constants import number_of_baseline_parameters
+from syncmoss.constants import (number_of_baseline_parameters, ALPHA_FE_FIELD,
+                                NAT_WIDTH, SMS_POL_DEFAULT)
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
 from syncmoss.spectrum_io import load_spectrum, estimate_edge_background
@@ -260,7 +261,7 @@ HIRES_INTEGRATION_FACTOR = 4
 
 
 def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
-                     Distri=[0], Cor=[0], pol=0.98, Recon=[0]):
+                     Distri=[0], Cor=[0], pol=SMS_POL_DEFAULT, Recon=[0]):
     """High-resolution convergence check: (model at JN*4) - (model at JN).
 
     ``SPC_f`` is the already-computed model at the displayed ``JN`` (so it is
@@ -395,7 +396,7 @@ def _load_be_param(params_dir):
         Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
         print('Be file was read')
     except Exception:
-        Be_param = np.array([0.057, 0.066, -0.261, 0.098, 0.375, 90, 0, 0.427037824, 1])
+        Be_param = np.array([0.057, 0.066, -0.261, NAT_WIDTH, 0.375, 90, 0, 0.427037824, 1])
         print('COULD NOT READ Be.txt')
     return Be_param
 
@@ -564,7 +565,7 @@ def instrumental(app, ref, mode=0, pool=None):
 
         Be_param = _load_be_param(app.params_dir)
         p = np.concatenate((p, Be_param))
-        p1 = np.array([4.6, -0.097, 0.098, 0.0])
+        p1 = np.array([4.6, -0.097, NAT_WIDTH, 0.0])
         p = np.concatenate((p, p1))
         # Layout: baseline(8) + polarized Doublet(9) + Singlet(4); Singlet T is 17.
         bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
@@ -602,7 +603,7 @@ def instrumental(app, ref, mode=0, pool=None):
 
         p = np.concatenate((p, Be_param))
         # Polarized Sextet (14): I, d, e, H, L, G, theta_k=90, phi_h=0, A=0, A_m=0, a+, a-, GH, I13.
-        p1 = np.array([7.5, 0, 0, 33.04, 0.098, 0, 90, 0, 0, 0, 0, 0, 0, 3])
+        p1 = np.array([7.5, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3])
         p = np.concatenate((p, p1))
         # Layout: baseline(8) + polarized Doublet(9) + polarized Sextet(14);
         # Sextet T is index 17, its texture A is index 25, its A_m is index 26.

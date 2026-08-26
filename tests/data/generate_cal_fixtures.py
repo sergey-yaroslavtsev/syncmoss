@@ -17,7 +17,10 @@ import os
 
 import numpy as np
 
-# alpha-Fe sextet line velocities (mm/s) -- the calibration reference points.
+# alpha-Fe sextet line velocities (mm/s). Deliberately the EXPERIMENTALLY measured
+# values, not syncmoss.constants.ALPHA_FE_LINE_VELOCITIES: the fixture must look
+# like a real foil so the calibration is tested against reality rather than
+# against its own g-factors (the two differ by <= 0.0006 mm/s on the inner lines).
 SEX0 = np.array([-5.3123, -3.0760, -0.8397, 0.8397, 3.0760, 5.3123])
 # Relative line depths (3:2:1 for a random-powder / thin absorber).
 DEPTHS = np.array([3.0, 2.0, 1.0, 1.0, 2.0, 3.0])

@@ -52,10 +52,12 @@ def _compute(model, params, mett, pol, monkeypatch):
 def test_sms_default_polarization_reads_11_element(model, monkeypatch):
     """p = 1 must reproduce the original (1,1)-only SMS readout."""
     params = _THICK_CASES[model]
-    # The realistic-beam default polarization degree is 0.98 ...
+    # Both entry points must default to the SHARED constant, not a stray literal.
     import inspect
-    assert inspect.signature(m5.TImod).parameters["sms_pol"].default == 0.98
-    assert inspect.signature(m5.TI).parameters["pol"].default == 0.98
+    from syncmoss.constants import SMS_POL_DEFAULT
+    assert SMS_POL_DEFAULT == 0.98, "realistic-beam default changed"
+    assert inspect.signature(m5.TImod).parameters["sms_pol"].default == SMS_POL_DEFAULT
+    assert inspect.signature(m5.TI).parameters["pol"].default == SMS_POL_DEFAULT
     # ... and computing at p = 1 is a plain (1,1) readout, in (0, 1].
     y = _compute(model, params, mett=0, pol=1.0, monkeypatch=monkeypatch)
     assert np.all(np.isfinite(y))

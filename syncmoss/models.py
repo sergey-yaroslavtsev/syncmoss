@@ -44,25 +44,18 @@ import scipy
 import scipy.linalg
 dummy = scipy.linalg.eig(np.array([[1,0], [0,1]])) #required to build exe
 from syncmoss.constants import number_of_baseline_parameters, numco
+# 57Fe physics constants (see constants.py for values, sources and the note on
+# how `mun` is derived from the alpha-Fe standard). Imported into this module's
+# namespace because the njit kernels below read them as globals.
+from syncmoss.constants import (
+    NAT_WIDTH, E0_J, c, ggr, gex, mun, MMS_PER_T_PER_G, SMS_POL_DEFAULT,
+    LINE_SHIFT_16, LINE_SHIFT_25, LINE_SHIFT_34, TESLA_PER_MMS,
+    LINE_RATIO_25, LINE_RATIO_34)
 from numpy.linalg import eig
 from numpy import linalg as LA
 # from numpy.linalg import inv
 from numpy import abs
 # import matplotlib.pyplot as plt
-
-G = 4.7 * 10 ** -9  # natural width in eV*10**-9 # 4.7 value from Ralf Rohlsberger
-# Flm = 0.4                  # Lamb Mossbauer factor for source
-E0 = 14412  # energy of resonance
-E0_J = E0 * 1.602176634 * 10**-19
-c = 2.99792458 * 10 ** 11  # speed of light at mm/s
-d = 0.005  # area density
-# ro = 7880                # density
-Fa = 0.54676  # fraction of resonance absorption
-etto = 1  # percent of 57Fe
-sigma = 2.464 * 10 ** -22  # max resonance cross section
-mun = 5.050783699*10**-27
-ggr = 0.18121
-gex = -0.10353
 
 T = 1
 
@@ -92,17 +85,17 @@ def limits(pool, JN0, INS):
     def integral_INS_p(R):
         iINS = 0
         for i in range(0, int(len(INS) / 3)):
-            # iINS += INS[i*3+2]**2*1/2*(INS[i*3]**2+G/E0*c/2)*np.sqrt(np.pi)*(1-erf((R - INS[i*3+1])/(INS[i*3]**2+G/E0*c/2)))
+            # iINS += INS[i*3+2]**2*1/2*(INS[i*3]**2+NAT_WIDTH/2)*np.sqrt(np.pi)*(1-erf((R - INS[i*3+1])/(INS[i*3]**2+NAT_WIDTH/2)))
             iINS += INS[i * 3 + 2] ** 2 * (
-                        1 - erf((R - INS[i * 3 + 1]) / np.sqrt(2) / (INS[i * 3] ** 2 + G / E0 * c / 2))) / 2
+                        1 - erf((R - INS[i * 3 + 1]) / np.sqrt(2) / (INS[i * 3] ** 2 + NAT_WIDTH / 2))) / 2
         return iINS
 
     def integral_INS_m(R):
         iINS = 0
         for i in range(0, int(len(INS) / 3)):
-            # iINS += INS[i*3+2]**2*1/2*(INS[i*3]**2+G/E0*c/2)*np.sqrt(np.pi)*(1+erf((R - INS[i*3+1])/(INS[i*3]**2+G/E0*c/2)))
+            # iINS += INS[i*3+2]**2*1/2*(INS[i*3]**2+NAT_WIDTH/2)*np.sqrt(np.pi)*(1+erf((R - INS[i*3+1])/(INS[i*3]**2+NAT_WIDTH/2)))
             iINS += INS[i * 3 + 2] ** 2 * (
-                        1 + erf((R - INS[i * 3 + 1]) / np.sqrt(2) / (INS[i * 3] ** 2 + G / E0 * c / 2))) / 2
+                        1 + erf((R - INS[i * 3 + 1]) / np.sqrt(2) / (INS[i * 3] ** 2 + NAT_WIDTH / 2))) / 2
         return iINS
 
     sp_l = np.linspace(0, -5, 4096)
@@ -146,7 +139,7 @@ def limits(pool, JN0, INS):
 
     x = np.linspace(-5, 5, 1024)
     model = ['Singlet', 'Singlet', 'Singlet']
-    p = [1000000, 0, 0, 0, 0, 0, 0, 0, 15, -3, 0.098, 0, 10, 0, 0.098, 0, 20, 3, 0.098, 0.6]
+    p = [1000000, 0, 0, 0, 0, 0, 0, 0, 15, -3, NAT_WIDTH, 0, 10, 0, NAT_WIDTH, 0, 20, 3, NAT_WIDTH, 0.6]
     JN = max(JN0*4, 1024)
     F = TI(x, p, model, JN, pool, x0, MulCo, INS)
     # plt.figure(dpi=300)
@@ -752,10 +745,10 @@ def Ham_poly(Q, Hhf, etto, phi, tet):
 #     Num = len(H)
 #     X, H = np.meshgrid(X, H)
 #     S1 = (-1) * (Sig - H / 2 + eps) * MulCo + X
-#     S2 = (-1) * (Sig - 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
-#     S3 = (-1) * (Sig - 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-#     S4 = (-1) * (Sig + 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-#     S5 = (-1) * (Sig + 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
+#     S2 = (-1) * (Sig - LINE_RATIO_25 * H / 2 - eps) * MulCo + X
+#     S3 = (-1) * (Sig - LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+#     S4 = (-1) * (Sig + LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+#     S5 = (-1) * (Sig + LINE_RATIO_25 * H / 2 - eps) * MulCo + X
 #     S6 = (-1) * (Sig + H / 2 + eps) * MulCo + X
 #
 #     PDF = np.sin(alf)
@@ -800,10 +793,10 @@ def Average(X, MulCo, Sig, eps, H, Ep, L, G, alf):
     N = len(H)
     X, H = meshgrid(X, H)
     S1 = (-1) * (Sig - H / 2 + eps) * MulCo + X
-    S2 = (-1) * (Sig - 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
-    S3 = (-1) * (Sig - 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-    S4 = (-1) * (Sig + 0.8397 / 5.3123 * H / 2 - eps) * MulCo + X
-    S5 = (-1) * (Sig + 3.0760 / 5.3123 * H / 2 - eps) * MulCo + X
+    S2 = (-1) * (Sig - LINE_RATIO_25 * H / 2 - eps) * MulCo + X
+    S3 = (-1) * (Sig - LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+    S4 = (-1) * (Sig + LINE_RATIO_34 * H / 2 - eps) * MulCo + X
+    S5 = (-1) * (Sig + LINE_RATIO_25 * H / 2 - eps) * MulCo + X
     S6 = (-1) * (Sig + H / 2 + eps) * MulCo + X
 
     PDF = np.sin(alf)
@@ -925,10 +918,10 @@ def Angles_min(tet, N, K, J, Hin, Hex, X, L, G, eps, Sig):
 
     X, H = meshgrid(X, H)
     S1 = (-1) * (Sig - H / 2 + eps) + X
-    S2 = (-1) * (Sig - 3.0760 / 5.3123 * H / 2 - eps) + X
-    S3 = (-1) * (Sig - 0.8397 / 5.3123 * H / 2 - eps) + X
-    S4 = (-1) * (Sig + 0.8397 / 5.3123 * H / 2 - eps) + X
-    S5 = (-1) * (Sig + 3.0760 / 5.3123 * H / 2 - eps) + X
+    S2 = (-1) * (Sig - LINE_RATIO_25 * H / 2 - eps) + X
+    S3 = (-1) * (Sig - LINE_RATIO_34 * H / 2 - eps) + X
+    S4 = (-1) * (Sig + LINE_RATIO_34 * H / 2 - eps) + X
+    S5 = (-1) * (Sig + LINE_RATIO_25 * H / 2 - eps) + X
     S6 = (-1) * (Sig + H / 2 + eps) + X
 
     PDF = np.sin(alf)
@@ -969,8 +962,8 @@ def _relax_MS_groups(S, x, Sig, eps, Hv, W, R, alfa):
     M33 = insert1D(M33, len(numb) - 1, (W - M11[-1]))
 
     M441 = (D2A(x, len(numb)).transpose(1,0) - Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig - eps)
-    M442 = (D2A(x, len(numb)).transpose(1,0) - 3.0760 / 5.3123 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
-    M443 = (D2A(x, len(numb)).transpose(1,0) - 0.8397 / 5.3123 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
+    M442 = (D2A(x, len(numb)).transpose(1,0) - LINE_RATIO_25 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
+    M443 = (D2A(x, len(numb)).transpose(1,0) - LINE_RATIO_34 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
 
     V1 = np.array([[float(0)] * len(M33)] * len(x))
     V2 = np.array([[float(0)] * len(M33)] * len(x))
@@ -1055,8 +1048,8 @@ def _relax_MS_groups_c(S, x, Sig, eps, Hv, W, R, alfa):
     M33 = insert1D(M33, len(numb) - 1, (W - M11[-1]))
 
     M441 = (D2A(x, len(numb)).transpose(1,0) - Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig - eps)
-    M442 = (D2A(x, len(numb)).transpose(1,0) - 3.0760 / 5.3123 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
-    M443 = (D2A(x, len(numb)).transpose(1,0) - 0.8397 / 5.3123 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
+    M442 = (D2A(x, len(numb)).transpose(1,0) - LINE_RATIO_25 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
+    M443 = (D2A(x, len(numb)).transpose(1,0) - LINE_RATIO_34 * Hv * (S - (D2A(numb, len(x)) + 1) + 1) / S - Sig + eps)
 
     V1 = np.array([[float(0)] * len(M33)] * len(x))
     V2 = np.array([[float(0)] * len(M33)] * len(x))
@@ -1347,13 +1340,13 @@ def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
 # LINEAR polarization along h:  C_a = tr[expm(-Sigma) rho]
 #                                   = (1+p)/2 [expm(-Sigma)]_11 + (1-p)/2 [expm(-Sigma)]_22.
 #
-#   p = 0.98 -> a realistic synchrotron (SMS) beam (DEFAULT).
+#   p = SMS_POL_DEFAULT -> a realistic synchrotron (SMS) beam (DEFAULT).
 #   p = 1.0  -> fully polarized: reads the (1,1) element only, i.e. the original
 #               SMS behaviour.
 #   p = 0.0  -> unpolarized: half the trace, the conventional radioactive-source
 #               (CMS) readout.
 #
-# The degree p is the ``pol`` argument of ``TI`` (default 0.98), which forwards
+# The degree p is the ``pol`` argument of ``TI`` (default SMS_POL_DEFAULT), which forwards
 # it to ``TImod`` as ``sms_pol``. It is editable at runtime from the GUI
 # (Supp -> "Set polarization"). It applies to SMS spectra only; CMS spectra
 # (Met == 1) are always read out unpolarized (rho = I/2, a fixed 1:1 mixture)
@@ -1749,7 +1742,7 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
     positions are binned onto a per-line grid of step ``dg = width / steps`` so
     the caller evaluates the Voigt once per node -- the Voigt count follows
     span/width, NOT ``Num``. ``width`` = max(WL, WG) (WG is often 0, so min would
-    give dg=0) floored at the natural line width (0.098), MulCo-scaled like the
+    give dg=0) floored at the natural line width (NAT_WIDTH), MulCo-scaled like the
     positions. ``steps`` is the per-component grid resolution. The full period is
     always binned (H0/KeH/KdH correlate the six lines, so it cannot be folded).
     Returns ``(grids, weights)`` -- two 6-tuples of float64 arrays (the six
@@ -1760,7 +1753,7 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
     width = abs(WL)
     if abs(WG) > width:
         width = abs(WG)
-    natural = 0.098 * MulCo          # natural Lorentzian width (WL default), MulCo-scaled
+    natural = NAT_WIDTH * MulCo          # natural Lorentzian width (WL default), MulCo-scaled
     if width < natural:
         width = natural
     dg = width / steps
@@ -1774,7 +1767,7 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
     return (g1, g2, g3, g4, g5, g6), (w1, w2, w3, w4, w5, w6)
 
 
-def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.98, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0):
+def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0):
         # SCR = np.array(x_exp)
         SCR = x_exp
         N = np.array([float(0)]*len(SCR))
@@ -1798,7 +1791,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
             Mett = Met
             E = MulCo*SCR + x0*MulCo + np.log((1+EE)/(1-EE))
             for i in range (0, int((len(INS))/3)):
-                    N += 1*INS[i*3+2]**2*np.exp((-1)*((E-(INS[i*3+1]+SCR)*MulCo)**2/(2*((INS[i*3]**2+G/E0*c/2)*MulCo)**2)))/((INS[i*3]**2+G/E0*c/2)*MulCo)/np.sqrt(2*np.pi)
+                    N += 1*INS[i*3+2]**2*np.exp((-1)*((E-(INS[i*3+1]+SCR)*MulCo)**2/(2*((INS[i*3]**2+NAT_WIDTH/2)*MulCo)**2)))/((INS[i*3]**2+NAT_WIDTH/2)*MulCo)/np.sqrt(2*np.pi)
         elif Met == 1:
             Mett = Met
             Wid = INS*MulCo
@@ -1815,7 +1808,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                             + cof[1] * np.log((2 + EE) / (2 - EE)) \
                             + cof[2] * np.log((3 + EE) / (3 - EE))
 
-            N += Voight(0.098*MulCo, Wid, E - SCR * MulCo)
+            N += Voight(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo)
             # N += Wid/2/np.pi/((E - SCR*MulCo)**2 + (Wid/2)**2)
             # N += (Wid / 2 / np.pi / ((E - SCR * MulCo) ** 2 + (Wid / 2) ** 2)) ** 2 * Wid * np.pi
         elif Met == 2:
@@ -1855,7 +1848,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
 
             N += (Wid / 2 / np.pi / ((E - SCR * MulCo) ** 2 + (Wid / 2) ** 2)) ** 2 * Wid * np.pi
 
-        Kpref = np.pi * (G / 2 / E0 * c * MulCo)
+        Kpref = np.pi * (NAT_WIDTH / 2 * MulCo)
         Smat = None       # 2x2 cross-section accumulator for the CURRENT layer (thick components)
         Smat_old = None   # mirrors CHold for the matrix path (used by the Distr reset)
         Tprod = None      # running product of completed-layer AMPLITUDE matrices expm(-Smat/2) (None = identity)
@@ -1869,7 +1862,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 WG = abs(p[V + 3]) * MulCo
                 V += 4
                 Voi = Voight(WL, WG, S)
-                CHt = CH*np.exp((-1)*np.pi*(G/2/E0*c*MulCo)*I*Voi)
+                CHt = CH*np.exp((-1)*np.pi*(NAT_WIDTH/2*MulCo)*I*Voi)
             if model[i] == 'Sextet(rough)':
                 I = abs(p[V])
                 I1 = I * p[V + 9]  / (1 + p[V + 9] + p[V + 10]) * p[V + 11] / (1 + p[V + 11])
@@ -1878,26 +1871,26 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 I4 = I * 1         / (1 + p[V + 9] + p[V + 10]) * 1         / (1 + p[V + 13])
                 I5 = I * p[V + 10] / (1 + p[V + 9] + p[V + 10]) * 1         / (1 + p[V + 12])
                 I6 = I * p[V + 9]  / (1 + p[V + 9] + p[V + 10]) * 1         / (1 + p[V + 11])
-                HH = p[V + 3] / 3.101
+                HH = p[V + 3] / TESLA_PER_MMS
                 S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 6] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 7] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 7] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 7] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 7] * MulCo + E
+                S2 = (-1) * (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2]) * MulCo + p[V + 7] * MulCo + E
+                S3 = (-1) * (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2]) * MulCo - p[V + 7] * MulCo + E
+                S4 = (-1) * (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2]) * MulCo + p[V + 7] * MulCo + E
+                S5 = (-1) * (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2]) * MulCo - p[V + 7] * MulCo + E
                 S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 6] * MulCo + E
                 WL = abs(p[V + 4]) * MulCo
                 WG = abs(p[V + 5]) * MulCo
-                GaH = abs(p[V + 8]) / 2 / 3.101 * MulCo
+                GaH = abs(p[V + 8]) / 2 / TESLA_PER_MMS * MulCo
                 Ga16 = (WG**2 + GaH**2)** (1/2)
-                Ga25 = (WG**2 + (3.0760 / 5.3123 * GaH)**2)** (1/2)
-                Ga34 = (WG**2 + (0.8397 / 5.3123 * GaH)**2)** (1/2)
+                Ga25 = (WG**2 + (LINE_RATIO_25 * GaH)**2)** (1/2)
+                Ga34 = (WG**2 + (LINE_RATIO_34 * GaH)**2)** (1/2)
                 Voi1 = Voight(WL, Ga16, S1)
                 Voi2 = Voight(WL, Ga25, S2)
                 Voi3 = Voight(WL, Ga34, S3)
                 Voi4 = Voight(WL, Ga34, S4)
                 Voi5 = Voight(WL, Ga25, S5)
                 Voi6 = Voight(WL, Ga16, S6)
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo)\
+                CHt = CH * np.exp((-1) * np.pi * (NAT_WIDTH / 2 * MulCo)\
                                   * (I1*Voi1+I6*Voi6+I2*Voi2+I5*Voi5+I3*Voi3+I4*Voi4))
                 V += 14
             if model[i] == 'Hamilton_pc':
@@ -1914,7 +1907,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 I = Itmp * I
                 S = S * MulCo
                 S += delt
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo)\
+                CHt = CH * np.exp((-1) * np.pi * (NAT_WIDTH / 2 * MulCo)\
                                   * (I[0]*Voight(WL,WG,E-S[0])+I[1]*Voight(WL,WG,E-S[1])+I[2]*Voight(WL,WG,E-S[2])+I[3]*Voight(WL,WG,E-S[3])\
                                     +I[4]*Voight(WL,WG,E-S[4])+I[5]*Voight(WL,WG,E-S[5])+I[6]*Voight(WL,WG,E-S[6])+I[7]*Voight(WL,WG,E-S[7])))
                 V += 9
@@ -1922,16 +1915,16 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 I = abs(p[V])
                 Sig = p[V+1] * MulCo
                 Q = p[V+2] * MulCo
-                Hin = p[V+3] / 3.101 * (-1) * MulCo
+                Hin = p[V+3] / TESLA_PER_MMS * (-1) * MulCo
                 WL = p[V+4] * MulCo
                 WG = p[V+5] * MulCo
-                Hex = p[V+6] / 3.101 * MulCo
+                Hex = p[V+6] / TESLA_PER_MMS * MulCo
                 K = p[V+7] * MulCo
                 J = p[V+8] * MulCo
                 tet = p[V+9] / 180 * np.pi
                 Num = max(int(p[V+10]), 1)
 
-                CHt = CH * np.exp((-1) * np.pi * (G / 2 / E0 * c * MulCo) * I * Angles_min(tet, Num, K, J, Hin, Hex, E, WL, WG, Q, Sig))
+                CHt = CH * np.exp((-1) * np.pi * (NAT_WIDTH / 2 * MulCo) * I * Angles_min(tet, Num, K, J, Hin, Hex, E, WL, WG, Q, Sig))
                 V += 11
             # --- Polarized model components ---------------------------------
             # Each adds a 2x2 cross-section matrix to Smat instead of a scalar
@@ -1979,19 +1972,19 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
-                HH = p[V + 3] / 3.101
+                HH = p[V + 3] / TESLA_PER_MMS
                 S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 10] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 11] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 11] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 11] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 11] * MulCo + E
+                S2 = (-1) * (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2]) * MulCo + p[V + 11] * MulCo + E
+                S3 = (-1) * (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2]) * MulCo - p[V + 11] * MulCo + E
+                S4 = (-1) * (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2]) * MulCo + p[V + 11] * MulCo + E
+                S5 = (-1) * (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2]) * MulCo - p[V + 11] * MulCo + E
                 S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 10] * MulCo + E
                 WL = abs(p[V + 4]) * MulCo
                 WG = abs(p[V + 5]) * MulCo
-                GaH = abs(p[V + 12]) / 2 / 3.101 * MulCo
+                GaH = abs(p[V + 12]) / 2 / TESLA_PER_MMS * MulCo
                 Ga16 = (WG ** 2 + GaH ** 2) ** (1 / 2)
-                Ga25 = (WG ** 2 + (3.0760 / 5.3123 * GaH) ** 2) ** (1 / 2)
-                Ga34 = (WG ** 2 + (0.8397 / 5.3123 * GaH) ** 2) ** (1 / 2)
+                Ga25 = (WG ** 2 + (LINE_RATIO_25 * GaH) ** 2) ** (1 / 2)
+                Ga34 = (WG ** 2 + (LINE_RATIO_34 * GaH) ** 2) ** (1 / 2)
                 Voi1 = Voight_c(WL, Ga16, S1)
                 Voi2 = Voight_c(WL, Ga25, S2)
                 Voi3 = Voight_c(WL, Ga34, S3)
@@ -2020,12 +2013,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
                 I2 = I * 2 * Aeff / (8 - 4 * Aeff)
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
-                HH = p[V + 3] / 3.101
+                HH = p[V + 3] / TESLA_PER_MMS
                 S1 = (-1) * (p[V + 1] - HH / 2 + p[V + 2]) * MulCo - p[V + 14] * MulCo + E
-                S2 = (-1) * (p[V + 1] - 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 15] * MulCo + E
-                S3 = (-1) * (p[V + 1] - 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 15] * MulCo + E
-                S4 = (-1) * (p[V + 1] + 0.8397 / 5.3123 * HH / 2 - p[V + 2]) * MulCo + p[V + 15] * MulCo + E
-                S5 = (-1) * (p[V + 1] + 3.0760 / 5.3123 * HH / 2 - p[V + 2]) * MulCo - p[V + 15] * MulCo + E
+                S2 = (-1) * (p[V + 1] - LINE_RATIO_25 * HH / 2 - p[V + 2]) * MulCo + p[V + 15] * MulCo + E
+                S3 = (-1) * (p[V + 1] - LINE_RATIO_34 * HH / 2 - p[V + 2]) * MulCo - p[V + 15] * MulCo + E
+                S4 = (-1) * (p[V + 1] + LINE_RATIO_34 * HH / 2 - p[V + 2]) * MulCo + p[V + 15] * MulCo + E
+                S5 = (-1) * (p[V + 1] + LINE_RATIO_25 * HH / 2 - p[V + 2]) * MulCo - p[V + 15] * MulCo + E
                 S6 = (-1) * (p[V + 1] + HH / 2 + p[V + 2]) * MulCo + p[V + 14] * MulCo + E
                 WL = abs(p[V + 4]) * MulCo
                 Guni = abs(p[V + 5]) * MulCo
@@ -2035,7 +2028,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 Geh = p[V + 9]
                 Cd = [1, 1, 1, 1, 1, 1]
                 Ce = [1, -1, -1, -1, -1, 1]
-                Ch = [-1 / 6.202, -1 / 10.71, -1 / 39.24, 1 / 39.24, 1 / 10.71, 1 / 6.202]
+                # dv_k/dH per line, mm/s per T; signed, for the Gdh/Geh cross terms
+                Ch = [-LINE_SHIFT_16, -LINE_SHIFT_25, -LINE_SHIFT_34,
+                      LINE_SHIFT_34, LINE_SHIFT_25, LINE_SHIFT_16]
                 Gfinal = []
                 for j in range(0, 6):
                     Gfinal.append(np.sqrt(abs(Guni ** 2 + Ch[j] ** 2 * Gh ** 2 + Cd[j] * Ce[j] * Gde * Guni ** 2 * max(0, (1 - (abs(Gdh) + abs(Geh)) ** 2)) + Cd[j] * Ch[j] * 2 * Gdh * Guni * Gh + Ce[j] * Ch[j] * 2 * Geh * Guni * Gh)))
@@ -2064,7 +2059,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 I = abs(float(p[V]) * 2)
                 sig0 = float(p[V + 1]) * MulCo
                 eps = float(p[V + 2]) * MulCo
-                Hv = float(p[V + 3]) * MulCo / 2 / 3.1098
+                Hv = float(p[V + 3]) * MulCo / 2 / TESLA_PER_MMS
                 W = float(p[V + 4]) * MulCo / 2
                 th = p[V + 5]
                 ph = p[V + 6]
@@ -2091,10 +2086,11 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 I3 = I * 1 * (1 - Aeff) / (8 - 4 * Aeff)
                 Sig1 = p[V + 1] * MulCo
                 Q1 = p[V + 2] / 3 * MulCo
-                H1 = p[V + 3] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
+                # Blume wants the field in mm/s per unit g (it applies ggr/gex itself)
+                H1 = p[V + 3] * MMS_PER_T_PER_G * MulCo
                 Sig2 = p[V + 4] * MulCo
                 Q2 = p[V + 5] / 3 * MulCo
-                H2 = p[V + 6] / (abs(ggr) + 3 * abs(gex)) * 2 * MulCo / 3.101 / 2
+                H2 = p[V + 6] * MMS_PER_T_PER_G * MulCo
                 WL = p[V + 7] * MulCo
                 Atex = p[V + 10]             # uniaxial (fiber) texture order parameter
                 Am = p[V + 11]               # magnetic polar order A_m in [-1,1] (S1 fraction), right after A
@@ -2568,7 +2564,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
                 rho11 = rho22 = 0.5
             else:
                 # SMS beam linear polarization degree, passed in from TI (which
-                # forwards the GUI value into the pool workers). Default 0.98.
+                # forwards the GUI value into the pool workers). Default SMS_POL_DEFAULT.
                 pol = sms_pol
                 rho11 = 0.5 * (1.0 + pol)
                 rho22 = 0.5 * (1.0 - pol)
@@ -2589,7 +2585,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=0.
         return(CH)
 
 
-def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=0.98, Recon=[0]):  # num - number of Gausians # PS - spc, p - InsFun
+def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0]):  # num - number of Gausians # PS - spc, p - InsFun
     """Compute the Mossbauer transmission spectrum (full transmission integral).
 
     Integrates the per-energy model ``TImod`` over the source line shape using
@@ -2603,7 +2599,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     Returns:
         numpy.ndarray: model intensity sampled at the experimental points ``x_exp``.
     """
-    # ``pol`` is the SMS beam linear polarization degree (0..1, default 0.98). It
+    # ``pol`` is the SMS beam linear polarization degree (0..1, default SMS_POL_DEFAULT). It
     # travels to every ``TImod`` worker as the positional ``sms_pol`` argument
     # (right after ``Met`` in the tuples below) so it is pickled through to the
     # spawned pool workers -- they re-import this module fresh and cannot see a
