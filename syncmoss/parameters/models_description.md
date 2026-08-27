@@ -126,8 +126,11 @@ Parameters:
 - $\Omega_{12}$: transition rate between states.
 - P1/P2: state-population ratio.
 
-### Hamilton_mc
-Single-crystal Hamiltonian model (magnetic + quadrupole, full orientation).
+### Hamiltonian
+Full Hamiltonian model (magnetic + quadrupole, arbitrary orientation) of a
+MOSAIC textured crystal. It replaces the former single-crystal `Hamilton_mc`
+(now $A = A_m = A_h = 1$) and powder `Hamilton_pc` (now $A = A_m = A_h = 0$),
+both of which it reproduces exactly, and interpolates continuously between them.
 
 Parameters:
 - T: effective thickness.
@@ -138,21 +141,27 @@ Parameters:
 - G: Gaussian width.
 - $\eta$: EFG asymmetry parameter.
 - $\theta_H$, $\varphi_H$: hyperfine field direction in PAS.
-- $\theta$, $\varphi$: geometry angles (source-mode dependent).
-- $\alpha_k$: beam-rotation angle used in thick SMS geometry.
+- $\theta$, $\varphi$: PAS direction of the lab reference axis (the radiation
+  magnetic field **h** for an SMS source, the beam **k** for a CMS one).
+- $\alpha_k$: beam rotation about **h** (SMS only; redundant for CMS).
+- A: mosaic order $\langle P_2(\cos\chi)\rangle$, $\chi$ = tilt of the crystal
+  direction $(\theta,\varphi)$ away from the lab reference axis. 1 = no spread
+  (single crystal), 0 = isotropic tilt, $-1/2$ = tilt confined to $90^\circ$.
+- A_m: polar order of that same tilt, $S_1 = \langle\cos\chi\rangle =
+  A_m\sqrt{(1+2A)/3}$. Non-zero only for a magnetised/polar mosaic; it acts
+  only through the Faraday (magneto-optical) term, exactly as in the Sextet.
+- A_h: order of the crystal azimuth about the reference axis,
+  $\langle\cos m\alpha\rangle = A_h^{|m|}$. 1 = $\alpha_k$ sharply defined,
+  0 = crystallites uniformly spun about the axis (fiber texture).
 
-### Hamilton_pc
-Powder/averaged Hamiltonian variant.
+Limits: $A_h = 0$ is a fiber texture about the reference axis; at $Q = 0$ and
+$A_h = 0$ the model equals the textured Sextet with its axis along that axis and
+$A_\mathrm{eff} = A\,P_2(\cos\theta_{BH})$.
 
-Parameters:
-- T: effective thickness.
-- $\delta$: isomer shift.
-- Q: quadrupole coupling scale.
-- H: magnetic field.
-- L: Lorentzian width.
-- G: Gaussian width.
-- $\eta$: EFG asymmetry parameter.
-- $\theta_H$, $\varphi_H$: hyperfine field orientation.
+### Hamilton_mc, Hamilton_pc (deprecated)
+Superseded by `Hamiltonian` and no longer offered in the model dropdown; opening
+an old model file rewrites them to `Hamiltonian` with the order parameters above.
+They will be removed in a later release.
 
 ### ASM
 Anharmonic spin modulation (cycloid-like) model.

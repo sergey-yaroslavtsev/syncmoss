@@ -38,13 +38,17 @@ def mod_len_def(mod, include_special=True):
     """
     # Every component type is now the polarized model: the former scalar
     # asymmetry A was replaced by the orientation angles (theta_k, phi_h) plus
-    # the uniaxial texture parameter A (Hamilton_mc gained the beam-rotation
-    # angle alpha_k and has no texture parameter). See syncmoss.legacy for how
-    # pre-merge model files / presets are upgraded to these counts.
+    # the uniaxial texture parameter A. 'Hamiltonian' keeps its crystal angles
+    # (plus the beam rotation alpha_k) and carries THREE mosaic order parameters
+    # (A, A_m, A_h) instead; it supersedes the deprecated 'Hamilton_mc' (12) and
+    # 'Hamilton_pc' (9), whose counts stay listed only so an old model file still
+    # walks. See syncmoss.legacy for how pre-merge model files / presets (and the
+    # two old Hamiltonian names) are upgraded to these counts.
     base_params = int(
         4 * (mod == 'Singlet') + 9 * (mod == 'Doublet') + 14 * (mod == 'Sextet') +
         14 * (mod == 'Sextet(rough)') + 14 * (mod == 'Relax_2S') + 11 * (mod == 'Average_H') +
-        11 * (mod == 'Relax_MS') + 15 * (mod == 'ASM') + 27 * (mod == 'SCDW') + 12 * (mod == 'Hamilton_mc') +
+        11 * (mod == 'Relax_MS') + 15 * (mod == 'ASM') + 27 * (mod == 'SCDW') +
+        15 * (mod == 'Hamiltonian') + 12 * (mod == 'Hamilton_mc') +
         9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 17 * (mod == 'MDGD') +
         number_of_baseline_parameters * (mod == 'Nbaseline')  # Nbaseline has baseline parameters
         # 'Layer' has 0 parameters (handled by the default for unknown names).

@@ -219,7 +219,13 @@ $\hat M_\sigma^{\mathrm{sym}}$ still has eigenvalues $\{0,3\}$ for an axis in th
 polarization plane, so the 50 % limit holds; only the (unresolved) longitudinal
 circular dichroism is dropped.
 
-### 2.6 Single-crystal Hamiltonian `Hamilton_mc_(thick)` (12 params)
+### 2.6 Mosaic textured Hamiltonian `Hamiltonian` (15 params)
+
+> **2026-08-26.** This one component replaced BOTH former Hamiltonian models: the
+> single crystal `Hamilton_mc` (now the order parameters $A=A_m=A_h=1$) and the
+> random powder `Hamilton_pc` (now $0,0,0$), each reproduced exactly. §2.6.1 adds
+> the mosaic average; both old names are deprecated and are rewritten on load.
+> The same revision fixed the family's amplitude convention — see §2.6.2.
 
 The shared core `_ham_mono_core` diagonalises the combined quadrupole + magnetic
 Hamiltonian and returns, per transition $k=1..8$, the polarization-independent
@@ -238,9 +244,9 @@ $$
 $$
 
 For a polarization at spherical angles $(\theta_p,\varphi_p)$,
-$F_{+}=\sqrt2\sin\theta_p(-\mathrm i)e^{\mathrm i\varphi_p}$,
+$F_{+}=\sqrt2\sin\theta_p(-\mathrm i)e^{-\mathrm i\varphi_p}$,
 $F_{0}=\sqrt2\cos\theta_p(\mathrm i)$,
-$F_{-}=\sqrt2\sin\theta_p(\mathrm i)e^{-\mathrm i\varphi_p}$, and
+$F_{-}=\sqrt2\sin\theta_p(\mathrm i)e^{+\mathrm i\varphi_p}$, and
 $A^{(p)}_k=g_0^k F_{+}+g_1^k F_{0}+g_2^k F_{-}$. With $A_1=A^{(\mathbf e_1)}$,
 $A_2=A^{(\mathbf e_2)}$, the **per-transition cross-section matrix** (explicit) is
 
@@ -277,6 +283,88 @@ selects one of two cores by `Met`:
   redundant (a true no-op) and the user leaves it fixed. The thin limit
   $\tfrac12\operatorname{tr}\hat P_k$ equals the scalar `Ham_mono_CMS` intensity for
   the same beam $(\theta,\varphi)$ (verified $<10^{-10}$).
+
+#### 2.6.1 The mosaic average: $A$, $A_m$, $A_h$ (`Ham_mosaic`)
+
+The three trailing parameters average $\hat P_k$ over an **orientation
+distribution (ODF)** of the crystal, in closed form — still one diagonalisation.
+Write the reference orientation as $R_0$ (rows = the lab axes $\mathbf e_1$,
+$\mathbf e_2$, $\mathbf k$ in PAS coordinates, i.e. the frame built above) and let
+$\mathbf f$ be the **lab reference axis** that $(\theta,\varphi)$ points at:
+$\mathbf f=\mathbf h$ for SMS, $\mathbf f=\mathbf k$ for CMS. The ODF is
+
+$$
+R=W(\beta,\chi)\,R_0\,Z(\alpha),\qquad
+W=R_{\mathbf f}(\beta)\,R_\perp(\chi)\,R_{\mathbf f}(-\beta),
+$$
+
+with $Z(\alpha)$ a rotation of the crystal about $\mathbf f$ and $W$ the
+**twist-free wobble**: a tilt by $\chi$ about an axis $\perp\mathbf f$ whose
+azimuth $\beta$ is uniform, so the ODF is axially symmetric about $\mathbf f$.
+("Spread the axis but keep $\alpha_k$" is ambiguous as such — transporting an
+azimuth along a tilt has holonomy — and the twist-free wobble is the
+convention-free realisation.) Then
+
+$$
+A=\langle P_2(\cos\chi)\rangle\in[-\tfrac12,1],\qquad
+S_1=\langle\cos\chi\rangle=A_m\sqrt{\tfrac{1+2A}{3}},\qquad
+\langle\cos m\alpha\rangle=A_h^{|m|} ,
+$$
+
+the last being exactly a wrapped-Cauchy azimuth. $A$ and $A_m$ have **the same
+meaning as in the sextet family** (§3.1, §3.2), now applied to the crystal wobble
+rather than to a single axis; $A_h$ is new and Hamiltonian-only.
+
+Averaging is closed because $\hat P_k=2\pi\,\mathbf d_k\mathbf d_k^\dagger$
+(restricted to the transverse block) splits into an $\ell=0$ trace, an $\ell=2$
+symmetric traceless part $T$ and an $\ell=1$ axial (Faraday) vector $\mathbf w$,
+and for a rotation distribution axially symmetric about an axis the $m$-components
+about that axis are simply scaled by $\langle d^{(\ell)}_{mm}(\chi)\rangle$:
+
+$$
+\lambda^{(2)}_0=\tfrac{3\langle\cos^2\chi\rangle-1}{2}=A,\quad
+\lambda^{(2)}_1=\tfrac{2\langle\cos^2\chi\rangle+S_1-1}{2},\quad
+\lambda^{(2)}_2=\tfrac{1+2S_1+\langle\cos^2\chi\rangle}{4},
+$$
+$$
+\langle W\rangle=S_1\,\mathbf f\mathbf f^{\!\top}+\tfrac{1+S_1}{2}(\mathbb 1-\mathbf f\mathbf f^{\!\top}),
+\qquad \langle R\rangle=\langle W\rangle R_0\langle Z\rangle .
+$$
+
+So the average depends on the ODF only through $\langle\cos\chi\rangle$,
+$\langle\cos^2\chi\rangle$, $\langle\cos\alpha\rangle$ and
+$\langle\cos2\alpha\rangle$ — exactly the three order parameters. Verified
+limits (all to round-off, $\lesssim10^{-14}$; see
+`tests/test_hamiltonian_texture.py`, which also checks the closed form against
+brute-force numerical integration of the ODF for two different $\chi$
+realisations):
+
+| $(A,A_m,A_h)$ | equals |
+|---|---|
+| $(1,1,1)$ | the single crystal — `Ham_mono_thick` / `Ham_mono_thick_CMS` (former `Hamilton_mc`) |
+| $(0,0,0)$ | the random powder — $\hat P_k=I_k^{\rm poly}\mathbb 1$, i.e. `Ham_poly` (former `Hamilton_pc`) |
+| $A_h=0$ | a fiber texture about $\mathbf f$ (the reference azimuth $\alpha_k$ then drops out entirely) |
+| $Q=0$, $A_h=0$ | the textured Sextet with axis $\parallel\mathbf f$ and $A_{\rm eff}=A\,P_2(\cos\theta_{BH})$ |
+
+At $(0,0,A_h>0)$ the model is **not** a powder: the twist-free wobble keeps the
+$|m|=1,2$ rotational correlations even for a fully random axis direction.
+
+#### 2.6.2 Amplitude convention (fixed 2026-08-26)
+
+The family used to build $g_q$ as $V_{\rm ex}\overline{V_{\rm gr}}$ instead of
+$\overline{V_{\rm ex}}V_{\rm gr}$, i.e. it returned $\overline{\langle e|T_q|g\rangle}$,
+while $F_\pm$ carried the mirrored azimuth $e^{\pm\mathrm i\varphi_p}$. The two
+mirrors cancelled in every scalar intensity $|A|^2$ — so all thin results, all
+scalar models and all line positions were and remain exactly right — but not in
+the matrix: they transposed every $\hat P_k$, which for a pure Zeeman multiplet
+hands the $\Delta m=+1$ ($\sigma^+$) lines the $\sigma^-$ Faraday sign of the
+Sextet family. Both halves are now standard, so at $Q=0$ each block equals the
+corresponding Sextet block exactly (§2.2), and a Hamiltonian component mixed or
+stacked with any other polarized component now carries the correct **relative**
+polarity. Impact on results: nothing for scalar/thin models; for ONE homogeneous
+dispersive layer only through the commutator of the absorptive and dispersive
+parts of $\hat\Sigma$ (a $\sim0.1\%$-of-depth shift; the CMS half-trace is exactly
+unchanged); for mixtures and stacks, the full Faraday term (tens of percent).
 
 ### 2.7 Anharmonic spin modulation `ASM_(thick)` (14 params) — *non-trivial, with a geometric assumption*
 
@@ -326,17 +414,17 @@ orientation. Confirm/refine for quantitative work.
 | MDGD | $A_{\rm asym}\to\theta_h,\varphi_h,A$; $+A_m$ | 14→17 |
 | Relax_MS | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 9→11 |
 | Relax_2S | $A_{\rm asym}\to\theta_h,\varphi_h,A$; $+A_m$ | 11→14 |
-| Hamilton_mc | $+\,\alpha_k$ (no texture) | 11→12 |
+| Hamiltonian | $+\,\alpha_k$; $+A,A_m,A_h$ (mosaic ODF) | 11→15 |
 | ASM | $A_{\rm asym}\to\theta_h,\varphi_h,A$ | 12→14 |
 | Layer | marker, no params | 0 |
 
 (The Faraday-active models — Sextet, MDGD, Relax_2S — carry one further parameter
 $A_m$, the magnetic polar-order fraction, immediately after $A$; see §3.2.)
 
-(Singlet has no thick form. For Hamilton the existing $(\theta,\varphi)$ already are
-the SMS radiation direction $(\theta_h,\varphi_h)$ — under CMS they are the beam
-direction $\mathbf k$ instead, see §2.6; only $\alpha_k$ is added — see §3.1 for why
-Hamilton gets no texture parameter.)
+(Singlet has no thick form. For `Hamiltonian` the existing $(\theta,\varphi)$ already
+are the SMS radiation direction $(\theta_h,\varphi_h)$ — under CMS they are the beam
+direction $\mathbf k$ instead, see §2.6 — and $\alpha_k$ plus the three mosaic order
+parameters are added; see §3.1 for why one texture parameter is not enough there.)
 
 ### 3.1 Uniaxial (fiber) texture parameter $A$
 
@@ -420,12 +508,16 @@ use the Faraday-averaged $\hat M_\sigma^{\rm sym}$ — Relax_MS (grouped $\sigma
 ASM (cycloid average) — and the doublet (no $\sigma^\pm$ splitting) never need
 $A_m$ and do not carry it.
 
-**Hamilton_mc_(thick) has no texture parameter.** Its per-transition matrices
-$\hat P_k$ depend on the *full* crystallite orientation (the anisotropic-EFG
-$\eta\ne0$ couples the EFG eigenframe to the texture frame), so a genuine fiber
-average needs the closed-form rank-$\le2$ (Wigner-$D$, $\ell\le2$) average — more
-than one parameter. A single blend would be a two-phase "aligned + random"
-mixture, not a fiber texture, so it is deliberately omitted.
+**`Hamiltonian` needs three texture parameters, not one.** Its per-transition
+matrices $\hat P_k$ depend on the *full* crystallite orientation (an anisotropic
+EFG couples the EFG eigenframe to the texture frame), so a genuine fiber average
+needs the closed-form rank-$\le2$ (Wigner-$D$, $\ell\le2$) average — which is
+exactly what $(A,A_m,A_h)$ parametrise (§2.6.1); a single blend would be a
+two-phase "aligned + random" mixture, not a texture. $A$ and $A_m$ keep their
+meaning from this section and §3.2 (they are the $\ell=2$ and $\ell=1$ moments of
+the same tilt distribution), and $A_h$ adds the azimuthal order about the
+reference axis. Before 2026-08-26 the former `Hamilton_mc` carried no texture
+parameter at all and only a single crystal could be fitted.
 
 ---
 
@@ -469,10 +561,11 @@ matrix-based models (Doublet/Sextet/MDGD/Relax/ASM) the half-trace depends only 
 the polar angle $\theta_h$, so the azimuth $\varphi_h$ has **no effect** (an
 unpolarized source defines no direction in the polarization plane); a resolved
 allowed line saturates at exactly $50\%$ absorption for any orientation, a forbidden
-line vanishes, and a random powder shows no floor. (`Hamilton_mc_(thick)` is the one
+line vanishes, and a random powder shows no floor. (`Hamiltonian` is the one
 exception — under CMS its $(\theta,\varphi)$ are the **beam direction $\mathbf k$ in
 the crystal frame**, so *both* angles are physical (they aim the beam through the
-anisotropic crystal), whereas $\alpha_k$ becomes redundant; see §2.6.) Because
+anisotropic crystal) and the mosaic is textured about that beam axis, whereas
+$\alpha_k$ stays redundant; see §2.6 and §2.6.1.) Because
 the matrix exponential is convex, $\tfrac12(e^{-\lambda_+}+e^{-\lambda_-})\ne
 e^{-\frac12(\lambda_++\lambda_-)}$, so the matrix treatment (not a scalar effective
 thickness) is still required for a thick oriented absorber even with an unpolarized
@@ -491,7 +584,8 @@ $$
 $$
 
 for Doublet, Sextet, MDGD, Relax_MS and Relax_2S (with $I_1/I_3$ unchanged). For
-`Hamilton_mc` the thin equal is `Hamilton_mc` itself with the same
-$(\theta,\varphi)$ (any $\alpha_k$). `ASM_(thick)` has no single-$A$ thin equal
+`Hamiltonian` at $(A,A_m,A_h)=(1,1,1)$ the thin equal is the scalar `Ham_mono`
+with the same $(\theta,\varphi)$ (any $\alpha_k$), and at $(0,0,0)$ it is the
+scalar powder `Ham_poly`. `ASM_(thick)` has no single-$A$ thin equal
 because the orientation varies per cycloid point. See
 `tests/` / `docs/thick_vs_thin.md` for the numerical comparison.

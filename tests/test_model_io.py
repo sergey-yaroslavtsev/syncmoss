@@ -12,9 +12,11 @@ from syncmoss.model_io import mod_len_def, _remap_reference_text
 # Expected parameter count per model type (must match models.TImod parameter
 # layout). Every anisotropic component is now the polarized model: the former
 # scalar asymmetry A was replaced by orientation angles (theta_k, phi_h) + the
-# uniaxial texture parameter A (Hamilton_mc gained alpha_k, no texture). Singlet
-# is isotropic (no angles/texture); Sextet(rough)/Average_H/Hamilton_pc had no
-# polarized twin and keep their counts.
+# uniaxial texture parameter A. 'Hamiltonian' keeps its crystal angles + alpha_k
+# and carries three mosaic order parameters (A, A_m, A_h); it supersedes
+# Hamilton_mc/_pc, whose counts must keep working for old files. Singlet is
+# isotropic (no angles/texture); Sextet(rough)/Average_H had no polarized twin
+# and keep their counts.
 EXPECTED_PARAM_COUNTS = {
     "Singlet": 4,
     "Doublet": 9,
@@ -26,8 +28,9 @@ EXPECTED_PARAM_COUNTS = {
     "Relax_MS": 11,
     "ASM": 15,
     "SCDW": 27,
-    "Hamilton_mc": 12,
-    "Hamilton_pc": 9,
+    "Hamiltonian": 15,
+    "Hamilton_mc": 12,       # deprecated
+    "Hamilton_pc": 9,        # deprecated
     "Variables": numco,                       # 26
     "Nbaseline": number_of_baseline_parameters,  # 8
     "Layer": 0,

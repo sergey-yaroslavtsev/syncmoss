@@ -42,7 +42,7 @@ syncmoss
 * Can extract instrumental function from spectrum of standard absorber
 * Sequence (batch) fitting
 * Simultaneous fitting
-* Full Hamiltonian model for single crystal case
+* Full Hamiltonian model for the single crystal, mosaic textured and powder cases (one model, three order parameters)
 * 2-state relaxation model
 * Many-state superparamagnetic relaxation model
 * Anharmonic spin modulation (ASM) model

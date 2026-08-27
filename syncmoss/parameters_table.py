@@ -33,7 +33,11 @@ MODEL_OPTIONS = [
     # polarized fittable models (each reduces to its former scalar form at
     # texture A = 0; SMS uses the full polarized readout, CMS the half-trace)
     'Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S',
-    'Hamilton_mc', 'Hamilton_pc', 'ASM', 'SCDW',
+    'Hamiltonian', 'ASM', 'SCDW',
+    # NOT listed (deprecated, superseded by the textured 'Hamiltonian'):
+    # 'Hamilton_mc' (== A, A_m, A_h = 1, 1, 1) and 'Hamilton_pc' (== 0, 0, 0).
+    # Their rows still build and evaluate if a hand-written file names them, and
+    # syncmoss.legacy rewrites both to 'Hamiltonian' when a model file is opened.
     # presets / structural / utility
     'Be', 'KB_nano', 'Layer', 'Distr', 'Corr', 'Recon',
     'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline',
@@ -892,9 +896,9 @@ class ParametersTable(QWidget):
         # orientation angles (theta_k, phi_h) of its axis in the lab frame
         # (theta_k from the beam k, phi_h from the polarization h) followed by the
         # uniaxial (fiber) texture parameter A in [-0.5, 1] (A=0 random powder ->
-        # former scalar model, A=1 single crystal at the axis). Hamilton_mc
-        # carries the beam-rotation angle alpha_k instead and has no texture
-        # parameter (its anisotropic-EFG fiber average needs more than one).
+        # former scalar model, A=1 single crystal at the axis). 'Hamiltonian'
+        # keeps its crystal angles plus the beam rotation alpha_k and needs THREE
+        # order parameters (A, A_m, A_h) for the mosaic of an anisotropic EFG.
         # Singlet is isotropic, so it has neither. The Faraday-active models
         # (Sextet, MDGD, Relax_2S) also carry a magnetic polar-order parameter A_m
         # in [-1, 1] immediately after A (the net-magnetisation fraction
@@ -919,13 +923,35 @@ class ParametersTable(QWidget):
             lowers = ['0', '', '', '', _NAT, '0', '0', '-1', '-1', '-1', '-180', '-360', '-0.5', '-1', '', '', '0']
             uppers = ['', '', '', '', '', '', '', '1', '1', '1', '180', '360', '1', '1', '', '', '']
             fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A, A_m locked by default
+        elif model == 'Hamiltonian':
+            # Mosaic textured full Hamiltonian (supersedes Hamilton_mc/_pc).
+            # (θH, φH) is B_hf in the EFG frame; (θ, φ) the lab reference axis in
+            # the EFG frame -- the radiation field h for SMS, the beam k for CMS
+            # -- and αk the beam rotation about h (SMS only). A/A_m/A_h are the
+            # mosaic order parameters: A = <P2(cos chi)> of the crystal wobble
+            # about that reference axis, A_m its polar order (Faraday), A_h the
+            # order of the crystal azimuth about it. DEFAULT (0, 0, 0) = random
+            # powder, i.e. exactly the former scalar 'Hamilton_pc' -- matching
+            # every other model, whose A = 0 default is also its former scalar
+            # form. (1, 1, 1) is the single crystal (former 'Hamilton_mc').
+            # Because the reference-orientation angles (θ, φ, αk) do nothing in
+            # the powder default, they are FIXED with A/A_m/A_h; untick them
+            # together with A (and A_h) when fitting an oriented sample.
+            names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °', 'A', 'A_m', 'A_h']
+            values = ['1.0', '0.0', '0.0', '33.0', _NAT, '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0', '0', '0']
+            lowers = ['0', '', '', '', _NAT, '0', '-1', '-180', '-360', '-180', '-360', '-360', '-0.5', '-1', '0']
+            uppers = ['', '', '', '', '', '', '1', '180', '360', '180', '360', '360', '1', '1', '1']
+            fixes = [False, False, False, False, True, False, False, False, False, True, True, True, True, True, True]  # reference angles + A, A_m, A_h locked by default
         elif model == 'Hamilton_mc':
+            # DEPRECATED (superseded by 'Hamiltonian'); no longer in the dropdown,
+            # kept so an old model file naming it still builds a valid row.
             names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °']
             values = ['1.0', '0.0', '0.0', '33.0', _NAT, '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0']
             lowers = ['0', '', '', '', _NAT, '0', '-1', '-180', '-360', '-180', '-360', '-360']
             uppers = ['', '', '', '', '', '', '1', '180', '360', '180', '360', '360']
             fixes = [False, False, False, False, True, False, False, False, False, False, False, True]  # alpha_k locked by default
         elif model == 'Hamilton_pc':
+            # DEPRECATED (superseded by 'Hamiltonian' at A = A_m = A_h = 0).
             names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °']
             values = ['1.0', '0.0', '0.0', '33.0', _NAT, '0.1', '0.0', '0.0', '0.0']
             lowers = ['0', '', '', '', _NAT, '0', '-1', '-180', '-360']

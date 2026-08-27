@@ -280,6 +280,14 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 
 @njit(cache=True)
 def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
+    """Local copy of models.Ham_mono; ONLY the returned positions S are consumed.
+
+    ``pos_ac`` draws line-position markers, so the returned intensities are never
+    used and this copy deliberately keeps the old amplitude/azimuth convention
+    (which is exact for |amplitude|^2 anyway). The one convention that matters
+    for the spectrum lives in models._ham_mono_core -- do not build a 2x2
+    cross-section matrix from this copy.
+    """
     Q = Q / c * E0_J
     phi = phi / 180 * np.pi
     tet = tet / 180 * np.pi
@@ -795,6 +803,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 SET.append([S1, S2, S3, S4, S5, S6])
                 V += 14
             if model[i] == 'Hamilton_pc':
+                # DEPRECATED, superseded by 'Hamiltonian' (see models.py).
                 delt = p[V+1]
                 Q = p[V+2]
                 H = p[V+3]
@@ -861,6 +870,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 SET.append([S1, S2, S3, S4, S5, S6, S12, S22, S32, S42, S52, S62])
                 V += 14
             if model[i] == 'Hamilton_mc':
+                # DEPRECATED, superseded by 'Hamiltonian' (see models.py).
                 delt = p[V + 1]
                 Q = p[V + 2]
                 H = p[V + 3]
@@ -873,6 +883,22 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S += delt
                 SET.append(S)
                 V += 12
+            if model[i] == 'Hamiltonian':
+                # Mosaic textured Hamiltonian: the ODF order parameters A, A_m,
+                # A_h redistribute INTENSITY between the 8 transitions, never
+                # their positions, so the markers are the single-crystal ones.
+                delt = p[V + 1]
+                Q = p[V + 2]
+                H = p[V + 3]
+                eto = p[V + 6]
+                tet = p[V + 7]
+                phi = p[V + 8]
+                tetr = p[V + 9]
+                phir = p[V + 10]
+                S = Ham_mono(Q, H, eto, phi, tet, phir, tetr)[1]
+                S += delt
+                SET.append(S)
+                V += 15
             if model[i] == 'ASM':
                 Sig = p[V + 1]
                 eps_m = p[V + 2]
@@ -981,7 +1007,7 @@ def mod_pos(p, model, INS, Met=0):
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
                     + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM') + 27 * (model[j] == 'SCDW')\
-                    + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
+                    + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)

@@ -27,7 +27,11 @@ The upgrade applies the SAME transform the presets/data files were converted wit
     gain a magnetic polar-order parameter ``A_m = 0`` immediately after ``A``
     (unmagnetised, so the sigma+- lines keep their Faraday-averaged form, matching
     pre-A_m files);
-  * ``Hamilton_mc`` had no asymmetry -- it only gains a trailing ``alpha_k = 0``;
+  * the two Hamiltonian components were merged into the mosaic textured
+    ``Hamiltonian`` (see :data:`_HAMILTONIAN_UPGRADES`): ``Hamilton_pc``
+    (9 params, random powder) and ``Hamilton_mc`` (single crystal, 11 params
+    before it gained ``alpha_k``, 12 after) are renamed and padded out to the
+    15-parameter layout with the order parameters that reproduce them exactly;
   * ``ASM`` additionally gained a trailing cycloid-plane angle ``omega`` (both from
     the pre-merge scalar layout AND from the pre-omega polarized layout). It is
     appended set to ``omega_0(theta_k, phi_h)`` -- the angle that reproduces the
@@ -63,8 +67,7 @@ def a_scalar_to_texture(a):
 
 # For each model merged into its polarized twin: the OLD scalar parameter count
 # and the index of the OLD scalar asymmetry ``A`` within that component (the slot
-# where ``theta_k, phi_h`` are inserted and ``A`` is transformed). ``asym`` is
-# None for Hamilton_mc, which had no asymmetry and only gains a trailing alpha_k.
+# where ``theta_k, phi_h`` are inserted and ``A`` is transformed).
 # ``am`` marks the Faraday-active models (Sextet, MDGD, Relax_2S) that gained a
 # magnetic polar-order parameter ``A_m`` (= 0, unmagnetised) right after ``A``.
 # For those, ``poly`` is the pre-A_m polarized count (theta_k/phi_h/A but no A_m)
@@ -81,7 +84,28 @@ _MERGED = {
     # theta_k/phi_h slots in that layout, used to seed omega = omega_0(th, ph).
     'ASM':         {'old': 12, 'asym': 9, 'trail': True, 'trail_poly': 14,
                     'th_idx': 9, 'ph_idx': 10},
-    'Hamilton_mc': {'old': 11, 'asym': None},
+}
+
+# The single-crystal ('Hamilton_mc') and powder ('Hamilton_pc') Hamiltonians were
+# merged into ONE mosaic textured component, 'Hamiltonian' (15 params = the 12 of
+# Hamilton_mc + the order parameters A, A_m, A_h). Both old names map to it, and
+# the row is padded out by APPENDING the values that reproduce the old model
+# exactly -- (1, 1, 1) is the single crystal, (0, 0, 0) the random powder (both
+# equalities are exact, see models.Ham_mosaic). The three old layouts have
+# distinct parameter counts, so the count alone identifies the source:
+#
+#   9  -> 'Hamilton_pc'  : append theta/phi/alpha_k = 0 (a powder ignores the
+#                          reference orientation) and A = A_m = A_h = 0;
+#   11 -> 'Hamilton_mc' before it gained alpha_k: append alpha_k = 0, (1, 1, 1);
+#   12 -> 'Hamilton_mc' as published in the current layout: append (1, 1, 1).
+#
+# {count: (appended values, appended bounds)}; every appended slot is fitted-fixed.
+# (built below, once the shared bounds constants exist)
+
+# Pre-merge model names that are simply RENAMED to their current component.
+_RENAMED = {
+    'Hamilton_mc': 'Hamiltonian',
+    'Hamilton_pc': 'Hamiltonian',
 }
 
 # Default bounds/fix for the parameters the upgrade introduces, mirroring the
@@ -90,8 +114,20 @@ _THETA_K_BOUNDS = ('-180', '180')
 _PHI_H_BOUNDS = ('-360', '360')
 _A_TEX_BOUNDS = ('-0.5', '1')
 _A_M_BOUNDS = ('-1', '1')
+_A_H_BOUNDS = ('0', '1')
 _ALPHA_K_BOUNDS = ('-360', '360')
 _OMEGA_BOUNDS = ('-360', '360')
+# Hamiltonian reference-orientation angles (theta, phi of the lab reference axis
+# in the EFG frame) -- same ranges as the other polar/azimuthal pairs.
+_TET_R_BOUNDS = ('-180', '180')
+_PHI_R_BOUNDS = ('-360', '360')
+
+_HAMILTONIAN_UPGRADES = {
+    9:  ([0, 0, 0, 0, 0, 0], [_TET_R_BOUNDS, _PHI_R_BOUNDS, _ALPHA_K_BOUNDS,
+                              _A_TEX_BOUNDS, _A_M_BOUNDS, _A_H_BOUNDS]),
+    11: ([0, 1, 1, 1], [_ALPHA_K_BOUNDS, _A_TEX_BOUNDS, _A_M_BOUNDS, _A_H_BOUNDS]),
+    12: ([1, 1, 1], [_A_TEX_BOUNDS, _A_M_BOUNDS, _A_H_BOUNDS]),
+}
 
 
 def _fmt(x):
@@ -142,13 +178,16 @@ def normalize_legacy_model_name(name):
     """Map a pre-merge model name to its current name.
 
     The polarized models used to carry a ``_(thick)`` suffix; that suffix is gone
-    now (the plain name IS the polarized model). Any other name is returned
-    unchanged. A trailing ``\\r`` from CR/LF files is also stripped.
+    now (the plain name IS the polarized model), and the two old Hamiltonian
+    components (``Hamilton_mc``, ``Hamilton_pc``) are both the textured
+    ``Hamiltonian`` (:func:`upgrade_mdl_row` pads their rows out to it). Any other
+    name is returned unchanged. A trailing ``\\r`` from CR/LF files is also
+    stripped.
     """
     name = str(name).strip()
     if name.endswith('_(thick)'):
         name = name[:-len('_(thick)')]
-    return name
+    return _RENAMED.get(name, name)
 
 
 def upgrade_mdl_row(model_name, row_data):
@@ -163,17 +202,21 @@ def upgrade_mdl_row(model_name, row_data):
     upgraded to the polarized layout: ``theta_k = 90`` and ``phi_h = 0`` are
     inserted where the scalar asymmetry was, that asymmetry is remapped to the
     texture order parameter, and the Faraday-active models gain ``A_m = 0`` right
-    after ``A`` (Hamilton_mc instead gains a trailing ``alpha_k = 0``). If instead
-    the count matches a Faraday model's PRE-A_m polarized count, only ``A_m = 0`` is
-    inserted after ``A``. Otherwise (row already in the new layout, or model not
-    part of the merge) it is returned unchanged, so this is safe to call
-    unconditionally while loading.
+    after ``A``. If instead the count matches a Faraday model's PRE-A_m polarized
+    count, only ``A_m = 0`` is inserted after ``A``. Otherwise (row already in the
+    new layout, or model not part of the merge) it is returned unchanged, so this
+    is safe to call unconditionally while loading.
+
+    A ``Hamiltonian`` row is instead recognised by its parameter count (9, 11 or
+    12 = the two old Hamiltonian layouts) and padded out to 15 with the order
+    parameters that reproduce the old model exactly; see
+    :data:`_HAMILTONIAN_UPGRADES`.
 
     ``model_name`` must already be normalised (see
     :func:`normalize_legacy_model_name`).
     """
     info = _MERGED.get(model_name)
-    if info is None:
+    if info is None and model_name != 'Hamiltonian':
         return row_data
 
     n_groups = len(row_data) // 5
@@ -185,30 +228,39 @@ def upgrade_mdl_row(model_name, row_data):
     while real < n_groups and str(groups[real][0]).strip() != '':
         real += 1
     real_groups = groups[:real]
+
+    if model_name == 'Hamiltonian':
+        # One of the two old Hamiltonians (identified by its parameter count):
+        # append the slots that turn it into the textured model without changing
+        # the spectrum. Unknown count (already 15, or unexpected) -> unchanged.
+        upgrade = _HAMILTONIAN_UPGRADES.get(real)
+        if upgrade is None:
+            return row_data
+        values, bounds = upgrade
+        upgraded = real_groups + [[_fmt(v), lo, hi, '', 'True']
+                                  for v, (lo, hi) in zip(values, bounds)]
+        return [field for g in upgraded for field in g]
     asym = info['asym']
     am_group = ['0', _A_M_BOUNDS[0], _A_M_BOUNDS[1], '', 'True']
 
     if real == info['old']:
         # Pre-merge SCALAR row -> full polarized layout.
-        if asym is None:                   # Hamilton_mc: append alpha_k (= 0)
-            upgraded = real_groups + [['0', _ALPHA_K_BOUNDS[0], _ALPHA_K_BOUNDS[1], '', 'True']]
-        else:
-            a_group = real_groups[asym]
-            a_value, a_fix = a_group[0], a_group[4]
-            # Best effort: only recompute a plain numeric asymmetry. A constraint /
-            # expression reference (``=[..]`` / ``p[..]``) is left untouched.
-            try:
-                a_value = _fmt(a_scalar_to_texture(float(a_group[0])))
-            except (ValueError, TypeError):
-                pass
-            theta = ['90', _THETA_K_BOUNDS[0], _THETA_K_BOUNDS[1], '', 'True']
-            phi = ['0', _PHI_H_BOUNDS[0], _PHI_H_BOUNDS[1], '', 'True']
-            new_a = [a_value, _A_TEX_BOUNDS[0], _A_TEX_BOUNDS[1], '', a_fix]
-            # The Faraday-active models (Sextet, MDGD, Relax_2S) gain a magnetic
-            # polar-order parameter A_m = 0 immediately AFTER A (unmagnetised ->
-            # Faraday-averaged sigma, i.e. the pre-A_m behaviour).
-            am = [am_group] if info.get('am') else []
-            upgraded = real_groups[:asym] + [theta, phi, new_a] + am + real_groups[asym + 1:]
+        a_group = real_groups[asym]
+        a_value, a_fix = a_group[0], a_group[4]
+        # Best effort: only recompute a plain numeric asymmetry. A constraint /
+        # expression reference (``=[..]`` / ``p[..]``) is left untouched.
+        try:
+            a_value = _fmt(a_scalar_to_texture(float(a_group[0])))
+        except (ValueError, TypeError):
+            pass
+        theta = ['90', _THETA_K_BOUNDS[0], _THETA_K_BOUNDS[1], '', 'True']
+        phi = ['0', _PHI_H_BOUNDS[0], _PHI_H_BOUNDS[1], '', 'True']
+        new_a = [a_value, _A_TEX_BOUNDS[0], _A_TEX_BOUNDS[1], '', a_fix]
+        # The Faraday-active models (Sextet, MDGD, Relax_2S) gain a magnetic
+        # polar-order parameter A_m = 0 immediately AFTER A (unmagnetised ->
+        # Faraday-averaged sigma, i.e. the pre-A_m behaviour).
+        am = [am_group] if info.get('am') else []
+        upgraded = real_groups[:asym] + [theta, phi, new_a] + am + real_groups[asym + 1:]
         # ASM: append the trailing cycloid-plane angle omega (= omega_0 for the
         # theta_k/phi_h just inserted -> 90 deg for the degenerate default).
         upgraded = _append_trailing(model_name, info, upgraded)

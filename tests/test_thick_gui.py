@@ -139,17 +139,18 @@ def test_recon_num_and_reg_locked_by_default(physics_app):
 # Orientation/texture parameters each polarized model carries that are FIXED by
 # default, as {param column: label}; the user unticks the box to refine them.
 # (theta_k, phi_h replace the former scalar asymmetry and are followed by the
-# uniaxial texture parameter A; Hamilton_mc keeps its crystal angles and only
-# adds the beam-rotation angle alpha_k, with no texture parameter. The
-# Faraday-active models also carry a magnetic polar-order A_m right after A,
-# likewise locked by default.)
+# uniaxial texture parameter A; 'Hamiltonian' keeps its crystal angles, the
+# beam-rotation alpha_k and the three mosaic order parameters A, A_m, A_h -- its
+# reference-orientation angles are locked WITH them because they do nothing in
+# the default random-powder setting (A = A_m = A_h = 0). The Faraday-active
+# models also carry a magnetic polar-order A_m right after A, likewise locked.)
 _THICK_LOCKED_ANGLES = {
     'Doublet':     {5: 'θk, °', 6: 'φh, °', 7: 'A'},
     'Sextet':      {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'A_m'},
     'MDGD':        {10: 'θk, °', 11: 'φh, °', 12: 'A', 13: 'A_m'},
     'Relax_MS':    {5: 'θk, °', 6: 'φh, °', 7: 'A'},
     'Relax_2S':    {8: 'θk, °', 9: 'φh, °', 10: 'A', 11: 'A_m'},
-    'Hamilton_mc': {11: 'αk, °'},
+    'Hamiltonian': {9: 'θ, °', 10: 'φ, °', 11: 'αk, °', 12: 'A', 13: 'A_m', 14: 'A_h'},
     'ASM':         {9: 'θk, °', 10: 'φh, °', 11: 'A', 14: 'ω, °'},
     'SCDW':        {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'A_m'},
 }
@@ -179,6 +180,47 @@ def test_thick_extra_angles_locked_by_default(physics_app, model):
         assert cb.isChecked(), f"{model}: angle '{label}' should be fixed by default"
         # Locked but unlockable: the checkbox stays enabled so the user can refine it.
         assert cb.isEnabled(), f"{model}: angle '{label}' must remain user-unlockable"
+
+
+# --- opening a model file written before the Hamiltonian merge ---------------
+_BASELINE_ROW = '\t'.join(['10000', '1', '', '', 'False'] + ['0', '', '', '', 'True'] * 7)
+
+
+def _write_legacy_mdl(tmp_path, name, values):
+    """A minimal one-component .mdl in the on-disk format (names, colors, rows)."""
+    row = '\t'.join('\t'.join([str(v), '', '', '', 'False']) for v in values)
+    path = tmp_path / (name + '.mdl')
+    path.write_text('\t'.join(['baseline', name]) + '\n'
+                    + '\t'.join(['red', 'red']) + '\n'
+                    + _BASELINE_ROW + '\n' + row + '\n', encoding='utf-8')
+    return str(path)
+
+
+@pytest.mark.parametrize("name,values,tail", [
+    # old powder Hamiltonian -> Hamiltonian at (A, A_m, A_h) = (0, 0, 0)
+    ('Hamilton_pc', [1.0, 0.1, 0.4, 33.0, 0.098, 0.12, 0.3, 20.0, 30.0],
+     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    # very old single-crystal Hamiltonian (no alpha_k) -> (1, 1, 1), + alpha_k = 0
+    ('Hamilton_mc', [1.0, 0.1, 0.4, 33.0, 0.098, 0.12, 0.3, 20.0, 30.0, 40.0, 50.0],
+     [0.0, 1.0, 1.0, 1.0]),
+    # current single-crystal layout (with alpha_k) -> (1, 1, 1)
+    ('Hamilton_mc', [1.0, 0.1, 0.4, 33.0, 0.098, 0.12, 0.3, 20.0, 30.0, 40.0, 50.0, 70.0],
+     [1.0, 1.0, 1.0]),
+])
+def test_loading_an_old_hamiltonian_model_file_upgrades_it(physics_app, tmp_path, name, values, tail):
+    """Both old Hamiltonians open as the merged 'Hamiltonian' with the order
+    parameters that reproduce them, and every original value keeps its slot."""
+    from syncmoss.model_io import load_model_from_path
+
+    load_model_from_path(physics_app, _write_legacy_mdl(tmp_path, name, values))
+    pt = physics_app.params_table
+    assert _model_name(pt, 1) == 'Hamiltonian'
+    assert pt.row_params[1] == 15
+    model, p = read_model(physics_app)[0], read_model(physics_app)[1]
+    assert model[0] == 'Hamiltonian'
+    from syncmoss.constants import number_of_baseline_parameters as NB
+    got = [float(v) for v in p[NB:NB + 15]]
+    assert got == pytest.approx(list(values) + tail)
 
 
 def test_thick_non_angle_param_not_force_locked(physics_app):

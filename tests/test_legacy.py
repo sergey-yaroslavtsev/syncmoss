@@ -19,6 +19,8 @@ from syncmoss.model_io import mod_len_def
 # (old scalar count, new count, asymmetry index in the old layout)
 # The Faraday-active models (Sextet, MDGD, Relax_2S) gain A_m right after A,
 # so their new count is old + 3 (theta_k, phi_h, A_m) rather than old + 2.
+# (The two Hamiltonian components are not part of this merge -- they were merged
+# with EACH OTHER into 'Hamiltonian'; see the tests at the bottom of this file.)
 _MERGED = {
     'Doublet':     (7, 9, 5),
     'Sextet':      (11, 14, 6),
@@ -26,7 +28,6 @@ _MERGED = {
     'Relax_MS':    (9, 11, 5),
     'Relax_2S':    (11, 14, 8),
     'ASM':         (12, 15, 9),
-    'Hamilton_mc': (11, 12, None),
 }
 
 
@@ -48,7 +49,10 @@ def test_a_transform_monotonic_and_bounded_on_unit_interval():
 @pytest.mark.parametrize("raw,expected", [
     ("Doublet_(thick)", "Doublet"),
     ("Sextet_(thick)", "Sextet"),
-    ("Hamilton_mc_(thick)", "Hamilton_mc"),
+    # both old Hamiltonians are now the one textured 'Hamiltonian'
+    ("Hamilton_mc_(thick)", "Hamiltonian"),
+    ("Hamilton_mc", "Hamiltonian"),
+    ("Hamilton_pc", "Hamiltonian"),
     ("Doublet", "Doublet"),          # already current
     ("Singlet", "Singlet"),          # never had a thick form
     ("Doublet\r", "Doublet"),        # CR/LF stray carriage return
@@ -149,6 +153,36 @@ def test_upgrade_mdl_row_is_noop_for_new_layout():
 def test_upgrade_mdl_row_is_noop_for_unmerged_model():
     row = _row(range(4), pad_to=16)
     assert legacy.upgrade_mdl_row('Singlet', row) == row
+
+
+# --- the Hamiltonian merge (Hamilton_mc + Hamilton_pc -> 'Hamiltonian') --------
+# A row is identified by its parameter count and padded out to 15 with the order
+# parameters that reproduce the old model exactly: the powder Hamilton_pc (9)
+# gains theta/phi/alpha_k = 0 and A = A_m = A_h = 0, the single-crystal
+# Hamilton_mc (11 before it gained alpha_k, 12 after) gains A = A_m = A_h = 1.
+@pytest.mark.parametrize("old_n,tail", [
+    (9,  [0, 0, 0, 0, 0, 0]),      # Hamilton_pc -> random powder
+    (11, [0, 1, 1, 1]),            # pre-alpha_k Hamilton_mc -> single crystal
+    (12, [1, 1, 1]),               # Hamilton_mc -> single crystal
+])
+def test_upgrade_hamiltonian_row(old_n, tail):
+    out = legacy.upgrade_mdl_row('Hamiltonian', _row(range(old_n), pad_to=16))
+    groups = [out[i * 5:i * 5 + 5] for i in range(len(out) // 5)]
+    assert len(groups) == 15 == mod_len_def('Hamiltonian', include_special=False)
+    # the original parameters keep their places and values ...
+    for i in range(old_n):
+        assert float(groups[i][0]) == i
+    # ... and the appended slots carry the reproducing values, all fitted-fixed.
+    assert [float(g[0]) for g in groups[old_n:]] == [float(v) for v in tail]
+    assert all(g[4] == 'True' for g in groups[old_n:])
+    assert groups[-1][1:3] == ['0', '1']          # A_h bounds
+    assert groups[-2][1:3] == ['-1', '1']         # A_m bounds
+    assert groups[-3][1:3] == ['-0.5', '1']       # A bounds
+
+
+def test_upgrade_hamiltonian_is_noop_for_new_layout():
+    row = _row(range(15), pad_to=16)
+    assert legacy.upgrade_mdl_row('Hamiltonian', row) == row
 
 
 def test_upgrade_mdl_row_preserves_constraint_reference_in_A():

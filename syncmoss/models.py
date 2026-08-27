@@ -382,7 +382,7 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 # Dispersive (Kramers--Kronig) completion of the beam propagation.
 #
 # Every THICK (2x2 matrix) component -- 'Doublet', 'Sextet', 'MDGD',
-# 'Relax_MS', 'Relax_2S', 'Hamilton_mc', 'ASM' -- fills the cross-section
+# 'Relax_MS', 'Relax_2S', 'Hamiltonian', 'ASM', 'SCDW' -- fills the cross-section
 # matrix Smat with a line shape. Smat/2 is the exponent of the AMPLITUDE
 # transmission operator expm(-Smat/2), and causality ties every absorptive
 # profile V(E) to a dispersive partner D(E) (its Hilbert / KK transform).
@@ -541,6 +541,24 @@ def _ham_mono_core(Q, Hhf, etto, phi, tet):
     1/4*sqrt(...) prefactor) and the line positions S (mm/s). ``Ham_mono`` (thin,
     one polarization) and ``Ham_mono_thick`` (2x2 matrix) both project these onto
     their polarization geometry; this avoids duplicating the diagonalisation.
+
+    CONVENTION (fixed 2026-08-26). The Hamiltonians below are the textbook ones:
+    H_Q = (eQV_zz/12)[3I_z^2 - I(I+1) + eta(I_x^2 - I_y^2)] and H_Z = -mu.B with B
+    at (tet, phi), so the Zeeman off-diagonal <m+1|H|m> carries exp(-i*phi). The
+    amplitudes g_q are the true transition matrix elements <e|T_q|g> =
+    sum conj(Vex[m_e]) CG(m_g, q; m_e) Vgr[m_g] -- note conj() on the EXCITED
+    (bra) side. They used to be built with the conjugation on the GROUND side,
+    which returns conj(<e|T_q|g>); combined with the mirrored azimuth of the old
+    polarization components (exp(+i*phi_r) on the Delta m = +1 channel) that left
+    every scalar INTENSITY |A|^2 exactly right, but transposed every 2x2
+    cross-section block P -> P^T, i.e. it handed the Delta m = +1 (sigma+) lines
+    the sigma- Faraday (magneto-optical) sign of the Sextet family. Invisible in
+    one homogeneous layer (expm(-Smat^T) = expm(-Smat)^T and the readout takes
+    diagonals), it flipped the relative Faraday polarity against every other
+    polarized component in mixtures, stacks and non-diagonal readouts. Both
+    halves are now in the standard right-handed convention: for a pure Zeeman
+    field the Delta m = +1 block equals 1.5*[(I2 - m_perp m_perp) + i m_z J]
+    exactly as ``_mhat_dm1(..., +1)`` builds it for the Sextet.
     """
     Q = Q / c * E0_J
     phi = phi / 180 * np.pi
@@ -578,17 +596,19 @@ def _ham_mono_core(Q, Hhf, etto, phi, tet):
     g0 = np.array([0.0 + 0j] * 8)
     g1 = np.array([0.0 + 0j] * 8)
     g2 = np.array([0.0 + 0j] * 8)
+    # <e|T_q|g> = sum_{m_e, m_g} conj(Vex[m_e]) * CG(1/2 m_g; 1 q | 3/2 m_e) * Vgr[m_g].
+    # Basis order: excited m_e = 3/2, 1/2, -1/2, -3/2; ground m_g = 1/2, -1/2.
     for i in range(0, 8):
-        g0[i] = (np.sqrt(1 / 3) * Vex[1][i - 4 * (i // 4)] * np.conjugate(Vgr[1][i // 4]) + Vex[0][
-            i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4])) \
+        g0[i] = (np.sqrt(1 / 3) * np.conjugate(Vex[1][i - 4 * (i // 4)]) * Vgr[1][i // 4]
+                 + np.conjugate(Vex[0][i - 4 * (i // 4)]) * Vgr[0][i // 4]) \
                     * (1 / 4) * np.sqrt(3 / np.pi)
 
-        g1[i] = (np.sqrt(2 / 3) * Vex[1][i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4]) + np.sqrt(2 / 3) *
-                    Vex[2][i - 4 * (i // 4)] * np.conjugate(Vgr[1][i // 4])) \
+        g1[i] = (np.sqrt(2 / 3) * np.conjugate(Vex[1][i - 4 * (i // 4)]) * Vgr[0][i // 4]
+                 + np.sqrt(2 / 3) * np.conjugate(Vex[2][i - 4 * (i // 4)]) * Vgr[1][i // 4]) \
                     * (1/4) * np.sqrt(3*2/np.pi)
 
-        g2[i] = (np.sqrt(1 / 3) * Vex[2][i - 4 * (i // 4)] * np.conjugate(Vgr[0][i // 4]) + Vex[3][
-            i - 4 * (i // 4)] * np.conjugate(Vgr[1][i // 4])) \
+        g2[i] = (np.sqrt(1 / 3) * np.conjugate(Vex[2][i - 4 * (i // 4)]) * Vgr[0][i // 4]
+                 + np.conjugate(Vex[3][i - 4 * (i // 4)]) * Vgr[1][i // 4]) \
                     * (1 / 4) * np.sqrt(3 / np.pi)
 
     S = np.array([float(0)] * 8)
@@ -605,14 +625,20 @@ def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
 
     Thin-sample projection of the shared core onto the radiation magnetic field
     at (tetr, phir): the per-transition intensity I[k] = pi*|<e|I.h|g>|^2.
+
+    F2/F4/F6 are the (-1)^q h_{-q} polarization factors of the q = +1, 0, -1
+    channels for h at (tetr, phir): c_{+-1}/c_0 = -+(1/sqrt2) sin(tetr)
+    exp(-+i*phir), the standard right-handed convention (see _ham_mono_core).
+    The returned INTENSITIES are unchanged by that convention fix -- the old
+    (mirrored) F's compensated the old (conjugated) g's exactly.
     """
     g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
 
     phir = phir / 180 * np.pi
     tetr = tetr / 180 * np.pi
-    F2 = np.sqrt(2) * np.sin(tetr) * (-1j) * np.exp(1j * (phir))
+    F2 = np.sqrt(2) * np.sin(tetr) * (-1j) * np.exp(-1j * (phir))
     F4 = np.sqrt(2) * np.cos(tetr) * (1j)
-    F6 = np.sqrt(2) * np.sin(tetr) * (1j) * np.exp(-1j * (phir))
+    F6 = np.sqrt(2) * np.sin(tetr) * (1j) * np.exp(1j * (phir))
 
     E = g0 * F2 + g1 * F4 + g2 * F6
     I = np.real(E * np.conjugate(E)) * np.pi
@@ -621,6 +647,15 @@ def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
 
 @njit(cache=True)
 def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
+    """UNUSED (no caller): thin CMS single-crystal intensities, kept for reference.
+
+    Duplicates the Hamiltonian construction instead of sharing
+    ``_ham_mono_core``, and still carries the old (conjugated) amplitude
+    convention -- harmless because it only ever returns |amplitude|^2 sums, which
+    that convention leaves exact, but do NOT build a 2x2 matrix from it without
+    switching it over first (see _ham_mono_core). Delete with the deprecated
+    'Hamilton_mc'/'Hamilton_pc' branches.
+    """
     Q = Q / c * E0_J
     phi = phi / 180 * np.pi
     tet = tet / 180 * np.pi
@@ -690,6 +725,16 @@ def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
 
 @njit(cache=True)
 def Ham_poly(Q, Hhf, etto, phi, tet):
+    """DEPRECATED: random-powder Hamiltonian line intensities/positions.
+
+    Only the deprecated scalar 'Hamilton_pc' component (and its line-position
+    twin in models_positions) still calls this. ``Ham_mosaic(..., 0, 0, 0, cms)``
+    reproduces it exactly (I_poly[k] * I2 per transition, verified to 3e-17), so
+    it survives only as the independent powder reference for the tests. Like
+    ``Ham_mono_CMS`` it duplicates the Hamiltonian construction and keeps the old
+    (conjugated) amplitude convention, which is exact for the |amplitude|^2 sums
+    it returns but must not be used to build a 2x2 matrix.
+    """
     Q = Q / c * E0_J
     phi = phi / 180 * np.pi
     tet = tet / 180 * np.pi
@@ -1493,6 +1538,12 @@ def _expm_neg11(Sig):
 def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
     """Per-transition 2x2 cross-section matrices for the SMS Hamiltonian.
 
+    DEPRECATED (2026-08-26): only the deprecated 'Hamilton_mc' component uses
+    this. ``Ham_mosaic(..., 1, 1, 1, False)`` reproduces it exactly (to
+    round-off) and is what the current 'Hamiltonian' component calls. Kept as the
+    independent single-crystal reference for the tests; remove together with the
+    'Hamilton_mc' branch.
+
     Mirrors ``Ham_mono`` (single-crystal, SMS) but, instead of a scalar
     intensity per transition, returns the 8 polarization matrices P[k] in the
     (e1=h, e2) basis. ``(phir, tetr)`` give the radiation magnetic field h in
@@ -1513,12 +1564,12 @@ def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
     tet2 = np.arccos(e2[2])
     phi2 = np.arctan2(e2[1], e2[0])
 
-    F2a = np.sqrt(2) * np.sin(tetr1) * (-1j) * np.exp(1j * phir1)
+    F2a = np.sqrt(2) * np.sin(tetr1) * (-1j) * np.exp(-1j * phir1)
     F4a = np.sqrt(2) * np.cos(tetr1) * (1j)
-    F6a = np.sqrt(2) * np.sin(tetr1) * (1j) * np.exp(-1j * phir1)
-    F2b = np.sqrt(2) * np.sin(tet2) * (-1j) * np.exp(1j * phi2)
+    F6a = np.sqrt(2) * np.sin(tetr1) * (1j) * np.exp(1j * phir1)
+    F2b = np.sqrt(2) * np.sin(tet2) * (-1j) * np.exp(-1j * phi2)
     F4b = np.sqrt(2) * np.cos(tet2) * (1j)
-    F6b = np.sqrt(2) * np.sin(tet2) * (1j) * np.exp(-1j * phi2)
+    F6b = np.sqrt(2) * np.sin(tet2) * (1j) * np.exp(1j * phi2)
 
     A1 = np.array([0.0 + 0j] * 8)
     A2 = np.array([0.0 + 0j] * 8)
@@ -1538,6 +1589,10 @@ def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
 @njit(cache=True)
 def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
     """Per-transition 2x2 cross-section matrices for the CMS (unpolarized) Hamiltonian.
+
+    DEPRECATED (2026-08-26) exactly like ``Ham_mono_thick``: superseded by
+    ``Ham_mosaic(..., 1, 1, 1, True)``, kept as its independent reference and for
+    the deprecated 'Hamilton_mc' branch.
 
     Like ``Ham_mono_thick`` (same shared core, same 8 matrices P[k]), but for a
     conventional radioactive (CMS, ``Met == 1``) source, which is unpolarized.
@@ -1567,12 +1622,12 @@ def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
     tet2 = np.arccos(e2[2])
     phi2 = np.arctan2(e2[1], e2[0])
 
-    F2a = np.sqrt(2) * np.sin(tet1) * (-1j) * np.exp(1j * phi1)
+    F2a = np.sqrt(2) * np.sin(tet1) * (-1j) * np.exp(-1j * phi1)
     F4a = np.sqrt(2) * np.cos(tet1) * (1j)
-    F6a = np.sqrt(2) * np.sin(tet1) * (1j) * np.exp(-1j * phi1)
-    F2b = np.sqrt(2) * np.sin(tet2) * (-1j) * np.exp(1j * phi2)
+    F6a = np.sqrt(2) * np.sin(tet1) * (1j) * np.exp(1j * phi1)
+    F2b = np.sqrt(2) * np.sin(tet2) * (-1j) * np.exp(-1j * phi2)
     F4b = np.sqrt(2) * np.cos(tet2) * (1j)
-    F6b = np.sqrt(2) * np.sin(tet2) * (1j) * np.exp(-1j * phi2)
+    F6b = np.sqrt(2) * np.sin(tet2) * (1j) * np.exp(1j * phi2)
 
     A1 = np.array([0.0 + 0j] * 8)
     A2 = np.array([0.0 + 0j] * 8)
@@ -1586,6 +1641,203 @@ def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
         P[i, 0, 1] = np.pi * (A1[i] * np.conjugate(A2[i]))
         P[i, 1, 0] = np.pi * (A2[i] * np.conjugate(A1[i]))
         P[i, 1, 1] = np.pi * (A2[i] * np.conjugate(A2[i]))
+    return (P, S)
+
+
+# ---------------------------------------------------------------------------
+# 'Hamiltonian': the MOSAIC TEXTURED full-Hamiltonian component.
+#
+# It supersedes both former Hamiltonian models: it keeps all 12 parameters of
+# the single-crystal 'Hamilton_mc' (including tetr, phir, alfak) and adds three
+# order parameters (A, A_m, A_h) describing an axially symmetric orientation
+# distribution (ODF) of the crystal about the lab reference axis. Exact limits:
+#
+#   (A, A_m, A_h) = (1, 1, 1) -> the single crystal ('Hamilton_mc'), exactly;
+#   A_h = 0                   -> fiber texture about the reference axis;
+#   (0, 0, 0)                 -> random powder ('Hamilton_pc'), exactly;
+#   Q = 0 and A_h = 0         -> the textured Sextet with its axis along the
+#                                reference axis and A_eff = A*P2(cos th_Bh).
+#
+# Order parameters (the sextet family's A / A_m carry over unchanged in meaning):
+#   A   in [-1/2, 1] : S  = <P2(cos chi)> of the twist-free wobble of the crystal
+#                      about the reference orientation; chi = tilt of the crystal
+#                      direction set by (tetr, phir) away from the lab reference
+#                      axis. A = 1 no wobble, A = 0 isotropic tilt, A = -1/2 the
+#                      tilt confined to 90 deg.
+#   A_m in [-1, 1]   : polar order of that same wobble, S1 = <cos chi> =
+#                      A_m*sqrt((1+2A)/3) (the Cauchy--Schwarz bound, as in
+#                      _texture_s1) -- does the mosaic distinguish +axis from
+#                      -axis. Only a magnetised/polar mosaic has A_m != 0 and it
+#                      acts only through the Faraday (magneto-optical) term.
+#   A_h in [0, 1]    : order of the crystal AZIMUTH about the reference axis,
+#                      <cos(m*alpha)> = A_h^|m| (exactly a wrapped-Cauchy
+#                      azimuth). A_h = 1 alfak sharply defined (single crystal),
+#                      A_h = 0 crystallites uniformly spun about the axis.
+#
+# THE ODF. R = W(beta, chi) * R0 * Z(alpha) with R0 the reference orientation,
+# Z(alpha) a rotation of the crystal about the reference axis and
+# W = R_f(beta) R_perp(chi) R_f(-beta) the twist-free wobble about the lab
+# reference axis f (beta uniform). "Spread the axis but keep alfak" is ambiguous
+# as such (transporting an azimuth along a tilt has holonomy); the twist-free
+# wobble is the convention-free realisation. The ODF-averaged 2x2 block of each
+# transition depends on the distribution ONLY through <cos chi>, <cos^2 chi>,
+# <cos alpha> and <cos 2 alpha> -- exactly the three order parameters -- because
+# the average of a rank-l tensor about an axially symmetric rotation
+# distribution scales its m-components by <d^(l)_mm(chi)>, and
+# d^(1)_00 = cos chi, d^(1)_11 = (1+cos chi)/2, d^(2)_00 = P2(cos chi),
+# d^(2)_11 = (1+cos chi)(2cos chi - 1)/2, d^(2)_22 = ((1+cos chi)/2)^2.
+# So ONE diagonalisation still suffices: the average is closed in the moments.
+#
+# The lab reference axis f is the axis that (tetr, phir) points at: the radiation
+# field h = e1 for an SMS source, the BEAM k for a CMS one (which is exactly how
+# (tetr, phir) itself is already read in each case, see Ham_mono_thick /
+# Ham_mono_thick_CMS). A CMS mosaic is therefore a foil-normal (beam-axis)
+# texture, which keeps the CMS spectrum independent of alfak -- for an
+# unpolarized source no transverse direction is observable.
+# ---------------------------------------------------------------------------
+
+@njit(cache=True)
+def _R0_rows(tetr, phir, alfak, cms):
+    """Reference lab axes (e1, e2, k) as ROWS, in EFG (PAS) coordinates.
+
+    So ``R0 @ v`` gives the lab components of an EFG-frame vector v, and
+    ``R0[j]`` is lab axis j expressed in EFG coordinates.
+
+    ``cms = False`` (SMS): (tetr, phir) is the radiation magnetic field h = e1
+    and alfak rotates the beam k about it, e2 = k x h -- the geometry of
+    ``Ham_mono_thick``. ``cms = True``: (tetr, phir) is the BEAM k and
+    (e1, e2) = (theta_hat, phi_hat) -- the geometry of ``Ham_mono_thick_CMS``
+    (alfak unused there: the half-trace readout is invariant under a spin of
+    that basis).
+    """
+    t = tetr / 180 * np.pi
+    ph = phir / 180 * np.pi
+    ak = alfak / 180 * np.pi
+    nr = np.array([np.sin(t) * np.cos(ph), np.sin(t) * np.sin(ph), np.cos(t)])
+    that = np.array([np.cos(t) * np.cos(ph), np.cos(t) * np.sin(ph), -np.sin(t)])
+    phat = np.array([-np.sin(ph), np.cos(ph), 0.0])
+    R0 = np.empty((3, 3))
+    if cms:
+        R0[0] = that                                   # e1 = theta_hat
+        R0[1] = phat                                   # e2 = phi_hat
+        R0[2] = nr                                     # k  = (tetr, phir)
+    else:
+        R0[0] = nr                                     # e1 = h = (tetr, phir)
+        R0[1] = np.sin(ak) * that - np.cos(ak) * phat  # e2 = k x h
+        R0[2] = np.cos(ak) * that + np.sin(ak) * phat  # k
+    return R0
+
+
+@njit(cache=True)
+def _rank2_scale(X, axis, lam0, lam1, lam2):
+    """Uniaxial rotation average of a symmetric traceless 3x3 tensor.
+
+    Splits ``X`` into its m = 0, +-1, +-2 parts about ``axis`` and scales them by
+    (lam0, lam1, lam2) -- which is what <Q X Q^T> does for any rotation
+    distribution Q that is axially symmetric about that axis (lam_m =
+    <d^(2)_mm>). The transverse frame used to do the split is arbitrary because
+    the scaling is diagonal in |m|.
+    """
+    z = axis / np.sqrt(axis[0] ** 2 + axis[1] ** 2 + axis[2] ** 2)
+    if np.abs(z[0]) < 0.9:
+        t = np.array([1.0, 0.0, 0.0])
+    else:
+        t = np.array([0.0, 1.0, 0.0])
+    x = np.array([t[1] * z[2] - t[2] * z[1], t[2] * z[0] - t[0] * z[2], t[0] * z[1] - t[1] * z[0]])
+    x = x / np.sqrt(x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
+    y = np.array([z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]])
+    L = np.empty((3, 3))
+    L[:, 0] = x
+    L[:, 1] = y
+    L[:, 2] = z
+    Lt = np.ascontiguousarray(L.T)
+    Xl = Lt @ np.ascontiguousarray(X) @ L
+    a = Xl[2, 2]                        # m = 0  amplitude
+    b = 0.5 * (Xl[0, 0] - Xl[1, 1])     # m = +-2 (real part)
+    Xp = np.zeros((3, 3))
+    Xp[0, 0] = -0.5 * lam0 * a + lam2 * b
+    Xp[1, 1] = -0.5 * lam0 * a - lam2 * b
+    Xp[2, 2] = lam0 * a
+    Xp[0, 1] = lam2 * Xl[0, 1]          # m = +-2 (imaginary part)
+    Xp[1, 0] = Xp[0, 1]
+    Xp[0, 2] = lam1 * Xl[0, 2]          # m = +-1
+    Xp[2, 0] = Xp[0, 2]
+    Xp[1, 2] = lam1 * Xl[1, 2]
+    Xp[2, 1] = Xp[1, 2]
+    return L @ Xp @ Lt
+
+
+@njit(cache=True)
+def Ham_mosaic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
+    """Per-transition 2x2 cross-section matrices of the mosaic textured Hamiltonian.
+
+    Returns ``(P, S)`` exactly like ``Ham_mono_thick``: ``P[k]`` the ODF-averaged
+    pi*<A A^dagger> block of transition k in the (e1, e2) basis and ``S[k]`` the
+    line positions (mm/s). ONE diagonalisation -- the orientation average is
+    closed in the three order parameters (see the block comment above).
+    ``(Atex, Am, Ah) = (1, 1, 1)`` reproduces ``Ham_mono_thick`` (SMS) or
+    ``Ham_mono_thick_CMS`` (CMS) to round-off; ``(0, 0, 0)`` the random powder
+    ``Ham_poly``; ``Ah = 0`` a fiber texture about the reference axis.
+    """
+    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+    R0 = _R0_rows(tetr, phir, alfak, cms)
+    # Lab reference (fiber) axis f: h = e1 for SMS, the beam k for CMS.
+    fl = np.zeros(3)
+    if cms:
+        fl[2] = 1.0
+    else:
+        fl[0] = 1.0
+    n0 = np.ascontiguousarray(R0[2] if cms else R0[0])   # same axis in EFG coords
+
+    # order parameters -> the four moments of the two ODF stages
+    c2 = (1.0 + 2.0 * Atex) / 3.0                # <cos^2 chi>
+    if c2 < 0.0:                                 # guard an out-of-range A
+        c2 = 0.0
+    c1 = Am * np.sqrt(c2)                        # <cos chi> = S1
+    r1 = Ah                                      # <cos alpha>
+    r2 = Ah * Ah                                 # <cos 2 alpha>
+    lam0 = 0.5 * (3.0 * c2 - 1.0)                # <d2_00> = <P2(cos chi)> = A
+    lam1 = 0.5 * (2.0 * c2 + c1 - 1.0)           # <d2_11>
+    lam2 = 0.25 * (1.0 + 2.0 * c1 + c2)          # <d2_22>
+
+    # l = 1 Cartesian moment matrix <R> = <W> R0 <Z> (for the axial/Faraday part)
+    AW = np.empty((3, 3))
+    AZ = np.empty((3, 3))
+    for i in range(3):
+        for j in range(3):
+            dij = 1.0 if i == j else 0.0
+            AW[i, j] = c1 * fl[i] * fl[j] + 0.5 * (1.0 + c1) * (dij - fl[i] * fl[j])
+            AZ[i, j] = n0[i] * n0[j] + r1 * (dij - n0[i] * n0[j])
+    Rm = AW @ R0 @ AZ
+
+    P = np.zeros((8, 2, 2), dtype=np.complex128)
+    for n in range(8):
+        # complex dipole vector d in EFG coords: A(e) = sqrt(2)*1j * (d . e), so
+        # P = pi*A A^dagger = 2*pi * d d^dagger (see _ham_mono_core for the F_q).
+        dx = g2[n] - g0[n]
+        dy = 1j * (g0[n] + g2[n])
+        dz = g1[n] + 0j
+        s = (dx * np.conjugate(dx) + dy * np.conjugate(dy) + dz * np.conjugate(dz)).real
+        # axial (antisymmetric, Faraday) vector  w_c = Im(d_a conj(d_b)) eps_abc
+        w = np.array([(dy * np.conjugate(dz)).imag,
+                      (dz * np.conjugate(dx)).imag,
+                      (dx * np.conjugate(dy)).imag])
+        # symmetric traceless part
+        dr = np.array([dx.real, dy.real, dz.real])
+        di = np.array([dx.imag, dy.imag, dz.imag])
+        T = np.empty((3, 3))
+        for i in range(3):
+            for j in range(3):
+                T[i, j] = dr[i] * dr[j] + di[i] * di[j] - (s / 3.0 if i == j else 0.0)
+        wl = Rm @ w                                       # <R> w, in lab coords
+        T1 = _rank2_scale(T, n0, 1.0, r1, r2)             # azimuth stage (about n0, EFG)
+        T2 = R0 @ T1 @ np.ascontiguousarray(R0.T)         # to the lab frame
+        T3 = _rank2_scale(T2, fl, lam0, lam1, lam2)       # wobble stage (about f, lab)
+        # transverse 2x2 block of  2*pi * [ s/3*I + T3 + 1j*(axial from wl) ]
+        P[n, 0, 0] = 2.0 * np.pi * (s / 3.0 + T3[0, 0])
+        P[n, 1, 1] = 2.0 * np.pi * (s / 3.0 + T3[1, 1])
+        P[n, 0, 1] = 2.0 * np.pi * (T3[0, 1] + 1j * wl[2])
+        P[n, 1, 0] = 2.0 * np.pi * (T3[0, 1] - 1j * wl[2])
     return (P, S)
 
 
@@ -1894,6 +2146,15 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                                   * (I1*Voi1+I6*Voi6+I2*Voi2+I5*Voi5+I3*Voi3+I4*Voi4))
                 V += 14
             if model[i] == 'Hamilton_pc':
+                # DEPRECATED (2026-08-26), superseded by 'Hamiltonian' at
+                # (A, A_m, A_h) = (0, 0, 0), which reproduces this scalar powder
+                # exactly (its cross-section matrix is then a multiple of the
+                # identity, so the matrix path collapses onto this Beer--Lambert
+                # one; verified to 3e-17 per transition). Kept only so a
+                # hand-written model file with the old name still evaluates; it
+                # is gone from the GUI dropdown and syncmoss.legacy rewrites it
+                # to 'Hamiltonian' on load. Remove this branch and Ham_poly in a
+                # later release.
                 I = abs(p[V])
                 delt = p[V+1] * MulCo
                 Q = p[V+2]
@@ -2117,6 +2378,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 CHt = CH
                 V += 14
             if model[i] == 'Hamilton_mc':
+                # DEPRECATED (2026-08-26), superseded by 'Hamiltonian' at
+                # (A, A_m, A_h) = (1, 1, 1). Kept only so a hand-written model
+                # file with the old name still evaluates; it is gone from the GUI
+                # dropdown and syncmoss.legacy rewrites it (plus its 11-parameter
+                # pre-alfak form) to 'Hamiltonian' on load. Remove this branch,
+                # Ham_mono_thick and Ham_mono_thick_CMS in a later release.
                 I = abs(p[V])
                 delt = p[V + 1] * MulCo
                 Q = p[V + 2]
@@ -2145,6 +2412,59 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
                 V += 12
+            if model[i] == 'Hamiltonian':
+                # Mosaic textured full Hamiltonian: the 12 single-crystal
+                # parameters plus the three ODF order parameters A, A_m, A_h.
+                # It replaces BOTH former Hamiltonian models -- (1, 1, 1) is the
+                # single crystal ('Hamilton_mc'), (0, 0, 0) the random powder
+                # ('Hamilton_pc'), A_h = 0 a fiber texture -- see Ham_mosaic.
+                # SMS (Mett != 1): (tetr, phir) is the radiation field h and
+                # alfak rotates the beam k about it; the mosaic is textured about
+                # h. CMS (Mett == 1, unpolarized): (tetr, phir) is the beam k
+                # itself, the mosaic is textured about the beam and alfak stays
+                # redundant (the half-trace readout below is basis-invariant).
+                I = abs(p[V])
+                delt = p[V + 1] * MulCo
+                Q = p[V + 2]
+                H = p[V + 3]
+                WL = p[V + 4] * MulCo
+                WG = p[V + 5] * MulCo
+                eto = p[V + 6]
+                tet = p[V + 7]
+                phi = p[V + 8]
+                tetr = p[V + 9]
+                phir = p[V + 10]
+                alfak = p[V + 11]
+                Atex = p[V + 12]                 # A   : <P2(cos chi)> of the mosaic wobble
+                Am = p[V + 13]                   # A_m : polar order of that wobble (Faraday)
+                Ah = p[V + 14]                   # A_h : azimuthal order about the reference axis
+                Pmat, S = Ham_mosaic(Q, H, eto, phi, tet, tetr, phir, alfak,
+                                     Atex, Am, Ah, Mett == 1)
+                S = S * MulCo + delt
+                Piso = 0.5 * (Pmat[:, 0, 0] + Pmat[:, 1, 1]).real   # scalar part per line
+                if np.max(np.abs(Pmat - Piso[:, None, None] * _I2[None, :, :])) <= 1e-12:
+                    # A fully disordered mosaic (the random-powder limit, and any
+                    # A = A_h = 0) makes every P[k] a multiple of the identity, so
+                    # the component is isotropic in the polarization plane and can
+                    # take the SCALAR path -- exactly what the former 'Hamilton_pc'
+                    # did, at ~2.4x less cost. NOT an approximation: a scalar
+                    # contribution s(E)*1 to Smat factors out of the matrix
+                    # exponential and out of every layer product as exp(-s/2), and
+                    # |exp(-s/2)|^2 = exp(-Re s), i.e. its dispersive part is a
+                    # global phase that the Gram readout cancels -- which is also
+                    # why the real Voight() is the right line shape here.
+                    Voi = np.zeros(len(E))
+                    for k in range(0, 8):
+                        Voi = Voi + Piso[k] * Voight(WL, WG, E - S[k])
+                    CHt = CH * np.exp((-1) * Kpref * I * Voi)
+                else:
+                    add = np.zeros((len(E), 2, 2), dtype=complex)
+                    for k in range(0, 8):
+                        add += Voight_c(WL, WG, E - S[k])[:, None, None] * Pmat[k][None, :, :]
+                    add = Kpref * I * add
+                    Smat_t = add if Smat is None else Smat + add
+                    CHt = CH
+                V += 15
             if model[i] == 'ASM':
                 # Anharmonic spin modulation, polarized. The moment direction
                 # rotates along the cycloid (a distribution of H orientations
@@ -2350,7 +2670,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
                            + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='SCDW')\
-                           + 14*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+                           + 14*(model[k]=='Relax_2S')) + 15*(model[k]=='Hamiltonian') + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
 
                 # Total flat slots from the base component through every preceding
                 # distribution marker (Corr=2, Distr=5, Recon=7 each): the base
@@ -2459,7 +2779,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
                            + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='SCDW')\
-                           + 14*(model[k]=='Relax_2S')) + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+                           + 14*(model[k]=='Relax_2S')) + 15*(model[k]=='Hamiltonian') + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
 
                 Prev = Vnum + Ck*2 + Dk*5 + Rk*7
 
@@ -2681,7 +3001,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
                 MV += 1
                 V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
                     + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='SCDW')\
-                    + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
+                    + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
                     + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
