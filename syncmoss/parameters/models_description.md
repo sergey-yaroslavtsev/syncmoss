@@ -1,14 +1,21 @@
 # SYNCmoss models description
 
-This file summarizes all model rows available in SYNCmoss, their parameters,
-and practical meaning.
+This file summarizes every model row offered in the SYNCmoss model dropdown,
+its parameters and their practical meaning. Models that cannot be selected in
+the GUI are not described here.
 
 Notes:
-- Parameter names here follow the GUI labels exactly.
+- Parameter names here follow the GUI labels exactly, in table order.
 - Velocity-like units are mm/s, magnetic field is T, angles are degrees.
 - For polarized thick models, orientation angles are defined as:
   - $\theta_k$: angle from beam direction $\mathbf{k}$.
   - $\varphi_h$: azimuth from polarization direction $\mathbf{h}$.
+- The angles, the texture parameters ($A$, $A_m$, $A_h$) and the numerical
+  (grid/resolution) parameters start **fixed**; untick "fix" only when the data
+  can support them.
+- For features that are not visible in the interface (the `Model_<range>`
+  simulation mode, `=[X,Y]` links, the `par` numbering of `Distr`/`Corr`/`Recon`,
+  keyboard shortcuts, …) see *Supp -> Help (hidden features)*.
 
 ---
 
@@ -20,18 +27,20 @@ Background polynomial for the first spectrum (global baseline row).
 Parameters:
 - Ns: source-side baseline level.
 - Os: source-side offset.
-- c2s: source-side quadratic term.
+- c²s: source-side quadratic term.
 - lins: source-side linear term.
 - Nnr: non-resonant baseline level.
 - Onr: non-resonant offset.
-- c2nr: non-resonant quadratic term.
+- c²nr: non-resonant quadratic term.
 - linnr: non-resonant linear term.
 
 ### Nbaseline
-Baseline row used for sequence/simultaneous workflows (one per extra spectrum).
+Extra baseline row for SIMULTANEOUS fitting: one per additional spectrum, so
+$n$ spectra need exactly $n-1$ Nbaseline rows. Their presence is what selects
+simultaneous over sequence fitting.
 
 Parameters are the same as baseline:
-- Ns, Os, c2s, lins, Nnr, Onr, c2nr, linnr.
+- Ns, Os, c²s, lins, Nnr, Onr, c²nr, linnr.
 
 ---
 
@@ -52,13 +61,15 @@ Quadrupole doublet in polarized thick-matrix formalism.
 Parameters:
 - T: effective thickness.
 - $\delta$: isomer shift.
-- $\varepsilon$: quadrupole splitting.
+- $\varepsilon$: quadrupole shift — HALF the splitting; the two lines sit at
+  $\delta \pm \varepsilon$.
 - L: Lorentzian width.
-- G: Gaussian width.
-- $\theta_k$: axis polar angle (from beam direction).
+- G: Gaussian width (of line 1).
+- $\theta_k$: axis polar angle (from beam direction) of the EFG axis.
 - $\varphi_h$: axis azimuth (from polarization direction).
 - A: uniaxial (fiber) texture order parameter, $A\in[-0.5, 1]$.
-- G2/G1: ratio of Gaussian widths for line 2 and line 1.
+- G2/G1: Gaussian width of line 2 as a multiple of G — for an asymmetric
+  doublet. 1 = both lines equally broad.
 
 ### Sextet
 Magnetic sextet in polarized thick-matrix formalism.
@@ -66,53 +77,74 @@ Magnetic sextet in polarized thick-matrix formalism.
 Parameters:
 - T: effective thickness.
 - $\delta$: isomer shift.
-- $\varepsilon$: quadrupole contribution.
+- $\varepsilon$: quadrupole shift — the outer pair (1, 6) moves by $+\varepsilon$,
+  the other four lines by $-\varepsilon$.
 - H: hyperfine magnetic field.
 - L: Lorentzian width.
 - G: Gaussian width.
-- $\theta_k$: axis polar angle.
-- $\varphi_h$: axis azimuth.
+- $\theta_k$: polar angle of the hyperfine-field axis.
+- $\varphi_h$: azimuth of the hyperfine-field axis.
 - A: uniaxial texture order parameter.
 - A_m: magnetic polar-order parameter (Faraday-active contribution).
-- a+: positive branch shift correction.
-- a-: negative branch shift correction.
-- GH: field-distribution width parameter.
-- I1/I3: outer-to-inner line intensity ratio control.
+- a+: extra symmetric splitting of the OUTER pair only (line 1 by $-a_+$, line 6
+  by $+a_+$); the second-order/relativistic correction of lines 1 and 6.
+- a-: the same for the four inner lines (2 and 4 by $+a_-$, 3 and 5 by $-a_-$).
+- GH: Gaussian spread of H, in T. It is added in quadrature to G with each line's
+  own field sensitivity, so the outer lines broaden most — a field distribution,
+  not an extra uniform width.
+- I1/I3: intensity ratio of the outer (1, 6) to the inner (3, 4) lines; 3 is the
+  isotropic 3:2:1 case. The middle pair (2, 5) keeps its isotropic weight and the
+  total area is conserved.
 
 ### MDGD
 Magnetic sextet with correlated multidimensional distribution broadening.
 
 Parameters:
 - T, $\delta$, $\varepsilon$, H, L, G: same meaning as Sextet.
-- GH: field-distribution width term.
-- Dde: correlation/spread term between $\delta$ and $\varepsilon$.
-- DdH: correlation/spread term between $\delta$ and H.
-- DeH: correlation/spread term between $\varepsilon$ and H.
+- GH: field-distribution width term (as in Sextet).
+- D$\delta\varepsilon$: correlation between $\delta$ and $\varepsilon$.
+- D$\delta$H: correlation between $\delta$ and H.
+- D$\varepsilon$H: correlation between $\varepsilon$ and H.
 - $\theta_k$: axis polar angle.
 - $\varphi_h$: axis azimuth.
 - A: uniaxial texture order parameter.
 - A_m: magnetic polar-order parameter.
-- a+, a-: shift corrections.
-- I1/I3: outer-to-inner intensity ratio control.
+- a+, a-: line-position corrections (as in Sextet).
+- I1/I3: outer-to-inner intensity ratio (as in Sextet).
 
 ### Relax_MS
-Many-state magnetic relaxation model.
+Many-state superparamagnetic relaxation: the moment of one particle of spin S
+hops between its $2S+1$ projections in a uniaxial anisotropy potential, and the
+$\Delta m = \pm 1, 0$ line groups are broadened by the resulting stochastic
+process.
 
 Parameters:
 - T: effective thickness.
 - $\delta$: isomer shift.
 - $\varepsilon$: quadrupole contribution.
-- H: magnetic field scale.
-- L: Lorentzian width.
+- H: saturation hyperfine field, i.e. the field of the fully aligned ($m = S$)
+  state. State $m$ sees $H\,m/S$.
+- L: Lorentzian width. This model has NO Gaussian width parameter — the
+  broadening it produces is the relaxation itself, not a convolution.
 - $\theta_k$: axis polar angle.
 - $\varphi_h$: axis azimuth.
 - A: uniaxial texture order parameter.
-- R: relaxation-rate parameter.
-- alfa: distribution/shape factor for relaxation kernel.
-- S: numerical resolution parameter (typically fixed).
+- R: relaxation rate — the prefactor of the jump rates
+  $\propto R\,[S(S+1)-m(m\mp1)]$. Small R = a static sextet, large R = a
+  collapsed (fast-relaxing) line.
+- alfa: reduced uniaxial anisotropy barrier (the barrier energy in units of
+  $k_BT$). It enters as the Boltzmann factor of the UPWARD jumps only — jumps
+  toward lower energy keep a factor 1, which is detailed balance. alfa = 0 is
+  free hopping; large alfa freezes the moment near $m = \pm S$.
+- S: spin of the particle — the total spin quantum number, giving $2S+1$
+  projections. It is the physical size knob of the superparamagnetic particle
+  (and therefore also what sets the cost: the model solves a $(2S+1)$-state
+  system per velocity point). Structural, so it is never fitted.
 
 ### Relax_2S
-Two-state Blume relaxation model.
+Two-state (Blume) relaxation: the nucleus jumps between two complete hyperfine
+sets. Set H2 = -H1 for a moment that reverses; set the two sets differently for
+a jump between two chemical/magnetic states.
 
 Parameters:
 - T: effective thickness.
@@ -122,9 +154,13 @@ Parameters:
 - $\theta_k$: axis polar angle.
 - $\varphi_h$: axis azimuth.
 - A: uniaxial texture order parameter.
-- A_m: magnetic polar-order parameter.
-- $\Omega_{12}$: transition rate between states.
-- P1/P2: state-population ratio.
+- A_m: magnetic polar-order parameter. Note that a mirror-symmetric pair
+  (H2 = -H1 at P1/P2 = 1) is unmagnetised: the Faraday term then cancels for any
+  A_m, which is correct physics, not a bug.
+- $\Omega_{12}$: transition rate between the states, in the same (mm/s) units as
+  L, so $\Omega_{12} \ll L$ is slow relaxation and $\Omega_{12} \gg$ the
+  splitting is the fast (collapsed) limit.
+- P1/P2: population ratio of the two states.
 
 ### Hamiltonian
 Full Hamiltonian model (magnetic + quadrupole, arbitrary orientation) of a
@@ -158,6 +194,27 @@ Limits: $A_h = 0$ is a fiber texture about the reference axis; at $Q = 0$ and
 $A_h = 0$ the model equals the textured Sextet with its axis along that axis and
 $A_\mathrm{eff} = A\,P_2(\cos\theta_{BH})$.
 
+#### Reading the geometry in CMS and in SMS
+
+The **same** 15 parameters are used in both source modes; what changes is which
+lab axis $(\theta, \varphi)$ points at, and that changes what is measurable.
+
+| | SMS (polarized) | CMS (unpolarized) |
+| --- | --- | --- |
+| $(\theta, \varphi)$ points at | the radiation magnetic field $\mathbf{h}$ | the BEAM $\mathbf{k}$ (foil normal) |
+| the mosaic is a texture about | $\mathbf{h}$ | the beam / foil normal |
+| $\alpha_k$ | rotation of the beam about $\mathbf{h}$ — observable | **no effect at all** (an unpolarized beam has no transverse direction to reference); leave it fixed at 0 |
+| A | active | active |
+| A_m | active; its SIGN is observable | active (a thick, off-axis effect), but its SIGN is essentially not |
+| A_h | active | still active — a partially ordered azimuth is not the same absorber as a uniformly spun one, even though the reference azimuth $\alpha_k$ itself is unobservable |
+
+So in CMS the sample description is: a mosaic of tilt order A about the foil
+normal, with A_h the residual azimuthal order and A_m any net magnetisation
+along the beam; $(\theta, \varphi)$ is the crystal direction that the beam runs
+along, and $\alpha_k$ is a spare parameter that must stay fixed.
+Never release $\alpha_k$ in CMS: it is exactly redundant, so the fit
+will wander along it without changing $\chi^2$.
+
 ### Hamilton_mc, Hamilton_pc (deprecated)
 Superseded by `Hamiltonian` and no longer offered in the model dropdown; opening
 an old model file rewrites them to `Hamiltonian` with the order parameters above.
@@ -179,8 +236,10 @@ Parameters:
 - $\theta_k$: easy (anharmonicity) axis polar angle.
 - $\varphi_h$: easy (anharmonicity) axis azimuth.
 - A: uniaxial texture order parameter.
-- Num: number of sampling points over one modulation period.
-- I13: intensity-ratio control between outer and inner groups.
+- Num: number of sampling points over one modulation period (rounded internally
+  to $6k+1$). The accuracy↔speed knob; structural, so never fitted.
+- I13: intensity ratio of the outer (1, 6) to the inner (3, 4) lines, as in
+  Sextet.
 - $\omega$: cycloid-plane angle about the easy axis. $(\theta_k, \varphi_h)$ fix
   the easy (anharmonicity) axis $\mathbf{u}$, which always lies IN the plane the
   moment rotates in. $\omega$ picks the second in-plane axis
@@ -241,22 +300,6 @@ the Faraday contributions cancel exactly for any A_m; a non-zero base field H0
 signal. With all wave parameters zero and H0 $\ne$ 0 the model reduces to a
 single (Sextet-equivalent) sextet at the same A_m.
 
-### Average_H (legacy/advanced)
-Field-averaging model retained for compatibility.
-
-Parameters:
-- T: effective thickness.
-- $\delta$: isomer shift.
-- $\varepsilon$: quadrupole splitting.
-- Hin: internal field.
-- L: Lorentzian width.
-- G: Gaussian width.
-- Hex: external field.
-- K: anisotropy-like coefficient.
-- J: coupling/sign coefficient.
-- $\theta$: orientation angle.
-- N: numerical averaging resolution.
-
 ---
 
 ## 3. Presets and utility component rows
@@ -280,41 +323,80 @@ Parameters:
 - none.
 
 Behavior:
-- Components above and below Layer are exponentiated as separate layer matrices.
+- Components above and below Layer are exponentiated as separate layer matrices,
+  multiplied in order at the amplitude level. Use it for a genuine stack (two
+  foils, a coating on a substrate, differently oriented crystals) — components
+  within one layer are averaged before the exponential instead.
 - For scalar-only models this behaves like a no-op.
+
+### Library, Copy, Paste, Insert, Delete
+Not models: they act on the table row they were selected from. `Library` opens
+the phase library and fills the row from a stored model; `Copy`/`Paste` move a
+row (model, values and fix states) through an internal clipboard; `Insert` and
+`Delete` add/remove a row and renumber every `p[i]` and `=[X,Y]` reference for
+you.
 
 ---
 
 ## 4. Expression/distribution helper rows
 
+`Distr`, `Corr` and `Recon` attach to the physical model row ABOVE them; their
+`par` is the parameter's column number WITHIN that row (1 = its second parameter,
+i.e. $\delta$ for most models). The parameter `par`
+selects is framed in grey and becomes read-only, so the choice can be checked at
+a glance. `Expression` and `Variables` stand on their own.
+
 ### Distr
-Adds a parameter distribution to the preceding physical model.
+Adds a parameter distribution to the preceding physical model. Several `Distr`
+rows on the same component build a multidimensional distribution.
 
 Parameters:
-- par: index of model parameter to distribute.
+- par: which parameter of the model above is distributed.
 - L: left bound of distribution axis.
 - R: right bound of distribution axis.
 - Num: number of grid points.
-- Probability density function: expression in variable X.
+- Probability density function: expression in variable X (the axis), e.g.
+  `exp(-X**2/2)`.
 
 ### Corr
-Adds parameter dependence/correlation to the preceding model.
+Makes a second parameter follow the distributed one, so the distribution becomes
+correlated. May only be placed under a `Distr`/`Corr`/`Recon`.
 
 Parameters:
-- par: index of controlled parameter.
-- Dependency function: expression in variable X.
+- par: which parameter of the model above is driven.
+- Dependency function: expression in variable X (the current value of the
+  distributed parameter), e.g. `0.3*X`.
+
+### Recon
+Distribution RECONSTRUCTION: same axis definition as `Distr`, but the shape is
+fitted instead of given. The Num weights are free fit variables held beside the
+parameter array (so parameter numbering never shifts with Num), regularized by
+two Tikhonov terms.
+
+Parameters:
+- par, L, R, Num: as for `Distr`.
+- D_dif: weight of the first-derivative smoothness penalty, 0…1 (0 = free).
+- D_dif2: the same for the second derivative.
+- weights: the reconstructed distribution as a comma-separated list. Leave it
+  empty for a uniform start — the fit writes the result back here.
+
+Raise D_dif / D_dif2 if the reconstruction oscillates; the two penalties are the
+only thing keeping an under-determined shape stable.
 
 ### Expression
-Adds a free algebraic expression evaluated on parameter array p.
+A free algebraic expression evaluated on the parameter array p. The result is a
+parameter in its own right — point real parameters at it with `=[X,Y]` (see
+*Supp -> Help (hidden features)*).
 
 Parameters:
-- Expression: formula text, for example p[0] or p[5]*0.5.
+- Expression: formula text, for example `p[0]` or `p[5]*0.5`.
 
 ### Variables
-Helper row with named placeholders V1..V17.
+Helper row of scalar placeholders to reference from expressions and links; the
+row is as wide as the table (currently V1 … V27).
 
 Parameters:
-- V1 ... V17: user-defined scalar values for referencing.
+- V1 … V27: user-defined scalar values.
 
 ---
 
@@ -333,20 +415,31 @@ C_a(v) = \operatorname{tr}\!\left[\exp(-\hat{\Sigma}(v))\,\rho\right]
 $$
 
 Texture parameters:
-- A controls second-moment alignment ($A=0$ random powder, $A=1$ aligned).
-- A_m controls first-moment magnetic polar order in Faraday-active models.
+- A controls second-moment alignment ($A=0$ random powder, $A=1$ aligned along
+  the axis, $A=-1/2$ the axis confined to the plane perpendicular to it). Every
+  model reduces EXACTLY to its former scalar (powder) form at $A=0$ — which is
+  why $A=0$ is the default everywhere.
+- A_m controls first-moment magnetic polar order in the Faraday-active models
+  (Sextet, MDGD, Relax_2S, SCDW, Hamiltonian), bounded by
+  $S_1 = A_m\sqrt{(1+2A)/3}$.
+- A_h (Hamiltonian only) controls the azimuthal order about the reference axis.
+
+A_m is a purely THICK, off-axis observable: it enters only through the
+off-diagonal Faraday term, so it does nothing in the thin limit and nothing when
+the axis lies in the polarization plane ($\theta_k = 90°$).
 
 Practical fitting advice:
 - Start with A = 0 (powder-like) unless strong texture is expected.
 - Keep orientation angles fixed initially, then release if residuals suggest anisotropy.
-- For Sextet/MDGD/Relax_2S, release A_m only when data quality supports it.
+- Release A_m only when data quality supports it, and only for a genuinely
+  magnetised sample — a mirror-symmetric (unmagnetised) system cancels the
+  Faraday term whatever A_m says.
 
 ---
 
 ## 6. Source mode notes
 
-- SMS mode: linearly polarized readout (default near fully polarized).
+- SMS mode: linearly polarized readout. The polarization degree is settable in
+  *Supp -> Set polarization* (default 0.98).
 - CMS mode: unpolarized half-trace readout.
-- Thick models are valid in both modes, but angular sensitivity differs.
 
-For detailed thick-model derivations and explicit matrices, see thick_models.md.

@@ -728,6 +728,7 @@ class PhysicsApp(QMainWindow):
         self.last_plot_data = None
         self.last_fitting_data = None
         self.models_description_window = None
+        self.help_window = None
         self._fit_links_snapshot = {}
 
         self.setWindowTitle('SYNCMoss ESRF ID14')
@@ -1795,6 +1796,11 @@ class PhysicsApp(QMainWindow):
         else:
             self.path_list = self.parse_process_path()
             velocity_range = 15.0
+            path_error = self.check_spectrum_paths_exist(self.path_list)
+            if path_error:
+                self.set_status(path_error, "red")
+                self.inprogress = False
+                return
 
         # Initialize
         if not self.initialize_parameters():
@@ -1967,6 +1973,10 @@ class PhysicsApp(QMainWindow):
             else None.
           - ``error_message``: a human-readable reason when the syntax is
             malformed, else None.
+
+        Anything that is NOT this keyword is a spectrum path, however it is
+        spelled; a path that turns out not to exist is reported by
+        :meth:`check_spectrum_paths_exist`, which names both possibilities.
         """
         text = self.process_path.toPlainText().strip().strip("[]'\" ")
         match = re.match(r'^model_(.*)$', text, re.IGNORECASE)
@@ -1981,6 +1991,24 @@ class PhysicsApp(QMainWindow):
         if value <= 0:
             return True, None, f"Model-only range must be positive (got {value:g})."
         return True, value, None
+
+    @staticmethod
+    def check_spectrum_paths_exist(paths):
+        """Return an error message if any of *paths* is not on disk, else None.
+
+        The path box holds either spectrum files or the model-only ``Model_<N>``
+        keyword, so anything that is neither has exactly one diagnosis and the
+        message names both ways out. Callers must run this BEFORE starting a
+        worker thread: the spectrum loader reports its own failures through the
+        main window's status widget, which is not safe to touch from a thread —
+        a bad path getting that far used to take the application down.
+        """
+        missing = [path for path in paths if not os.path.exists(path)]
+        if not missing:
+            return None
+        return ("Not a spectrum file: " + ", ".join(missing)
+                + ". Enter an existing path, or 'Model_<range>' (e.g. 'Model_6') "
+                  "to calculate the model without a spectrum.")
 
     def parse_process_path(self):
         """Parse the process_path text field to extract file paths"""
@@ -2305,6 +2333,12 @@ class PhysicsApp(QMainWindow):
             self.set_status("No spectrum selected", "orange")
             self.inprogress = False
             return
+
+        path_error = self.check_spectrum_paths_exist(self.path_list)
+        if path_error:
+            self.set_status(path_error, "red")
+            self.inprogress = False
+            return
         try:
             A_list, B_list = load_spectrum(self, self.path_list, calibration_path=self.calibration_path)
             if A_list and B_list:              
@@ -2549,9 +2583,9 @@ class PhysicsApp(QMainWindow):
             tuple: (success: bool, error_message: str or None)
         """
         # Check file existence first
-        for i, file_path in enumerate(spectrum_files):
-            if not os.path.exists(file_path):
-                return False, f"File does not exist: {file_path}"
+        path_error = self.check_spectrum_paths_exist(spectrum_files)
+        if path_error:
+            return False, path_error
         
         # Try to load all files (without plotting)
         A_list, B_list = load_spectrum(self, spectrum_files, calibration_path=self.calibration_path)

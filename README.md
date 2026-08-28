@@ -47,14 +47,28 @@ syncmoss
 * Many-state superparamagnetic relaxation model
 * Anharmonic spin modulation (ASM) model
 * MDGD model (instead of xVBF https://doi.org/10.1016/j.nimb.2025.165669)
+* SCDW: spin- and charge-density-wave model
 * Multi-dimensional distributions with correlations (not reconstruction but functional)
+* Distribution reconstruction with regularization (on testing)
 * Expressions (which could be linked to parameters)
 * Online (along with experiment) fitting
 * Parallel calculations of full-transmission integral
-
-New features:
-* Library with import/export - create your own and share it with others
+* Library with import/export - create your own and share it with others, ~50 reference phases included
 * Interactive spectrum image
+
+
+*Thick samples and proper handling of polarization*
+* Every model builds a 2x2 cross-section matrix,
+  so absorber thickness, polarization and multi-line interference are treated
+  together
+* Works in both source modes: polarized SMS
+  (with a settable linear polarization degree)
+  and unpolarized CMS
+* `Layer` marker: stack layers of different orientation or composition, each with
+  its own transmission matrix
+* Magnetic texture: uniaxial order `A` on every anisotropic component plus the
+  magnetic polar order `A_m` on the Faraday-active ones - a random powder,
+  a textured foil and a single crystal are the same model at different values
 
 ## Author
 

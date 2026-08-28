@@ -4,8 +4,8 @@ The "Supp" (support) button menu and its actions.
 Everything reachable from the Supp button in the main window lives here:
 the menu construction (:func:`build_supp_menu`) and the handlers for the
 small settings dialogs (integral points, instrumental lines, polarization),
-the Library export/import, the models-description window and the (parked)
-Hamiltonian initial-guess helper.
+the Library export/import, the two markdown viewers (models description and
+quick help) and the (parked) Hamiltonian initial-guess helper.
 
 The values edited by the dialogs are stored in hidden QLineEdit widgets on
 the main window (``jn0_input``, ``instrumental_number``,
@@ -24,7 +24,9 @@ from PySide6.QtGui import QAction, QDoubleValidator, QIntValidator
 from PySide6.QtCore import QLocale
 
 from syncmoss.Library_io import export_library, import_library
-from syncmoss.models_description_window import ModelsDescriptionWindow, resolve_models_description_path
+from syncmoss.models_description_window import (
+    ModelsDescriptionWindow, resolve_help_path, resolve_models_description_path,
+)
 
 
 def build_supp_menu(main_window):
@@ -45,6 +47,8 @@ def build_supp_menu(main_window):
     import_lib_action.triggered.connect(lambda: import_library_pressed(main_window))
     models_description_action = QAction("Models description", main_window)
     models_description_action.triggered.connect(lambda: open_models_description_pressed(main_window))
+    help_action = QAction("Help (hidden features)", main_window)
+    help_action.triggered.connect(lambda: open_help_pressed(main_window))
 
     menu.addAction(ham_guess_action)
     menu.addAction(set_integral_points_action)
@@ -54,6 +58,7 @@ def build_supp_menu(main_window):
     menu.addAction(export_lib_action)
     menu.addAction(import_lib_action)
     menu.addAction(models_description_action)
+    menu.addAction(help_action)
     return menu
 
 
@@ -229,26 +234,46 @@ def import_library_pressed(main_window):
         main_window.set_status(f"Import Library failed: {e}", "red")
 
 
-def open_models_description_pressed(main_window):
-    """Open model descriptions markdown in a separate, copy-friendly window."""
-    doc_path = resolve_models_description_path(main_window.dir_path)
+def _open_markdown_document(main_window, doc_path, attribute, label):
+    """Show *doc_path* in the markdown viewer kept on ``main_window.<attribute>``.
+
+    One viewer window per document (created on first use, reloaded from disk on
+    every later call) so the models description and the quick help can be open
+    side by side. ``label`` is both the window title suffix and the wording used
+    in the not-found messages.
+    """
     if not os.path.isfile(doc_path):
-        main_window.set_status(f"Models description file not found: {doc_path}", "red")
-        QMessageBox.warning(main_window, "Models description", f"File not found:\n{doc_path}")
+        main_window.set_status(f"{label} file not found: {doc_path}", "red")
+        QMessageBox.warning(main_window, label, f"File not found:\n{doc_path}")
         return
 
-    if main_window.models_description_window is None:
-        main_window.models_description_window = ModelsDescriptionWindow(doc_path)
+    window = getattr(main_window, attribute, None)
+    if window is None:
+        window = ModelsDescriptionWindow(doc_path, title=f"SYNCmoss - {label}")
+        setattr(main_window, attribute, window)
     else:
-        main_window.models_description_window.markdown_path = doc_path
-        main_window.models_description_window.reload_document()
+        window.markdown_path = doc_path
+        window.reload_document()
 
     app_icon = main_window.windowIcon()
     if not app_icon.isNull():
-        main_window.models_description_window.setWindowIcon(app_icon)
+        window.setWindowIcon(app_icon)
 
-    window = main_window.models_description_window
     window.showNormal()
     window.show()
     window.raise_()
     window.activateWindow()
+
+
+def open_models_description_pressed(main_window):
+    """Open model descriptions markdown in a separate, copy-friendly window."""
+    _open_markdown_document(main_window,
+                            resolve_models_description_path(main_window.dir_path),
+                            'models_description_window', "Models description")
+
+
+def open_help_pressed(main_window):
+    """Open the quick-help markdown (features not visible in the UI)."""
+    _open_markdown_document(main_window,
+                            resolve_help_path(main_window.dir_path),
+                            'help_window', "Help")

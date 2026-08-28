@@ -401,13 +401,38 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 # change. Scalar (thin) components keep the real Voight().
 #
 # DISPERSION_SIGN fixes the sign of D relative to the +/- 1j*n_z*J Faraday
-# assignment of the sigma+- matrices. In a total-intensity spectrum this sign
-# is exactly degenerate with theta_h -> 180 - theta_h (a global complex
-# conjugation of the exponent leaves every diagonal of T^H T unchanged), so it
-# must be CALIBRATED once on a spectrum of known geometry, not fitted. All
-# complex line shapes honour this single switch; the numba-compiled ones
-# (Blume_c, _relax_MS_groups_c) bake it in at their first compilation, so set
-# it BEFORE the first call.
+# assignment of the sigma+- matrices: every complex line shape here returns
+# Lambda = V + 1j*DISPERSION_SIGN*D, verified against a numerical Hilbert
+# transform to be the SAME convention in all three kernels (Voight_c in both its
+# 'pseudo' and 'wofz' forms, Blume_c, _relax_MS_groups_c -- Im/H[Re] = +1.000 for
+# each at +1.0). One global value is meaningful for the whole model only since
+# the 2026-08-26 amplitude-convention fix: before it, the Hamiltonian family's
+# blocks were transposed relative to the sextet family's, so the two families
+# effectively ran with OPPOSITE pairings and no single value was right for both.
+#
+# In a total-intensity spectrum the sign is exactly degenerate with flipping the
+# Faraday term of EVERY component (theta_h -> 180 - theta_h, equivalently
+# A_m -> -A_m, for the axis-based models; the mirrored crystal for 'Hamiltonian'):
+# a global complex conjugation of the exponent leaves every diagonal of T^H T
+# unchanged. Measured: bit-identical (0.0) for a Sextet, a two-Sextet stack, a
+# Relax_2S, and Relax_2S/Relax_MS + Sextet stacks. Flipping it ALONE does move a
+# spectrum (a few % of the line depth: 1.8e-2 on a single magnetised sextet of
+# depth 0.57, 5.0e-2 on a two-layer stack of depth 0.74), so it must be
+# CALIBRATED once on a spectrum of known geometry, not fitted.
+#
+# TO CHANGE IT, EDIT THE LITERAL BELOW -- assigning it at runtime is NOT enough.
+# `Blume_c` and `_relax_MS_groups_c` read it as a GLOBAL from inside njit code,
+# so they use the value baked in when they were compiled; being njit(cache=True)
+# they may even reload a stale on-disk cache, which defeats "set it before the
+# first call" as well. Editing this line does work (it changes the source stamp,
+# so numba recompiles): verified that all three kernels then report
+# Im/H[Re] = -1.000 and that the cross-family Hamiltonian == Sextet limit still
+# holds. Verified failure mode of the runtime route: with
+# `models.DISPERSION_SIGN = -1.0` set immediately after import, the Voigt-shaped
+# components switched but Relax_MS/Relax_2S silently kept +1 -- a model with
+# MIXED dispersion signs across its components. (For the same reason the
+# `m5.DISPERSION_SIGN = +1.0` lines in the tests are a no-op safeguard for those
+# two components; they are only meaningful because this literal is +1.0.)
 #
 # COMPLEX_VOIGT_METHOD selects how Voight_c() builds the complex Voigt of the
 # Voigt-shaped components. It is a DEVELOPER switch (edit here + restart to
