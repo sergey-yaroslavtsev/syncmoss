@@ -18,9 +18,9 @@ import syncmoss.models as m5
 
 _E = np.linspace(-10.0, 10.0, 96)
 
-# Two distinct thick, anisotropic sextets (I=20/15, A=1, A_m=1 -> the two 2x2
+# Two distinct thick, anisotropic sextets (I=20/15, A=1, Am=1 -> the two 2x2
 # amplitude operators (Faraday included) genuinely differ and couple through the
-# sample). A_m (index 9) sits right after A in the polarized Sextet.
+# sample). Am (index 9) sits right after A in the polarized Sextet.
 _SX = [20.0, 0.0, 0.0, 33.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0, 0.0, 0.0, 0.0, 3.0]
 _SY = [15.0, 0.3, 0.1, 28.0, 0.098, 0.15, 40.0, 70.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0]
 

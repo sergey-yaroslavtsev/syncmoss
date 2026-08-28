@@ -602,11 +602,11 @@ def instrumental(app, ref, mode=0, pool=None):
             Be_param[0] = 0
 
         p = np.concatenate((p, Be_param))
-        # Polarized Sextet (14): I, d, e, H, L, G, theta_k=90, phi_h=0, A=0, A_m=0, a+, a-, GH, I13.
+        # Polarized Sextet (14): I, d, e, H, L, G, theta_k=90, phi_h=0, A=0, Am=0, a+, a-, GH, I13.
         p1 = np.array([7.5, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3])
         p = np.concatenate((p, p1))
         # Layout: baseline(8) + polarized Doublet(9) + polarized Sextet(14);
-        # Sextet T is index 17, its texture A is index 25, its A_m is index 26.
+        # Sextet T is index 17, its texture A is index 25, its Am is index 26.
         bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
         bounds[0][0] = 0
         bounds[0][17] = 0.001

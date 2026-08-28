@@ -10,7 +10,7 @@ Notes:
 - For polarized thick models, orientation angles are defined as:
   - $\theta_k$: angle from beam direction $\mathbf{k}$.
   - $\varphi_h$: azimuth from polarization direction $\mathbf{h}$.
-- The angles, the texture parameters ($A$, $A_m$, $A_h$) and the numerical
+- The angles, the texture parameters ($A$, $Am$, $Ah$) and the numerical
   (grid/resolution) parameters start **fixed**; untick "fix" only when the data
   can support them.
 - For features that are not visible in the interface (the `Model_<range>`
@@ -85,7 +85,7 @@ Parameters:
 - $\theta_k$: polar angle of the hyperfine-field axis.
 - $\varphi_h$: azimuth of the hyperfine-field axis.
 - A: uniaxial texture order parameter.
-- A_m: magnetic polar-order parameter (Faraday-active contribution).
+- Am: magnetic polar-order parameter (Faraday-active contribution).
 - a+: extra symmetric splitting of the OUTER pair only (line 1 by $-a_+$, line 6
   by $+a_+$); the second-order/relativistic correction of lines 1 and 6.
 - a-: the same for the four inner lines (2 and 4 by $+a_-$, 3 and 5 by $-a_-$).
@@ -108,7 +108,7 @@ Parameters:
 - $\theta_k$: axis polar angle.
 - $\varphi_h$: axis azimuth.
 - A: uniaxial texture order parameter.
-- A_m: magnetic polar-order parameter.
+- Am: magnetic polar-order parameter.
 - a+, a-: line-position corrections (as in Sextet).
 - I1/I3: outer-to-inner intensity ratio (as in Sextet).
 
@@ -154,9 +154,9 @@ Parameters:
 - $\theta_k$: axis polar angle.
 - $\varphi_h$: axis azimuth.
 - A: uniaxial texture order parameter.
-- A_m: magnetic polar-order parameter. Note that a mirror-symmetric pair
+- Am: magnetic polar-order parameter. Note that a mirror-symmetric pair
   (H2 = -H1 at P1/P2 = 1) is unmagnetised: the Faraday term then cancels for any
-  A_m, which is correct physics, not a bug.
+  Am, which is correct physics, not a bug.
 - $\Omega_{12}$: transition rate between the states, in the same (mm/s) units as
   L, so $\Omega_{12} \ll L$ is slow relaxation and $\Omega_{12} \gg$ the
   splitting is the fast (collapsed) limit.
@@ -165,7 +165,7 @@ Parameters:
 ### Hamiltonian
 Full Hamiltonian model (magnetic + quadrupole, arbitrary orientation) of a
 MOSAIC textured crystal. It replaces the former single-crystal `Hamilton_mc`
-(now $A = A_m = A_h = 1$) and powder `Hamilton_pc` (now $A = A_m = A_h = 0$),
+(now $A = Am = Ah = 1$) and powder `Hamilton_pc` (now $A = Am = Ah = 0$),
 both of which it reproduces exactly, and interpolates continuously between them.
 
 Parameters:
@@ -183,15 +183,15 @@ Parameters:
 - A: mosaic order $\langle P_2(\cos\chi)\rangle$, $\chi$ = tilt of the crystal
   direction $(\theta,\varphi)$ away from the lab reference axis. 1 = no spread
   (single crystal), 0 = isotropic tilt, $-1/2$ = tilt confined to $90^\circ$.
-- A_m: polar order of that same tilt, $S_1 = \langle\cos\chi\rangle =
-  A_m\sqrt{(1+2A)/3}$. Non-zero only for a magnetised/polar mosaic; it acts
+- Am: polar order of that same tilt, $S_1 = \langle\cos\chi\rangle =
+  Am\sqrt{(1+2A)/3}$. Non-zero only for a magnetised/polar mosaic; it acts
   only through the Faraday (magneto-optical) term, exactly as in the Sextet.
-- A_h: order of the crystal azimuth about the reference axis,
-  $\langle\cos m\alpha\rangle = A_h^{|m|}$. 1 = $\alpha_k$ sharply defined,
+- Ah: order of the crystal azimuth about the reference axis,
+  $\langle\cos m\alpha\rangle = Ah^{|m|}$. 1 = $\alpha_k$ sharply defined,
   0 = crystallites uniformly spun about the axis (fiber texture).
 
-Limits: $A_h = 0$ is a fiber texture about the reference axis; at $Q = 0$ and
-$A_h = 0$ the model equals the textured Sextet with its axis along that axis and
+Limits: $Ah = 0$ is a fiber texture about the reference axis; at $Q = 0$ and
+$Ah = 0$ the model equals the textured Sextet with its axis along that axis and
 $A_\mathrm{eff} = A\,P_2(\cos\theta_{BH})$.
 
 #### Reading the geometry in CMS and in SMS
@@ -205,11 +205,11 @@ lab axis $(\theta, \varphi)$ points at, and that changes what is measurable.
 | the mosaic is a texture about | $\mathbf{h}$ | the beam / foil normal |
 | $\alpha_k$ | rotation of the beam about $\mathbf{h}$ — observable | **no effect at all** (an unpolarized beam has no transverse direction to reference); leave it fixed at 0 |
 | A | active | active |
-| A_m | active; its SIGN is observable | active (a thick, off-axis effect), but its SIGN is essentially not |
-| A_h | active | still active — a partially ordered azimuth is not the same absorber as a uniformly spun one, even though the reference azimuth $\alpha_k$ itself is unobservable |
+| Am | active; its SIGN is observable | active (a thick, off-axis effect), but its SIGN is essentially not |
+| Ah | active | still active — a partially ordered azimuth is not the same absorber as a uniformly spun one, even though the reference azimuth $\alpha_k$ itself is unobservable |
 
 So in CMS the sample description is: a mosaic of tilt order A about the foil
-normal, with A_h the residual azimuthal order and A_m any net magnetisation
+normal, with Ah the residual azimuthal order and Am any net magnetisation
 along the beam; $(\theta, \varphi)$ is the crystal direction that the beam runs
 along, and $\alpha_k$ is a spare parameter that must stay fixed.
 Never release $\alpha_k$ in CMS: it is exactly redundant, so the fit
@@ -272,7 +272,7 @@ Parameters (in table order):
 - $\theta_k$: spin-axis polar angle (beam frame).
 - $\varphi_h$: spin-axis azimuth.
 - A: uniaxial texture order parameter.
-- A_m: magnetic polar-order parameter (as in the Sextet model) that scales the
+- Am: magnetic polar-order parameter (as in the Sextet model) that scales the
   resolved $\sigma^\pm$ Faraday term.
 - $K_\delta H$: isomer-shift–field correlation (mm/s per field unit).
 - $K_\varepsilon H$: quadrupole–field correlation (mm/s per field unit).
@@ -293,12 +293,12 @@ therefore the grid resolution N/Γ above.
 
 The resolved $\sigma^\pm$ (Faraday) matrices are kept per site (never the merged
 symmetric form). Whether the Faraday term survives the modulation is set by the
-WAVE, independently of A_m: for a balanced wave (H0 = 0 and
+WAVE, independently of Am: for a balanced wave (H0 = 0 and
 $K_\varepsilon H = K_\delta H = 0$) the $+$/$-$ sites are populated equally and
-the Faraday contributions cancel exactly for any A_m; a non-zero base field H0
-(or field correlation) leaves a real, A_m-scaled, thickness-dependent Faraday
+the Faraday contributions cancel exactly for any Am; a non-zero base field H0
+(or field correlation) leaves a real, Am-scaled, thickness-dependent Faraday
 signal. With all wave parameters zero and H0 $\ne$ 0 the model reduces to a
-single (Sextet-equivalent) sextet at the same A_m.
+single (Sextet-equivalent) sextet at the same Am.
 
 ---
 
@@ -419,21 +419,21 @@ Texture parameters:
   the axis, $A=-1/2$ the axis confined to the plane perpendicular to it). Every
   model reduces EXACTLY to its former scalar (powder) form at $A=0$ — which is
   why $A=0$ is the default everywhere.
-- A_m controls first-moment magnetic polar order in the Faraday-active models
+- Am controls first-moment magnetic polar order in the Faraday-active models
   (Sextet, MDGD, Relax_2S, SCDW, Hamiltonian), bounded by
-  $S_1 = A_m\sqrt{(1+2A)/3}$.
-- A_h (Hamiltonian only) controls the azimuthal order about the reference axis.
+  $S_1 = Am\sqrt{(1+2A)/3}$.
+- Ah (Hamiltonian only) controls the azimuthal order about the reference axis.
 
-A_m is a purely THICK, off-axis observable: it enters only through the
+Am is a purely THICK, off-axis observable: it enters only through the
 off-diagonal Faraday term, so it does nothing in the thin limit and nothing when
 the axis lies in the polarization plane ($\theta_k = 90°$).
 
 Practical fitting advice:
 - Start with A = 0 (powder-like) unless strong texture is expected.
 - Keep orientation angles fixed initially, then release if residuals suggest anisotropy.
-- Release A_m only when data quality supports it, and only for a genuinely
+- Release Am only when data quality supports it, and only for a genuinely
   magnetised sample — a mirror-symmetric (unmagnetised) system cancels the
-  Faraday term whatever A_m says.
+  Faraday term whatever Am says.
 
 ---
 

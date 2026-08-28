@@ -17,8 +17,8 @@ from syncmoss.model_io import mod_len_def
 
 
 # (old scalar count, new count, asymmetry index in the old layout)
-# The Faraday-active models (Sextet, MDGD, Relax_2S) gain A_m right after A,
-# so their new count is old + 3 (theta_k, phi_h, A_m) rather than old + 2.
+# The Faraday-active models (Sextet, MDGD, Relax_2S) gain Am right after A,
+# so their new count is old + 3 (theta_k, phi_h, Am) rather than old + 2.
 # (The two Hamiltonian components are not part of this merge -- they were merged
 # with EACH OTHER into 'Hamiltonian'; see the tests at the bottom of this file.)
 _MERGED = {
@@ -96,8 +96,8 @@ def test_upgrade_mdl_row_handles_column_padding(model):
     assert len(out) // 5 == new_n
 
 
-# Faraday models: (pre-A_m polarized count, index of A in that layout). A pre-A_m
-# file (theta_k/phi_h/A but no A_m) must gain A_m=0 right after A.
+# Faraday models: (pre-Am polarized count, index of A in that layout). A pre-Am
+# file (theta_k/phi_h/A but no Am) must gain Am=0 right after A.
 _PRE_AM = {'Sextet': (13, 8), 'MDGD': (16, 12), 'Relax_2S': (13, 10)}
 
 
@@ -110,8 +110,8 @@ def test_upgrade_pre_am_polarized_inserts_am_after_a(model):
     groups = [out[i * 5:i * 5 + 5] for i in range(len(out) // 5)]
     assert len(groups) == poly + 1 == mod_len_def(model, include_special=False)
     assert float(groups[a_idx][0]) == 0.7             # A preserved
-    assert groups[a_idx + 1][0] == '0'                # A_m = 0 inserted right after A
-    assert groups[a_idx + 1][1:3] == ['-1', '1']      # A_m bounds [-1, 1]
+    assert groups[a_idx + 1][0] == '0'                # Am = 0 inserted right after A
+    assert groups[a_idx + 1][1:3] == ['-1', '1']      # Am bounds [-1, 1]
     assert float(groups[a_idx + 2][0]) == a_idx + 1   # the old next param shifted by one
 
 
@@ -158,8 +158,8 @@ def test_upgrade_mdl_row_is_noop_for_unmerged_model():
 # --- the Hamiltonian merge (Hamilton_mc + Hamilton_pc -> 'Hamiltonian') --------
 # A row is identified by its parameter count and padded out to 15 with the order
 # parameters that reproduce the old model exactly: the powder Hamilton_pc (9)
-# gains theta/phi/alpha_k = 0 and A = A_m = A_h = 0, the single-crystal
-# Hamilton_mc (11 before it gained alpha_k, 12 after) gains A = A_m = A_h = 1.
+# gains theta/phi/alpha_k = 0 and A = Am = Ah = 0, the single-crystal
+# Hamilton_mc (11 before it gained alpha_k, 12 after) gains A = Am = Ah = 1.
 @pytest.mark.parametrize("old_n,tail", [
     (9,  [0, 0, 0, 0, 0, 0]),      # Hamilton_pc -> random powder
     (11, [0, 1, 1, 1]),            # pre-alpha_k Hamilton_mc -> single crystal
@@ -175,8 +175,8 @@ def test_upgrade_hamiltonian_row(old_n, tail):
     # ... and the appended slots carry the reproducing values, all fitted-fixed.
     assert [float(g[0]) for g in groups[old_n:]] == [float(v) for v in tail]
     assert all(g[4] == 'True' for g in groups[old_n:])
-    assert groups[-1][1:3] == ['0', '1']          # A_h bounds
-    assert groups[-2][1:3] == ['-1', '1']         # A_m bounds
+    assert groups[-1][1:3] == ['0', '1']          # Ah bounds
+    assert groups[-2][1:3] == ['-1', '1']         # Am bounds
     assert groups[-3][1:3] == ['-0.5', '1']       # A bounds
 
 

@@ -31,7 +31,7 @@ def test_thick_model_selection_param_count(physics_app):
     pt = physics_app.params_table
     pt.select_model(1, 'Sextet')
     assert _model_name(pt, 1) == 'Sextet'
-    assert pt.row_params[1] == 14  # T,d,e,H,L,G,theta_k,phi_h,A,a+,a-,GH,I1/I3,A_m
+    assert pt.row_params[1] == 14  # T,d,e,H,L,G,theta_k,phi_h,A,a+,a-,GH,I1/I3,Am
 
 
 def test_distr_after_baseline_is_blocked(physics_app):
@@ -140,19 +140,19 @@ def test_recon_num_and_reg_locked_by_default(physics_app):
 # default, as {param column: label}; the user unticks the box to refine them.
 # (theta_k, phi_h replace the former scalar asymmetry and are followed by the
 # uniaxial texture parameter A; 'Hamiltonian' keeps its crystal angles, the
-# beam-rotation alpha_k and the three mosaic order parameters A, A_m, A_h -- its
+# beam-rotation alpha_k and the three mosaic order parameters A, Am, Ah -- its
 # reference-orientation angles are locked WITH them because they do nothing in
-# the default random-powder setting (A = A_m = A_h = 0). The Faraday-active
-# models also carry a magnetic polar-order A_m right after A, likewise locked.)
+# the default random-powder setting (A = Am = Ah = 0). The Faraday-active
+# models also carry a magnetic polar-order Am right after A, likewise locked.)
 _THICK_LOCKED_ANGLES = {
     'Doublet':     {5: 'θk, °', 6: 'φh, °', 7: 'A'},
-    'Sextet':      {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'A_m'},
-    'MDGD':        {10: 'θk, °', 11: 'φh, °', 12: 'A', 13: 'A_m'},
+    'Sextet':      {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'Am'},
+    'MDGD':        {10: 'θk, °', 11: 'φh, °', 12: 'A', 13: 'Am'},
     'Relax_MS':    {5: 'θk, °', 6: 'φh, °', 7: 'A'},
-    'Relax_2S':    {8: 'θk, °', 9: 'φh, °', 10: 'A', 11: 'A_m'},
-    'Hamiltonian': {9: 'θ, °', 10: 'φ, °', 11: 'αk, °', 12: 'A', 13: 'A_m', 14: 'A_h'},
+    'Relax_2S':    {8: 'θk, °', 9: 'φh, °', 10: 'A', 11: 'Am'},
+    'Hamiltonian': {9: 'θ, °', 10: 'φ, °', 11: 'αk, °', 12: 'A', 13: 'Am', 14: 'Ah'},
     'ASM':         {9: 'θk, °', 10: 'φh, °', 11: 'A', 14: 'ω, °'},
-    'SCDW':        {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'A_m'},
+    'SCDW':        {6: 'θk, °', 7: 'φh, °', 8: 'A', 9: 'Am'},
 }
 
 
@@ -197,7 +197,7 @@ def _write_legacy_mdl(tmp_path, name, values):
 
 
 @pytest.mark.parametrize("name,values,tail", [
-    # old powder Hamiltonian -> Hamiltonian at (A, A_m, A_h) = (0, 0, 0)
+    # old powder Hamiltonian -> Hamiltonian at (A, Am, Ah) = (0, 0, 0)
     ('Hamilton_pc', [1.0, 0.1, 0.4, 33.0, 0.098, 0.12, 0.3, 20.0, 30.0],
      [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     # very old single-crystal Hamiltonian (no alpha_k) -> (1, 1, 1), + alpha_k = 0

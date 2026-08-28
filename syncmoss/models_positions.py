@@ -884,8 +884,8 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 SET.append(S)
                 V += 12
             if model[i] == 'Hamiltonian':
-                # Mosaic textured Hamiltonian: the ODF order parameters A, A_m,
-                # A_h redistribute INTENSITY between the 8 transitions, never
+                # Mosaic textured Hamiltonian: the ODF order parameters A, Am,
+                # Ah redistribute INTENSITY between the 8 transitions, never
                 # their positions, so the markers are the single-crystal ones.
                 delt = p[V + 1]
                 Q = p[V + 2]

@@ -412,7 +412,7 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 #
 # In a total-intensity spectrum the sign is exactly degenerate with flipping the
 # Faraday term of EVERY component (theta_h -> 180 - theta_h, equivalently
-# A_m -> -A_m, for the axis-based models; the mirrored crystal for 'Hamiltonian'):
+# Am -> -Am, for the axis-based models; the mirrored crystal for 'Hamiltonian'):
 # a global complex conjugation of the exponent leaves every diagonal of T^H T
 # unchanged. Measured: bit-identical (0.0) for a Sextet, a two-Sextet stack, a
 # Relax_2S, and Relax_2S/Relax_MS + Sextet stacks. Flipping it ALONE does move a
@@ -1674,30 +1674,30 @@ def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
 #
 # It supersedes both former Hamiltonian models: it keeps all 12 parameters of
 # the single-crystal 'Hamilton_mc' (including tetr, phir, alfak) and adds three
-# order parameters (A, A_m, A_h) describing an axially symmetric orientation
+# order parameters (A, Am, Ah) describing an axially symmetric orientation
 # distribution (ODF) of the crystal about the lab reference axis. Exact limits:
 #
-#   (A, A_m, A_h) = (1, 1, 1) -> the single crystal ('Hamilton_mc'), exactly;
-#   A_h = 0                   -> fiber texture about the reference axis;
+#   (A, Am, Ah) = (1, 1, 1) -> the single crystal ('Hamilton_mc'), exactly;
+#   Ah = 0                   -> fiber texture about the reference axis;
 #   (0, 0, 0)                 -> random powder ('Hamilton_pc'), exactly;
-#   Q = 0 and A_h = 0         -> the textured Sextet with its axis along the
+#   Q = 0 and Ah = 0         -> the textured Sextet with its axis along the
 #                                reference axis and A_eff = A*P2(cos th_Bh).
 #
-# Order parameters (the sextet family's A / A_m carry over unchanged in meaning):
+# Order parameters (the sextet family's A / Am carry over unchanged in meaning):
 #   A   in [-1/2, 1] : S  = <P2(cos chi)> of the twist-free wobble of the crystal
 #                      about the reference orientation; chi = tilt of the crystal
 #                      direction set by (tetr, phir) away from the lab reference
 #                      axis. A = 1 no wobble, A = 0 isotropic tilt, A = -1/2 the
 #                      tilt confined to 90 deg.
-#   A_m in [-1, 1]   : polar order of that same wobble, S1 = <cos chi> =
-#                      A_m*sqrt((1+2A)/3) (the Cauchy--Schwarz bound, as in
+#   Am in [-1, 1]   : polar order of that same wobble, S1 = <cos chi> =
+#                      Am*sqrt((1+2A)/3) (the Cauchy--Schwarz bound, as in
 #                      _texture_s1) -- does the mosaic distinguish +axis from
-#                      -axis. Only a magnetised/polar mosaic has A_m != 0 and it
+#                      -axis. Only a magnetised/polar mosaic has Am != 0 and it
 #                      acts only through the Faraday (magneto-optical) term.
-#   A_h in [0, 1]    : order of the crystal AZIMUTH about the reference axis,
-#                      <cos(m*alpha)> = A_h^|m| (exactly a wrapped-Cauchy
-#                      azimuth). A_h = 1 alfak sharply defined (single crystal),
-#                      A_h = 0 crystallites uniformly spun about the axis.
+#   Ah in [0, 1]    : order of the crystal AZIMUTH about the reference axis,
+#                      <cos(m*alpha)> = Ah^|m| (exactly a wrapped-Cauchy
+#                      azimuth). Ah = 1 alfak sharply defined (single crystal),
+#                      Ah = 0 crystallites uniformly spun about the axis.
 #
 # THE ODF. R = W(beta, chi) * R0 * Z(alpha) with R0 the reference orientation,
 # Z(alpha) a rotation of the crystal about the reference axis and
@@ -2172,7 +2172,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 V += 14
             if model[i] == 'Hamilton_pc':
                 # DEPRECATED (2026-08-26), superseded by 'Hamiltonian' at
-                # (A, A_m, A_h) = (0, 0, 0), which reproduces this scalar powder
+                # (A, Am, Ah) = (0, 0, 0), which reproduces this scalar powder
                 # exactly (its cross-section matrix is then a multiple of the
                 # identity, so the matrix path collapses onto this Beer--Lambert
                 # one; verified to 3e-17 per transition). Kept only so a
@@ -2219,9 +2219,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             # (A = 0, every Mhat below averages to I and the component reduces
             # EXACTLY to its former scalar form) and a single crystal (A = 1).
             # The Faraday-active models (Sextet, MDGD, Relax_2S) additionally carry
-            # the magnetic polar-order parameter A_m in [-1, 1] (S1 = A_m*sqrt((1+2A)
+            # the magnetic polar-order parameter Am in [-1, 1] (S1 = Am*sqrt((1+2A)
             # /3), see _texture_s1) that scales the resolved sigma+- Faraday term;
-            # A_m = 0 (the default) is an unmagnetised texture, A_m = A = 1 the
+            # Am = 0 (the default) is an unmagnetised texture, Am = A = 1 the
             # fully-magnetised single crystal.
             # (Singlet is isotropic, so it has no polarized form and stays scalar.)
             # DISPERSION: the Voigt-shaped thick components below multiply their
@@ -2278,7 +2278,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Voi5 = Voight_c(WL, Ga25, S5)
                 Voi6 = Voight_c(WL, Ga16, S6)
                 Atex = p[V + 8]                   # uniaxial (fiber) texture order parameter
-                Am = p[V + 9]                     # magnetic polar order A_m in [-1,1] (S1 fraction), right after A
+                Am = p[V + 9]                     # magnetic polar order Am in [-1,1] (S1 fraction), right after A
                 mx, my, mz = _axis_xyz(p[V + 6], p[V + 7])
                 Msig = _texture_blend(_mhat_dm1_sym(mx, my), Atex)       # symmetric (quadratic) sigma part
                 Mfar = 1.5 * _texture_s1(Atex, Am) * 1j * mz * _J2       # +/- Faraday (magneto-optical) term
@@ -2327,7 +2327,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Voi5 = Voight_c(WL, Gfinal[4], S5)
                 Voi6 = Voight_c(WL, Gfinal[5], S6)
                 Atex = p[V + 12]                  # uniaxial (fiber) texture order parameter
-                Am = p[V + 13]                    # magnetic polar order A_m in [-1,1] (S1 fraction), right after A
+                Am = p[V + 13]                    # magnetic polar order Am in [-1,1] (S1 fraction), right after A
                 mx, my, mz = _axis_xyz(p[V + 10], p[V + 11])
                 Msig = _texture_blend(_mhat_dm1_sym(mx, my), Atex)       # symmetric (quadratic) sigma part
                 Mfar = 1.5 * _texture_s1(Atex, Am) * 1j * mz * _J2       # +/- Faraday (magneto-optical) term
@@ -2379,7 +2379,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 H2 = p[V + 6] * MMS_PER_T_PER_G * MulCo
                 WL = p[V + 7] * MulCo
                 Atex = p[V + 10]             # uniaxial (fiber) texture order parameter
-                Am = p[V + 11]               # magnetic polar order A_m in [-1,1] (S1 fraction), right after A
+                Am = p[V + 11]               # magnetic polar order Am in [-1,1] (S1 fraction), right after A
                 We = p[V + 12] * MulCo
                 R = p[V + 13]
                 mx, my, mz = _axis_xyz(p[V + 8], p[V + 9])
@@ -2404,7 +2404,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 V += 14
             if model[i] == 'Hamilton_mc':
                 # DEPRECATED (2026-08-26), superseded by 'Hamiltonian' at
-                # (A, A_m, A_h) = (1, 1, 1). Kept only so a hand-written model
+                # (A, Am, Ah) = (1, 1, 1). Kept only so a hand-written model
                 # file with the old name still evaluates; it is gone from the GUI
                 # dropdown and syncmoss.legacy rewrites it (plus its 11-parameter
                 # pre-alfak form) to 'Hamiltonian' on load. Remove this branch,
@@ -2439,10 +2439,10 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 V += 12
             if model[i] == 'Hamiltonian':
                 # Mosaic textured full Hamiltonian: the 12 single-crystal
-                # parameters plus the three ODF order parameters A, A_m, A_h.
+                # parameters plus the three ODF order parameters A, Am, Ah.
                 # It replaces BOTH former Hamiltonian models -- (1, 1, 1) is the
                 # single crystal ('Hamilton_mc'), (0, 0, 0) the random powder
-                # ('Hamilton_pc'), A_h = 0 a fiber texture -- see Ham_mosaic.
+                # ('Hamilton_pc'), Ah = 0 a fiber texture -- see Ham_mosaic.
                 # SMS (Mett != 1): (tetr, phir) is the radiation field h and
                 # alfak rotates the beam k about it; the mosaic is textured about
                 # h. CMS (Mett == 1, unpolarized): (tetr, phir) is the beam k
@@ -2461,15 +2461,15 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 phir = p[V + 10]
                 alfak = p[V + 11]
                 Atex = p[V + 12]                 # A   : <P2(cos chi)> of the mosaic wobble
-                Am = p[V + 13]                   # A_m : polar order of that wobble (Faraday)
-                Ah = p[V + 14]                   # A_h : azimuthal order about the reference axis
+                Am = p[V + 13]                   # Am : polar order of that wobble (Faraday)
+                Ah = p[V + 14]                   # Ah : azimuthal order about the reference axis
                 Pmat, S = Ham_mosaic(Q, H, eto, phi, tet, tetr, phir, alfak,
                                      Atex, Am, Ah, Mett == 1)
                 S = S * MulCo + delt
                 Piso = 0.5 * (Pmat[:, 0, 0] + Pmat[:, 1, 1]).real   # scalar part per line
                 if np.max(np.abs(Pmat - Piso[:, None, None] * _I2[None, :, :])) <= 1e-12:
                     # A fully disordered mosaic (the random-powder limit, and any
-                    # A = A_h = 0) makes every P[k] a multiple of the identity, so
+                    # A = Ah = 0) makes every P[k] a multiple of the identity, so
                     # the component is isotropic in the polarization plane and can
                     # take the SCALAR path -- exactly what the former 'Hamilton_pc'
                     # did, at ~2.4x less cost. NOT an approximation: a scalar
@@ -2579,20 +2579,20 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 # matrix assignment ({1,4}->sigma-, {3,6}->sigma+, {2,5}->pi)
                 # stays fixed, reproducing the helicity swap of a reversed moment.
                 #
-                # A_m is a fit parameter, EXACTLY the Sextet branch's magnetic
+                # Am is a fit parameter, EXACTLY the Sextet branch's magnetic
                 # polar-order parameter: each site carries the resolved sigma+-
-                # Faraday term A_m*sqrt((1+2A)/3)*i*mz*J2 (do NOT use the merged
+                # Faraday term Am*sqrt((1+2A)/3)*i*mz*J2 (do NOT use the merged
                 # _mhat_dm1_sym). Whether that term survives the modulation is set
-                # by the WAVE, independently of A_m's value: for a BALANCED wave
+                # by the WAVE, independently of Am's value: for a BALANCED wave
                 # (H0 = 0 and KeH = KdH = 0, pure odd harmonics) the positions pair
                 # up as v1(psi+pi) = v6(psi) etc., so L1 == L6 and L3 == L4 and the
-                # +/- Faraday cancels EXACTLY for any A_m. With a non-zero base
+                # +/- Faraday cancels EXACTLY for any Am. With a non-zero base
                 # field H0 (the usual case) or a field-shift correlation KeH/KdH
-                # the wave is offset, L1 != L6, and a real (A_m-scaled),
+                # the wave is offset, L1 != L6, and a real (Am-scaled),
                 # thickness-dependent Faraday signal remains. EDGE CASE: all
                 # harmonics = KeH = KdH = 0 with H0 != 0 gives constant positions,
                 # i.e. a single sextet reproducing the 'Sextet' branch at the same
-                # (delta, eps, H0, widths, theta_k, phi_h, A, A_m, I13).
+                # (delta, eps, H0, widths, theta_k, phi_h, A, Am, I13).
                 I    = abs(p[V]);        d0  = p[V + 1] * MulCo
                 eps0 = p[V + 2] * MulCo; H0  = p[V + 3] * MulCo
                 WL   = abs(p[V + 4]) * MulCo
@@ -2615,7 +2615,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 I3 = I * (4 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
 
                 # Matrices EXACTLY as in the 'Sextet' branch at (th, ph), texture
-                # Atex, magnetic polar order A_m: resolved sigma-/sigma+ (Faraday
+                # Atex, magnetic polar order Am: resolved sigma-/sigma+ (Faraday
                 # included) and pi -- NOT the merged _mhat_dm1_sym.
                 mx, my, mz = _axis_xyz(th, ph)
                 Msig = _texture_blend(_mhat_dm1_sym(mx, my), Atex)       # symmetric (quadratic) sigma part

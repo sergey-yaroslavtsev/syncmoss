@@ -67,7 +67,7 @@ syncmoss
 * `Layer` marker: stack layers of different orientation or composition, each with
   its own transmission matrix
 * Magnetic texture: uniaxial order `A` on every anisotropic component plus the
-  magnetic polar order `A_m` on the Faraday-active ones - a random powder,
+  magnetic polar order `Am` on the Faraday-active ones - a random powder,
   a textured foil and a single crystal are the same model at different values
 
 ## Author

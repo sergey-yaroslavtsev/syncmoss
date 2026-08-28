@@ -13,7 +13,7 @@ from syncmoss.model_io import mod_len_def, _remap_reference_text
 # layout). Every anisotropic component is now the polarized model: the former
 # scalar asymmetry A was replaced by orientation angles (theta_k, phi_h) + the
 # uniaxial texture parameter A. 'Hamiltonian' keeps its crystal angles + alpha_k
-# and carries three mosaic order parameters (A, A_m, A_h); it supersedes
+# and carries three mosaic order parameters (A, Am, Ah); it supersedes
 # Hamilton_mc/_pc, whose counts must keep working for old files. Singlet is
 # isotropic (no angles/texture); Sextet(rough)/Average_H had no polarized twin
 # and keep their counts.

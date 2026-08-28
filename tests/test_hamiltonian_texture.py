@@ -18,10 +18,10 @@ Two things are pinned here.
 
 (2) THE ORDER PARAMETERS. 'Hamiltonian' averages the crystal orientation over an
     axially symmetric ODF, in closed form, through three order parameters
-    (A, A_m, A_h). ``_brute_force_blocks`` performs the same average by explicit
+    (A, Am, Ah). ``_brute_force_blocks`` performs the same average by explicit
     numerical integration over the ODF and the closed form must reproduce it, for
     two different realisations of the tilt distribution. The exact limits
-    (1,1,1) = single crystal, (0,0,0) = random powder, A_h = 0 = fiber texture
+    (1,1,1) = single crystal, (0,0,0) = random powder, Ah = 0 = fiber texture
     are checked against the models they replace (Hamilton_mc / Hamilton_pc /
     the textured Sextet).
 
@@ -240,7 +240,7 @@ def test_pure_zeeman_blocks_equal_the_sextet_building_blocks():
     P, S = np.asarray(P), np.asarray(S)
     mx, my, mz = R @ _sph(_TET, _PHI)                # B_hf in lab coordinates
     Msig = m5._mhat_dm1_sym(mx, my)
-    Mfar = 1.5 * 1.0 * 1j * mz * m5._J2              # S1 = 1 (A = A_m = 1)
+    Mfar = 1.5 * 1.0 * 1j * mz * m5._J2              # S1 = 1 (A = Am = 1)
     Mpi = m5._mhat_dm0(mx, my)
     w1, w2, w3 = 0.25, 1 / 6, 1 / 12                 # I1, I2, I3 at I13 = 3, I = 1
     expect = [w1 * (Msig - Mfar), w2 * Mpi, w3 * (Msig + Mfar),
@@ -294,8 +294,8 @@ def test_isotropic_shortcut_is_exact_inside_a_stack(stack):
 
 
 def test_disordered_azimuth_and_axis_is_isotropic_whatever_am_is():
-    """At A = A_h = 0 the wobble is isotropic and the azimuth uniform, so even a
-    polar (A_m != 0) mosaic averages to the random powder: the Faraday term needs
+    """At A = Ah = 0 the wobble is isotropic and the azimuth uniform, so even a
+    polar (Am != 0) mosaic averages to the random powder: the Faraday term needs
     a net axis along the beam, which a fiber texture about h cannot provide."""
     ref = _run(['Hamilton_pc'], _HAM12[:9])
     for Am in (0.0, 0.7, -1.0):
@@ -319,7 +319,7 @@ def _sextet_angles(cms=False):
 
 
 def _sextet_params(th_k, ph_h, A=1.0, Am=1.0, T=8.0, delta=0.0, H=33.0):
-    # T, delta, eps, H, L, G, theta_k, phi_h, A, A_m, a+, a-, GH, I1/I3
+    # T, delta, eps, H, L, G, theta_k, phi_h, A, Am, a+, a-, GH, I1/I3
     return [T, delta, 0.0, H, 0.098, 0.12, th_k, ph_h, A, Am, 0.0, 0.0, 0.0, 3.0]
 
 
@@ -343,7 +343,7 @@ def test_zeeman_single_crystal_spectrum_equals_sextet_under_cms():
 
 @pytest.mark.parametrize("Atex", [1.0, 0.5, -0.3])
 def test_fiber_texture_limit_equals_the_textured_sextet(Atex):
-    """Q = 0 and A_h = 0: a fiber texture about h, i.e. exactly the textured
+    """Q = 0 and Ah = 0: a fiber texture about h, i.e. exactly the textured
     Sextet with its axis along h and A_eff = A * P2(cos theta_BH)."""
     _, _, m = _sextet_angles()
     A_eff = Atex * 0.5 * (3 * m[0] ** 2 - 1)          # m[0] = cos(angle to h)
@@ -447,7 +447,7 @@ def test_alfak_is_redundant_under_cms_but_observable_under_sms(order):
 
 
 def test_alfak_drops_out_when_the_azimuth_is_disordered():
-    """At A_h = 0 the crystal is uniformly spun about the reference axis, so the
+    """At Ah = 0 the crystal is uniformly spun about the reference axis, so the
     reference azimuth alpha_k can no longer matter, even under SMS."""
     ref = _run(['Hamiltonian'], _HAMQ0 + [0.5, 0.2, 0.0], 0, 1.0)
     par = list(_HAMQ0)

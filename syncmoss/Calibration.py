@@ -78,10 +78,10 @@ Parameter-vector layouts used throughout (``nbp`` = number_of_baseline_parameter
 * Spectrum model ``p`` / ``p00`` / ``pCAL`` -- ``[0..nbp-1]`` baseline
   (``[0]`` count rate of half-sweep 1, ``[4]`` count rate of half-sweep 2 for
   CMS), then one polarized Sextet block of 14:
-  ``T(+0) d(+1) e(+2) H(+3) L(+4) G(+5) theta_k(+6) phi_h(+7) A(+8) A_m(+9)
+  ``T(+0) d(+1) e(+2) H(+3) L(+4) G(+5) theta_k(+6) phi_h(+7) A(+8) Am(+9)
   a+(+10) a-(+11) GH(+12) I13(+13)``.
   ``theta_k=90, phi_h=0, A=0`` make the polarized Sextet identical to the old
-  scalar one (isotropic powder); ``A_m=0`` is also a no-op since
+  scalar one (isotropic powder); ``Am=0`` is also a no-op since
   ``theta_k=90 -> n_z=0`` kills the Faraday term.
 * Drive-curve parameters ``ps`` (3): sinusoidal ``[amplitude, phase(rad),
   source shift]``; triangular ``[v at ch 0, v at last ch, v step/channel]``.

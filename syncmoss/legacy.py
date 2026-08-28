@@ -24,9 +24,9 @@ The upgrade applies the SAME transform the presets/data files were converted wit
   * replace the scalar asymmetry ``A`` with the texture order parameter
     ``A_new = f(A)`` (see :func:`a_scalar_to_texture`);
   * the Faraday-active models (``Sextet``, ``MDGD``, ``Relax_2S``) additionally
-    gain a magnetic polar-order parameter ``A_m = 0`` immediately after ``A``
+    gain a magnetic polar-order parameter ``Am = 0`` immediately after ``A``
     (unmagnetised, so the sigma+- lines keep their Faraday-averaged form, matching
-    pre-A_m files);
+    pre-Am files);
   * the two Hamiltonian components were merged into the mosaic textured
     ``Hamiltonian`` (see :data:`_HAMILTONIAN_UPGRADES`): ``Hamilton_pc``
     (9 params, random powder) and ``Hamilton_mc`` (single crystal, 11 params
@@ -69,9 +69,9 @@ def a_scalar_to_texture(a):
 # and the index of the OLD scalar asymmetry ``A`` within that component (the slot
 # where ``theta_k, phi_h`` are inserted and ``A`` is transformed).
 # ``am`` marks the Faraday-active models (Sextet, MDGD, Relax_2S) that gained a
-# magnetic polar-order parameter ``A_m`` (= 0, unmagnetised) right after ``A``.
-# For those, ``poly`` is the pre-A_m polarized count (theta_k/phi_h/A but no A_m)
-# and ``a_idx`` the index of ``A`` in that layout, so a pre-A_m file can have A_m
+# magnetic polar-order parameter ``Am`` (= 0, unmagnetised) right after ``A``.
+# For those, ``poly`` is the pre-Am polarized count (theta_k/phi_h/A but no Am)
+# and ``a_idx`` the index of ``A`` in that layout, so a pre-Am file can have Am
 # inserted in the right place too.
 _MERGED = {
     'Doublet':     {'old': 7,  'asym': 5},
@@ -88,14 +88,14 @@ _MERGED = {
 
 # The single-crystal ('Hamilton_mc') and powder ('Hamilton_pc') Hamiltonians were
 # merged into ONE mosaic textured component, 'Hamiltonian' (15 params = the 12 of
-# Hamilton_mc + the order parameters A, A_m, A_h). Both old names map to it, and
+# Hamilton_mc + the order parameters A, Am, Ah). Both old names map to it, and
 # the row is padded out by APPENDING the values that reproduce the old model
 # exactly -- (1, 1, 1) is the single crystal, (0, 0, 0) the random powder (both
 # equalities are exact, see models.Ham_mosaic). The three old layouts have
 # distinct parameter counts, so the count alone identifies the source:
 #
 #   9  -> 'Hamilton_pc'  : append theta/phi/alpha_k = 0 (a powder ignores the
-#                          reference orientation) and A = A_m = A_h = 0;
+#                          reference orientation) and A = Am = Ah = 0;
 #   11 -> 'Hamilton_mc' before it gained alpha_k: append alpha_k = 0, (1, 1, 1);
 #   12 -> 'Hamilton_mc' as published in the current layout: append (1, 1, 1).
 #
@@ -201,9 +201,9 @@ def upgrade_mdl_row(model_name, row_data):
     If the real parameter count matches the model's OLD scalar count, the row is
     upgraded to the polarized layout: ``theta_k = 90`` and ``phi_h = 0`` are
     inserted where the scalar asymmetry was, that asymmetry is remapped to the
-    texture order parameter, and the Faraday-active models gain ``A_m = 0`` right
-    after ``A``. If instead the count matches a Faraday model's PRE-A_m polarized
-    count, only ``A_m = 0`` is inserted after ``A``. Otherwise (row already in the
+    texture order parameter, and the Faraday-active models gain ``Am = 0`` right
+    after ``A``. If instead the count matches a Faraday model's PRE-Am polarized
+    count, only ``Am = 0`` is inserted after ``A``. Otherwise (row already in the
     new layout, or model not part of the merge) it is returned unchanged, so this
     is safe to call unconditionally while loading.
 
@@ -257,8 +257,8 @@ def upgrade_mdl_row(model_name, row_data):
         phi = ['0', _PHI_H_BOUNDS[0], _PHI_H_BOUNDS[1], '', 'True']
         new_a = [a_value, _A_TEX_BOUNDS[0], _A_TEX_BOUNDS[1], '', a_fix]
         # The Faraday-active models (Sextet, MDGD, Relax_2S) gain a magnetic
-        # polar-order parameter A_m = 0 immediately AFTER A (unmagnetised ->
-        # Faraday-averaged sigma, i.e. the pre-A_m behaviour).
+        # polar-order parameter Am = 0 immediately AFTER A (unmagnetised ->
+        # Faraday-averaged sigma, i.e. the pre-Am behaviour).
         am = [am_group] if info.get('am') else []
         upgraded = real_groups[:asym] + [theta, phi, new_a] + am + real_groups[asym + 1:]
         # ASM: append the trailing cycloid-plane angle omega (= omega_0 for the
@@ -267,8 +267,8 @@ def upgrade_mdl_row(model_name, row_data):
         return [field for g in upgraded for field in g]
 
     if info.get('am') and real == info['poly']:
-        # Pre-A_m POLARIZED row (already has theta_k/phi_h/A, but no A_m): just
-        # insert A_m = 0 right after A; everything else keeps its place.
+        # Pre-Am POLARIZED row (already has theta_k/phi_h/A, but no Am): just
+        # insert Am = 0 right after A; everything else keeps its place.
         a_idx = info['a_idx']
         upgraded = real_groups[:a_idx + 1] + [am_group] + real_groups[a_idx + 1:]
         return [field for g in upgraded for field in g]

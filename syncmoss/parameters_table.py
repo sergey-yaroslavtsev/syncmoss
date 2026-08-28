@@ -35,7 +35,7 @@ MODEL_OPTIONS = [
     'Singlet', 'Doublet', 'Sextet', 'MDGD', 'Relax_MS', 'Relax_2S',
     'Hamiltonian', 'ASM', 'SCDW',
     # NOT listed (deprecated, superseded by the textured 'Hamiltonian'):
-    # 'Hamilton_mc' (== A, A_m, A_h = 1, 1, 1) and 'Hamilton_pc' (== 0, 0, 0).
+    # 'Hamilton_mc' (== A, Am, Ah = 1, 1, 1) and 'Hamilton_pc' (== 0, 0, 0).
     # Their rows still build and evaluate if a hand-written file names them, and
     # syncmoss.legacy rewrites both to 'Hamiltonian' when a model file is opened.
     # presets / structural / utility
@@ -898,13 +898,13 @@ class ParametersTable(QWidget):
         # uniaxial (fiber) texture parameter A in [-0.5, 1] (A=0 random powder ->
         # former scalar model, A=1 single crystal at the axis). 'Hamiltonian'
         # keeps its crystal angles plus the beam rotation alpha_k and needs THREE
-        # order parameters (A, A_m, A_h) for the mosaic of an anisotropic EFG.
+        # order parameters (A, Am, Ah) for the mosaic of an anisotropic EFG.
         # Singlet is isotropic, so it has neither. The Faraday-active models
-        # (Sextet, MDGD, Relax_2S) also carry a magnetic polar-order parameter A_m
+        # (Sextet, MDGD, Relax_2S) also carry a magnetic polar-order parameter Am
         # in [-1, 1] immediately after A (the net-magnetisation fraction
-        # S1/sqrt((1+2A)/3) scaling the resolved sigma+- Faraday term; A_m=0
-        # unmagnetised, A_m=1 fully magnetised at the axis). The angles (theta_k,
-        # phi_h; alpha_k), A and A_m are FIXED by default -- untick "fix" to refine. ---
+        # S1/sqrt((1+2A)/3) scaling the resolved sigma+- Faraday term; Am=0
+        # unmagnetised, Am=1 fully magnetised at the axis). The angles (theta_k,
+        # phi_h; alpha_k), A and Am are FIXED by default -- untick "fix" to refine. ---
         elif model == 'Doublet':
             names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1']
             values = ['1.0', '0.0', '1.0', _NAT, '0.1', theta_default, '0.0', '0', '1.0']
@@ -912,36 +912,36 @@ class ParametersTable(QWidget):
             uppers = ['', '', '', '', '', '180', '360', '1', '']
             fixes = [False, False, False, True, False, True, True, True, True]  # theta_k, phi_h, A locked by default
         elif model == 'Sextet':
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'a+', 'a-', 'GH, T', 'I1/I3']
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'Am', 'a+', 'a-', 'GH, T', 'I1/I3']
             values = ['1.0', '0.0', '0.0', '33.0', _NAT, '0.1', theta_default, '0.0', '0', '0', '0.0', '0.0', '0.0', '3.0']
             lowers = ['0', '', '', '', _NAT, '0', '-180', '-360', '-0.5', '-1', '', '', '0', '0']
             uppers = ['', '', '', '', '', '', '180', '360', '1', '1', '', '', '', '']
-            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A, A_m locked by default
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A, Am locked by default
         elif model == 'MDGD':
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'GH, T', 'Dδε', 'DδH', 'DεH', 'θk, °', 'φh, °', 'A', 'A_m', 'a+', 'a-', 'I1/I3']
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'GH, T', 'Dδε', 'DδH', 'DεH', 'θk, °', 'φh, °', 'A', 'Am', 'a+', 'a-', 'I1/I3']
             values = ['1.0', '0.0', '0.0', '33.0', _NAT, '0.1', '0.0', '0.0', '0.0', '0.0', theta_default, '0.0', '0', '0', '0.0', '0.0', '3.0']
             lowers = ['0', '', '', '', _NAT, '0', '0', '-1', '-1', '-1', '-180', '-360', '-0.5', '-1', '', '', '0']
             uppers = ['', '', '', '', '', '', '', '1', '1', '1', '180', '360', '1', '1', '', '', '']
-            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A, A_m locked by default
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, True, True, True, True]  # theta_k, phi_h, A, Am locked by default
         elif model == 'Hamiltonian':
             # Mosaic textured full Hamiltonian (supersedes Hamilton_mc/_pc).
             # (θH, φH) is B_hf in the EFG frame; (θ, φ) the lab reference axis in
             # the EFG frame -- the radiation field h for SMS, the beam k for CMS
-            # -- and αk the beam rotation about h (SMS only). A/A_m/A_h are the
+            # -- and αk the beam rotation about h (SMS only). A/Am/Ah are the
             # mosaic order parameters: A = <P2(cos chi)> of the crystal wobble
-            # about that reference axis, A_m its polar order (Faraday), A_h the
+            # about that reference axis, Am its polar order (Faraday), Ah the
             # order of the crystal azimuth about it. DEFAULT (0, 0, 0) = random
             # powder, i.e. exactly the former scalar 'Hamilton_pc' -- matching
             # every other model, whose A = 0 default is also its former scalar
             # form. (1, 1, 1) is the single crystal (former 'Hamilton_mc').
             # Because the reference-orientation angles (θ, φ, αk) do nothing in
-            # the powder default, they are FIXED with A/A_m/A_h; untick them
-            # together with A (and A_h) when fitting an oriented sample.
-            names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °', 'A', 'A_m', 'A_h']
+            # the powder default, they are FIXED with A/Am/Ah; untick them
+            # together with A (and Ah) when fitting an oriented sample.
+            names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °', 'θ, °', 'φ, °', 'αk, °', 'A', 'Am', 'Ah']
             values = ['1.0', '0.0', '0.0', '33.0', _NAT, '0.1', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0', '0', '0']
             lowers = ['0', '', '', '', _NAT, '0', '-1', '-180', '-360', '-180', '-360', '-360', '-0.5', '-1', '0']
             uppers = ['', '', '', '', '', '', '1', '180', '360', '180', '360', '360', '1', '1', '1']
-            fixes = [False, False, False, False, True, False, False, False, False, True, True, True, True, True, True]  # reference angles + A, A_m, A_h locked by default
+            fixes = [False, False, False, False, True, False, False, False, False, True, True, True, True, True, True]  # reference angles + A, Am, Ah locked by default
         elif model == 'Hamilton_mc':
             # DEPRECATED (superseded by 'Hamiltonian'); no longer in the dropdown,
             # kept so an old model file naming it still builds a valid row.
@@ -951,7 +951,7 @@ class ParametersTable(QWidget):
             uppers = ['', '', '', '', '', '', '1', '180', '360', '180', '360', '360']
             fixes = [False, False, False, False, True, False, False, False, False, False, False, True]  # alpha_k locked by default
         elif model == 'Hamilton_pc':
-            # DEPRECATED (superseded by 'Hamiltonian' at A = A_m = A_h = 0).
+            # DEPRECATED (superseded by 'Hamiltonian' at A = Am = Ah = 0).
             names = ['T', 'δ, mm/s', 'Q, mm/s', 'H, T', 'L, mm/s', 'G, mm/s', 'η', 'θH, °', 'φH, °']
             values = ['1.0', '0.0', '0.0', '33.0', _NAT, '0.1', '0.0', '0.0', '0.0']
             lowers = ['0', '', '', '', _NAT, '0', '-1', '-180', '-360']
@@ -964,11 +964,11 @@ class ParametersTable(QWidget):
             uppers = ['', '', '', '', '', '180', '360', '1', '', '100', '']
             fixes = [False, False, False, False, False, True, True, True, False, False, True]  # theta_k, phi_h, A locked by default
         elif model == 'Relax_2S':
-            names = ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'Ω12', 'P1/P2']
+            names = ['T', 'δ1, mm/s', 'ε1, mm/s', 'H1, T', 'δ2, mm/s', 'ε2, mm/s', 'H2, T', 'L, mm/s', 'θk, °', 'φh, °', 'A', 'Am', 'Ω12', 'P1/P2']
             values = ['1.0', '0.0', '0.0', '33.0', '0.0', '0.0', '-33.0', '0.1', theta_default, '0.0', '0', '0', '0.3', '1']
             lowers = ['', '', '', '', '', '', '', _NAT, '-180', '-360', '-0.5', '-1', '0', '0']
             uppers = ['', '', '', '', '', '', '', '', '180', '360', '1', '1', '', '']
-            fixes = [False, False, False, False, False, False, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, A_m locked by default
+            fixes = [False, False, False, False, False, False, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, Am locked by default
         elif model == 'ASM':
             names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13', 'ω, °']
             values = ['1.0', '0.0', '0.0', '0.0', '30.0', '5.0', _NAT, '0.1', '0.1', theta_default, '0.0', '0', '25', '3.0', '90']
@@ -978,18 +978,18 @@ class ParametersTable(QWidget):
         elif model == 'SCDW':
             # Spin/charge density wave (SpectrRelax SDW/CDW layout, 27 slots):
             # I, base delta/eps, base field H0, widths, spin-axis (theta_k,
-            # phi_h), texture A, magnetic polar order A_m, the field->shift
+            # phi_h), texture A, magnetic polar order Am, the field->shift
             # correlations KdH/KeH, CDW phase Phi, 8 odd field harmonics
             # (h1..h15), 4 even shift harmonics (d2..d8), grid resolution N/Gamma
             # (grid steps per line width -- the accuracy<->speed knob, replaces the
             # old 'Num' which is now fixed internally at models.SDW_NUM), ratio
-            # I13. Unused harmonics stay fitted-fixed at 0. A_m behaves as in the
+            # I13. Unused harmonics stay fitted-fixed at 0. Am behaves as in the
             # Sextet model (Faraday polar order). See models.SDW_thick_terms.
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H0, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'A_m', 'KδH', 'KεH', 'Φ, °', 'h1, T', 'h3, T', 'h5, T', 'h7, T', 'h9, T', 'h11, T', 'h13, T', 'h15, T', 'd2, mm/s', 'd4, mm/s', 'd6, mm/s', 'd8, mm/s', 'N/Γ', 'I13']
+            names = ['T', 'δ, mm/s', 'ε, mm/s', 'H0, T', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'Am', 'KδH', 'KεH', 'Φ, °', 'h1, T', 'h3, T', 'h5, T', 'h7, T', 'h9, T', 'h11, T', 'h13, T', 'h15, T', 'd2, mm/s', 'd4, mm/s', 'd6, mm/s', 'd8, mm/s', 'N/Γ', 'I13']
             values = ['1.0', '0.0', '0.0', '30.0', _NAT, '0.1', theta_default, '0.0', '0', '0', '0.0', '0.0', '0.0', '5.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '4', '3.0']
             lowers = ['0', '', '', '', _NAT, '0', '-180', '-360', '-0.5', '-1', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '1', '0']
             uppers = ['', '', '', '', '', '', '180', '360', '1', '1', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
-            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, False, True, True, True, True, True, True, True, True, True, True, True, True, False]  # theta_k, phi_h, A, A_m, Num and all optional harmonics/correlations locked by default
+            fixes = [False, False, False, False, True, False, True, True, True, True, True, True, True, False, True, True, True, True, True, True, True, True, True, True, True, True, False]  # theta_k, phi_h, A, Am, Num and all optional harmonics/correlations locked by default
         elif model == 'Be':
             # Impurity preset based on the polarized Doublet, loaded from Be.txt
             # (9-value polarized layout: T, d, e, L, G, theta_k, phi_h, A, G2/G1).

@@ -28,10 +28,10 @@ _E = np.linspace(-10.0, 10.0, 96)
 # polarization eigenchannels differ, i.e. [expm(-Sigma)]_11 != _22).
 _THICK_CASES = {
     "Doublet":     [20.0, 0.0, 1.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0],
-    # Sextet: A=1 (single crystal) and A_m=1 (fully magnetised, right after A) -> the
+    # Sextet: A=1 (single crystal) and Am=1 (fully magnetised, right after A) -> the
     # resolved sigma+- Faraday term is active, so the two polarization eigenchannels differ.
     "Sextet":      [20.0, 0.0, 0.0, 33.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0, 0.0, 0.0, 0.0, 3.0],
-    # Hamiltonian: a magnetised mosaic (A, A_m, A_h are the last three columns);
+    # Hamiltonian: a magnetised mosaic (A, Am, Ah are the last three columns);
     # (1, 1, 1) would be the single crystal, this is a partially ordered mosaic.
     "Hamiltonian": [20.0, 0.0, 0.4, 33.0, 0.098, 0.15, 0.0, 20.0, 30.0, 40.0, 25.0, 35.0,
                     0.8, 0.7, 0.6],
@@ -163,7 +163,7 @@ def _compute_multi(model_list, params, mett, pol, monkeypatch):
 
 # Two genuinely thick, anisotropic components to stack (I=20, A=1 -> strong
 # non-commutativity between the two 2x2 amplitude operators). The Sextet also has
-# A_m=1 (magnetised single crystal, right after A), so its sigma+- Faraday term is present.
+# Am=1 (magnetised single crystal, right after A), so its sigma+- Faraday term is present.
 _DOUBLET = [20.0, 0.0, 1.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0]
 _SEXTET = [20.0, 0.0, 0.0, 33.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0, 0.0, 0.0, 0.0, 3.0]
 

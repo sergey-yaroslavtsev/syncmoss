@@ -40,7 +40,7 @@ def mod_len_def(mod, include_special=True):
     # asymmetry A was replaced by the orientation angles (theta_k, phi_h) plus
     # the uniaxial texture parameter A. 'Hamiltonian' keeps its crystal angles
     # (plus the beam rotation alpha_k) and carries THREE mosaic order parameters
-    # (A, A_m, A_h) instead; it supersedes the deprecated 'Hamilton_mc' (12) and
+    # (A, Am, Ah) instead; it supersedes the deprecated 'Hamilton_mc' (12) and
     # 'Hamilton_pc' (9), whose counts stay listed only so an old model file still
     # walks. See syncmoss.legacy for how pre-merge model files / presets (and the
     # two old Hamiltonian names) are upgraded to these counts.
