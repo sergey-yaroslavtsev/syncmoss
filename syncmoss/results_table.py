@@ -32,10 +32,11 @@ import os
 import numpy as np
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QTabWidget
+    QTableWidget, QTableWidgetItem, QTabWidget, QAbstractItemView,
+    QApplication
 )
 from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QFont, QColor, QImage, QPainter
+from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortcut, QTextDocument
 from syncmoss.constants import numro, numco, contrast_text_color
 from syncmoss.support_math import calculate_intensity_percentage_error
 # NOTE: the eval() calls in this module run against an explicit math_namespace
@@ -146,7 +147,10 @@ class ResultsTable(QWidget):
         self.interactive_table.setFont(QFont('Arial', 14))
         self.interactive_table.horizontalHeader().setVisible(False)
         self.interactive_table.verticalHeader().setVisible(False)
-        
+        self.interactive_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.interactive_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._enable_copy(self.interactive_table)
+
         # Set column widths
         for col in range(self.num_cols):
             self.interactive_table.setColumnWidth(col, 64)
@@ -195,12 +199,55 @@ class ResultsTable(QWidget):
         # Create table for correlation matrix
         self.correlation_table = QTableWidget()
         self.correlation_table.setFont(QFont('Arial', 10))
-        
-        
+        self.correlation_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.correlation_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._enable_copy(self.correlation_table)
+
         # Will be populated when correlation matrix is available
         tab_layout.addWidget(self.correlation_table)
         return tab_widget
-    
+
+    def _enable_copy(self, table):
+        """Make Ctrl+C copy the selected cells of *table* as tab-separated text.
+
+        The cells hold widgets (buttons / rich-text labels) instead of plain
+        items, so Qt's own copy path finds nothing: the selection highlights but
+        the clipboard stays empty. WidgetWithChildren context so the shortcut
+        also fires while a cell widget has the focus.
+        """
+        shortcut = QShortcut(QKeySequence.StandardKey.Copy, table)
+        shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        shortcut.activated.connect(lambda t=table: self.copy_selection(t))
+
+    @staticmethod
+    def _cell_text(table, row, col):
+        """Plain text of a cell, whether it holds a widget, an item or nothing."""
+        widget = table.cellWidget(row, col)
+        if widget is not None:
+            text = widget.text() if hasattr(widget, 'text') else ''
+        else:
+            item = table.item(row, col)
+            text = item.text() if item is not None else ''
+        if '<' in text:  # labels are RichText: strip markup for the clipboard
+            doc = QTextDocument()
+            doc.setHtml(text)
+            text = doc.toPlainText()
+        return text.strip()
+
+    def copy_selection(self, table):
+        """Copy *table*'s selected cells to the clipboard as tab-separated text."""
+        cells = {(idx.row(), idx.column()) for idx in table.selectedIndexes()}
+        cols = sorted({c for _, c in cells})
+        rows = []
+        for row in sorted({r for r, _ in cells}):
+            texts = [self._cell_text(table, row, c) if (row, c) in cells else ''
+                     for c in cols]
+            if any(texts):  # skip the empty rows of the fixed-size results grid
+                rows.append(texts)
+        text = '\n'.join('\t'.join(r) for r in rows)
+        QApplication.clipboard().setText(text)
+        return text
+
     def fill_table(self, parameters, model_list, model_colors, parameter_names, covariance_matrix, errors=None, fix=None, expression_texts=None):
         """
         Main function to fill the results table with fitting results.
@@ -706,7 +753,7 @@ class ResultsTable(QWidget):
                             self.interactive_table.removeCellWidget(table_row, last_col)
                             item = QTableWidgetItem(text)
                             item.setFont(QFont('Arial', 10))
-                            item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                             self.interactive_table.setItem(table_row, last_col, item)
 
     def display_correlation_matrix(self, covariance_matrix):
@@ -798,7 +845,7 @@ class ResultsTable(QWidget):
         for i in range(2):
             for j in range(2):
                 corner_item = QTableWidgetItem('')
-                corner_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                corner_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 corner_item.setBackground(QColor(200, 200, 200))
                 corner_item.setForeground(QColor(255, 255, 255))
                 self.correlation_table.setItem(i, j, corner_item)
@@ -813,7 +860,7 @@ class ResultsTable(QWidget):
                 current_model = model_name
             else:
                 header_item = QTableWidgetItem('')
-            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             header_item.setBackground(QColor(70, 70, 70))
             header_item.setForeground(QColor(255, 255, 255))
@@ -822,7 +869,7 @@ class ResultsTable(QWidget):
         # Set second row (parameter names as column headers)
         for j in range(n_params):
             header_item = QTableWidgetItem(param_labels[j] if j < len(param_labels) else f'p{j}')
-            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             header_item.setBackground(QColor(70, 70, 70))
             header_item.setForeground(QColor(255, 255, 255))
@@ -838,7 +885,7 @@ class ResultsTable(QWidget):
                 current_model = model_name
             else:
                 header_item = QTableWidgetItem('')
-            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             header_item.setBackground(QColor(70, 70, 70))
             header_item.setForeground(QColor(255, 255, 255))
@@ -847,7 +894,7 @@ class ResultsTable(QWidget):
         # Set second column (parameter names as row headers)
         for i in range(n_params):
             header_item = QTableWidgetItem(param_labels[i] if i < len(param_labels) else f'p{i}')
-            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             header_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             header_item.setBackground(QColor(70, 70, 70))
             header_item.setForeground(QColor(255, 255, 255))
