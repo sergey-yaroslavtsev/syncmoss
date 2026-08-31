@@ -1487,7 +1487,10 @@ class PhysicsApp(QMainWindow):
                 param_widget = row_widget.layout().itemAt(col + 1).widget()
                 value_input = param_widget.layout().itemAt(1).widget()
                 value_input.setText(expr_text)
-            
+
+            # A 'par' restored to the value auto_fill_params already put there
+            # emits no textChanged, so re-draw the grey frames once.
+            self.params_table.update_distr_corr_highlights()
             self.set_status("Result copied to model", "green")
             
         except Exception as e:
@@ -1543,11 +1546,13 @@ class PhysicsApp(QMainWindow):
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
 
-        Two checks run up front:
+        Three checks run up front:
 
         * no active numeric parameter slot may be empty (a =[X,y] reference to a
           deleted parameter leaves its field empty; read_model would silently
-          read it as 0.0), and
+          read it as 0.0),
+        * no two Distr/Corr/Recon rows of one chain may share a 'par' (they would
+          overwrite each other in the same parameter slot), and
         * every user-typed Expression/Distr/Corr text must evaluate.
 
         On failure the offending table fields turn red (they recover as soon as
@@ -1566,6 +1571,32 @@ class PhysicsApp(QMainWindow):
                 f"{action_label} was not started — empty parameter(s) "
                 f"(fill them in; a value referenced by =[...] may have been "
                 f"deleted):\n" + "\n".join(lines),
+                "red",
+            )
+            return False
+
+        conflicts = self.params_table.get_conflicting_distr_targets()
+        if conflicts:
+            lines = []
+            for clash in conflicts:
+                # The first claimant may well be the one the user meant, so only
+                # the later duplicates are marked: fixing them clears the whole
+                # error, with no leftover red field to click just to clean up.
+                for clash_row in clash['rows'][1:]:
+                    self.params_table.mark_parameter_error(clash_row, 0)
+                named = [f"{name} (table row {clash_row})" for name, clash_row
+                         in zip(clash['models'], clash['rows'])]
+                who = " and ".join([", ".join(named[:-1]), named[-1]])
+                target = f"'{clash['param']}'" if clash['param'] else f"number {clash['par']}"
+                base = (f"{clash['base_model']} (table row {clash['base_row']})"
+                        if clash['base_row'] is not None else "the component above")
+                lines.append(f"{who} all use par = {clash['par']} "
+                             f"→ parameter {target} of {base}")
+            self.set_status(
+                f"{action_label} was not started — Distr/Corr/Recon rows applied to "
+                f"the same component must each take a DIFFERENT 'par' (they write "
+                f"into the same parameter slot, so only the last one would "
+                f"survive):\n" + "\n".join(lines),
                 "red",
             )
             return False

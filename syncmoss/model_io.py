@@ -246,6 +246,7 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                         row_data[base_idx + 4],
                     )
 
+            main_window.params_table.update_distr_corr_highlights()
             main_window.set_status("Library submodel appended successfully", "green")
             return
 
@@ -358,6 +359,9 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                     param_widget_3.layout().itemAt(0).layout().itemAt(1).widget().setChecked(True)
                     param_widget_7.layout().itemAt(0).layout().itemAt(1).widget().setChecked(True)
 
+        # A loaded 'par' that happens to equal the auto-filled default emits no
+        # textChanged, so re-draw the grey frames once the whole table is in.
+        main_window.params_table.update_distr_corr_highlights()
         main_window.set_status("Model loaded successfully", "green")
 
     except Exception as e:

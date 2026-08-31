@@ -48,6 +48,11 @@ MODEL_OPTIONS = [
 # to visually split: fittable models | presets/utility.
 _MENU_SEPARATOR_BEFORE = {'Be'}
 
+# Rows that do not stand on their own: each one re-shoots the fittable component
+# in front of it, replacing that component's parameter number 'par'. Consecutive
+# ones form a single chain over one base component (see get_distribution_chains).
+_DISTRIBUTION_MODELS = ('Distr', 'Corr', 'Recon')
+
 class ClickableLabel(QLabel):
     def __init__(self, text, row, col):
         super().__init__(text)
@@ -381,13 +386,13 @@ class ParametersTable(QWidget):
                 # row. Corr is stricter: it may only follow a Distr/Corr/Recon
                 # (the distribution it correlates onto). Recon places like Distr.
                 # If the placement is invalid, do nothing (the row stays as it was).
-                if opt in ('Distr', 'Corr', 'Recon'):
+                if opt in _DISTRIBUTION_MODELS:
                     prev_model = ''
                     if r > 0:
                         prev_start = self.row_widgets[r - 1].layout().itemAt(0).widget()
                         prev_model = prev_start.layout().itemAt(1).widget().text()
                     if opt == 'Corr':
-                        allowed = prev_model in ('Distr', 'Corr', 'Recon')
+                        allowed = prev_model in _DISTRIBUTION_MODELS
                     else:  # Distr / Recon
                         allowed = prev_model not in ('baseline', 'Layer', 'Expression', 'None', '')
                     if not allowed:
@@ -728,56 +733,134 @@ class ParametersTable(QWidget):
             if row < len(self.row_fix_locked) and self.row_fix_locked[row]:
                 self._set_row_fix_states(row, [True] * numco)
 
+    def model_name_at(self, row):
+        """Model button text of a table row ('baseline' for row 0, 'None' for an
+        empty row)."""
+        if row < 0 or row >= len(self.row_widgets):
+            return 'None'
+        start_widget = self.row_widgets[row].layout().itemAt(0).widget()
+        return start_widget.layout().itemAt(1).widget().text()
+
+    def _value_input(self, row, col):
+        """The value QLineEdit of one table cell."""
+        param_widget = self.row_widgets[row].layout().itemAt(col + 1).widget()
+        return param_widget.layout().itemAt(1).widget()
+
+    def _name_label(self, row, col):
+        """The parameter-name ClickableLabel of one table cell."""
+        param_widget = self.row_widgets[row].layout().itemAt(col + 1).widget()
+        return param_widget.layout().itemAt(0).layout().itemAt(0).widget()
+
+    def _parameter_name(self, row, col):
+        """Displayed name of one table cell ('' outside the table)."""
+        if row is None or not (0 <= col < numco) or row >= len(self.row_widgets):
+            return ''
+        name_label = self._name_label(row, col)
+        return name_label.original_text or name_label.text()
+
+    def _par_value(self, row):
+        """The 'par' of a Distr/Corr/Recon row as the fit sees it.
+
+        read_model stores the field as a float and models.TImod indexes with
+        ``int(p[V])``, so '2' and '2.0' are the same target. Returns None when the
+        field is empty or holds a =[X,y] link instead of a plain number.
+        """
+        try:
+            return int(float(self._value_input(row, 0).text().strip()))
+        except ValueError:
+            return None
+
+    def get_distribution_chains(self):
+        """Group the Distr/Corr/Recon rows by the component they attach to.
+
+        A marker row re-shoots the fittable component in front of it, so a run of
+        consecutive markers forms one chain over one base component — exactly the
+        walk models.TImod does backwards from a 'Distr' to the first non-marker
+        entry. Rows left at 'None' are invisible to the fit (read_model skips
+        them), so they are skipped here too instead of cutting a chain in half.
+
+        Returns:
+            list of ``(base_row, [marker_row, ...])`` in table order. base_row is
+            None for a chain with no component in front of it (only reachable
+            from a hand-written file — the model menu refuses such a placement).
+        """
+        chains = []
+        base_row = None
+        markers = []
+        for row in range(1, len(self.row_widgets)):
+            model_name = self.model_name_at(row)
+            if model_name == 'None':
+                continue
+            if model_name in _DISTRIBUTION_MODELS:
+                markers.append(row)
+                continue
+            if markers:
+                chains.append((base_row, markers))
+                markers = []
+            base_row = row
+        if markers:
+            chains.append((base_row, markers))
+        return chains
+
+    def get_conflicting_distr_targets(self):
+        """Distr/Corr/Recon rows of one chain that claim the SAME 'par'.
+
+        Every marker row of a chain writes into slot 'par' of the one parameter
+        block of its base component (models.TImod: ``pN[int(p[V])] = X`` for the
+        Distr/Recon axis, ``= f(X)`` for a Corr). Two rows with the same 'par'
+        therefore overwrite each other and only the last one survives — silently,
+        with no error from the fit. Show model / Fit refuse to start until the
+        clash is resolved.
+
+        Returns:
+            list of dicts ``{'par', 'rows', 'models', 'base_row', 'base_model',
+            'param'}`` — one entry per clashing 'par', in table order. 'rows'
+            lists every claimant in table order; the caller flags rows[1:], since
+            the first one may keep the target and only the later ones need moving.
+        """
+        conflicts = []
+        for base_row, marker_rows in self.get_distribution_chains():
+            rows_by_par = {}
+            for row in marker_rows:
+                par = self._par_value(row)
+                if par is not None:
+                    rows_by_par.setdefault(par, []).append(row)
+            for par, rows in rows_by_par.items():
+                if len(rows) > 1:
+                    conflicts.append({
+                        'par': par,
+                        'rows': rows,
+                        'models': [self.model_name_at(r) for r in rows],
+                        'base_row': base_row,
+                        'base_model': self.model_name_at(base_row) if base_row is not None else None,
+                        'param': self._parameter_name(base_row, par),
+                    })
+        return conflicts
+
     def update_distr_corr_highlights(self):
-        """Update grey frame highlights for parameters referenced by Distr/Corr models"""
+        """Grey out every parameter driven by a Distr/Corr/Recon row.
+
+        The 'par' of each marker row picks a parameter of its base component;
+        that field stops being a free number (the distribution axis overwrites
+        it), so it gets a grey frame and is made read-only.
+        """
         # First, clear all grey frames
         self.clear_all_grey_frames()
-        
-        # Then, add grey frames for all Distr/Corr models
-        for row in range(len(self.row_widgets)):
-            row_widget = self.row_widgets[row]
-            start_widget = row_widget.layout().itemAt(0).widget()
-            model_btn = start_widget.layout().itemAt(1).widget()
-            model_name = model_btn.text()
-            
-            if model_name in ['Distr', 'Corr', 'Recon']:
-                # Find the last non-distribution model before this row (the base
-                # fittable component a Distr/Corr/Recon chain attaches to).
-                target_row = None
-                for search_row in range(row - 1, -1, -1):
-                    prev_row_widget = self.row_widgets[search_row]
-                    prev_start = prev_row_widget.layout().itemAt(0).widget()
-                    prev_model_btn = prev_start.layout().itemAt(1).widget()
-                    prev_model = prev_model_btn.text()
-                    if prev_model not in ['Distr', 'Corr', 'Recon']:
-                        target_row = search_row
-                        break
-                
-                if target_row is not None:
-                    # Get the 'par' value (first parameter)
-                    param_widget = row_widget.layout().itemAt(1).widget()
-                    value_input = param_widget.layout().itemAt(1).widget()
-                    par_text = value_input.text().strip()
-                    
-                    try:
-                        par_value = int(par_text)
-                        if par_value >= 1:
-                            # The parameter index in the target row is par_value (since it's 1-based and we add 1 to get actual column)
-                            # Column index = par_value (0-based counting where par=1 means first parameter)
-                            param_col = par_value  # par=1 means column 1 (index 1), which is the second widget
-                            
-                            # Set grey frame on the name label and make value uneditable
-                            if param_col < numco:
-                                target_param_widget = self.row_widgets[target_row].layout().itemAt(param_col + 1).widget()
-                                top_layout = target_param_widget.layout().itemAt(0).layout()
-                                name_label = top_layout.itemAt(0).widget()
-                                name_label.setStyleSheet("border: 2px solid grey;")
-                                # Make value input read-only and grey
-                                value_input = target_param_widget.layout().itemAt(1).widget()
-                                value_input.setReadOnly(True)
-                                value_input.setStyleSheet("background-color: lightgrey;")
-                    except ValueError:
-                        pass  # Invalid par value, skip
+
+        # Then, add grey frames for the target of every Distr/Corr/Recon row
+        for base_row, marker_rows in self.get_distribution_chains():
+            if base_row is None:
+                continue
+            for row in marker_rows:
+                par = self._par_value(row)
+                # par=1 means the second field of the base row (par=0 is its
+                # amplitude, which a distribution shares rather than replaces).
+                if par is None or not (1 <= par < numco):
+                    continue
+                self._name_label(base_row, par).setStyleSheet("border: 2px solid grey;")
+                value_input = self._value_input(base_row, par)
+                value_input.setReadOnly(True)
+                value_input.setStyleSheet("background-color: lightgrey;")
 
     def clear_all_grey_frames(self):
         """Clear all grey frame highlights from parameter name labels and restore editability"""
@@ -789,12 +872,15 @@ class ParametersTable(QWidget):
                 name_label = top_layout.itemAt(0).widget()
                 # Reset name label style (no border)
                 name_label.setStyleSheet("")
-                # Reset value input to editable if it has a name
                 value_input = param_widget.layout().itemAt(1).widget()
+                # Reset value input to editable if it has a name
                 if name_label.text() != "":
                     value_input.setReadOnly(False)
-                    value_input.setStyleSheet("")
-                else:
+                # A field marked red by mark_parameter_error/mark_expression_error
+                # keeps its warning: only its own eventFilter (a click into the
+                # field) clears that, so an unrelated refresh elsewhere in the
+                # table cannot hide the reason a fit was refused.
+                if not value_input.property('expression_error'):
                     value_input.setStyleSheet("")
 
     def update_references(self, start_index, delta):
@@ -862,20 +948,36 @@ class ParametersTable(QWidget):
         new_text = re.sub(r'p\[(\d+)\]', repl, text)
         return new_text, has_deleted_ref[0]
 
+    def _row_of_value_input(self, input_widget, fallback_row):
+        """Row a value QLineEdit sits in RIGHT NOW.
+
+        The textChanged lambdas capture the row index the widget was built with,
+        but Insert/Delete (and a Library append, which inserts) move whole row
+        widgets between positions and leave that index pointing at a neighbour.
+        Locating the row widget itself keeps the live 'par' highlighting correct
+        after such a move; the captured index is only a fallback for a widget no
+        longer in the table (mid-deletion).
+        """
+        param_widget = input_widget.parentWidget()
+        row_widget = param_widget.parentWidget() if param_widget is not None else None
+        for row, candidate in enumerate(self.row_widgets):
+            if candidate is row_widget:
+                return row
+        return fallback_row
+
     def on_value_changed(self, input_widget, row, col):
         """Handle value changes - check references and update grey frames for Distr/Corr"""
         # Check reference validity
         self.check_reference(input_widget)
-        
-        # If this is a Distr/Corr/Recon model and we're changing the 'par' parameter (col 0)
-        # update the grey frame highlights
-        if row < len(self.row_widgets) and col == 0:
-            row_widget = self.row_widgets[row]
-            start_widget = row_widget.layout().itemAt(0).widget()
-            model_btn = start_widget.layout().itemAt(1).widget()
-            model_name = model_btn.text()
-            if model_name in ['Distr', 'Corr', 'Recon']:
-                self.update_distr_corr_highlights()
+
+        # Editing the 'par' of a Distr/Corr/Recon row (col 0) re-aims it at
+        # another parameter of the component above: move the grey frame WHILE the
+        # user types, not only when a model is picked from the menu.
+        if col != 0:
+            return
+        row = self._row_of_value_input(input_widget, row)
+        if row < len(self.row_widgets) and self.model_name_at(row) in _DISTRIBUTION_MODELS:
+            self.update_distr_corr_highlights()
 
     def check_reference(self, input):
         text = input.text()

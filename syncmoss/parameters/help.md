@@ -78,11 +78,18 @@ The `par` field of `Distr`/`Corr`/`Recon` is **not** the flat `p[i]` number: it
 counts the parameters of the model row it attaches to, `1` being that row's
 second parameter (`δ` for most models). The amplitude (`T`, column 0) cannot be
 distributed. Check your choice visually — the targeted parameter gets a grey
-frame and becomes read-only, since the distribution now drives it.
+frame and becomes read-only, since the distribution now drives it, and the frame
+moves as soon as you retype `par`.
 
 `Distr`/`Recon` must sit directly under a fittable component, `Corr` under a
 `Distr`/`Corr`/`Recon`; a wrong placement is refused with a message instead of
 being accepted.
+
+When several `Distr`/`Corr`/`Recon` rows follow the **same** component, each must
+take a **different** `par`: they all write into the same parameter, so two rows
+sharing a `par` would silently overwrite each other. **Show model** and **Fit**
+refuse to start and redden the duplicate `par` fields (the first row keeps its
+target — move the ones below it).
 
 An unparsable text, or an empty parameter field (typically left behind when a
 value referenced by `=[X,Y]` was deleted), blocks **Show model** and **Fit** with
