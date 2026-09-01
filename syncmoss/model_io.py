@@ -86,26 +86,54 @@ def _set_row_param(row_widget, col, value, lower, upper, fix_str):
     fix_cb.setChecked(str(fix_str).lower() == 'true')
 
 
+def _pick_model_file(main_window, caption):
+    """Ask the user for a .mdl file and return its path ('' when canceled)."""
+    file_path, _ = QFileDialog.getOpenFileName(
+        main_window,
+        caption,
+        main_window.workfolder,
+        "Model files (*.mdl);;All files (*.*)"
+    )
+    return file_path
+
+
 def load_model(main_window):
     """
     Load a model from a .mdl or .txt file and apply it to the parameters table.
 
+    Replaces the whole table (baseline included). To merge a file into the
+    current model instead, use :func:`append_model_via_dialog`.
+
     Args:
         main_window: The main PhysicsApp window instance
     """
-    # Open file dialog
-    file_path, _ = QFileDialog.getOpenFileName(
-        main_window,
-        "Pick a model...",
-        main_window.workfolder,
-        "Model files (*.mdl);;All files (*.*)"
-    )
+    file_path = _pick_model_file(main_window, "Pick a model...")
 
     if not file_path:
         main_window.set_status("Selection was canceled", "orange")
         return
 
     _load_model_from_path_impl(main_window, file_path)
+
+
+def append_model_via_dialog(main_window, insert_row):
+    """
+    Ask for a .mdl file and concatenate its components into the current model.
+
+    The file-browser twin of the Library append: the picked file's baseline is
+    dropped and its components are inserted at ``insert_row``, with their
+    parameter references re-indexed by :func:`_remap_reference_text`. Both entry
+    points share :func:`load_model_from_path`, so the two behave identically.
+
+    Args:
+        main_window: The main PhysicsApp window instance
+        insert_row: Table row the components are inserted at (never the baseline)
+    """
+    file_path = _pick_model_file(main_window, "Pick a model to add...")
+    if not file_path:
+        main_window.set_status("Selection was canceled", "orange")
+        return
+    load_model_from_path(main_window, file_path, insert_row=insert_row)
 
 
 def load_model_from_path(main_window, file_path, insert_row=None):
@@ -115,6 +143,9 @@ def load_model_from_path(main_window, file_path, insert_row=None):
     Args:
         main_window: The main PhysicsApp window instance
         file_path: Absolute path to a model file
+        insert_row: When given, APPEND the file's components at this row (the
+                    file's baseline is ignored and the current one kept);
+                    when None, replace the whole table.
     """
     if not file_path:
         main_window.set_status("Selection was canceled", "orange")
@@ -132,25 +163,39 @@ def _last_parameter_index_before_row(params_table, row):
 
 
 def _remap_reference_text(text, z_value):
-    """Remap references for appended library models.
+    """Remap parameter references of a model being appended to the current one.
+
+    Used by every append path (Library browser and 'Load model' file browser):
+    the appended file's own baseline is discarded, so its component parameters
+    land at a different flat index than they had in the file. Parameter indices
+    are 0-based, and the first ``number_of_baseline_parameters`` belong to the
+    baseline.
 
     Rules:
-    - '=[X,Y]' -> '=[Z+X-number_of_baseline_parameters+1,Y]'
-    - 'p[X]'   -> 'p[Z+X-number_of_baseline_parameters+1]'
+    - a reference to a BASELINE parameter (``X < number_of_baseline_parameters``)
+      is kept verbatim: the destination baseline is the one that survives, and
+      its parameters sit at exactly the same indices in both models.
+    - any other reference is shifted onto the appended rows:
+      ``=[X,Y]`` -> ``=[Z+X-number_of_baseline_parameters+1,Y]`` and
+      ``p[X]``   -> ``p[Z+X-number_of_baseline_parameters+1]``, where ``Z`` is
+      the index of the last parameter before the insertion point (so the shift
+      is a no-op when appending directly after the baseline).
     """
     if not isinstance(text, str) or not text:
         return text
 
+    def new_index(x):
+        # Baseline links must survive the append untouched.
+        if x < number_of_baseline_parameters:
+            return x
+        return z_value + x - number_of_baseline_parameters + 1
+
     def repl_ref(m):
-        x = int(m.group(1))
         y = m.group(2)
-        new_x = z_value + x - number_of_baseline_parameters + 1
-        return f"=[{new_x},{y}]"
+        return f"=[{new_index(int(m.group(1)))},{y}]"
 
     def repl_p(m):
-        x = int(m.group(1))
-        new_x = z_value + x - number_of_baseline_parameters + 1
-        return f"p[{new_x}]"
+        return f"p[{new_index(int(m.group(1)))}]"
 
     out = re.sub(r"=\[(\d+)\s*,\s*([^\]]+)\]", repl_ref, text)
     out = re.sub(r"p\[(\d+)\]", repl_p, out)
@@ -247,7 +292,9 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
                     )
 
             main_window.params_table.update_distr_corr_highlights()
-            main_window.set_status("Library submodel appended successfully", "green")
+            appended = len(active_src_indices)
+            main_window.set_status(
+                f"Added {appended} submodel(s) from {os.path.basename(file_path)}", "green")
             return
 
         # Clear existing models by setting them to None (instead of deleting to preserve color order)

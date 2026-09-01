@@ -2,10 +2,11 @@
 The "Supp" (support) button menu and its actions.
 
 Everything reachable from the Supp button in the main window lives here:
-the menu construction (:func:`build_supp_menu`) and the handlers for the
-small settings dialogs (integral points, instrumental lines, polarization),
-the Library export/import, the two markdown viewers (models description and
-quick help) and the (parked) Hamiltonian initial-guess helper.
+the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
+and the handlers for the small settings dialogs (integral points, instrumental
+lines, polarization), the Library export/import, the two markdown viewers
+(models description and quick help) and the (parked) Hamiltonian initial-guess
+helper.
 
 The values edited by the dialogs are stored in hidden QLineEdit widgets on
 the main window (``jn0_input``, ``instrumental_number``,
@@ -29,9 +30,22 @@ from syncmoss.models_description_window import (
 )
 
 
+def theme_action_text(is_dark_mode):
+    """Label for the theme entry: it names the mode the click switches TO."""
+    return "Switch to light mode" if is_dark_mode else "Switch to dark mode"
+
+
 def build_supp_menu(main_window):
-    """Create the Supp QMenu wired to *main_window* and return it."""
+    """Create the Supp QMenu wired to *main_window* and return it.
+
+    The theme entry is kept on the window as ``main_window.theme_action`` so
+    ``PhysicsApp._apply_theme`` can relabel it whenever the mode changes.
+    """
     menu = QMenu(main_window)
+
+    theme_action = QAction(theme_action_text(main_window._is_dark_mode), main_window)
+    theme_action.triggered.connect(main_window.toggle_theme)
+    main_window.theme_action = theme_action
 
     ham_guess_action = QAction("Find initial guess for Hamiltonian", main_window)
     ham_guess_action.triggered.connect(lambda: open_hamiltonian_helper(main_window))
@@ -50,6 +64,8 @@ def build_supp_menu(main_window):
     help_action = QAction("Help (hidden features)", main_window)
     help_action.triggered.connect(lambda: open_help_pressed(main_window))
 
+    menu.addAction(theme_action)
+    menu.addSeparator()
     menu.addAction(ham_guess_action)
     menu.addAction(set_integral_points_action)
     menu.addAction(set_instrumental_lines_action)

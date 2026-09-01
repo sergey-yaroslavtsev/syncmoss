@@ -14,6 +14,7 @@ import pytest
 
 from syncmoss.constants import number_of_baseline_parameters
 from syncmoss.model_io import read_model, _save_model_to_file, load_model_from_path
+from syncmoss.supp_menu import theme_action_text
 
 pytestmark = pytest.mark.gui
 
@@ -111,6 +112,27 @@ def test_toggle_use_dat_instrumental_action_text(physics_app):
     w.toggle_use_dat_instrumental()
     assert w.use_dat_instrumental_metadata is (not before)
     assert w.toggle_dat_ins_action.text()  # text was updated, not crashed
+
+
+def test_theme_toggle_lives_in_the_supp_menu(physics_app):
+    """The light/dark switch is a Supp-menu entry, not a top-row button."""
+    w = physics_app
+    assert not hasattr(w, 'theme_btn')
+    assert w.theme_action in w.supp_menu.actions()
+
+    before_dark = w._is_dark_mode
+    before_text = w.theme_action.text()
+    assert before_text == theme_action_text(before_dark)
+
+    w.theme_action.trigger()
+    assert w._is_dark_mode is (not before_dark)
+    # The entry always names the mode the NEXT click switches to.
+    assert w.theme_action.text() == theme_action_text(w._is_dark_mode)
+    assert w.theme_action.text() != before_text
+
+    w.theme_action.trigger()  # restore
+    assert w._is_dark_mode is before_dark
+    assert w.theme_action.text() == before_text
 
 
 def test_show_spectrum_calibration_dat(physics_app):

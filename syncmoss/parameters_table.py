@@ -13,7 +13,7 @@ from syncmoss.constants import numro, numco, model_colors, number_of_baseline_pa
 # Lorentzian width L (a fitted line can never be narrower than the natural width).
 _NAT = str(NAT_WIDTH)
 from syncmoss.spectrum_io import calculate_backgrounds
-from syncmoss.model_io import mod_len_def
+from syncmoss.model_io import mod_len_def, append_model_via_dialog
 from syncmoss.Library_window import open_library_model_dialog
 
 # Absolute path to the icons directory.
@@ -40,7 +40,10 @@ MODEL_OPTIONS = [
     # syncmoss.legacy rewrites both to 'Hamiltonian' when a model file is opened.
     # presets / structural / utility
     'Be', 'KB_nano', 'Layer', 'Distr', 'Corr', 'Recon',
-    'Variables', 'Expression', 'Library', 'Delete', 'Insert', 'Nbaseline',
+    # 'Library' picks a model out of the internal Library folder, 'Load model'
+    # picks any .mdl through a file browser; both ADD the chosen model's
+    # components to the current one (see model_io.load_model_from_path).
+    'Variables', 'Expression', 'Library', 'Load model', 'Delete', 'Insert', 'Nbaseline',
     'Copy', 'Paste'
 ]
 
@@ -274,7 +277,7 @@ class ParametersTable(QWidget):
         _menu_colors = {
             'Insert': '#cc4444', 'Delete': '#cc4444',
             'Nbaseline': '#224477',
-            'Library': "#319B00",
+            'Library': "#319B00", 'Load model': "#1F6600",
             'Expression': '#5599cc', 'Variables': '#5599cc',
             'Distr': '#774488', 'Corr': '#774488', 'Recon': '#774488',
             'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
@@ -374,6 +377,9 @@ class ParametersTable(QWidget):
             if start.layout().itemAt(1).widget() == btn:
                 if opt == 'Library':
                     self._open_library_model_dialog(r)
+                    return
+                if opt == 'Load model':
+                    append_model_via_dialog(self.main_window, r)
                     return
                 if opt == 'Copy':
                     self.copy_model_to_memory(r)

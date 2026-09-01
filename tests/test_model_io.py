@@ -88,3 +88,41 @@ def test_remap_reference_text_formula_is_consistent_with_constant():
     z, x = 12, 20
     expected_index = z + x - number_of_baseline_parameters + 1
     assert _remap_reference_text(f"p[{x}]", z) == f"p[{expected_index}]"
+
+
+# --- baseline references survive an append -----------------------------------
+# An appended model keeps the DESTINATION baseline, and a baseline parameter sits
+# at the same flat index in both models, so a link into the first
+# number_of_baseline_parameters slots must come out byte-identical. Shifting it
+# (the pre-fix behaviour) silently repointed e.g. '=[1,1]' at whatever component
+# parameter happened to land on that index.
+
+@pytest.mark.parametrize("z", [7, 21, 100])
+@pytest.mark.parametrize("x", list(range(number_of_baseline_parameters)))
+def test_remap_reference_text_keeps_baseline_links(x, z):
+    assert _remap_reference_text(f"=[{x},1]", z) == f"=[{x},1]"
+    assert _remap_reference_text(f"p[{x}]", z) == f"p[{x}]"
+
+
+def test_remap_reference_text_first_component_param_is_the_boundary():
+    # x == number_of_baseline_parameters is the appended model's FIRST component
+    # parameter: it must shift. x one below it is the last baseline slot: it must not.
+    z = 21
+    first = number_of_baseline_parameters
+    assert _remap_reference_text(f"p[{first}]", z) == f"p[{z + 1}]"
+    assert _remap_reference_text(f"p[{first - 1}]", z) == f"p[{first - 1}]"
+
+
+def test_remap_reference_text_append_after_baseline_is_identity():
+    # Appending directly after the baseline (z = last baseline index) must leave
+    # every reference alone, baseline or not.
+    z = number_of_baseline_parameters - 1
+    text = "p[0]+p[3]*p[8]-p[20]"
+    assert _remap_reference_text(text, z) == text
+    assert _remap_reference_text("=[8,2]", z) == "=[8,2]"
+
+
+def test_remap_reference_text_mixes_baseline_and_component_links():
+    z = 21
+    assert (_remap_reference_text("p[0]+p[8]+p[7]+p[16]", z)
+            == f"p[0]+p[{z + 1}]+p[7]+p[{z + 9}]")

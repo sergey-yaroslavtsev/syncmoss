@@ -99,7 +99,7 @@ from syncmoss.instrumental_io import (
     hires_model_diff,
 )
 from syncmoss.Library_window import save_to_library_via_dialog
-from syncmoss.supp_menu import build_supp_menu
+from syncmoss.supp_menu import build_supp_menu, theme_action_text
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -853,11 +853,9 @@ class PhysicsApp(QMainWindow):
         self.interrupt_btn.setStyleSheet("background-color: red; color: white;")
         self.interrupt_btn.clicked.connect(self.interrupt)
 
-        self.theme_btn = QPushButton('Light mode')
-        self.theme_btn.setFont(QFont('Arial', 16))
-        self.theme_btn.clicked.connect(self.toggle_theme)
-
-        # The Supp menu (support tools & settings dialogs) lives in supp_menu.py
+        # The Supp menu (support tools & settings dialogs) lives in supp_menu.py.
+        # It also owns the light/dark toggle (self.theme_action), which is why it
+        # must be built after _load_theme() set self._is_dark_mode.
         self.supp_btn = QPushButton('Supp')
         self.supp_btn.setFont(QFont('Arial', 16))
         self.supp_menu = build_supp_menu(self)
@@ -865,7 +863,7 @@ class PhysicsApp(QMainWindow):
 
         # Add all buttons to top controls
         top_buttons = [self.loadmod_btn, self.btncleanmodel, self.cal_cho_btn,
-                   self.cal_btn, self.vel_btn, self.interrupt_btn, self.theme_btn, self.supp_btn]
+                   self.cal_btn, self.vel_btn, self.interrupt_btn, self.supp_btn]
         for btn in top_buttons:
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             top_controls.addWidget(btn)
@@ -2134,7 +2132,7 @@ class PhysicsApp(QMainWindow):
         """Apply the loaded theme to matplotlib figure.
 
         Qt widgets follow the QPalette set by _force_color_scheme.
-        Only the matplotlib figure and the theme-toggle button text
+        Only the matplotlib figure and the Supp-menu theme entry text
         are touched here.
         """
         t = self._theme
@@ -2142,8 +2140,8 @@ class PhysicsApp(QMainWindow):
         # Matplotlib figure background
         self.figure.patch.set_facecolor(t['figure_facecolor'])
 
-        # Update theme button label (no setStyleSheet — palette handles colors)
-        self.theme_btn.setText('Light mode' if self._is_dark_mode else 'Dark mode')
+        # Relabel the Supp-menu theme entry (no setStyleSheet — palette handles colors)
+        self.theme_action.setText(theme_action_text(self._is_dark_mode))
 
         # Style instrumental buttons with a color distinct from background
         if self._is_dark_mode:

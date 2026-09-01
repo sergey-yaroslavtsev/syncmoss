@@ -122,8 +122,12 @@ an explicit message and reddened fields rather than failing halfway through.
   propagated as separate layers of the sample (correct for a stack of different
   orientation or of different phases, where the transmission matrices do not
   commute).
-- `Library` in the model dropdown opens the phase library; `Copy`/`Paste`,
-  `Insert`/`Delete` act on the row you picked them from.
+- `Library` in the model dropdown opens the phase library and `Load model` a
+  `.mdl` file browser; both ADD the chosen model's components to the current one
+  at that row (your baseline is kept, links to it are preserved, links between
+  the added parameters are re-indexed). `Copy`/`Paste`, `Insert`/`Delete` act on
+  the row you picked them from.
+- The light/dark theme toggle lives in the *Supp* menu (first entry).
 
 ## 7. Spectrum files and instrumental function
 

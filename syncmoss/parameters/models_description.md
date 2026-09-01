@@ -329,12 +329,14 @@ Behavior:
   within one layer are averaged before the exponential instead.
 - For scalar-only models this behaves like a no-op.
 
-### Library, Copy, Paste, Insert, Delete
+### Library, Load model, Copy, Paste, Insert, Delete
 Not models: they act on the table row they were selected from. `Library` opens
-the phase library and fills the row from a stored model; `Copy`/`Paste` move a
-row (model, values and fix states) through an internal clipboard; `Insert` and
-`Delete` add/remove a row and renumber every `p[i]` and `=[X,Y]` reference for
-you.
+the phase library and `Load model` a `.mdl` file browser; both ADD every
+component of the chosen model at that row, keeping your current baseline and
+re-indexing the added `p[i]` / `=[X,Y]` references (links to the baseline's
+first 8 parameters stay as they are). `Copy`/`Paste` move a row (model, values
+and fix states) through an internal clipboard; `Insert` and `Delete` add/remove
+a row and renumber every `p[i]` and `=[X,Y]` reference for you.
 
 ---
 
