@@ -39,7 +39,9 @@ dependencies = [
 Homepage = "https://github.com/sergey-yaroslavtsev/syncmoss"
 Repository = "https://github.com/sergey-yaroslavtsev/syncmoss"
 
-[project.gui-scripts]
+[project.scripts]
+# console script (not gui-scripts): on Windows this uses the python.exe launcher
+# so the app stays attached to the calling terminal and its stdout/stderr are visible.
 syncmoss = "syncmoss.main:main"
 
 [tool.setuptools.packages.find]
