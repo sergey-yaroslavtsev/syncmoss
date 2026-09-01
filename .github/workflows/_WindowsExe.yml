@@ -24,7 +24,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
-          pip install wheels/*.whl
+          # PowerShell does NOT expand a glob when calling a native command, so
+          # `pip install wheels/*.whl` handed pip the literal string and failed --
+          # silently, because the step's exit code came from the last line. Resolve
+          # the path in PowerShell instead.
+          pip install (Get-ChildItem wheels/*.whl).FullName
           pip install pyinstaller
 
       - name: Build with PyInstaller

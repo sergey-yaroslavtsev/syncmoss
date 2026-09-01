@@ -1,0 +1,50 @@
+name: Tests
+
+# Runs on EVERY push, on any branch, and on every pull request -- so a plain
+# `git push` to main and opening a PR both get checked. The release pipeline
+# (release.yml) only fires when __VERSION__ in syncmoss/main.py changes, which is
+# why the suite needs its own trigger here.
+#
+# Push/PR runs everything EXCEPT the `slow` marker (the real calibration fits,
+# the real simultaneous-fit tests, and the full GUI open-and-fit smoke) -- those
+# are re-run in full by release.yml against the built wheel. To run absolutely
+# everything from any branch, use "Run workflow" -> scope: full.
+on:
+  push:
+    # '**' = every branch, but NOT tags -- otherwise the release tag that
+    # _TagRelease.yml pushes would re-run the whole suite for nothing.
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Which tests to run'
+        type: choice
+        options:
+          - full   # every test, nothing skipped
+          - fast   # skip the `slow` marker
+        default: full
+
+# A push immediately followed by opening a PR fires two events that name the same
+# head branch; collapse them into one run instead of paying for both.
+concurrency:
+  group: tests-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+# Exactly one lane runs; the other is skipped.
+jobs:
+  # Every push and pull request, and "Run workflow" -> fast.
+  fast:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope == 'fast'
+    uses: ./.github/workflows/_Tests.yml
+    with:
+      install: source
+      selection: 'not slow'
+
+  # "Run workflow" -> full: the whole suite, on demand, from any branch.
+  full:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'full'
+    uses: ./.github/workflows/_Tests.yml
+    with:
+      install: source
+      selection: ''

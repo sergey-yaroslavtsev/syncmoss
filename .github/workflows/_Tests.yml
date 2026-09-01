@@ -1,12 +1,41 @@
 name: _Tests (Linux / Windows / macOS)
 
+# The single definition of "how the test-suite is run". Two callers use it:
+#
+#   * Tests.yml   -- every push / pull request. Tests the SOURCE checkout and
+#                    skips the `slow` marker, so a branch push gets an answer
+#                    quickly.
+#   * release.yml -- before the (expensive) PyInstaller builds. Tests the
+#                    INSTALLED WHEEL, with no marker filter, so nothing is
+#                    skipped in a release.
+#
+# Both always run on all three OSes; the two lanes differ only in WHAT is
+# installed and WHICH tests are selected.
 on:
   workflow_call:
+    inputs:
+      install:
+        description: "'wheel' = exercise the built wheel artifact; 'source' = exercise the checkout"
+        type: string
+        default: 'wheel'
+      selection:
+        description: "pytest -m marker expression; empty = the whole suite"
+        type: string
+        default: ''
   workflow_dispatch:
+    inputs:
+      install:
+        description: 'What to test (wheel needs a `wheels` artifact in this run, so pick source)'
+        type: choice
+        options:
+          - source
+          - wheel
+        default: source
+      selection:
+        description: 'pytest -m expression, e.g. "not slow". Empty = every test.'
+        type: string
+        default: ''
 
-# Runs the pytest suite against the *installed wheel* on all three OSes in
-# parallel. Called after the wheels are built and before any bundling/freezing,
-# so a test failure stops the (expensive) PyInstaller builds.
 jobs:
   tests:
     name: tests (${{ matrix.os }})
@@ -30,27 +59,48 @@ jobs:
           sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libglib2.0-0
 
       - name: Download wheel artifact
+        if: inputs.install == 'wheel'
         uses: actions/download-artifact@v6
         with:
           name: wheels
           path: wheels
 
+      # These steps run on all three OSes, so they are written in the one shell
+      # present on all three: bash. (Pre-existing choice -- it is also why
+      # `mktemp -d` is used below rather than a Windows temp path.)
       - name: Install syncmoss from the built wheel (as a library) + pytest
+        if: inputs.install == 'wheel'
         shell: bash
         run: |
           python -m pip install --upgrade pip
           pip install wheels/*.whl
           pip install pytest
 
-      # Run from a clean directory so the source tree is NOT on sys.path and the
-      # installed wheel is exercised (syncmoss is a namespace package). mktemp -d
-      # works in Git-bash on Windows too, avoiding backslash-path pitfalls.
-      - name: Run test-suite against the installed library
+      - name: Install runtime dependencies + pytest (source checkout)
+        if: inputs.install == 'source'
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run the test-suite
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
+          INSTALL: ${{ inputs.install }}
+          SELECTION: ${{ inputs.selection }}
         run: |
-          workdir="$(mktemp -d)"
-          cd "$workdir"
+          args=(-q)
+          if [ -n "$SELECTION" ]; then args+=(-m "$SELECTION"); fi
+
+          # wheel mode: run from a clean directory so the source tree is NOT on
+          # sys.path and the installed wheel is exercised (syncmoss is a namespace
+          # package). mktemp -d works in Git-bash on Windows too, avoiding
+          # backslash-path pitfalls.
+          # source mode: stay in the workspace, so `syncmoss/` is imported from
+          # the checkout -- that is the code the push is about.
+          if [ "$INSTALL" = "wheel" ]; then cd "$(mktemp -d)"; fi
+
           python -c "import syncmoss.syncmoss_main as m; print('syncmoss from:', m.__file__)"
-          python -m pytest "$GITHUB_WORKSPACE/tests" -q
+          python -m pytest "$GITHUB_WORKSPACE/tests" "${args[@]}"

@@ -108,10 +108,29 @@ def qapp():
 
 @pytest.fixture
 def physics_app(qapp, tmp_path):
-    """A freshly built :class:`PhysicsApp` main window (closed on teardown).
+    """A freshly built :class:`PhysicsApp` main window (destroyed on teardown).
 
     ``calibration_path`` is redirected to a temp copy so tests that show/fit the
     bundled Calibration.dat never mutate the tracked data file.
+
+    Teardown must DESTROY the window, not just close() it. close() merely hides a
+    widget: WA_DeleteOnClose is not set, the window is top-level (no Qt parent to
+    delete it), and ParametersTable/ResultsTable/CustomNavigationToolbar all hold
+    back-references to it. So a close()-only teardown left the whole window tree
+    -- 103 top-level widgets and ~181 MB -- alive for the rest of the session, per
+    test. Over the ~110 tests that use this fixture the process reached ~12 GB,
+    PhysicsApp construction slowed from 2.6 s to >4.5 s as the widgets piled up,
+    and the run eventually stopped making progress altogether.
+    deleteLater() alone is NOT enough either: QApplication.processEvents() does
+    not deliver DeferredDelete events, so the window is never actually destroyed.
+
+    We destroy with shiboken6.delete() rather than deleteLater() +
+    sendPostedEvents(None, DeferredDelete). Both free the window, but
+    sendPostedEvents(None, ...) scans the whole posted-event queue for the thread,
+    and that scan gets more expensive every time: measured over 16 build/destroy
+    cycles the teardown grew 0.75s -> 5.47s (~0.3 s per preceding window), which is
+    what made the late GUI tests take 20-27 s each. shiboken6.delete() destroys the
+    object immediately with no queue scan and stays flat (0.69s -> 0.90s).
     """
     from syncmoss.syncmoss_main import PhysicsApp
 
@@ -121,3 +140,12 @@ def physics_app(qapp, tmp_path):
         yield window
     finally:
         window.close()
+        window.setParent(None)
+        try:
+            import shiboken6
+            shiboken6.delete(window)
+        except Exception:  # pragma: no cover - shiboken6 ships with PySide6
+            from PySide6.QtCore import QEvent
+            from PySide6.QtWidgets import QApplication
+            window.deleteLater()
+            QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

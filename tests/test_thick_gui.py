@@ -7,6 +7,9 @@ import pytest
 
 from syncmoss.model_io import read_model
 
+# Every test here builds the PySide6 GUI via the physics_app fixture.
+pytestmark = pytest.mark.gui
+
 
 def _model_btn(pt, row):
     return pt.row_widgets[row].layout().itemAt(0).widget().layout().itemAt(1).widget()

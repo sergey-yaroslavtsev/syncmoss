@@ -26,6 +26,9 @@ import syncmoss.models as m5
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.model_io import load_model_from_path, mod_len_def, read_model
 
+# Builds the PySide6 GUI (physics_app) and runs the real forward pipeline (TI).
+pytestmark = pytest.mark.gui
+
 _DATA = os.path.join(os.path.dirname(__file__), "data")
 _X = np.linspace(-12.0, 12.0, 400)
 _INS = np.array([0.1, 0.0, 1.0])     # one narrow source line (Met=0 instrumental triple)

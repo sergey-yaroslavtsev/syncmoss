@@ -122,10 +122,13 @@ def test_sms_matches_golden(sms_results, golden, vel_start):
     assert v.min() < -4.5 and v.max() > 4.5
 
 
-@pytest.mark.parametrize("vel_start", [0, 1])
-def test_sms_velocity_direction_reverses(sms_results, vel_start):
+def test_sms_velocity_direction_reverses(sms_results):
     """Vel_start flips the sweep direction, so the two axes are mirror-like:
-    the span matches but the (min, max) endpoints swap sign roughly."""
+    the span matches but the (min, max) endpoints swap sign roughly.
+
+    (Not parametrized: the body compares BOTH directions against each other, so a
+    `vel_start` parameter was unused and simply ran the identical assertion twice.)
+    """
     v0, v1 = sms_results[0][0], sms_results[1][0]
     assert float(v0.max() - v0.min()) == pytest.approx(float(v1.max() - v1.min()), abs=0.05)
 

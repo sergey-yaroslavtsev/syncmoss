@@ -64,6 +64,7 @@ def test_distribution_curves_empty_without_distributions():
     assert distribution_curves(['Sextet'], np.zeros(NB + 14), [], [], []) == []
 
 
+@pytest.mark.gui
 def test_param_file_writes_placeholder_for_recon_weights(physics_app, tmp_path):
     """The Recon 'weights' column is written as 1 (not the placeholder p-slot)."""
     model_list = ['baseline', 'Recon']
@@ -86,6 +87,7 @@ def test_param_file_writes_placeholder_for_recon_weights(physics_app, tmp_path):
     assert data[header.index('d_weights')] == 'nan'
 
 
+@pytest.mark.gui
 def test_graf_and_distributions_png_for_recon(physics_app, tmp_path):
     """A single-spectrum result with a Recon adds Recon_x/Recon_y graf columns and
     writes a *_distributions.png."""

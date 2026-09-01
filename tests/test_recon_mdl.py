@@ -8,9 +8,13 @@ that a save -> load cycle preserves them (the fixed 7-slot footprint means the
 generic .mdl loader needs no Num-dependent special-casing).
 """
 import numpy as np
+import pytest
 
 from syncmoss.model_io import read_model, _save_model_to_file, load_model_from_path
 from syncmoss.constants import number_of_baseline_parameters
+
+# Every test here builds the PySide6 GUI via the physics_app fixture.
+pytestmark = pytest.mark.gui
 
 
 def _model_btn(pt, row):
