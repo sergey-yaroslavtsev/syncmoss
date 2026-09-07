@@ -88,6 +88,7 @@ from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
     plot_distribution, plot_calibration, plot_model, plot_model_with_nbaseline,
     plot_spectrum, plot_model_without_spectrum, calculate_z_order, distribution_curves,
+    calculate_baseline,
 )
 from syncmoss.instrumental_io import (
     instrumental,
@@ -2937,12 +2938,17 @@ class PhysicsApp(QMainWindow):
                 self._showing_distribution = False
                 self.SP_DI.setText('Distribution')
 
-                # Store fitting data for graf.txt saving
+                # Store fitting data for graf.txt saving. Every entry is a LIST
+                # with one item per spectrum; 'begining_spc' lets the save code
+                # slice each section's own baseline parameters out of the flat p.
                 self.last_fitting_data = {
                     'A': result['A_list'],  # List of arrays
                     'B': result['B_list'],
                     'SPC_f': result['SPC_f_list'],
-                    'FS': result['FS_list']
+                    'FS': result['FS_list'],
+                    'is_simultaneous': True,
+                    'begining_spc': result['begining_spc'],
+                    'spectrum_files': result['spectrum_files'],
                 }
                 
                 result_svg, result_png, position_artists_list = plot_simultaneous_fitting_result(
@@ -2982,7 +2988,8 @@ class PhysicsApp(QMainWindow):
                     'A': result['A'],
                     'B': result['B'],
                     'SPC_f': result['SPC_f'],
-                    'FS': result['FS']
+                    'FS': result['FS'],
+                    'is_simultaneous': False,
                 }
                 
                 # Store data for replotting with z-order changes
@@ -3164,7 +3171,14 @@ class PhysicsApp(QMainWindow):
             if save_dir and not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
-            spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
+            # A simultaneous fit produced ONE parameter row for several spectra —
+            # name them all, otherwise the saved row looks like a single-file fit.
+            fit_data = self.last_fitting_data or {}
+            sim_files = fit_data.get('spectrum_files') if fit_data.get('is_simultaneous') else None
+            if sim_files:
+                spectrum_file = '; '.join(os.path.basename(f) for f in sim_files)
+            else:
+                spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
             self._write_result_files(base_path, spectrum_file, mode)
 
             # Success message
@@ -3249,57 +3263,84 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             print(f"Error saving distributions png: {e}\n{traceback.format_exc()}")
 
+    def _graf_section_columns(self, A, B, SPC_f, FS, p_section, section_model, prefix=''):
+        """Build the (names, columns) of one spectrum's block of the graf file.
+
+        The block is ``Velocity Data Baseline Fit <subspectrum> ...``, every name
+        carrying *prefix* (empty for a single spectrum, ``S<n>_`` per section of a
+        simultaneous fit). ``p_section`` is the parameter array whose FIRST eight
+        slots are this spectrum's baseline; ``section_model`` the model names of
+        this section only.
+        """
+        A = np.asarray(A, dtype=float)
+        baseline = (calculate_baseline(p_section, A) if p_section is not None and len(p_section) >= 8
+                    else np.zeros_like(A))
+
+        # Names of the actually plotted subspectra only. Keep this aligned with the
+        # plotting filters: 'Layer' is a boundary marker that draws no curve of its
+        # own (FS has no entry for it), so it is excluded here just like
+        # Nbaseline/Distr/Corr/Recon/Expression/Variables.
+        excluded = {'baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
+        model_names = [m for m in section_model if m not in excluded]
+        while len(model_names) < len(FS):
+            model_names.append(f'Submodel{len(model_names) + 1}')
+
+        names = ['Velocity', 'Data', 'Baseline', 'Fit'] + model_names[:len(FS)]
+        columns = [A, B, baseline, SPC_f] + list(FS)
+        return [prefix + n for n in names], columns
+
     def _save_graf_file(self, filepath, fitting_data):
         """
         Save graph data to text file with columns: A (velocity), B (data), Baseline, SPC_f (fit), model1, model2, ...
-        
+
+        For a simultaneous (Nbaseline) fit the same block is written for EVERY
+        spectrum, each column prefixed ``S<n>_`` (``S1_Velocity``, ``S1_Baseline``,
+        ``S1_Fit``, ..., ``S2_Velocity``, ...), so all baselines, all fits and all
+        subspectra land in the one file the user plots later. The spectra usually
+        differ in length, so every column is NaN-padded to the longest one.
+
         Args:
             filepath: Path to save the file
-            fitting_data: Dictionary with 'A', 'B', 'SPC_f', 'FS' arrays
+            fitting_data: Dictionary with 'A', 'B', 'SPC_f', 'FS' arrays. For a
+                simultaneous fit these are LISTS with one entry per spectrum and
+                'is_simultaneous'/'begining_spc' are set as well.
         """
-        A = fitting_data['A']
-        B = fitting_data['B']
-        SPC_f = fitting_data['SPC_f']
-        FS = fitting_data['FS']
-        
-        # Calculate baseline from current parameters
-        if hasattr(self.results_table, 'current_parameters') and self.results_table.current_parameters is not None:
-            p = self.results_table.current_parameters
-            # Baseline formula: p[0] + p[3]*p[0]/100*A + p[2]*p[0]/10000*(A-p[1])^2 + p[6]*p[4]/10000*(A-p[5])^2 + p[4] + p[7]*p[4]/100*A
-            baseline = (p[0] + p[3] * p[0]/100 * A + p[2] * p[0] / 10000 * (A - p[1])**2 + 
-                       p[6] * p[4] / 10000 * (A - p[5])**2 + p[4] + p[7] * p[4]/100 * A)
-        else:
-            # Fallback: use zeros
-            baseline = np.zeros_like(A)
-        
-        # Get model names for actually plotted subspectra only.
-        # Keep save output aligned with plotting filters. 'Layer' is a boundary
-        # marker that draws no curve of its own (FS has no entry for it), so it
-        # is excluded here just like Nbaseline/Distr/Corr/Expression/Variables.
-        if hasattr(self.results_table, 'current_model_list') and len(self.results_table.current_model_list) > 1:
-            excluded = {'baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
-            model_names = [m for m in self.results_table.current_model_list if m not in excluded]
-        else:
-            model_names = [f'Submodel{i+1}' for i in range(len(FS))]
+        p_all = getattr(self.results_table, 'current_parameters', None)
+        model_list = list(getattr(self.results_table, 'current_model_list', None) or [])
 
-        # Pad model_names if needed
-        while len(model_names) < len(FS):
-            model_names.append(f'Submodel{len(model_names)+1}')
-
-        # Create data columns: A, B, Baseline, SPC_f, then each subspectrum
-        data_columns = [A, B, baseline, SPC_f]
-        column_names = ['Velocity', 'Data', 'Baseline', 'Fit'] + model_names[:len(FS)]
-        data_columns.extend(FS)
+        if fitting_data.get('is_simultaneous'):
+            # Per-spectrum blocks: each section has its OWN baseline parameters,
+            # which start at begining_spc[i] in the flat fitted array.
+            sections = fitting_io.split_model_sections(model_list)
+            begining_spc = list(fitting_data.get('begining_spc') or [])
+            column_names, data_columns = [], []
+            for i in range(len(fitting_data['A'])):
+                if p_all is not None and i < len(begining_spc):
+                    p_section = np.asarray(p_all, dtype=float)[begining_spc[i]:]
+                else:
+                    p_section = None
+                names, columns = self._graf_section_columns(
+                    fitting_data['A'][i], fitting_data['B'][i],
+                    fitting_data['SPC_f'][i], fitting_data['FS'][i],
+                    p_section, sections[i] if i < len(sections) else [],
+                    prefix=f'S{i + 1}_')
+                column_names.extend(names)
+                data_columns.extend(columns)
+        else:
+            column_names, data_columns = self._graf_section_columns(
+                fitting_data['A'], fitting_data['B'], fitting_data['SPC_f'],
+                fitting_data['FS'], p_all, model_list)
 
         # Append distribution / correlation curves as extra x/y column pairs
         # (Distr_x_N/Distr_y_N, Corr_x_N/Corr_y_N, Recon_x_N/Recon_y_N in model
-        # order). Their length is the grid size Num, generally != the spectrum
-        # length, so every column is padded with NaN to a common row count. Only
-        # for a single spectrum (A is a 1-D array); guarded so a failure here never
-        # blocks the rest of the graf file.
+        # order). Emitted once for the whole model — distribution_curves walks the
+        # flat parameter array with mod_len_def, so it crosses Nbaseline sections
+        # correctly. Their length is the grid size Num, generally != the spectrum
+        # length, so every column is padded with NaN to a common row count.
+        # Guarded so a failure here never blocks the rest of the graf file.
         try:
             data = getattr(self, 'last_plot_data', None)
-            if data is not None and np.ndim(A) == 1:
+            if data is not None:
                 curves = distribution_curves(
                     data.get('model', []), data.get('p_flat', data.get('p')),
                     data.get('Distri', []), data.get('Cor', []), data.get('Recon', []))

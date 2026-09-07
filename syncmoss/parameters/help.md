@@ -153,7 +153,10 @@ an explicit message and reddened fields rather than failing halfway through.
 
 - `<base>_param.txt` — parameters, errors, χ²  (appended in sequence mode)
 - `<base>_graf.txt` — the plotted curves: velocity, data, baseline, fit, then
-  one column per component (and the distribution curves, if any)
+  one column per component (and the distribution curves, if any). A simultaneous
+  (`Nbaseline`) fit writes that whole block for every spectrum, prefixed
+  `S1_`, `S2_`, … — each with its own baseline — padded with `nan` to the
+  longest spectrum
 - `<base>_combo.png` — the figure together with the rendered results table
 - `<base>.svg` — the figure alone
 - `<base>_distributions.png` — every `Distr`/`Corr`/`Recon` curve, when present
