@@ -593,6 +593,28 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
     return True
 
 
+def split_link_field(text):
+    """``(source parameter index, factor)`` of a parameter LINK field ``=[X,Y]``.
+
+    Returns None when the text is not a usable link: a plain number, an empty
+    field, or a link with one half still missing (``=[,1]``, ``=[3,]``,
+    ``=[,]``). The table deliberately lets those half-written forms be TYPED, so
+    that one of the two numbers can be deleted and retyped instead of having to
+    be overtyped; Show model / Fit refuse them up front (see
+    ParametersTable.get_empty_parameter_slots).
+    """
+    text = str(text).strip()
+    if not (text.startswith('=[') and text.endswith(']')):
+        return None
+    parts = text[2:-1].split(',')
+    if len(parts) != 2:
+        return None
+    try:
+        return float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+
+
 def parse_recon_weights(text, num):
     """Parse a 'Recon' weight-vector text field into a length-``num`` float array.
 
@@ -668,18 +690,23 @@ def read_model(main_window):
 
         A ``=[source,factor]`` text registers a linear constraint (con1 gets
         this slot's index, con2/con3 the source index and factor; the slot
-        itself receives placeholder 1). Anything else is parsed as a float
-        (empty field -> 0.0).
+        itself receives placeholder 1). Anything else is parsed as a float; an
+        empty field, or a half-written link such as ``=[,1]``, reads as 0.0
+        (Show model / Fit refuse both before they get here, see
+        ParametersTable.get_empty_parameter_slots).
         """
         nonlocal p, con1, con2, con3
-        if param_text.startswith('=[') and param_text.endswith(']'):
-            constraint_parts = param_text[2:-1].split(',')
+        link = split_link_field(param_text)
+        if link is not None:
             con1 = np.append(con1, len(p))
-            con2 = np.append(con2, float(constraint_parts[0]))
-            con3 = np.append(con3, float(constraint_parts[1]))
+            con2 = np.append(con2, link[0])
+            con3 = np.append(con3, link[1])
             p = np.append(p, 1)
         else:
-            p = np.append(p, float(param_text) if param_text else 0.0)
+            try:
+                p = np.append(p, float(param_text))
+            except (TypeError, ValueError):
+                p = np.append(p, 0.0)
 
     # Read baseline parameters from first row (row 0)
     baseline_row = main_window.params_table.row_widgets[0]

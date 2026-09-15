@@ -1547,9 +1547,10 @@ class PhysicsApp(QMainWindow):
 
         Three checks run up front:
 
-        * no active numeric parameter slot may be empty (a =[X,y] reference to a
-          deleted parameter leaves its field empty; read_model would silently
-          read it as 0.0),
+        * no active numeric parameter slot may be empty or hold a half-written
+          link (a =[X,y] reference to a deleted parameter leaves its field empty,
+          and '=[,1]' is a link the user has not finished typing; read_model
+          would silently read either as 0.0),
         * no two Distr/Corr/Recon rows of one chain may share a 'par' (they would
           overwrite each other in the same parameter slot), and
         * every user-typed Expression/Distr/Corr text must evaluate.
@@ -1564,12 +1565,17 @@ class PhysicsApp(QMainWindow):
             for slot in empty_slots:
                 self.params_table.mark_parameter_error(slot['row'], slot['col'])
                 param = slot['param'] or f"column {slot['col']}"
+                if slot['reason'] == 'empty':
+                    what = "is empty"
+                else:
+                    what = (f"holds an unfinished link '{slot['text']}' — a link "
+                            f"needs both numbers, =[parameter,factor]")
                 lines.append(f"{slot['model']} (table row {slot['row']}): "
-                             f"parameter '{param}' is empty")
+                             f"parameter '{param}' {what}")
             self.set_status(
-                f"{action_label} was not started — empty parameter(s) "
-                f"(fill them in; a value referenced by =[...] may have been "
-                f"deleted):\n" + "\n".join(lines),
+                f"{action_label} was not started — empty or unfinished "
+                f"parameter(s) (fill them in; a value referenced by =[...] may "
+                f"have been deleted):\n" + "\n".join(lines),
                 "red",
             )
             return False

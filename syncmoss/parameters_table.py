@@ -13,7 +13,7 @@ from syncmoss.constants import numro, numco, model_colors, number_of_baseline_pa
 # Lorentzian width L (a fitted line can never be narrower than the natural width).
 _NAT = str(NAT_WIDTH)
 from syncmoss.spectrum_io import calculate_backgrounds
-from syncmoss.model_io import mod_len_def, append_model_via_dialog
+from syncmoss.model_io import mod_len_def, append_model_via_dialog, split_link_field
 from syncmoss.Library_window import open_library_model_dialog
 
 # Absolute path to the icons directory.
@@ -28,6 +28,25 @@ _CB = f"{_ICONS_DIR}/CheckBox.png"
 _CB_ = f"{_ICONS_DIR}/CheckBox_.png"
 _CBL = f"{_ICONS_DIR}/CheckBox_L.png"
 _CBL2 = f"{_ICONS_DIR}/CheckBox_L2.png"
+
+# What a numeric parameter value field accepts while it is being TYPED: a plain
+# number, or a link '=[X,Y]' ("take Y times the value of parameter X") with
+# either half allowed to be missing -- '=[,1]', '=[3,]', '=[,]', '=[3,-]'.
+# Those half-written forms are what lets the user DELETE one of the two numbers
+# and type another, instead of having to overtype it; they are not links yet, so
+# Show model / Fit refuse them (see ParametersTable.get_empty_parameter_slots)
+# and model_io.split_link_field reads them as "not a link".
+_VALUE_INPUT_PATTERN = r'^(-?\d+(\.\d+)?|=\[\d*,-?(\d+(\.\d+)?)?\])$'
+
+# Prefilled by the "link to another parameter" context-menu entry, with the
+# cursor parked on the empty source-index half (before the comma).
+_EMPTY_LINK = '=[,1]'
+
+
+def _make_value_validator():
+    """Validator of a numeric parameter value field (number or =[X,Y] link)."""
+    return QRegularExpressionValidator(QRegularExpression(_VALUE_INPUT_PATTERN))
+
 
 MODEL_OPTIONS = [
     # polarized fittable models (each reduces to its former scalar form at
@@ -181,8 +200,9 @@ class ParametersTable(QWidget):
             value_input = QLineEdit("")
             value_input.setFont(QFont('Arial', 10))
             value_input.setFixedWidth(80)
-            validator_value = QRegularExpressionValidator(QRegularExpression(r'^(-?\d+(\.\d+)?|=\[\d+,-?\d+(\.\d+)?\])$'))
+            validator_value = _make_value_validator()
             value_input.setValidator(validator_value)
+            self._install_value_context_menu(value_input)
             value_input.textChanged.connect(lambda text, inp=value_input, r=0, c=col: self.on_value_changed(inp, r, c))
             # Bounds layout
             bounds_layout = QHBoxLayout()
@@ -218,7 +238,7 @@ class ParametersTable(QWidget):
             name_label.setText(name_labels[i])
             name_label.original_text = name_labels[i]
             value_input.setText(str(initial_values[i]))
-            validator_value = QRegularExpressionValidator(QRegularExpression(r'^(-?\d+(\.\d+)?|=\[\d+,-?\d+(\.\d+)?\])$'))
+            validator_value = _make_value_validator()
             value_input.setValidator(validator_value)
             if i in [1,2,3,4,5,6,7]:
                 fix_cb.setChecked(True)
@@ -331,8 +351,9 @@ class ParametersTable(QWidget):
             value_input = QLineEdit("")
             value_input.setFont(QFont('Arial', 10))
             value_input.setFixedWidth(80)
-            validator_value = QRegularExpressionValidator(QRegularExpression(r'^(-?\d+(\.\d+)?|=\[\d+,-?\d+(\.\d+)?\])$'))
+            validator_value = _make_value_validator()
             value_input.setValidator(validator_value)
+            self._install_value_context_menu(value_input)
             value_input.textChanged.connect(lambda text, inp=value_input, r=row, c=col: self.on_value_changed(inp, r, c))
             # Bounds layout
             bounds_layout = QHBoxLayout()
@@ -685,9 +706,13 @@ class ParametersTable(QWidget):
                 if col < self.row_params[row]:
                     if model in ['Distr', 'Corr', 'Recon', 'Expression'] and col == self.row_params[row] - 1:
                         value_input.setValidator(None)
+                        # Free prose, not a number: it keeps the stock
+                        # right-click menu (see _show_value_context_menu).
+                        value_input.setProperty('free_text', True)
                     else:
-                        validator_value = QRegularExpressionValidator(QRegularExpression(r'^(-?\d+(\.\d+)?|=\[\d+,-?\d+(\.\d+)?\])$'))
+                        validator_value = _make_value_validator()
                         value_input.setValidator(validator_value)
+                        value_input.setProperty('free_text', False)
                     name_label = param_widget.layout().itemAt(0).layout().itemAt(0).widget()
                     lower_input = param_widget.layout().itemAt(2).layout().itemAt(0).widget()
                     upper_input = param_widget.layout().itemAt(2).layout().itemAt(1).widget()
@@ -701,6 +726,7 @@ class ParametersTable(QWidget):
                         upper_input.setReadOnly(False)
                 else:
                     value_input.setValidator(None)
+                    value_input.setProperty('free_text', False)
                     lower_input = param_widget.layout().itemAt(2).layout().itemAt(0).widget()
                     upper_input = param_widget.layout().itemAt(2).layout().itemAt(1).widget()
                     value_input.setReadOnly(True)
@@ -989,6 +1015,57 @@ class ParametersTable(QWidget):
         text = input.text()
         if not re.match(r'=\[\d+,.+\]', text):
             input.setStyleSheet("")
+
+    def _install_value_context_menu(self, value_input):
+        """Replace the QLineEdit right-click menu of a value field with our own
+        (see _show_value_context_menu)."""
+        value_input.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        value_input.customContextMenuRequested.connect(
+            lambda pos, inp=value_input: self._show_value_context_menu(inp, pos))
+
+    def value_context_menu(self, value_input):
+        """Right-click menu of a parameter value field.
+
+        The stock QLineEdit menu (undo / cut / copy / paste / select all) is of
+        no use on a field that only takes a number or a ``=[X,Y]`` link, so it is
+        replaced by the one editing step that is awkward to type by hand:
+        starting a link. The free-text columns (an Expression / PDF / dependency
+        string or a Recon weight vector — the fields select_model flags
+        'free_text') keep the standard menu, where copy / paste does help.
+        """
+        if value_input.property('free_text'):
+            return value_input.createStandardContextMenu()
+        menu = QMenu(value_input)
+        action = menu.addAction("link to another parameter")
+        action.setEnabled(not value_input.isReadOnly())
+        action.triggered.connect(
+            lambda checked=False, inp=value_input: self.start_parameter_link(inp))
+        return menu
+
+    def _show_value_context_menu(self, value_input, pos):
+        menu = self.value_context_menu(value_input)
+        menu.exec(value_input.mapToGlobal(pos))
+        menu.deleteLater()
+
+    def start_parameter_link(self, value_input):
+        """Prefill a value field with an empty link and park the cursor where the
+        source parameter number goes: ``=[|,1]``.
+
+        Typing that number (the ``p[N]`` index a parameter-name label shows while
+        it is clicked) is then the only step left. The field stays refused by
+        Show model / Fit until it is typed.
+
+        The text is put in by replacing the selection rather than with setText(),
+        which would clear the field's undo history: Ctrl+Z must bring back the
+        value that was there before the link was started, exactly as it does
+        after the value is edited by hand.
+        """
+        if value_input.isReadOnly():
+            return
+        value_input.setFocus()
+        value_input.selectAll()
+        value_input.insert(_EMPTY_LINK)
+        value_input.setCursorPosition(_EMPTY_LINK.index(','))
 
     def auto_fill_params(self, row, model):
         # Auto-fill params based on model, mimicking original
@@ -1546,16 +1623,25 @@ class ParametersTable(QWidget):
         return rows
 
     def get_empty_parameter_slots(self):
-        """Active numeric parameter value fields left empty.
+        """Active numeric parameter value fields that hold no usable number.
 
-        This happens when a =[X,y] reference is deleted: update_references()
-        clears the referring field. read_model() would silently read an empty
-        field as 0.0, so show/fit must be blocked until it is filled. The
-        free-text expression column of Distr/Corr/Expression rows is excluded —
-        its emptiness is reported by validate_user_expressions instead.
+        Two ways that happens:
+
+        * the field is EMPTY — a =[X,y] reference whose target was deleted, which
+          update_references() clears, and read_model() would silently read as
+          0.0;
+        * the field holds a HALF-WRITTEN link — '=[,1]', '=[3,]', '=[,]'. The
+          value validator (_VALUE_INPUT_PATTERN) accepts those on purpose, so
+          that either of the two numbers can be deleted and retyped; until both
+          are there it is not a link, and read_model() would again read 0.0.
+
+        Either way show/fit must be blocked until the field is filled in. The
+        free-text expression column of Distr/Corr/Expression/Recon rows is
+        excluded — its emptiness is reported by validate_user_expressions.
 
         Returns:
-            list of dicts ``{'row', 'col', 'param', 'model'}``.
+            list of dicts ``{'row', 'col', 'param', 'model', 'text', 'reason'}``,
+            'reason' being 'empty' or 'unfinished link'.
         """
         empties = []
         for row in range(len(self.row_widgets)):
@@ -1569,11 +1655,17 @@ class ParametersTable(QWidget):
                     continue  # free-text expression field, handled elsewhere
                 param_widget = row_widget.layout().itemAt(col + 1).widget()
                 value_input = param_widget.layout().itemAt(1).widget()
-                if not value_input.text().strip():
-                    name_label = param_widget.layout().itemAt(0).layout().itemAt(0).widget()
-                    empties.append({'row': row, 'col': col,
-                                    'param': name_label.original_text or name_label.text(),
-                                    'model': model_name})
+                text = value_input.text().strip()
+                if not text:
+                    reason = 'empty'
+                elif text.startswith('=[') and split_link_field(text) is None:
+                    reason = 'unfinished link'
+                else:
+                    continue
+                name_label = param_widget.layout().itemAt(0).layout().itemAt(0).widget()
+                empties.append({'row': row, 'col': col,
+                                'param': name_label.original_text or name_label.text(),
+                                'model': model_name, 'text': text, 'reason': reason})
         return empties
 
     def mark_parameter_error(self, row, col):
