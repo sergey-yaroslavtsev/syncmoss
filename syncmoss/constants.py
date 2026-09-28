@@ -56,6 +56,26 @@ TESLA_PER_MMS = 1 / (2 * LINE_SHIFT_16)                 # 3.1097641 T per mm/s o
 LINE_RATIO_25 = LINE_SHIFT_25 / LINE_SHIFT_16           # 0.5789752
 LINE_RATIO_34 = LINE_SHIFT_34 / LINE_SHIFT_16           # 0.1579504
 
+# --- scattering-side 57Fe quantities (sms_theory.py) -----------------------
+# Everything below is DERIVED from the primitives above plus two new inputs,
+# ALPHA_IC and the universal hc; no 57Fe literal is repeated.
+#   ALPHA_IC -- internal conversion coefficient of the 14.4 keV level.
+#   HC_EV_A  -- h*c = 1239.8419843320026 eV nm (exact in SI since 2019).
+ALPHA_IC = 8.56
+HC_EV_A = 12398.419843320026                            # eV * Angstrom
+
+MMPS_TO_NEV = E0 / c * 10**9            # 48.0733 neV per (mm/s): E = E0 v/c
+GAMMA0_NEV = NAT_WIDTH * MMPS_TO_NEV    # 4.7112 neV, the natural width in neV
+MU_N_NEV_PER_T = mun / (E0_J / E0) * 10**9              # 31.4331 neV/T
+LAMBDA_A = HC_EV_A / E0                                 # 0.8603 A
+K_VEC_A = 2 * 3.141592653589793 / LAMBDA_A              # 7.3035 1/A
+R_E_A = 2.8179403262 * 10**-5                           # classical electron radius, A
+# Maximum resonant cross-section from the level scheme:
+#   sigma_0 = 2 pi lambdabar^2 (2 I_e + 1)/(2 I_g + 1) / (1 + alpha_ic)
+# equals `sigma` above (2.464e-22 m^2) to 0.02 %; sms_theory.selftest() checks it.
+SIGMA0_A2 = (2 * 3.141592653589793 * (LAMBDA_A / (2 * 3.141592653589793))**2
+             * (2 * 1.5 + 1) / (2 * 0.5 + 1) / (1 + ALPHA_IC))   # 0.024644 A^2
+
 # Linear polarization degree of the SMS (synchrotron) beam, 0..1. Only a default:
 # it is GUI-editable via Supp -> "Set polarization" and travels to the models as
 # the `pol` / `sms_pol` argument. 0.98 is a realistic synchrotron beam.

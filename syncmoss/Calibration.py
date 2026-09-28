@@ -102,6 +102,7 @@ import numpy as np
 
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
+import syncmoss.sms_theory as smst
 from syncmoss.constants import (number_of_baseline_parameters, ALPHA_FE_FIELD,
                                 TESLA_PER_MMS, LINE_RATIO_25, LINE_RATIO_34,
                                 NAT_WIDTH)
@@ -532,11 +533,16 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
             return m5.TI(x, p, model, JN, pool, x0, MulCo, INS, [], [], Norm=Norm)
 
         # The multi-line instrumental function displaces the apparent line
-        # positions by the intensity-weighted sum of the squared line shifts;
-        # the folded velocity axis is corrected by this at the very end.
+        # positions by its first moment (for the legacy sum of unit-area
+        # Gaussians: the intensity-weighted sum of the line shifts); the folded
+        # velocity axis is corrected by this at the very end. The theoretical
+        # SMS shapes compute the same moment in sms_theory.ins_centroid.
         INS_shift = 0
-        for i in range(0, int(len(INS) / 3)):
-            INS_shift += INS[i * 3 + 1] * INS[i * 3 + 2] ** 2
+        if smst.ins_kind(INS) == smst.KIND_GAUSS:
+            for i in range(0, int(len(INS) / 3)):
+                INS_shift += INS[i * 3 + 1] * INS[i * 3 + 2] ** 2
+        else:
+            INS_shift = smst.ins_centroid(INS)
     else:
         raise ValueError(f"unknown experimental method VVV={VVV!r} (expected 1 or 3)")
 

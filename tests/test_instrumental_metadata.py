@@ -15,6 +15,8 @@ import shutil
 import numpy as np
 import pytest
 
+from syncmoss import instrumental_io
+from syncmoss.constants import NAT_WIDTH
 from syncmoss.instrumental_io import (
     parse_dat_instrumental_metadata,
     resolve_instrumental_for_file,
@@ -649,3 +651,63 @@ def test_batch_fits_each_spectrum_with_own_metadata(physics_app, tmp_path):
     assert r_cms["success"] and r_sms["success"]
     assert "CMS" in r_cms["instrumental_note"] and "#@GCMS" in r_cms["instrumental_note"]
     assert "SMS" in r_sms["instrumental_note"] and "#@INSexp" in r_sms["instrumental_note"]
+
+
+# ======================================================================
+#  the reference absorber: the theoretical search frees its line width,
+#  the legacy search must not notice
+# ======================================================================
+
+def test_legacy_reference_model_is_unchanged(physics_app):
+    """build_reference_model's default must still hold every absorber width
+    fixed at the natural one -- that is the legacy search's behaviour, and the
+    instrumental functions it has already produced depend on it."""
+    B = np.full(64, 1.0e5)
+    for mode, width_index in ((0, 19), (2, 21)):
+        _model, p, _bounds, fix, _extra = instrumental_io.build_reference_model(
+            physics_app, mode, B, 0)
+        assert width_index in np.asarray(fix, dtype=int), \
+            f"mode {mode}: the absorber width must stay fixed by default"
+        assert p[width_index] == pytest.approx(NAT_WIDTH)
+
+
+def test_theoretical_search_releases_the_reference_absorber_width(physics_app):
+    """With free_absorber_width the width is released and, for the single-line
+    standard, started at the value measured on the ESRF absorber (1.3 natural
+    widths, not exactly 1.0). Holding it fixed forces that difference into the
+    instrumental function, which the theoretical shape cannot absorb.
+
+    The tolerance below is wide on purpose: thickness and width are strongly
+    anti-correlated in that measurement, so the pair is only known to about
+    +-0.1 natural widths. What the test pins is that the constant is used and
+    that it is NOT the natural width.
+    """
+    B = np.full(64, 1.0e5)
+    for mode, width_index in ((0, 19), (2, 21)):
+        _model, p, bounds, fix, _extra = instrumental_io.build_reference_model(
+            physics_app, mode, B, 0, free_absorber_width=True)
+        fix = np.asarray(fix, dtype=int)
+        assert width_index not in fix
+        assert bounds[0][width_index] > 0
+        assert bounds[1][width_index] > bounds[0][width_index]
+        # nothing else was released
+        base = np.asarray(instrumental_io.build_reference_model(
+            physics_app, mode, B, 0)[3], dtype=int)
+        assert set(base) - set(fix) == {width_index}
+    # the single-line standard starts from the measured width
+    _m, p, _b, _f, _e = instrumental_io.build_reference_model(
+        physics_app, 0, B, 0, free_absorber_width=True)
+    assert p[19] == pytest.approx(instrumental_io.ESRF_STANDARD_LINE_WIDTH)
+    assert p[19] / NAT_WIDTH == pytest.approx(1.30, abs=0.12)
+    assert p[19] > NAT_WIDTH * 1.05
+
+
+# ---------------------------------------------------------------------------
+# The theoretical search, end to end
+# ---------------------------------------------------------------------------
+
+# The theoretical search used to be exercised here. It lives in
+# tests/test_theory_search.py now, which covers BOTH buttons (Find and Refine),
+# runs in seconds rather than minutes, and does not silently pass: this version
+# called ins_kind() on the RESULT DICT rather than on result['INS'], so it had
+# been failing whenever the slow marker was actually selected.

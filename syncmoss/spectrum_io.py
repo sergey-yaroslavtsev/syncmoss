@@ -91,7 +91,38 @@ def _fold_raw_channels(id_data, cal_method, n1, n2):
     return None
 
 
-def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", points_match=True):
+def resolve_calibration_path(main_window, calibration_path, file_paths):
+    """Which Calibration.dat a load should use.
+
+    Its own function because getting it wrong is silent: the wrong file still
+    loads, the spectrum is just calibrated against the wrong velocity axis.
+
+    THE DEFAULT IS THE WINDOW'S OWN PATH, not the bare name "Calibration.dat".
+    A bare name is resolved against ``dir_path`` -- the working folder -- while
+    the calibration procedure WRITES the file into ``params_dir``
+    (CalibrationThread is constructed with it). So every caller that omitted
+    the argument calibrated against a stale file in the working folder, or none
+    at all, and nothing said so. Fitting did exactly that, at both of its call
+    sites. Resolving the default here fixes the class of bug, not the two
+    instances of it.
+
+    An explicit path always wins. With no window -- ``calculate_backgrounds``
+    passes None -- a relative name keeps its old meaning, relative to the
+    spectrum, because there is no window to ask.
+    """
+    if calibration_path is None:
+        calibration_path = getattr(main_window, 'calibration_path', None)
+        if calibration_path is None:
+            calibration_path = "Calibration.dat"
+    if os.path.isabs(calibration_path):
+        return calibration_path
+    if main_window is not None:
+        return os.path.join(main_window.dir_path, calibration_path)
+    first = file_paths[0] if file_paths else ''
+    return os.path.join(os.path.dirname(first), calibration_path)
+
+
+def load_spectrum(main_window, file_paths, calibration_path=None, points_match=True):
     """
     Load spectrum file(s).
 
@@ -102,7 +133,9 @@ def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", p
     Args:
         main_window: The main PhysicsApp window instance
         file_paths: String path or list of string paths to spectrum files
-        calibration_path: Name of calibration file (default: "Calibration.dat")
+        calibration_path: Calibration file to apply. Omit it and the window's
+            own ``calibration_path`` is used -- which is the one in the
+            PARAMETERS folder, where the calibration procedure writes it.
         points_match: Whether points match (default: True)
 
     Returns:
@@ -112,15 +145,8 @@ def load_spectrum(main_window, file_paths, calibration_path="Calibration.dat", p
     if isinstance(file_paths, str):
         file_paths = [file_paths]
 
-    # Set calibration path
-    if main_window is not None:
-        if not os.path.isabs(calibration_path):
-            calibration_path = os.path.join(main_window.dir_path, calibration_path)
-    else:
-        # Use directory of first file
-        if not os.path.isabs(calibration_path):
-            first_file_dir = os.path.dirname(file_paths[0])
-            calibration_path = os.path.join(first_file_dir, calibration_path)
+    calibration_path = resolve_calibration_path(main_window, calibration_path,
+                                                file_paths)
 
     acceptable_formats = ['.dat', '.txt', '.exp', '.ws5', '.w98', '.moe', '.m1', '.mca', '.cmca', 'tango', '.mcs']
 

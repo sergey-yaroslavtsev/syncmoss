@@ -56,6 +56,10 @@ from numpy import linalg as LA
 # from numpy.linalg import inv
 from numpy import abs
 # import matplotlib.pyplot as plt
+# Theoretical (simulated 57FeBO3) SMS source line shapes. The module holds no
+# state and imports nothing from here, so the pool workers can re-import it
+# freely; see sms_theory.ins_kind for how the INS array selects a shape.
+import syncmoss.sms_theory as smst
 
 T = 1
 
@@ -102,9 +106,15 @@ def limits(pool, JN0, INS):
     sp_r = np.linspace(0, 5, 4096)
     sp_int_l = np.array([float(0)] * len(sp_l))
     sp_int_r = np.array([float(0)] * len(sp_r))
-    for i in range(0, len(sp_l)):
-        sp_int_l[i] = integral_INS_m(sp_l[i])
-        sp_int_r[i] = integral_INS_p(sp_r[i])
+    if smst.ins_kind(INS) != smst.KIND_GAUSS:
+        # Theoretical SMS source: the same two cumulative integrals (lower tail
+        # below sp_l, upper tail above sp_r) of a unit-area S(v), vectorised.
+        sp_int_l = 1.0 - smst.ins_tail_above(INS, sp_l)
+        sp_int_r = smst.ins_tail_above(INS, sp_r)
+    else:
+        for i in range(0, len(sp_l)):
+            sp_int_l[i] = integral_INS_m(sp_l[i])
+            sp_int_r[i] = integral_INS_p(sp_r[i])
     # print(sp_int_l)
     # print(sp_int_r)
     Ll = -5
@@ -2067,8 +2077,20 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
         elif Met == 0:
             Mett = Met
             E = MulCo*SCR + x0*MulCo + np.log((1+EE)/(1-EE))
-            for i in range (0, int((len(INS))/3)):
-                    N += 1*INS[i*3+2]**2*np.exp((-1)*((E-(INS[i*3+1]+SCR)*MulCo)**2/(2*((INS[i*3]**2+NAT_WIDTH/2)*MulCo)**2)))/((INS[i*3]**2+NAT_WIDTH/2)*MulCo)/np.sqrt(2*np.pi)
+            if smst.ins_kind(INS) == smst.KIND_GAUSS:
+                for i in range (0, int((len(INS))/3)):
+                        N += 1*INS[i*3+2]**2*np.exp((-1)*((E-(INS[i*3+1]+SCR)*MulCo)**2/(2*((INS[i*3]**2+NAT_WIDTH/2)*MulCo)**2)))/((INS[i*3]**2+NAT_WIDTH/2)*MulCo)/np.sqrt(2*np.pi)
+            else:
+                # Theoretical SMS source: S(v) is a unit-area density in mm/s.
+                # The Gaussian sum above is, for every term, a density in the same
+                # variable -- its argument E - (pos + SCR)*MulCo equals
+                # MulCo*(v - pos) with v = log((1+EE)/(1-EE))/MulCo + x0, i.e. it
+                # does not depend on SCR at all, and the 1/(width*MulCo) prefactor
+                # is the 1/MulCo Jacobian of that substitution. So the drop-in
+                # replacement is S(v)/MulCo, a scalar per integration node that
+                # broadcasts over the velocity axis exactly as the sum does.
+                N = N + smst.ins_shape(
+                    INS, np.log((1 + EE) / (1 - EE)) / MulCo + x0) / MulCo
         elif Met == 1:
             Mett = Met
             Wid = INS*MulCo

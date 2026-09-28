@@ -137,6 +137,29 @@ an explicit message and reddened fields rather than failing halfway through.
   spectrum, and reads them back per spectrum — so a batch may mix CMS and SMS
   files. Switch the behaviour with *Instrumental function -> do not use
   instrumental function from .dat file*.
+- **Find Instr. func. NEW** fits the *theoretical* SMS instrumental function
+  instead of a free sum of Gaussians: the simulated energy distribution of a
+  ⁵⁷FeBO₃ synchrotron Mössbauer source, with four physical numbers —
+  the rocking-curve position θ [µrad], the staggered hyperfine field B_s [T]
+  (the temperature knob), the quadrupole splitting ΔE_Q [mm/s] and the source
+  shift [mm/s]. Same three reference absorbers as the ordinary search. It is
+  slower (≈100 s against ≈15 s) and, having 4 free shape numbers instead of 9,
+  will usually give a slightly *higher* χ² — what it gives back is parameters
+  that mean something and the correct v⁻⁴ line wings, which a Gaussian sum
+  cannot have at all.
+- The theoretical result is stored in `parameters/INSacc.txt` and, in converted
+  `.dat` files, in an extra `#@INSacc` header line. `#@INSexp`/`#@INSint` are
+  still written next to it, now holding the best Gaussian-sum stand-in for the
+  same source, so nothing that only understands the old lines is left without an
+  instrumental function. While `INSacc.txt` exists it is the one every fit uses;
+  running the ordinary search again, or *Reset to default values*, removes it.
+- *Supp -> Plot instrumental function from memory / from spectrum* draws what is
+  actually in use — from `INSacc.txt`/`INSexp.txt`, or from the loaded
+  spectrum's own header — with its FWHM, centre and first moment, on a linear
+  and a logarithmic scale. The log panel is where a theoretical and an empirical
+  instrumental function stop looking alike. It opens in its **own window**, with
+  its own zoom toolbar and a Save button, and stays there while you work on the
+  spectrum; the main plot is never touched.
 - The calibration file's first line is `# <method> <n1> <n2>`: `sin` or `lin`
   folding and the raw-channel range. Without it, `sin` folding over all channels
   is assumed.

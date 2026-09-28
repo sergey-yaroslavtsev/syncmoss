@@ -953,6 +953,58 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
     return result_svg, result_png
 
 
+def plot_instrumental_function(figure, curves, title, dir_path, gridcolor='gray',
+                               theme=None, v_max=0.9, log_panel=True):
+    """Plot one or more instrumental functions S(v) and save the figure.
+
+    ``curves`` is a list of ``(label, v, S, color)`` -- S already a unit-area
+    density in mm/s. The right panel repeats them on a log scale over a wider
+    range, because what distinguishes the theoretical shape from the empirical
+    Gaussian sum is almost entirely in the wings (v^-4 against exp(-v^2)), and on
+    a linear plot of the core the two are nearly indistinguishable.
+    """
+    tc = _tc(theme)
+    figure.clear()
+    figure.patch.set_facecolor(tc['figure_facecolor'])
+
+    axes = figure.subplots(1, 2) if log_panel else [figure.add_subplot(111)]
+    ax1 = axes[0]
+    ax1.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=1)
+    for label, v, S, color in curves:
+        ax1.plot(v, S, lw=1.5, color=color, label=label)
+    ax1.set_xlim(-v_max, v_max)
+    ax1.set_xlabel('Energy (source velocity), mm/s', color=tc['axes_text_color'])
+    ax1.set_ylabel('Instrumental function, 1/(mm/s)', color=tc['axes_text_color'])
+    ax1.set_title(title, color=tc['axes_text_color'], fontsize=10)
+    leg = ax1.legend(fontsize=8, facecolor=tc['legend_facecolor'],
+                     edgecolor=tc['legend_edgecolor'], framealpha=0.85)
+    for text in leg.get_texts():
+        text.set_color(tc['legend_textcolor'])
+    _style_axis(ax1, tc)
+
+    if log_panel:
+        ax2 = axes[1]
+        ax2.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=1)
+        peak = max((float(np.max(S)) for _l, _v, S, _c in curves), default=1.0)
+        for label, v, S, color in curves:
+            ax2.semilogy(v, np.maximum(S, peak * 1e-12), lw=1.3, color=color,
+                         label=label)
+        ax2.set_ylim(peak * 1e-7, peak * 2)
+        ax2.set_xlabel('Energy (source velocity), mm/s', color=tc['axes_text_color'])
+        ax2.set_ylabel('log scale', color=tc['axes_text_color'])
+        ax2.set_title('wings (log scale)', color=tc['axes_text_color'], fontsize=10)
+        _style_axis(ax2, tc)
+
+    figure.tight_layout()
+    result_svg = os.path.join(dir_path, 'instrumental.svg')
+    figure.savefig(result_svg, bbox_inches='tight',
+                   facecolor=tc['figure_facecolor'], dpi=300)
+    result_png = os.path.join(dir_path, 'instrumental.png')
+    figure.savefig(result_png, bbox_inches='tight',
+                   facecolor=tc['figure_facecolor'], dpi=300)
+    return result_svg, result_png
+
+
 def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None):
     """
     Plot spectrum fitting results on the given figure and save to files.

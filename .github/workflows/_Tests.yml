@@ -74,7 +74,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install wheels/*.whl
-          pip install pytest
+          pip install pytest pytest-xdist
 
       - name: Install runtime dependencies + pytest (source checkout)
         if: inputs.install == 'source'
@@ -82,7 +82,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest
+          pip install pytest pytest-xdist
 
       - name: Run the test-suite
         shell: bash
@@ -103,4 +103,7 @@ jobs:
           if [ "$INSTALL" = "wheel" ]; then cd "$(mktemp -d)"; fi
 
           python -c "import syncmoss.syncmoss_main as m; print('syncmoss from:', m.__file__)"
-          python -m pytest "$GITHUB_WORKSPACE/tests" "${args[@]}"
+          # -n 0 forces a SERIAL run: pyproject sets -n auto for local use,
+          # which oversubscribes a small CI runner. xdist is installed above
+          # only so that this flag parses.
+          python -m pytest "$GITHUB_WORKSPACE/tests" -n 0 "${args[@]}"

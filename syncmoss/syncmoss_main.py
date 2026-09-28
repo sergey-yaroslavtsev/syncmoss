@@ -36,6 +36,7 @@ import shutil
 import warnings
 import traceback
 import ast
+import threading
 import multiprocessing as mp
 
 # ---------------------------------------------------------------------------
@@ -91,16 +92,22 @@ from syncmoss.spectrum_plotter import (
     calculate_baseline,
 )
 from syncmoss.instrumental_io import (
+    DEFAULT_INSTRUMENTAL_METHOD,
     instrumental,
+    instrumental_theory,
+    recentre_instrumental_after_calibration,
     reset_instrumental_defaults,
     resolve_instrumental_for_file,
     analyze_instrumental_methods,
     build_dat_metadata_lines,
     compute_norm,
     hires_model_diff,
+    get_sms_instrumental_from_global_files,
 )
 from syncmoss.Library_window import save_to_library_via_dialog
-from syncmoss.supp_menu import build_supp_menu, theme_action_text
+from syncmoss.supp_menu import (
+    build_supp_menu, open_theory_find_dialog, theme_action_text,
+)
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -256,7 +263,12 @@ class InstrumentalThread(QThread):
     def run(self):
         try:
             print(f"[DEBUG] InstrumentalThread started: ref={self.ref}, mode={self.mode}")
-            result = instrumental(self.main_window, self.ref, self.mode, pool=self.pool)
+            if self.ref in (2, 3):
+                # ref 2/3 = Find/Refine the THEORETICAL (simulated 57FeBO3) shape.
+                result = instrumental_theory(self.main_window, ref=self.ref - 2,
+                                             mode=self.mode, pool=self.pool)
+            else:
+                result = instrumental(self.main_window, self.ref, self.mode, pool=self.pool)
             print(f"[DEBUG] InstrumentalThread completed successfully")
             self.finished.emit(result)
         except Exception as e:
@@ -736,6 +748,11 @@ class PhysicsApp(QMainWindow):
         self.setGeometry(50, 50, 1600, 900)
         self.setMinimumSize(1270, 710)
         self.inprogress = False  # Flag to indicate if a process is running
+        # Cooperative cancellation for a running search: the model function
+        # polls it (see interrupt()). An Event rather than a bool so a worker
+        # THREAD reads it without a lock. Same mechanism and same name as the
+        # SYNCtime branch, so the two stay portable.
+        self.fit_cancel = threading.Event()
 
         # Icon
         if getattr(sys, 'frozen', False):
@@ -772,6 +789,14 @@ class PhysicsApp(QMainWindow):
         self.backgrounds = []  # List to store calculated backgrounds
         self.sequence_fitting_type = 0  # 0 = initial, 1 = result
         self.use_dat_instrumental_metadata = True
+        # How "Find/Refine Instr. func." approximates the source, and which
+        # stored shape every fit reads: 'gauss' the empirical sum of Gaussians,
+        # 'theory' the simulated 57FeBO3 source. Set from Supp -> "Choose how to
+        # approximate instrumental function". It does NOT override a spectrum
+        # that carries its own instrumental function in the .dat file -- that is
+        # the separate "use instrumental function from .dat file" toggle; when a
+        # file carries BOTH descriptions this picks between them.
+        self.instrumental_method = DEFAULT_INSTRUMENTAL_METHOD
         # Set once the user ticks "do not ask again" on the mixed/different
         # instrumental-function warning (per-session, resets on restart).
         self.suppress_mixed_metadata_warning = False
@@ -924,9 +949,20 @@ class PhysicsApp(QMainWindow):
 
         # These settings are still used by the existing fitting logic; they are
         # edited via small dialogs opened from the Supp menu.
+        # Points for the full transmission integral. SMS and CMS need different
+        # numbers, so each has its own store; ``jn0_input`` holds whichever the
+        # current mode selects and is what the rest of the code reads.
+        # ``refresh_jn0_for_mode`` keeps it in step.
+        self.jn0_sms_input = QLineEdit("32", self)
+        self.jn0_sms_input.setValidator(QIntValidator(1, 1000000, self))
+        self.jn0_sms_input.hide()
+        self.jn0_cms_input = QLineEdit("64", self)
+        self.jn0_cms_input.setValidator(QIntValidator(1, 1000000, self))
+        self.jn0_cms_input.hide()
         self.jn0_input = QLineEdit("32", self)
         self.jn0_input.setValidator(QIntValidator(1, 1000000, self))
         self.jn0_input.hide()
+        self.refresh_jn0_for_mode()
 
         self.instrumental_number = QLineEdit("3", self)
         self.instrumental_number.setValidator(QIntValidator(1, 1000, self))
@@ -993,12 +1029,19 @@ class PhysicsApp(QMainWindow):
         
         # Create dropdown menu for INS button
         self.instrumental_menu = QMenu()
+        # WHICH search these run -- the theoretical simulated 57FeBO3 shape or
+        # the empirical sum of Gaussians -- is a setting, not a separate set of
+        # menu entries: Supp -> "Choose how to approximate instrumental
+        # function". self.instrumental_ref() turns it into the ref code.
         find_single = QAction("Find\nInstr. func.\n single line", self)
-        find_single.triggered.connect(lambda: self.instrumental_pressed(0, 0))
+        find_single.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(False), 0))
         find_aFe = QAction("Find\nInstr. func.\n pure a-Fe", self)
-        find_aFe.triggered.connect(lambda: self.instrumental_pressed(0, 2))
+        find_aFe.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(False), 2))
         find_model = QAction("Find\nInstr. func.\nmodel", self)
-        find_model.triggered.connect(lambda: self.instrumental_pressed(0, 1))
+        find_model.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(False), 1))
         self.toggle_dat_ins_action = QAction(self)
         self._update_use_dat_instrumental_action_text()
         self.toggle_dat_ins_action.triggered.connect(self.toggle_use_dat_instrumental)
@@ -1020,11 +1063,14 @@ class PhysicsApp(QMainWindow):
         # Create dropdown menu for INS refine button
         self.instrumental_menu2 = QMenu()
         refine_single = QAction("Refine\nInstr. func.\n single line", self)
-        refine_single.triggered.connect(lambda: self.instrumental_pressed(1, 0))
+        refine_single.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(True), 0))
         refine_aFe = QAction("Refine\nInstr. func.\n pure a-Fe", self)
-        refine_aFe.triggered.connect(lambda: self.instrumental_pressed(1, 2))
+        refine_aFe.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(True), 2))
         refine_model = QAction("Refine\nInstr. func.\nmodel", self)
-        refine_model.triggered.connect(lambda: self.instrumental_pressed(1, 1))
+        refine_model.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(True), 1))
         self.instrumental_menu2.addAction(refine_single)
         self.instrumental_menu2.addAction(refine_aFe)
         self.instrumental_menu2.addAction(refine_model)
@@ -1303,28 +1349,31 @@ class PhysicsApp(QMainWindow):
     def on_ms_sms_changed(self, changed_checkbox):
         """Handle MS/SMS checkbox mutual exclusivity"""
         if changed_checkbox == self.MS_fit and self.MS_fit.isChecked():  # MS checked
-            self._adjust_jn0_for_mode_switch(to_cms=True)
             self.SMS_fit.setChecked(False)  # Uncheck SMS
         elif changed_checkbox == self.MS_fit:  # MS checked
             self.SMS_fit.setChecked(True)  # Check SMS
         elif changed_checkbox == self.SMS_fit and self.SMS_fit.isChecked():  # SMS checked
-            self._adjust_jn0_for_mode_switch(to_cms=False)
             self.MS_fit.setChecked(False)  # Uncheck MS
         elif changed_checkbox == self.SMS_fit:  # SMS unchecked
             self.MS_fit.setChecked(True)  # Check MS
+        self.refresh_jn0_for_mode()
 
-    def _adjust_jn0_for_mode_switch(self, to_cms: bool):
-        """Auto-adjust JN0 only for legacy defaults when switching SMS/CMS."""
-        text = self.jn0_input.text().strip()
-        try:
-            current = int(text)
-        except ValueError:
-            return
+    def refresh_jn0_for_mode(self):
+        """Point ``jn0_input`` at the SMS or the CMS setting, whichever applies.
 
-        if to_cms and current == 32:
-            self.jn0_input.setText("64")
-        elif not to_cms and current == 64:
-            self.jn0_input.setText("32")
+        SMS and CMS need different numbers of integration points and now each
+        has its own stored value (Supp -> "Set number of points for full
+        transmission integral"). This used to be a switch that doubled 32 to 64
+        on the way into CMS and halved it back -- and only when the value was
+        still exactly one of those two, so any edited value stopped tracking the
+        mode at all. The two values are simply settable now.
+
+        Everything downstream keeps reading ``jn0_input``, which holds the
+        ACTIVE one.
+        """
+        source = (self.jn0_cms_input if self.MS_fit.isChecked()
+                  else self.jn0_sms_input)
+        self.jn0_input.setText(source.text().strip())
 
     def _update_use_dat_instrumental_action_text(self):
         if self.toggle_dat_ins_action is None:
@@ -1730,12 +1779,10 @@ class PhysicsApp(QMainWindow):
             except (ValueError, AttributeError):
                 self.SMS_pol = SMS_POL_DEFAULT
 
-            instrumental_int_path = os.path.join(self.params_dir, 'INSint.txt')
-            self.MulCo, self.x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)
-            
-            instrumental_exp_path = os.path.join(self.params_dir, 'INSexp.txt')
-            self.INS = np.genfromtxt(instrumental_exp_path, delimiter=' ', skip_footer=0)
-            
+            # The instrumental function currently in use: the theoretical one from
+            # INSacc.txt when a NEW search has stored it, else INSexp.txt.
+            self.INS, self.MulCo, self.x0 = get_sms_instrumental_from_global_files(self)
+
             print(f'Initialized: MulCo={self.MulCo}, x0={self.x0}')
 
         except Exception as e:
@@ -1745,9 +1792,10 @@ class PhysicsApp(QMainWindow):
 
     def calibration(self):
         """Perform calibration on RAW spectrum files"""
-        if self.inprogress == True:
+        if self._reject_if_busy('Calibration'):
             return
         self.inprogress = True
+        self.busy_with = 'Calibration'
         if not self.path_list:
             self.set_status("No spectrum selected for calibration", "orange")
             return
@@ -1798,8 +1846,19 @@ class PhysicsApp(QMainWindow):
             
             # Update calibration path (Calibration.dat was already saved by Calibration function)
             self.calibration_path = os.path.join(self.params_dir, 'Calibration.dat')
-            
-            self.set_status("Calibration completed successfully", "green")
+
+            # Calibration moved the velocity axis by the instrumental function's
+            # gravity centre; the source has to move with it or every later fit
+            # is off by that amount. See recentre_instrumental_after_calibration.
+            moved = recentre_instrumental_after_calibration(self)
+            note = (f" (instrumental function re-centred by {moved:+.4f} mm/s)"
+                    if moved else "")
+            # the in-memory copy must follow the file, or this session keeps
+            # fitting with the old one
+            self.INS, self.MulCo, self.x0 = \
+                get_sms_instrumental_from_global_files(self)
+
+            self.set_status(f"Calibration completed successfully{note}", "green")
         except Exception as e:
             self.set_status(f"Error processing calibration results: {e}", "red")
         finally:
@@ -1816,9 +1875,10 @@ class PhysicsApp(QMainWindow):
     def showM_pressed(self):
         """Show model with spectrum and subspectra (non-blocking)"""
         # Parse the current content of process_path
-        if self.inprogress == True:
+        if self._reject_if_busy('Show model'):
             return
         self.inprogress = True
+        self.busy_with = 'Show model'
 
         # Model-only mode: "Model_<N>" in the path box plots just the model on a
         # synthetic ±N mm/s grid, with no experimental spectrum.
@@ -2068,8 +2128,45 @@ class PhysicsApp(QMainWindow):
             paths = [p.strip().strip("'\" ") for p in text.split(',') if p.strip()]
             return paths
 
+    def _reject_if_busy(self, what):
+        """True -- and SAYS SO -- when another calculation is already running.
+
+        Only one calculation may run at a time: they share the process pool,
+        the integration grid and the instrumental function, so a fit started
+        while an instrumental-function search is running would read parameters
+        the search is in the middle of changing.
+
+        The guard itself is not new; the message is. Every entry point used to
+        ``return`` silently, so clicking Fit during a search did nothing at all
+        and looked like a broken button rather than a refusal.
+        """
+        if not self.inprogress:
+            return False
+        running = getattr(self, 'busy_with', 'another calculation')
+        self.set_status(f"{what} is not available right now: {running} is "
+                        f"still running. Press ! INTERRUPT ! to stop it.",
+                        "orange")
+        return True
+
     def interrupt(self):
-        """Emergency abort: kill the current pool and create a new one"""
+        """Emergency abort: kill the current pool and create a new one.
+
+        TWO mechanisms, because neither one alone stops everything:
+
+        * the flag. A thread cannot be killed, so the model function is asked to
+          give up instead: every evaluation checks ``fit_cancel`` and raises
+          ``FitInterrupted``, which unwinds out of the minimiser. This is what
+          stops the THEORETICAL instrumental-function search, whose cost is
+          rebuilding the dynamical source shape in its own thread -- terminating
+          the pool did nothing to that, so Interrupt did nothing.
+        * the pool. An ordinary fit farms every evaluation out to the process
+          pool, so terminating it aborts the fit from underneath. Kept, because
+          it is also the only way to stop work already handed to a worker.
+
+        The flag is set FIRST: a pool terminated while the search is between
+        evaluations would otherwise let it run on to the next one.
+        """
+        self.fit_cancel.set()
         try:
             # Terminate the old pool
             if self.pool:
@@ -2247,20 +2344,46 @@ class PhysicsApp(QMainWindow):
         else:
             self.set_status("Selection canceled", "orange")
 
+    def instrumental_ref(self, refine):
+        """The ``ref`` code for the current approximation method.
+
+        0 / 1 are Find / Refine with the empirical sum of Gaussians, 2 / 3 the
+        same two with the theoretical simulated shape. The menu entries no
+        longer choose between them -- ``self.instrumental_method`` does.
+        """
+        return (1 if refine else 0) + (
+            2 if getattr(self, 'instrumental_method',
+                         DEFAULT_INSTRUMENTAL_METHOD) == 'theory' else 0)
+
     def instrumental_pressed(self, ref, mode):
         """
         Handle instrumental function calculation/refinement button press.
         
         Args:
-            ref: 0 for Find, 1 for Refine
+            ref: 0 for Find, 1 for Refine (empirical sum of Gaussians);
+                 2 for Find, 3 for Refine the THEORETICAL simulated 57FeBO3 shape
             mode: 0 for single line, 1 for model, 2 for pure a-Fe
         """
-        if self.inprogress == True:
+        if self._reject_if_busy('The instrumental-function search'):
             return
+        # A THEORY "Find" (ref 2) discards the stored shape and restarts from
+        # the built-in values, so it asks first -- both to say that Refine is
+        # usually the better button and to let the user correct the starting
+        # numbers for a source run far from the usual settings. Confirmed
+        # BEFORE inprogress is claimed, so cancelling leaves nothing latched.
+        self.theory_find_overrides = None
+        if ref == 2:
+            overrides = open_theory_find_dialog(self)
+            if overrides is None:
+                self.set_status("Instrumental-function search cancelled",
+                                "orange")
+                return
+            self.theory_find_overrides = overrides
         self.inprogress = True
+        self.busy_with = 'The instrumental-function search'
         # Ensure parameters are initialized
         if not self.initialize_parameters():
-            self.inprogress = False    
+            self.inprogress = False
             return
         
         # Validation - check if model is defined for mode == 1
@@ -2285,6 +2408,16 @@ class PhysicsApp(QMainWindow):
         
         if (self.MS_fit.isChecked() and mode == 0):
             self.set_status("This will not work...", "red")
+            self.inprogress = False
+            return
+
+        if ref in (2, 3) and self.MS_fit.isChecked():
+            # The theoretical shape is the pure-nuclear reflection of an iron
+            # borate crystal: there is no such thing for a radioactive source.
+            self.set_status(
+                "The theoretical instrumental function describes a synchrotron "
+                "Mössbauer source (⁵⁷FeBO₃). Switch to SMS, or use the standard "
+                "search for CMS.", "red")
             self.inprogress = False
             return
         
@@ -2324,7 +2457,20 @@ class PhysicsApp(QMainWindow):
             self.canvas.draw()
             self.toolbar.push_current()
             
-            self.set_status(f"Instrumental function completed. χ² = {result['hi2']:.3f}\nResults saved to {self.dir_path}", "green")
+            if result.get('theory') is not None:
+                th = result['theory']
+                er = result.get('theory_err', {})
+                detail = ", ".join(
+                    f"{k.replace('_urad', '')} = {th[k]:+.4g}"
+                    + (f" ± {er[k]:.2g}" if np.isfinite(er.get(k, np.nan)) else "")
+                    for k in th)
+                self.set_status(
+                    f"Theoretical instrumental function found. χ² = {result['hi2']:.3f}\n"
+                    f"{detail}\nFWHM = {result['fwhm']:.4f} mm/s, "
+                    f"centre = {result['centre']:+.4f} mm/s\n"
+                    f"Results saved to {self.dir_path}", "green")
+            else:
+                self.set_status(f"Instrumental function completed. χ² = {result['hi2']:.3f}\nResults saved to {self.dir_path}", "green")
             
             # Update parameters if mode == 1
             if result['mode'] == 1 and result['mod_p_len']:
@@ -2351,9 +2497,10 @@ class PhysicsApp(QMainWindow):
 
     def show_pressed(self):
         """Load and display the selected spectrum(s)"""
-        if self.inprogress == True:
+        if self._reject_if_busy('Show spectrum'):
             return
         self.inprogress = True
+        self.busy_with = 'Show spectrum'
 
         # Model-only mode (Model_<N> in the path box) has no spectrum to show.
         if self.parse_model_only_request()[0]:
@@ -2662,9 +2809,10 @@ class PhysicsApp(QMainWindow):
         4. Start fitting in background thread
         5. Update results table and plot when finished
         """
-        if self.inprogress == True:
+        if self._reject_if_busy('Fitting'):
             return
         self.inprogress = True
+        self.busy_with = 'Fitting'
 
         # Model-only mode (Model_<N> in the path box) has no spectrum to fit.
         if self.parse_model_only_request()[0]:

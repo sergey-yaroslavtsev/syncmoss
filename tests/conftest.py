@@ -3,6 +3,7 @@
 The GUI tests run head-less: ``QT_QPA_PLATFORM`` is forced to ``offscreen`` *before*
 PySide6 is imported anywhere, so the suite works on CI machines without a display.
 """
+import hashlib
 import os
 import shutil
 
@@ -29,6 +30,25 @@ def redirect_calibration_to_tmp(window, tmp_dir):
         shutil.copy2(original, tmp_copy)
         window.calibration_path = tmp_copy
     return window.calibration_path
+
+
+def redirect_params_dir_to_tmp(window, tmp_dir):
+    """Point a PhysicsApp at a throw-away copy of ``parameters/``.
+
+    Every instrumental-function search WRITES its answer: INSexp.txt, INSint.txt
+    and (for the theoretical one) INSacc.txt, all under ``app.params_dir``. So a
+    test that runs a search silently replaces the shipped instrumental function
+    of the package with one fitted to whatever spectrum the test happened to use
+    -- no error, no failure, and nothing to restore from if the tree is not under
+    version control. This is the same hazard ``redirect_calibration_to_tmp``
+    exists for, one directory up, so any test that fits anything should call it.
+    """
+    original = window.params_dir
+    tmp_copy = os.path.join(str(tmp_dir), "parameters")
+    if os.path.isdir(original):
+        shutil.copytree(original, tmp_copy, dirs_exist_ok=True)
+        window.params_dir = tmp_copy
+    return window.params_dir
 
 
 # Guarantee the test process actually terminates. Head-less ("offscreen") Qt plus
@@ -85,6 +105,58 @@ def pytest_unconfigure(config):
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(code)
+
+
+def _parameters_dir():
+    """The SHIPPED parameters folder -- the one no test may write into."""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "syncmoss", "parameters")
+
+
+def _parameters_fingerprint():
+    d = _parameters_dir()
+    if not os.path.isdir(d):
+        return {}
+    out = {}
+    for name in sorted(os.listdir(d)):
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            with open(p, "rb") as f:
+                out[name] = hashlib.sha256(f.read()).hexdigest()
+    return out
+
+
+@pytest.fixture(scope="session", autouse=True)
+def parameters_folder_is_read_only():
+    """Fail the session if any test wrote into syncmoss/parameters.
+
+    Several operations WRITE their answer there and there is nothing to restore
+    from -- the tree is not always under version control from the test's point
+    of view, and the damage is silent:
+
+        * both instrumental-function searches write INSexp.txt / INSint.txt /
+          INSth.txt;
+        * calibration writes Calibration.dat and calibr.png, and now also
+          re-centres the stored instrumental function;
+        * "Reset to default values" rewrites whichever description is selected.
+
+    Individual tests are expected to call ``redirect_params_dir_to_tmp`` (and
+    ``redirect_calibration_to_tmp``) first. This is the backstop that catches
+    the one that forgets, rather than discovering it when the shipped
+    instrumental function has quietly become a fit of somebody's test spectrum.
+    """
+    before = _parameters_fingerprint()
+    yield
+    after = _parameters_fingerprint()
+    changed = sorted(k for k in after if k in before and before[k] != after[k])
+    removed = sorted(k for k in before if k not in after)
+    created = sorted(k for k in after if k not in before)
+    if changed or removed or created:
+        raise AssertionError(
+            "tests modified the shipped parameters folder -- "
+            f"modified={changed} removed={removed} created={created}. "
+            "Call redirect_params_dir_to_tmp(window, tmp_path) before anything "
+            "that searches, calibrates or resets.")
 
 
 @pytest.fixture(scope="session")

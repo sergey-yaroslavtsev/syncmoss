@@ -73,7 +73,14 @@ local_scheme = "no-local-version"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --basetemp=./.pytest_tmp"
+# -n auto: almost every test here spends its time in ONE process doing physics
+# (a fit, a calibration, an instrumental-function search), so a serial run
+# leaves most of the machine idle -- measured 351 s serial against 97 s on 8
+# workers for the calibration + instrumental set. CI overrides this with -n 0
+# (see .github/workflows/_Tests.yml): the runners are small, where -n auto
+# oversubscribes rather than helps. Use -n 0 locally too when debugging, since
+# xdist swallows live output.
+addopts = "-q --basetemp=./.pytest_tmp -n auto"
 markers = [
     "gui: builds the PySide6 GUI; runs head-less via QT_QPA_PLATFORM=offscreen (set in tests/conftest.py)",
     "slow: slow tests (numba compilation / fitting)",

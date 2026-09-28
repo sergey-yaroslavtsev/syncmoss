@@ -343,7 +343,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             # Load and concatenate all spectra
             A_list, B_list = [], []
             for i, spec_file in enumerate(spectrum_files):
-                A_temp, B_temp = load_spectrum(app, spec_file)
+                A_temp, B_temp = load_spectrum(
+                    app, spec_file, calibration_path=app.calibration_path)
                 A_temp, B_temp = A_temp[0], B_temp[0]
                 A_list.append(A_temp)
                 B_list.append(B_temp)
@@ -357,7 +358,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             
         else:
             # Single spectrum fitting mode
-            A, B = load_spectrum(app, spectrum_file)
+            A, B = load_spectrum(app, spectrum_file,
+                                 calibration_path=app.calibration_path)
             A, B = A[0], B[0]  # Unpack from list
             A_list, B_list = [A], [B]
             

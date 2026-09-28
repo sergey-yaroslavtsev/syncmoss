@@ -34,6 +34,7 @@ def max(*args):
     return bu.max(*args)
 # import dual_v3 as dn
 import syncmoss.minimi_lib as mi
+import syncmoss.sms_theory as smst
 import os
 import platform
 import time
@@ -783,8 +784,15 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
         SET = []
 
         if Met == 0:
-            for i in range (0, int((len(INS))/3)):
-                ZERO +=  INS[i*3+1]*INS[i*3+2]**2
+            # Apparent displacement of every absorber line by the multi-line
+            # source: the first moment of the instrumental function. For the
+            # legacy sum of unit-area Gaussians with sum amp^2 = 1 that is the
+            # sum below; the theoretical shapes compute it in sms_theory.
+            if smst.ins_kind(INS) == smst.KIND_GAUSS:
+                for i in range (0, int((len(INS))/3)):
+                    ZERO +=  INS[i*3+1]*INS[i*3+2]**2
+            else:
+                ZERO = smst.ins_centroid(INS)
 
 
         for i in range (0, len(model)):

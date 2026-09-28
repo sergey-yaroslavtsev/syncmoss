@@ -162,3 +162,11 @@ minimi_optimization_notes.txt
 # suite still covers the model end-to-end via the SCDW golden case, plus its
 # param-count and locked-angle checks (test_model_io / test_thick_gui).
 tests/test_sdw_grid.py
+
+# SMS instrumental-function study against the ESRF (temperature, angle) dataset
+# on N:\SL_studies: analysis scripts, cached intermediate fits and the figures
+# they produce. Local-only -- it needs a network share that is not part of the
+# repo, and its outputs are large. The conclusions that matter are tracked in
+# docs/sms_instrumental_function.md; the calibration it produced is in
+# sms_theory.FEBO3_BS_CALIBRATION and instrumental_io.ESRF_STANDARD_LINE_WIDTH.
+sms_study/
