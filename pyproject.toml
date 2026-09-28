@@ -73,14 +73,21 @@ local_scheme = "no-local-version"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# -n auto: almost every test here spends its time in ONE process doing physics
+# -n 6: almost every test here spends its time in ONE process doing physics
 # (a fit, a calibration, an instrumental-function search), so a serial run
-# leaves most of the machine idle -- measured 351 s serial against 97 s on 8
-# workers for the calibration + instrumental set. CI overrides this with -n 0
-# (see .github/workflows/_Tests.yml): the runners are small, where -n auto
-# oversubscribes rather than helps. Use -n 0 locally too when debugging, since
-# xdist swallows live output.
-addopts = "-q --basetemp=./.pytest_tmp -n auto"
+# leaves most of the machine idle -- measured 351 s serial against 116 s on 8
+# workers for the calibration + instrumental set.
+#
+# A FIXED 6, not "auto". Each worker builds its own QApplication, PhysicsApp
+# and numba-compiled model, so the suite is limited by MEMORY, not by cores:
+# "auto" resolves to one worker per core (22 here) and dies during start-up
+# with an execnet EOFError once the machine runs out. The same ceiling bit the
+# 83-spectrum study, where 10 parallel fits OOM'd and 6 did not.
+#
+# CI overrides this with -n 0 (see .github/workflows/_Tests.yml): the runners
+# are small, where even 6 oversubscribes. Use -n 0 locally too when debugging,
+# since xdist swallows live output.
+addopts = "-q --basetemp=./.pytest_tmp -n 6"
 markers = [
     "gui: builds the PySide6 GUI; runs head-less via QT_QPA_PLATFORM=offscreen (set in tests/conftest.py)",
     "slow: slow tests (numba compilation / fitting)",

@@ -14,7 +14,11 @@ import pytest
 from syncmoss import instrumental_io as iio
 from syncmoss import supp_menu as sm
 from syncmoss import sms_theory as st
-from tests.conftest import redirect_calibration_to_tmp  # noqa: F401  (fixtures)
+# NOT "from tests.conftest": in CI's wheel mode pytest runs from a temp
+# directory against the installed package, so the repo root is not on sys.path
+# and "tests" is not an importable package. pytest does put the test file's own
+# directory there, so the bare module name works in both modes.
+from conftest import redirect_calibration_to_tmp  # noqa: F401  (fixtures)
 
 pytestmark = pytest.mark.gui
 
