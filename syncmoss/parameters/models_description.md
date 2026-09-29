@@ -51,7 +51,7 @@ Single Lorentzian/Voigt-like resonance line (isotropic).
 
 Parameters:
 - T: effective thickness / intensity scale.
-- $\delta$: isomer shift.
+- $\delta$: central shift.
 - L: Lorentzian width (typically fixed near natural width).
 - G: Gaussian broadening.
 
@@ -60,7 +60,7 @@ Quadrupole doublet in polarized thick-matrix formalism.
 
 Parameters:
 - T: effective thickness.
-- $\delta$: isomer shift.
+- $\delta$: central shift.
 - $\varepsilon$: quadrupole shift — HALF the splitting; the two lines sit at
   $\delta \pm \varepsilon$.
 - L: Lorentzian width.
@@ -76,7 +76,7 @@ Magnetic sextet in polarized thick-matrix formalism.
 
 Parameters:
 - T: effective thickness.
-- $\delta$: isomer shift.
+- $\delta$: central shift.
 - $\varepsilon$: quadrupole shift — the outer pair (1, 6) moves by $+\varepsilon$,
   the other four lines by $-\varepsilon$.
 - H: hyperfine magnetic field.
@@ -120,7 +120,7 @@ process.
 
 Parameters:
 - T: effective thickness.
-- $\delta$: isomer shift.
+- $\delta$: central shift.
 - $\varepsilon$: quadrupole contribution.
 - H: saturation hyperfine field, i.e. the field of the fully aligned ($m = S$)
   state. State $m$ sees $H\,m/S$.
@@ -170,7 +170,7 @@ both of which it reproduces exactly, and interpolates continuously between them.
 
 Parameters:
 - T: effective thickness.
-- $\delta$: isomer shift.
+- $\delta$: central shift.
 - Q: quadrupole coupling scale.
 - H: magnetic field.
 - L: Lorentzian width.
@@ -225,7 +225,7 @@ Anharmonic spin modulation (cycloid-like) model.
 
 Parameters:
 - T: effective thickness.
-- $\delta$: isomer shift.
+- $\delta$: central shift.
 - $\varepsilon_m$: modulated quadrupole term.
 - $\varepsilon_l$: lattice/static quadrupole term.
 - His: isotropic magnetic field component.
@@ -256,7 +256,7 @@ Parameters:
 
 ### SCDW
 Spin/charge density wave. The spin AXIS is fixed at $(\theta_k, \varphi_h)$;
-only the scalar hyperfine parameters (signed field magnitude, isomer shift,
+only the scalar hyperfine parameters (signed field magnitude, central shift,
 quadrupole shift) are modulated along the wave, sampled at a fixed number of
 phase points over one period and averaged as a thick (polarized) sextet. The
 field keeps its SIGN, so a reversed moment automatically swaps the line positions
@@ -264,7 +264,7 @@ within the (1,6) and (3,4) pairs. Similar to the SpectrRelax SDW/CDW parameter l
 
 Parameters (in table order):
 - T: effective thickness.
-- $\delta$: base isomer shift $\delta_0$.
+- $\delta$: base central shift $\delta_0$.
 - $\varepsilon$: base quadrupole shift $\varepsilon_0$.
 - H0: base hyperfine field.
 - L: Lorentzian width.
@@ -274,11 +274,11 @@ Parameters (in table order):
 - A: uniaxial texture order parameter.
 - Am: magnetic polar-order parameter (as in the Sextet model) that scales the
   resolved $\sigma^\pm$ Faraday term.
-- $K_\delta H$: isomer-shift–field correlation (mm/s per field unit).
+- $K_\delta H$: central-shift–field correlation (mm/s per field unit).
 - $K_\varepsilon H$: quadrupole–field correlation (mm/s per field unit).
 - $\Phi$: CDW phase (deg).
 - h1, h3, …, h15: eight odd SDW field harmonics (field units); unused ones stay 0.
-- d2, d4, d6, d8: four even CDW isomer-shift harmonics (mm/s); unused ones stay 0.
+- d2, d4, d6, d8: four even CDW central-shift harmonics (mm/s); unused ones stay 0.
 - N/Γ: grid resolution — the number of grid steps per line width used to bin the
   wave positions. This is the accuracy↔speed knob (larger = finer grid = more
   Voigt evaluations = more accurate = slower; error ~ 1/(N/Γ)). Default 4.

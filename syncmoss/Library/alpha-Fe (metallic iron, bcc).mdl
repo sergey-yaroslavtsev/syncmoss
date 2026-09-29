@@ -4,7 +4,7 @@
 #@External field (T) 0.0
 #@DOI 
 #@Comment cs = 0 BY DEFINITION (delta scale referenced to alpha-Fe). No DOI meaningful.
-#@Comment Ref: Universal velocity / isomer-shift calibration standard; Bhf=33.0 T at 300 K.
+#@Comment Ref: Universal velocity / central-shift calibration standard; Bhf=33.0 T at 300 K.
 #@Comment Source: standard
 #@Comment   Fe(0) [sextet]: I=1, CS=0, QS/2=0, Bhf=33 T, width=0.24
 baseline	Sextet

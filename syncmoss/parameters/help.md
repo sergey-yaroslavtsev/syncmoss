@@ -39,7 +39,7 @@ parameter 12", `=[12,0.5]` means "half of parameter 12", `=[12,-1]` means
 - The link is applied both when showing the model and inside every fit
   iteration, so the linked parameter never has its own degree of freedom.
 - A link is also how a parameter is shared between components — e.g. one common
-  isomer shift for two sextets.
+  central shift for two sextets.
 
 ## 3. Finding a parameter number
 

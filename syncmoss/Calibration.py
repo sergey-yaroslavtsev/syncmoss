@@ -645,7 +645,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
                     # Sextet: T   d  e  H(T)             L      G  th ph A ...
                     8, 0.0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0.0, 90, 0, 0, 0, 0, 0, 0, 3])
     bounds = np.array([[-np.inf] * len(p00), [np.inf] * len(p00)], dtype=float)
-    bounds[0][nbp + 1] = -0.05                         # isomer shift d
+    bounds[0][nbp + 1] = -0.05                         # central shift d
     bounds[1][nbp + 1] = 0.05
     bounds[0][nbp + 3] = ALPHA_FE_FIELD - 0.5          # hyperfine field H (+/- 0.5 T)
     bounds[1][nbp + 3] = ALPHA_FE_FIELD + 0.5
@@ -748,7 +748,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     # This bootstraps the axis far more robustly than fitting everything    #
     # at once, because each round only trusts the line POSITIONS.           #
     # --------------------------------------------------------------------- #
-    p0[nbp + 1] = 0                                    # reset isomer shift
+    p0[nbp + 1] = 0                                    # reset central shift
     p0[nbp + 3] = ALPHA_FE_FIELD                       # reset hyperfine field
     print('method ', method)
     print(p0)

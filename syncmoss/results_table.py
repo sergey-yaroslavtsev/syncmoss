@@ -20,8 +20,8 @@ model_list = ['baseline', 'Doublet', 'Sextet']
 model_colors = ['gray', 'blue', 'red']
 parameter_names = [
     ['BG', 'A', 'B', 'C', ...],  # baseline parameter names
-    ['Intens', 'IS', 'QS', ...],  # Doublet parameter names
-    ['Intens', 'IS', 'Bhf', ...]  # Sextet parameter names
+    ['Intens', 'CS', 'QS', ...],  # Doublet parameter names
+    ['Intens', 'CS', 'Bhf', ...]  # Sextet parameter names
 ]
 correlation_matrix = np.array([...])  # From fitting routine
 

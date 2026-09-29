@@ -1203,7 +1203,7 @@ def instrumental(app, ref, mode=0, pool=None):
 #   theta  the position on the rocking curve       [urad]
 #   B_s    the staggered hyperfine field           [T]   (the temperature knob)
 #   dEQ    the quadrupole splitting of FeBO3       [mm/s]
-#   shift  the isomer + second-order-Doppler shift [mm/s]
+#   shift  the central shift (isomer + second-order Doppler) [mm/s]
 #
 # Everything else (crystal thickness, mosaicity, setting accuracy,
 # Lamb-Moessbauer factor, reflection order) is held at its measured value; those

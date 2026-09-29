@@ -463,7 +463,7 @@ class SMSParams:
             requiring the computed rocking curve to show the observed
             lower-left / higher-right double peak; its MAGNITUDE should come
             from a measured paramagnetic-phase FeBO3 spectrum.
-    shift : isomer + second-order-Doppler shift of FeBO3 [neV]
+    shift : central shift (isomer + second-order Doppler) of FeBO3 [neV]
     phi_m : azimuth of B_hf [rad]; 0 = in the scattering plane (SMS condition)
     """
 

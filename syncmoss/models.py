@@ -1945,7 +1945,7 @@ def SDW_thick_terms_direct(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
 
     Fixed spin axis; only the scalar hyperfine parameters vary along the wave.
     Zeeman positions carry the SIGNED field; the KeH/KdH shift correlations use
-    |H| (isomer/quadrupole shift tracks magnitude, not sign). Signs and the
+    |H| (central/quadrupole shift tracks magnitude, not sign). Signs and the
     field->velocity conversion follow ASM_thick_terms / SpectrRelax (Matsnev &
     Rusakov 2014, Eqs. 1-3, 8-10, a+- = 0). ``hodd`` (8 odd field harmonics) and
     ``dev`` (4 even shift harmonics) are float64 arrays; ``psi`` is built with
@@ -1959,7 +1959,7 @@ def SDW_thick_terms_direct(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
         if hk != 0.0:
             H = H + hk * np.sin((2 * i + 1) * psi)
     ph_r = phi_deg / 180.0 * np.pi
-    # the isomer shift is a scalar (s-electron density) and the quadrupole shift is a lattice/EFG property
+    # the central shift is a scalar (s-electron density + second-order Doppler) and the quadrupole shift is a lattice/EFG property
     # neither knows the direction of the moment, only its magnitude.
     absH = np.abs(H)
     dl = d0 + KdH * absH
@@ -2591,7 +2591,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             if model[i] == 'SCDW':
                 # Spin/charge density wave, polarized (thick). The spin AXIS is
                 # FIXED at (theta_k, phi_h); only the SCALAR hyperfine parameters
-                # (signed field H, isomer shift, quadrupole shift) are modulated
+                # (signed field H, central shift, quadrupole shift) are modulated
                 # along the wave. Unlike ASM the 2x2 matrices are therefore the
                 # plain Sextet ones evaluated ONCE and hoisted out of the
                 # modulation loop; only the six line positions vary per point.
