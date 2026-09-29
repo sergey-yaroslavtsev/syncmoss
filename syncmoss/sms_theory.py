@@ -1225,7 +1225,12 @@ PHYS_FIELDS = ('theta_urad', 'B_s', 'dEQ', 'shift', 'thickness_um',
                'gauss_fwhm', 'n_gauss', 'dT_mK')
 
 PHYS_DEFAULTS = {
-    'theta_urad': 70.0, 'B_s': 0.50, 'dEQ': -0.3228, 'shift': 0.0,
+    # dEQ and f_LM must match instrumental_io.THEORY_START, which is where they
+    # are documented. They were allowed to drift apart once (this dict kept
+    # -0.3228 for three revisions after the fitted value had moved) and nothing
+    # caught it, because every production call passes dEQ explicitly -- so the
+    # stale number only ever surfaces in a new caller that does not.
+    'theta_urad': 70.0, 'B_s': 0.50, 'dEQ': -0.4216, 'shift': 0.0,
     'thickness_um': DEFAULT_THICKNESS_UM, 'mosaic_urad': DEFAULT_MOSAIC_URAD,
     'setting_urad': DEFAULT_SETTING_URAD, 'phi_m_deg': 0.0,
     'f_LM': DEFAULT_F_LM, 'dBs_rel_fwhm': 0.0, 'n_angle': 11.0,

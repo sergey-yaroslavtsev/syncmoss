@@ -7,8 +7,7 @@ That is a GAUGE transformation -- for
 
 replacing S(E) by S(E - d) gives exactly T(v + d) -- so moving the axis is only
 correct if the source moves with it. Doing just the axis half leaves every later
-fit off by the centroid, which for the simulated source is -0.0144 mm/s, about
-15 % of a natural linewidth, and is what forced a sextet's shift open.
+fit off by the centroid, which is what forced a sextet's shift open.
 
 Doing both halves is the whole point: the fit is unchanged, the gravity centre
 lands at zero, and the NEXT calibration has nothing left to do.
@@ -24,24 +23,41 @@ import syncmoss.sms_theory as smst
 from conftest import redirect_params_dir_to_tmp
 
 
+OFFSET = 0.05          # mm/s, put in ON PURPOSE -- see the fixture
+
+
 @pytest.fixture
 def app_with_theory_ins(physics_app, tmp_path):
+    """A theoretical instrumental function deliberately off centre.
+
+    The displacement is applied here rather than relied upon: the shipped
+    default's own centroid is a property of the current crystal constants and
+    moves whenever they are refined. It WAS -0.0144 mm/s; refining dEQ to
+    -0.4216 left it at +0.0004, which silently made this file's premise false
+    and two tests fail for no fault of the code. Exactly the reasoning the
+    Gaussian fixture below already used.
+    """
     redirect_params_dir_to_tmp(physics_app, tmp_path)
-    io.write_accurate_instrumental(physics_app, io.default_theory_instrumental())
+    ph = smst.decode_physical(io.default_theory_instrumental())
+    ph['shift'] += OFFSET
+    io.write_accurate_instrumental(
+        physics_app, smst.encode_physical(**{k: ph[k] for k in smst.PHYS_FIELDS}))
     return physics_app
 
 
-def test_the_default_is_not_already_centred(app_with_theory_ins):
+def test_the_fixture_is_off_centre(app_with_theory_ins):
     """Otherwise the rest of this file would pass vacuously."""
     INS = io.read_accurate_instrumental(app_with_theory_ins)
     assert abs(smst.ins_centroid(INS)) > 0.005
 
 
 def test_recentring_zeroes_the_gravity_centre(app_with_theory_ins):
+    before = smst.ins_centroid(io.read_accurate_instrumental(app_with_theory_ins))
     moved = io.recentre_instrumental_after_calibration(app_with_theory_ins)
     INS = io.read_accurate_instrumental(app_with_theory_ins)
     assert smst.ins_centroid(INS) == pytest.approx(0.0, abs=1e-9)
-    assert moved == pytest.approx(-0.0144, abs=2e-3)
+    # it removed exactly the centroid it found -- whatever that happens to be
+    assert moved == pytest.approx(before, abs=1e-9)
 
 
 def test_it_moves_only_the_shift(app_with_theory_ins):

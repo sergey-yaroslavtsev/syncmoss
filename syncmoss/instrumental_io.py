@@ -1258,40 +1258,39 @@ THEORY_FREE_FIELDS = ('theta_urad', 'B_s', 'dEQ', 'shift',
 # over (0.19-2.4 T across the published temperature series), i.e. T ~ 75.93 C by
 # the calibrated law.
 #
-# dEQ = -0.4056 +- 0.0030 mm/s comes from the 83-spectrum global fit. It is a
-# property of FeBO3, so it is a starting value, not a guess: the independent
-# laboratory measurement of Lyubutin et al. (2022) gives 2q = -0.3815 mm/s in
-# this parametrisation, 6 % away.
+# dEQ = -0.4216 +- 0.0038 mm/s (2026-09-29 global fit of the 83-spectrum ESRF
+# series: 123 parameters, shape chi2 1.317, and the independent intensity
+# cross-check agreeing to 0.91-1.05 across all nine temperatures).
 #
-# It read -0.3228 until the model was corrected in several places at once -- the
-# baseline constrained to a pure scale, ONE B_s per temperature instead of one
-# per spectrum, the Gaussian imperfection released, and f_LM changed from 0.70 to
-# 0.774. Several of those had been letting dEQ absorb an error that was not its
-# own. Because they moved together, this value is NOT attributable to any single
-# one of them -- and note that f_LM was changed on theoretical grounds, not
-# because it was measured to improve anything (see sms_study/test_flm_refine.py,
-# where the data prefer 0.55-0.65).
+# QUOTE THE ERROR AS +-0.03, NOT +-0.004. dEQ tracks how much freedom the model
+# is given rather than converging on a value: -0.3228, then -0.4056, then
+# -0.3900, now -0.4216, each time the source model changed. The +-0.0038 is the
+# covariance of one fit; the spread ACROSS defensible fits is ten times that. So
+# the laboratory value of Lyubutin et al. (2022), 2q = -0.3815 mm/s in this
+# parametrisation, is consistent with this one -- do not report a disagreement.
 #
-# mosaic_urad and gauss_fwhm are the two incoherent broadenings, both measured
-# by the same global fit (14.49 +- 0.11 urad and 0.1222 +- 0.0007 mm/s).
+# f_LM is the opposite and IS well determined: 0.7718, 0.7661, 0.7714, 0.7711
+# across those same four models. It is pinned by the width of the saturated core
+# (see the dynamical-saturation argument in sms_theory), which the model gets
+# right, while dEQ trades against whatever is absorbing line asymmetry.
 #
 # mosaic_urad starts at ZERO: the angle deviation is off by default (see
 # THEORY_PASSES), and setting_urad = 3 urad is applied regardless, so the source
-# is never completely unsmeared. f_LM is the nuclear amplitude scale; 0.774 is
-# both the Debye value and where the 83-spectrum profile puts it.
+# is never completely unsmeared. Released only at the rocking minimum, where the
+# 83-spectrum fit puts it at 20-28 urad (it is a property of one measurement's
+# setting, not a constant -- so this is a start, not a value).
 #
 # theta and B_s are the OPERATING POINT: spectrum 008 of the ESRF series
 # (T = 75.825 C, the angle the source is actually used at), refitted under these
 # very conventions -- setting_urad = 3, n_angle = 11 -- at chi2 = 0.97. Starting
 # a search at a guessed point instead is what the B_s scan exists to repair.
 #
-# dEQ, gauss_fwhm and f_LM come from the GLOBAL 83-spectrum fit, not from 008:
-# they are properties of the crystal and the instrument, and one spectrum
-# determines dEQ only to about half a sigma (008 alone prefers -0.24, the global
-# fit gives -0.3900 +- 0.0027).
-THEORY_START = {'theta_urad': 87.3, 'B_s': 0.7898, 'dEQ': -0.3900,
+# dEQ, gauss_fwhm and f_LM come from the GLOBAL fit, not from 008: they are
+# properties of the crystal and the instrument, and one spectrum determines dEQ
+# only to about +-0.04 (008 alone prefers -0.24).
+THEORY_START = {'theta_urad': 87.3, 'B_s': 0.7898, 'dEQ': -0.4216,
                 'shift': -0.2882, 'mosaic_urad': 0.0, 'dBs_rel_fwhm': 0.0,
-                'gauss_fwhm': 0.1303, 'f_LM': 0.7718}
+                'gauss_fwhm': 0.1303, 'f_LM': 0.7711}
 
 # Levenberg-Marquardt budget for the SCHEDULE passes. The final polish keeps
 # the full budget; the intermediate passes do not need it and each iteration is
