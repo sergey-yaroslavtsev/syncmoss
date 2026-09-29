@@ -276,6 +276,17 @@ def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_param
     return FS, FS_pos
 
 
+def chi2_spread(n_points, n_free):
+    """The 1-sigma spread a reduced chi-square has when the model is RIGHT.
+
+    ``sqrt(2/dof)``. Without it a user cannot tell whether 1.3 is a bad fit or
+    an ordinary fluctuation: on 40 degrees of freedom 1.3 is one sigma and
+    means nothing, on 4000 it is nine sigma and means the model is wrong.
+    """
+    dof = max(int(n_points) - int(n_free), 1)
+    return float(np.sqrt(2.0 / dof))
+
+
 def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_params=None):
     """
     Fit single or multiple Mössbauer spectra (simultaneous fitting with Nbaseline).
@@ -293,6 +304,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             - 'parameters': fitted parameter array
             - 'errors': parameter error array
             - 'chi2': chi-squared value
+            - 'chi2_spread': 1-sigma spread of chi2 for a correct model, sqrt(2/dof)
             - 'correlation_matrix': correlation matrix
             - 'model': model list
             - 'message': status message
@@ -572,9 +584,15 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             s = base_len + info['wstart']
             Recon[info['re']] = np.asarray(pfit[s:s + info['num']], dtype=float)
 
+        # Degrees of freedom as the minimiser counts them: the real data rows (not
+        # the Recon penalty rows) minus the free entries of the working vector
+        # (the Recon weights are free). Parameters the minimiser pins to a bound
+        # on its own are not subtracted -- a shift far below the spread itself.
+        spread = chi2_spread(len(B), len(p0_fit) - len(fix))
+
         print(f'[Fitting] Fitted parameters: {p}')
         print(f'[Fitting] Errors: {er}')
-        print(f'[Fitting] Chi-squared: {hi2}')
+        print(f'[Fitting] Chi-squared: {hi2} ± {spread:.4f}')
         print(f'[Fitting] Covariance matrix shape: {covariance_matrix.shape}')
 
         # Calculate fitted spectrum for plotting
@@ -633,6 +651,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'parameters': p,
                 'errors': er,
                 'chi2': hi2,
+                'chi2_spread': spread,
                 'covariance_matrix': covariance_matrix,
                 'fix': fix,
                 'model': model,
@@ -670,6 +689,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'parameters': p,
                 'errors': er,
                 'chi2': hi2,
+                'chi2_spread': spread,
                 'covariance_matrix': covariance_matrix,
                 'fix': fix,
                 'model': model,

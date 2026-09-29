@@ -28,6 +28,19 @@ def _tc(theme):
 _HIRES_DIFF_LABEL = 'Integration check (×4)'
 
 
+def _chi2_title(chi2, chi2_spread=None):
+    """The fit-quality panel title: ``χ² = 1.023 ± 0.045``.
+
+    *chi2_spread* is the 1-sigma spread of a reduced chi-square when the model
+    is right (``fitting_io.chi2_spread``); it tells a bad fit from an ordinary
+    fluctuation. Without it (a caller that has only the one number) the title
+    is the bare chi-square, as before.
+    """
+    if chi2_spread is None or not np.isfinite(chi2_spread):
+        return f'χ² = {chi2:.3f}'
+    return f'χ² = {chi2:.3f} ± {chi2_spread:.3f}'
+
+
 def _plot_hires_diff(ax, x, diff, reference, label=_HIRES_DIFF_LABEL):
     """Draw the cyan high-resolution convergence-check line, if ``diff`` is given.
 
@@ -486,10 +499,10 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     return all_position_artists
 
 
-def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None):
+def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None, chi2_spread=None):
     """
     Plot simultaneous fitting results with multiple spectra in separate subplots.
-    
+
     Parameters:
     - figure: matplotlib Figure object
     - A_list, B_list, SPC_f_list, FS_list, FS_pos_list: data per spectrum
@@ -497,6 +510,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     - begining_spc: parameter start indices per spectrum
     - model_colors: colors for each model row
     - chi2: chi-squared value
+    - chi2_spread: optional 1-sigma spread of chi2, shown as ``± value``
     - spectrum_files: file paths
     - dir_path: output directory
     - z_order: optional custom z-order (flattened)
@@ -637,7 +651,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         
         # Add chi2 title to middle subplot
         if spc_idx == int(num_spectra / 2):
-            ax.set_title(f'χ² = {chi2:.3f}', y=1, color='r')
+            ax.set_title(_chi2_title(chi2, chi2_spread), y=1, color='r')
         
         # Formatting
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
@@ -1005,9 +1019,11 @@ def plot_instrumental_function(figure, curves, title, dir_path, gridcolor='gray'
     return result_svg, result_png
 
 
-def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None):
+def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None, chi2_spread=None):
     """
     Plot spectrum fitting results on the given figure and save to files.
+
+    ``chi2_spread`` (optional) is shown next to the chi-square as ``± value``.
     """
     tc = _tc(theme)
     figure.clear()
@@ -1056,8 +1072,8 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
             verticalalignment='center', color='m', transform=ax1.transAxes)
     
     # Add chi-squared title
-    ax1.set_title('χ² = %.3f' % hi2, y=1, color='r')
-    
+    ax1.set_title(_chi2_title(hi2, chi2_spread), y=1, color='r')
+
     # Add secondary y-axis for normalized scale if baseline is non-zero
     if p[2] == 0 and p[6] == 0:
         bg = p[0] + p[4]

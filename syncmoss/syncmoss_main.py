@@ -2728,7 +2728,8 @@ class PhysicsApp(QMainWindow):
                 data['model_colors'], data['chi2'], data['spectrum_files'],
                 self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
                 theme=self._theme, model=data.get('model'),
-                hires_diff_list=data.get('hires_diff_list')
+                hires_diff_list=data.get('hires_diff_list'),
+                chi2_spread=data.get('chi2_spread')
             )
             self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         else:
@@ -2738,7 +2739,8 @@ class PhysicsApp(QMainWindow):
                 data['FS_pos'], data['p'], data['model_colors'], data['chi2'],
                 data['filepath'], self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
                 theme=self._theme, model=data.get('model'),
-                hires_diff=data.get('hires_diff')
+                hires_diff=data.get('hires_diff'),
+                chi2_spread=data.get('chi2_spread')
             )
             self.position_artists = position_artists if position_artists else []
         
@@ -3101,6 +3103,7 @@ class PhysicsApp(QMainWindow):
             model_colors = self.params_table.get_current_colors()
             fitted_parameters = result['parameters']
             chi2 = result['chi2']
+            chi2_spread = result.get('chi2_spread')
             is_simultaneous = result.get('is_simultaneous', False)
             instrumental_note = str(result.get('instrumental_note', '') or '').strip()
             note_suffix = f"\n{instrumental_note}" if instrumental_note else ""
@@ -3124,6 +3127,7 @@ class PhysicsApp(QMainWindow):
                     'begining_spc': result['begining_spc'],
                     'model_colors': model_colors,
                     'chi2': chi2,
+                    'chi2_spread': chi2_spread,
                     'spectrum_files': result['spectrum_files'],
                     'is_simultaneous': True,
                     'z_order': None,
@@ -3154,7 +3158,8 @@ class PhysicsApp(QMainWindow):
                     result['begining_spc'], model_colors, chi2, result['spectrum_files'],
                     self.dir_path, z_order=None, gridcolor=gridcolor,
                     theme=self._theme, model=result.get('model'),
-                    hires_diff_list=result.get('hires_diff_list')
+                    hires_diff_list=result.get('hires_diff_list'),
+                    chi2_spread=chi2_spread
                 )
                 
                 # Store position artists (from all subplots)
@@ -3200,6 +3205,7 @@ class PhysicsApp(QMainWindow):
                     'p': fitted_parameters,
                     'model_colors': model_colors,
                     'chi2': chi2,
+                    'chi2_spread': chi2_spread,
                     'filepath': result['spectrum_file'],
                     'is_simultaneous': False,
                     'z_order': None,
@@ -3216,7 +3222,8 @@ class PhysicsApp(QMainWindow):
                     FS_pos, fitted_parameters, model_colors, chi2, result['spectrum_file'],
                     self.dir_path, z_order=None, gridcolor=gridcolor,
                     theme=self._theme, model=result.get('model'),
-                    hires_diff=result.get('hires_diff')
+                    hires_diff=result.get('hires_diff'),
+                    chi2_spread=chi2_spread
                 )
                 
                 # Store position artists and enable toggle button if positions exist
@@ -3262,8 +3269,12 @@ class PhysicsApp(QMainWindow):
             fix = result.get('fix', np.array([], dtype=int))
             is_simultaneous = result.get('is_simultaneous', False)
             
+            chi2_spread = result.get('chi2_spread')
             print(f"[Fit] Fitting successful!")
-            print(f"[Fit] chi^2 = {chi2:.3f}")
+            if chi2_spread is not None:
+                print(f"[Fit] chi^2 = {chi2:.3f} ± {chi2_spread:.3f}")
+            else:
+                print(f"[Fit] chi^2 = {chi2:.3f}")
             print(f"[Fit] Simultaneous: {is_simultaneous}")
             
             # Update results table

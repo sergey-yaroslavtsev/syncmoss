@@ -266,6 +266,9 @@ def test_fit_mixed_cms_and_sms_spectra(physics_app, tmp_path):
     assert result["success"], result.get("message")
     assert result["is_simultaneous"] is True
     assert np.isfinite(result["chi2"])
+    # sqrt(2/dof) over BOTH spectra's points
+    n_points = sum(len(b) for b in result["B_list"])
+    assert np.sqrt(2.0 / n_points) < result["chi2_spread"] < 1.0
 
     note = result["instrumental_note"]
     assert "Mixed-method simultaneous fit" in note
@@ -649,6 +652,7 @@ def test_batch_fits_each_spectrum_with_own_metadata(physics_app, tmp_path):
         pool.join()
 
     assert r_cms["success"] and r_sms["success"]
+    assert np.sqrt(2.0 / len(r_cms["B"])) < r_cms["chi2_spread"] < 1.0
     assert "CMS" in r_cms["instrumental_note"] and "#@GCMS" in r_cms["instrumental_note"]
     assert "SMS" in r_sms["instrumental_note"] and "#@INSexp" in r_sms["instrumental_note"]
 
