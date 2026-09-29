@@ -14,13 +14,13 @@ The flow:
   1. open the GUI
   2. show a spectrum (Calibration.dat = an alpha-iron calibration)
   3. refine the instrumental function (pure alpha-iron)
-  4. switch to a TWO-spectrum path ([Calibration.dat, Calibration.dat])
+  4. switch to a TWO-spectrum path ([Calibration.dat, Calibration.dat]) and show it
   5. build the model: add Sextet, Doublet, Nbaseline; delete the Doublet; Insert a
      row before Nbaseline; turn that row into a Be model; add a Sextet after
      Nbaseline  ->  Sextet, Be(=Doublet), Nbaseline, Sextet
   6. show the model
   7. fit (simultaneous, because of Nbaseline + two spectra)
-  8. assert reduced chi-square < 2
+  8. assert reduced chi-square < 3
   9. assert the per-model colours match between the parameters table and the
      results table (and equal the expected red-cyan-cyan-yellow)
 
@@ -54,6 +54,9 @@ if pytest is not None:
 _POLL_MS = 500
 # Max polls before giving up on one async step (~60 s at 500 ms each)
 _TIMEOUT_POLLS = 120
+
+# Upper bound on the final reduced chi-square (see step_check_results).
+_MAX_CHI2 = 3.0
 
 # Expected final model component colours (baseline excluded). The user verified
 # these are produced by the delete/insert/Be sequence below; the key invariant is
@@ -175,6 +178,16 @@ class _TestRunner:
         w = self.window
         cal = w.calibration_path
         w.process_path.setPlainText(repr([cal, cal]))
+        # Show them, as a user does (choosing files through the dialog has the
+        # same effect): Nbaseline takes its starting Ns from the background of
+        # the matching entry of path_list, and without this path_list still
+        # holds the single spectrum of step 1, so Ns fell back to 10000 against
+        # ~1.4e5 counts and the fit could land in a wrong minimum.
+        w.show_pressed()  # synchronous
+        if "red" in w.log.styleSheet():
+            self.errors.append(f"set two-spectrum path: {w.log.toPlainText()}")
+            self._finish()
+            return
         print("[TEST] two-spectrum path OK")
         QTimer.singleShot(200, self.step_build_model)
 
@@ -220,11 +233,15 @@ class _TestRunner:
         w = self.window
         rt = w.results_table
 
-        # (8) reduced chi-square
+        # (8) reduced chi-square. The bar is set by the bundled Calibration.dat:
+        # at ~1.4e5 counts per channel the instrumental refinement of step 2
+        # already ends at 2.43, and this fit converges to 2.80 (the second
+        # spectrum carries no Be doublet). A fit stuck in a wrong minimum is
+        # ~100x that. The old 6e3-count calibration passed at < 2.
         chi2 = rt.current_chi2
         print(f"[TEST] chi^2 = {chi2}")
-        if chi2 is None or not (chi2 < 2):
-            self.errors.append(f"chi^2 check: chi2={chi2}, expected < 2")
+        if chi2 is None or not (chi2 < _MAX_CHI2):
+            self.errors.append(f"chi^2 check: chi2={chi2}, expected < {_MAX_CHI2}")
 
         # (9) per-model colours must agree between the two tables.
         model_list = list(rt.current_model_list)

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Ab-initio energy distribution S(E) of a 57FeBO3 Synchrotron Mossbauer Source.
+Simulation of energy distribution S(E) of a 57FeBO3 Synchrotron Mossbauer Source.
 
 This is the *theoretical* instrumental function of the SMS: the spectral density
 of the beam leaving the iron borate crystal on the electronically forbidden,
@@ -981,6 +981,14 @@ def reduce_to_rational(E, S, n_terms=2, p0=None, passes=3):
     is the best so far: fitting 3 terms from scratch is badly conditioned and
     runs into the width bounds, fitting them incrementally is not.
 
+    The rms is peak-relative, so it cannot see the wings: an extra term can buy
+    a slightly better core by turning into a broad pedestal (a far pole tens of
+    Gamma_0 wide) whose E^-4 tail then sits orders of magnitude above the real
+    one -- at theta = 30 urad a third term did exactly that, 5-180x too high
+    between 150 and 1750 neV. The tail is what this form exists to get right, so an
+    extra term is also refused when it moves the wing (S < 1e-3 of its peak)
+    more than a factor 2 further from S than the previous solution had it.
+
     Returns ``(params, rms, max_dev)``, deviations relative to the peak of S.
     Uses SYNCmoss's own Levenberg-Marquardt (minimi_lib) rather than
     scipy.optimize, which is excluded from the distributed bundle.
@@ -1006,6 +1014,15 @@ def reduce_to_rational(E, S, n_terms=2, p0=None, passes=3):
         if pp is None or not np.all(np.isfinite(pp)):
             return np.inf
         return float(np.sqrt(np.mean(((rational_sum(E, pp) - Sn) / peak) ** 2)))
+
+    wing = (Sn > 0) & (Sn < 1e-3 * peak)
+
+    def wing_dev(pp):
+        """Largest |ln(reduced / S)| in the wing; 0 when the grid has no wing."""
+        if not np.any(wing):
+            return 0.0
+        with np.errstate(divide='ignore'):
+            return float(np.max(np.abs(np.log(rational_sum(E[wing], pp) / Sn[wing]))))
 
     def refine(p_start, npass):
         """Levenberg-Marquardt from one start; never returns a worse point."""
@@ -1043,7 +1060,7 @@ def reduce_to_rational(E, S, n_terms=2, p0=None, passes=3):
             p_new = np.concatenate((p_new, [v1, 3.0 * g1, v2, 3.0 * g2,
                                             w / np.sqrt(2.0)]))
             p_try, rms_try = refine(p_new, passes)
-            if rms_try >= rms:
+            if rms_try >= rms or wing_dev(p_try) > wing_dev(p) + np.log(2.0):
                 break            # the extra term did not help: keep what we have
             p, rms = p_try, rms_try
 
