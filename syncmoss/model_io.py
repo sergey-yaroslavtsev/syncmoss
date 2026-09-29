@@ -570,7 +570,7 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
         main_window.set_status("Library title is empty", "orange")
         return False
 
-    library_dir = os.path.join(main_window.dir_path, 'Library')
+    library_dir = main_window.library_dir
     os.makedirs(library_dir, exist_ok=True)
     final_title, version_idx = compute_versioned_title_if_needed(library_dir, title)
     file_path = os.path.join(library_dir, f"{final_title}.mdl")

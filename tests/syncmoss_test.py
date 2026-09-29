@@ -23,6 +23,14 @@ The flow:
   8. assert reduced chi-square < 3
   9. assert the per-model colours match between the parameters table and the
      results table (and equal the expected red-cyan-cyan-yellow)
+ 10. Library: saving the fitted model must be refused -- the Library takes no
+     models with Nbaseline (those go through Save model / Load model). Then a
+     round trip with a new plain model (Sextet + Doublet, one spectrum): save
+     it to the Library, empty the table, pick the model in the Library browser
+     as a user does, check that the table holds exactly what was saved, and
+     show it. ``--test`` saves into the REAL Library of the app under test (for
+     the frozen macOS app that is ~/Library/Application Support/SYNCmoss/Library)
+     and removes that one file again; the pytest wrappers work on a temp copy.
 
 Exit code of ``run_gui_smoke``: 0 on success, 1 on any failure.
 """
@@ -34,9 +42,11 @@ import tempfile
 import multiprocessing as mp
 from multiprocessing.pool import ThreadPool
 
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QDialog, QListWidget, QMessageBox
+from PySide6.QtCore import Qt, QTimer
 
+from syncmoss import model_io
+from syncmoss.model_io import save_model_to_library
 from syncmoss.syncmoss_main import PhysicsApp
 
 # pytest is NOT bundled into the frozen binaries; import it lazily so that
@@ -64,6 +74,13 @@ _MAX_CHI2 = 3.0
 _EXPECTED_MODEL_COLORS = ['red', 'cyan', 'cyan', 'yellow']
 # get_model_list() reports a Be model as a "Doublet" (it is a Doublet preset).
 _EXPECTED_MODEL_LIST = ['baseline', 'Sextet', 'Doublet', 'Nbaseline', 'Sextet']
+
+# The Library round trip (step 10) saves the model under this title and removes
+# the file again. Only the file it created is ever removed, so a user's own
+# model of the same name is safe (the save then becomes "... (2)").
+_LIBRARY_TITLE = "SYNCmoss self-test"
+# The plain model step 10 round-trips through the Library.
+_LIBRARY_MODEL_LIST = ['baseline', 'Sextet', 'Doublet']
 
 
 def _parse_bg_color(stylesheet: str):
@@ -98,6 +115,42 @@ def _redirect_params_to_tmp(window, tmp_dir=None) -> None:
     window.calibration_path = os.path.join(dst, "Calibration.dat")
 
 
+def _redirect_library_to_tmp(window, tmp_dir) -> None:
+    """Point the window's Library at a throw-away copy.
+
+    Only the pytest wrappers use this. ``--test`` deliberately leaves the
+    Library alone: in the frozen binaries step 10 has to go through the real
+    Library of the app under test, and it removes the one file it saves.
+    """
+    dst = os.path.join(str(tmp_dir), "Library")
+    if os.path.isdir(window.library_dir):
+        shutil.copytree(window.library_dir, dst, dirs_exist_ok=True)
+    window.library_dir = dst
+
+
+def _library_listing(library_dir) -> set:
+    return set(os.listdir(library_dir)) if os.path.isdir(library_dir) else set()
+
+
+def _empty_table(params_table) -> None:
+    """Delete every model row, leaving the baseline."""
+    for _ in range(len(params_table.row_widgets)):
+        if params_table.get_model_list() == ['baseline']:
+            return
+        params_table.select_model(1, "Delete")
+
+
+def _model_text(window) -> list:
+    """The table as .mdl lines, without the colour line: a model added from the
+    Library gets fresh colours, everything else must come back verbatim."""
+    with tempfile.TemporaryDirectory(prefix="syncmoss_smoke_") as tmp:
+        path = os.path.join(tmp, "table.mdl")
+        model_io._save_model_to_file(window, path)
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    return lines[:1] + lines[2:]
+
+
 class _TestRunner:
     """Drives the GUI through the smoke-test steps sequentially.
 
@@ -113,6 +166,11 @@ class _TestRunner:
         self._poll_count = 0
         self._next_step = None
         self._wait_label = ""
+        # Step 10: the file it saved into the Library (removed again), the saved
+        # table as .mdl lines, and whether the Library browser is still up.
+        self._library_file = None
+        self._library_model = None
+        self._browser_pending = False
 
     # -- entry point ---------------------------------------------------
 
@@ -271,11 +329,172 @@ class _TestRunner:
                 f"colours {param_model} != expected {_EXPECTED_MODEL_COLORS}"
             )
 
+        QTimer.singleShot(300, self.step_library_refuses_nbaseline)
+
+    # -- Step 8: Library (docstring item 10) --------------------------
+    # Each step records a failure and finishes instead of raising, so a broken
+    # step fails the run rather than leaving it waiting forever.
+
+    def step_library_refuses_nbaseline(self) -> None:
+        print("[TEST] Step: the Library refuses a model with Nbaseline ...")
+        w = self.window
+        pt = w.params_table
+        library_dir = w.library_dir
+        try:
+            models = pt.get_model_list()
+            if 'Nbaseline' not in models:
+                raise AssertionError(f"the model has no Nbaseline: {models}")
+            before = _library_listing(library_dir)
+            saved = save_model_to_library(w, _LIBRARY_TITLE, metadata={})
+            created = sorted(_library_listing(library_dir) - before)
+            if len(created) == 1 and created[0].startswith(_LIBRARY_TITLE):
+                self._library_file = os.path.join(library_dir, created[0])  # _finish removes it
+            if saved or created:
+                raise AssertionError(f"a model with Nbaseline was saved: {created}")
+            if "Nbaseline" not in w.log.toPlainText():
+                raise AssertionError(f"no refusal reported: {w.log.toPlainText()}")
+            if pt.get_model_list() != models:
+                raise AssertionError(f"the model changed: {pt.get_model_list()}")
+        except Exception as e:
+            self._fail("library refuses Nbaseline", e)
+            return
+        print("[TEST] Nbaseline refused OK")
+        QTimer.singleShot(300, self.step_library_new_model)
+
+    def step_library_new_model(self) -> None:
+        print("[TEST] Step: new plain model for the Library (Sextet + Doublet) ...")
+        w = self.window
+        pt = w.params_table
+        try:
+            # One spectrum and a fresh table with a model the Library takes.
+            w.process_path.setPlainText(repr([w.calibration_path]))
+            w.show_pressed()  # synchronous
+            if "red" in w.log.styleSheet():
+                raise AssertionError(w.log.toPlainText())
+            _empty_table(pt)
+            pt.select_model(1, "Sextet")
+            pt.select_model(2, "Doublet")
+        except Exception as e:
+            self._fail("library round trip, new model", e)
+            return
+        QTimer.singleShot(300, self.step_library_save)
+
+    def step_library_save(self) -> None:
+        print("[TEST] Step: save the model to the Library ...")
+        w = self.window
+        pt = w.params_table
+        library_dir = w.library_dir
+        try:
+            models = pt.get_model_list()
+            if models != _LIBRARY_MODEL_LIST:
+                raise AssertionError(f"model is {models}, expected {_LIBRARY_MODEL_LIST}")
+            self._library_model = _model_text(w)
+            before = _library_listing(library_dir)
+            saved = save_model_to_library(
+                w, _LIBRARY_TITLE, "Written and removed again by the SYNCmoss self-test.",
+                metadata={})
+            created = sorted(_library_listing(library_dir) - before)
+            # Only a file this step created may be removed again.
+            if not saved or len(created) != 1 or not created[0].startswith(_LIBRARY_TITLE):
+                raise AssertionError(
+                    f"expected one new '{_LIBRARY_TITLE}' file in {library_dir}, got {created} "
+                    f"({w.log.toPlainText()})")
+            self._library_file = os.path.join(library_dir, created[0])
+            print(f"[TEST] saved {self._library_file}")
+            # Empty the table: the model has to come back from the Library.
+            _empty_table(pt)
+            if pt.get_model_list() != ['baseline']:
+                raise AssertionError(f"table not emptied: {pt.get_model_list()}")
+        except Exception as e:
+            self._fail("library save", e)
+            return
+        QTimer.singleShot(300, self.step_library_add)
+
+    def step_library_add(self) -> None:
+        print("[TEST] Step: add the model back through the Library browser ...")
+        w = self.window
+        pt = w.params_table
+        file_name = os.path.basename(self._library_file)
+        errors_before = len(self.errors)
+        self._browser_pending = True
+        QTimer.singleShot(300, lambda: self._answer_library_browser(file_name, 50))
+        try:
+            # What choosing 'Library' in row 1's dropdown does: the modal
+            # Library browser, answered by _answer_library_browser.
+            model_btn = pt.row_widgets[1].layout().itemAt(0).widget().layout().itemAt(1).widget()
+            pt.select_model_by_button("Library", model_btn)
+            if len(self.errors) == errors_before:
+                models = pt.get_model_list()
+                if models != _LIBRARY_MODEL_LIST:
+                    raise AssertionError(
+                        f"model is {models}, expected {_LIBRARY_MODEL_LIST} ({w.log.toPlainText()})")
+                got = _model_text(w)
+                if got != self._library_model:
+                    first = next((i for i, (a, b) in enumerate(zip(self._library_model, got)) if a != b),
+                                 min(len(got), len(self._library_model)))
+                    raise AssertionError(
+                        f"the table does not hold what was saved (first difference in line {first})")
+        except Exception as e:
+            self.errors.append(f"library add: {e}")
+        finally:
+            self._browser_pending = False
+            self._remove_library_file()
+        if len(self.errors) > errors_before:
+            self._finish()
+            return
+        print("[TEST] library round trip OK")
+        QTimer.singleShot(300, self.step_library_show_model)
+
+    def step_library_show_model(self) -> None:
+        print("[TEST] Step: show the model added from the Library ...")
+        self.window.showM_pressed()
+        self._wait(self._finish, "show model from the Library")
+
+    def _answer_library_browser(self, file_name, attempts) -> None:
+        """Answer the modal Library browser as a user does: select ``file_name``
+        and press OK. Anything else titled "Library" (a warning box) is
+        recorded and closed, so the run can never hang on a dialog."""
+        if not self._browser_pending:
+            return
+        for widget in QApplication.topLevelWidgets():
+            if not (isinstance(widget, QDialog) and widget.isVisible()
+                    and widget.windowTitle() == "Library"):
+                continue
+            if isinstance(widget, QMessageBox):
+                self.errors.append(f"library browser: {widget.text()}")
+                widget.done(0)
+                continue
+            list_widget = widget.findChild(QListWidget)
+            mine = []
+            if list_widget is not None:
+                mine = [list_widget.item(i) for i in range(list_widget.count())
+                        if list_widget.item(i).data(Qt.ItemDataRole.UserRole) == file_name]
+            if mine:
+                list_widget.setCurrentItem(mine[0])
+                widget.accept()
+            else:
+                self.errors.append(f"library browser does not list {file_name}")
+                widget.reject()
+        if attempts > 0:
+            QTimer.singleShot(200, lambda: self._answer_library_browser(file_name, attempts - 1))
+
+    def _remove_library_file(self) -> None:
+        """Remove the file step 10 saved into the Library -- and only that one."""
+        path, self._library_file = self._library_file, None
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                self.errors.append(f"library round trip: could not remove {path}: {e}")
+
+    def _fail(self, label, error) -> None:
+        self.errors.append(f"{label}: {error}")
         self._finish()
 
     # -- finish / close ------------------------------------------------
 
     def _finish(self) -> None:
+        self._remove_library_file()
         if self.errors:
             print("\n[TEST FAILED]")
             for msg in self.errors:
@@ -333,8 +552,10 @@ def test_gui_open_and_fit(qapp, tmp_path):
     window = PhysicsApp(pool=pool)
     # Operate on a temp copy of the whole parameters folder so neither the fit
     # nor the instrumental refinement (step 2) rewrites the tracked data files
-    # (Calibration.dat, INSexp.txt, INSint.txt).
+    # (Calibration.dat, INSexp.txt, INSint.txt). Same for the Library, which
+    # the round trip (step 10) saves into.
     _redirect_params_to_tmp(window, tmp_path)
+    _redirect_library_to_tmp(window, tmp_path)
     try:
         window.show()
         runner = _TestRunner(qapp, window)
@@ -350,6 +571,54 @@ def test_gui_open_and_fit(qapp, tmp_path):
 
         assert runner.errors == [], "GUI smoke test failed: " + " | ".join(runner.errors)
     finally:
+        window.close()
+        pool.close()
+        pool.join()
+
+
+def test_gui_library_round_trip(qapp, tmp_path):
+    """Step 10 on its own, without the fit: a model with Nbaseline is refused,
+    a plain Sextet + Doublet is saved to the Library, added back through the
+    Library browser and shown."""
+    pool = ThreadPool(processes=1)
+    window = PhysicsApp(pool=pool)
+    _redirect_params_to_tmp(window, tmp_path)
+    _redirect_library_to_tmp(window, tmp_path)
+    runner = _TestRunner(qapp, window)
+
+    def _setup():
+        try:
+            window.process_path.setPlainText(repr([window.calibration_path]))
+            window.show_pressed()
+            window.params_table.select_model(1, "Sextet")
+            window.params_table.select_model(2, "Nbaseline")
+            window.params_table.select_model(3, "Sextet")
+        except Exception as e:
+            runner._fail("library round trip, setup", e)
+            return
+        runner.step_library_refuses_nbaseline()
+
+    def _safety_quit():
+        runner.errors.append("safety timeout: the Library round trip did not finish")
+        qapp.quit()
+
+    safety = QTimer()
+    safety.setSingleShot(True)
+    safety.timeout.connect(_safety_quit)
+    try:
+        window.show()
+        safety.start(120_000)
+        QTimer.singleShot(300, _setup)
+        qapp.exec()
+
+        assert runner.errors == [], "Library round trip failed: " + " | ".join(runner.errors)
+        # the one file it saved is gone again; the shipped Library was never used
+        for folder in (window.library_dir, os.path.join(window.dir_path, "Library")):
+            left = [n for n in os.listdir(folder) if n.startswith(_LIBRARY_TITLE)] \
+                if os.path.isdir(folder) else []
+            assert left == [], f"self-test model left in {folder}: {left}"
+    finally:
+        safety.stop()
         window.close()
         pool.close()
         pool.join()

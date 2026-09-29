@@ -175,27 +175,31 @@ check_tango = False
 # tango_uri = 'moesa:20000/id14/Can556/6a2'  # could be different
 # check_tango = True
 
-def _resolve_params_dir(base_dir):
-    """Return the directory that holds the parameter files, Calibration.dat and
-    the generated calibr.png.
+def _is_frozen_macos():
+    """True inside the frozen macOS ``.app``: its bundled folders are not
+    reliably writable (code-signed, or launched from a read-only mount)."""
+    return getattr(sys, 'frozen', False) and sys.platform == 'darwin'
 
-    Normally this is the bundled ``parameters/`` folder shipped next to the app.
-    A *frozen macOS* ``.app`` is code-signed / launched from a read-only mount, so
-    that folder is not reliably writable; redirect to a per-user writable location
-    (``QStandardPaths.AppDataLocation`` -> ``~/Library/Application Support/SYNCmoss``)
-    and seed it from the bundled originals. If any required file is missing there,
-    ALL bundled files are (re-)copied, overwriting existing ones.
 
-    Windows and source checkouts keep using the in-place ``parameters/`` folder.
-    """
-    bundled = os.path.join(base_dir, 'parameters')
-    if not (getattr(sys, 'frozen', False) and sys.platform == 'darwin'):
-        return bundled
-
+def _macos_app_data_dir():
+    """The per-user writable location of the frozen macOS app
+    (``QStandardPaths.AppDataLocation`` -> ``~/Library/Application Support/SYNCmoss``)."""
     QCoreApplication.setApplicationName('SYNCmoss')  # deterministic AppData path
     target = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
     if not target:
         target = os.path.expanduser('~/Library/Application Support/SYNCmoss')
+    return target
+
+
+def _seed_from_bundle(bundled, target):
+    """Make ``target`` the writable copy of the bundled folder ``bundled``.
+
+    If any bundled entry is missing in ``target``, ALL bundled entries are
+    (re-)copied, overwriting existing ones: a missing file means the software
+    logic changed, so to be safe everything is redone. While everything exists
+    the user's changes are preserved. Entries only ``target`` has (the user's
+    own files) are never touched.
+    """
     os.makedirs(target, exist_ok=True)
 
     required = os.listdir(bundled) if os.path.isdir(bundled) else []
@@ -208,6 +212,42 @@ def _resolve_params_dir(base_dir):
             else:
                 shutil.copy2(src, dst)
     return target
+
+
+def _resolve_params_dir(base_dir):
+    """Return the directory that holds the parameter files, Calibration.dat and
+    the generated calibr.png.
+
+    Normally this is the bundled ``parameters/`` folder shipped next to the app.
+    A *frozen macOS* ``.app`` is code-signed / launched from a read-only mount, so
+    that folder is not reliably writable; redirect to a per-user writable location
+    (``QStandardPaths.AppDataLocation`` -> ``~/Library/Application Support/SYNCmoss``)
+    and seed it from the bundled originals (``_seed_from_bundle``: if any required
+    file is missing there, ALL bundled files are (re-)copied, overwriting existing
+    ones).
+
+    Windows and source checkouts keep using the in-place ``parameters/`` folder.
+    """
+    bundled = os.path.join(base_dir, 'parameters')
+    if not _is_frozen_macos():
+        return bundled
+    return _seed_from_bundle(bundled, _macos_app_data_dir())
+
+
+def _resolve_library_dir(base_dir):
+    """Return the model Library folder ("Save to library" and "Import Library"
+    write into it).
+
+    The same redirect as ``_resolve_params_dir``, one level down: on a frozen
+    macOS ``.app`` the bundled ``Library/`` becomes
+    ``~/Library/Application Support/SYNCmoss/Library``, seeded from the bundled
+    models by the same rule. Windows and source checkouts keep using the
+    in-place ``Library/`` folder.
+    """
+    bundled = os.path.join(base_dir, 'Library')
+    if not _is_frozen_macos():
+        return bundled
+    return _seed_from_bundle(bundled, os.path.join(_macos_app_data_dir(), 'Library'))
 
 
 class CalibrationThread(QThread):
@@ -778,6 +818,9 @@ class PhysicsApp(QMainWindow):
         # On a frozen macOS app this redirects to ~/Library/Application Support;
         # everywhere else it is the bundled parameters/ folder next to the app.
         self.params_dir = _resolve_params_dir(self.dir_path)
+        # The model Library is written to as well ("Save to library", "Import
+        # Library"), so it gets the same redirect (<AppData>/Library there).
+        self.library_dir = _resolve_library_dir(self.dir_path)
         self.workfolder = None  # Start with no workfolder selected
         self.workfolder_check = 1
         self.check_points_match = False

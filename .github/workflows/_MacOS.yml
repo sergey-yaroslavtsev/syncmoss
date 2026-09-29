@@ -1,5 +1,27 @@
 name: _macOS (PyInstaller universal2 app)
 
+# Modelled on crispy's release workflow (github.com/mretegan/crispy):
+#   1. build the app natively on an Apple Silicon AND an Intel runner,
+#   2. fuse the two bundles into one universal2 SYNCmoss.app,
+#   3. sign it (Developer ID + hardened runtime), pack the DMG, notarize, staple.
+#
+# Signing and notarization run only when the Apple secrets are set (repository
+# Settings -> Secrets and variables -> Actions; release.yml forwards them).
+# Without them the job still ships a universal2 DMG, ad-hoc signed and not
+# notarized, named SYNCmoss-macOS-universal2.dmg. A notarized one is named
+# SYNCmoss-macOS-universal2-signed.dmg; _TagRelease.yml / _UploadRelease.yml
+# tell the two apart by that name.
+#
+#   APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64
+#       the "Developer ID Application" certificate WITH its private key,
+#       exported from Keychain Access as .p12, then: base64 -i cert.p12 | pbcopy
+#   APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD   password of that .p12
+#   APPLE_ID                             Apple Account e-mail of the developer
+#   APPLE_TEAM_ID                        10-character Team ID (developer.apple.com -> Membership)
+#   APPLE_APPLICATION_SPECIFIC_PASSWORD  app-specific password (account.apple.com -> Sign-In and Security)
+#   APPLE_KEYCHAIN_PASSWORD              optional: password of the throwaway CI keychain
+#                                        (a random one is used when unset)
+
 on:
   workflow_call:
     secrets:
@@ -17,8 +39,18 @@ on:
         required: false
 
 jobs:
-  macos_arm64_app:
-    runs-on: macos-latest
+  build:
+    name: Build macOS app (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
     env:
       MACOSX_DEPLOYMENT_TARGET: "11"
       CFLAGS: "-mmacosx-version-min=11"
@@ -31,299 +63,389 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
+      - name: Check the runner architecture
+        run: |
+          MACHINE="$(python -c 'import platform; print(platform.machine())')"
+          echo "Python runs as ${MACHINE}"
+          if [ "${MACHINE}" != "${{ matrix.arch }}" ]; then
+            echo "::error::expected a ${{ matrix.arch }} runner, got ${MACHINE}"
+            exit 1
+          fi
+
       - name: Download wheel artifact
         uses: actions/download-artifact@v6
         with:
           name: wheels
           path: wheels
 
+      # numba 0.62.x (llvmlite 0.45.x) is the last release with macOS x86_64
+      # wheels. The pin applies to BOTH architectures: the universal2 app holds
+      # one copy of the pure-Python code, so the two builds must resolve the
+      # same versions (checked again before the merge). --only-binary stops pip
+      # from quietly building an sdist on one architecture only.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install -r requirements.txt
-          pip install pyinstaller
-          pip install wheels/*.whl
+          python -m pip install --only-binary=:all: "numba==0.62.1" -r requirements.txt pyinstaller wheels/*.whl
+          python -m pip list --format=freeze
 
-      - name: Build arm64 app
-        run: python bundle/macos_bundle.py --dist-dir bundle/MacOS/arm64 --work-dir bundle/build/MacOS/arm64
+      - name: Build the app
+        run: python bundle/macos_bundle.py --dist-dir bundle/MacOS/${{ matrix.arch }} --work-dir bundle/build/MacOS/${{ matrix.arch }}
 
-      - name: Normalize arm64 app location
+      # tar keeps the symlinks (Qt frameworks) and executable bits that
+      # upload-artifact would drop.
+      - name: Archive the app bundle
         run: |
           set -euo pipefail
-          APP_PATH="$(find bundle/MacOS/arm64 -type d -name 'SYNCmoss.app' | head -n 1)"
-          if [ -z "$APP_PATH" ]; then
-            echo "SYNCmoss.app not found in arm64 build output"
-            find bundle/MacOS/arm64 -maxdepth 5 -print
+          DIST="bundle/MacOS/${{ matrix.arch }}"
+          APP_PATH=""
+          for candidate in "${DIST}/SYNCmoss.app" "${DIST}/SYNCmoss/SYNCmoss.app"; do
+            if [ -d "${candidate}" ]; then
+              APP_PATH="${candidate}"
+              break
+            fi
+          done
+          if [ -z "${APP_PATH}" ]; then
+            echo "::error::SYNCmoss.app not found in the ${{ matrix.arch }} build output"
+            find "${DIST}" -maxdepth 3 -print
             exit 1
           fi
-          mkdir -p bundle/MacOS/arm64/artifact
-          rm -rf bundle/MacOS/arm64/artifact/SYNCmoss.app
-          cp -R "$APP_PATH" bundle/MacOS/arm64/artifact/SYNCmoss.app
+          echo "Executable architectures: $(lipo -archs "${APP_PATH}/Contents/MacOS/SYNCmoss")"
+          mkdir -p macos-artifact
+          tar -cpzf macos-artifact/SYNCmoss.app.tar.gz -C "$(dirname "${APP_PATH}")" SYNCmoss.app
+          python -m pip list --format=freeze > macos-artifact/pip-freeze.txt
+          echo "APP_PATH=${APP_PATH}" >> "${GITHUB_ENV}"
 
-      - name: Upload arm64 app artifact
+      - name: Upload the app bundle
         uses: actions/upload-artifact@v5
         with:
-          name: macos-arm64-app
-          path: bundle/MacOS/arm64/artifact/SYNCmoss.app
+          name: macos-app-${{ matrix.arch }}
+          path: macos-artifact/
           if-no-files-found: error
-          retention-days: 5
+          retention-days: 1
 
-  macos_x86_64_app:
-    runs-on: macos-latest
-    env:
-      MACOSX_DEPLOYMENT_TARGET: "11"
-      CFLAGS: "-mmacosx-version-min=11"
-      LDFLAGS: "-mmacosx-version-min=11"
+      # Runs each architecture natively (the x86_64 slice is never exercised
+      # later). After archiving, so nothing the test writes reaches the artifact.
+      - name: Smoke-test the frozen app
+        run: |
+          "${APP_PATH}/Contents/MacOS/SYNCmoss" --test
+
+  universal2:
+    name: Merge, sign and notarize the universal2 app
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v6
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: "pip"
 
-      - name: Install Rosetta
-        run: sudo softwareupdate --install-rosetta --agree-to-license
-
-      - name: Create x86_64 Python environment
-        run: |
-          python -m venv venv-x86_64
-          lipo venv-x86_64/bin/python -remove arm64 -output venv-x86_64/bin/python_x86
-          mv venv-x86_64/bin/python_x86 venv-x86_64/bin/python
-          chmod +x venv-x86_64/bin/python
-          file venv-x86_64/bin/python
-
-      - name: Download wheel artifact
+      - name: Download the arm64 app
         uses: actions/download-artifact@v6
         with:
-          name: wheels
-          path: wheels
+          name: macos-app-arm64
+          path: bundles/arm64
 
-      - name: Install dependencies (x86_64)
-        run: |
-          source venv-x86_64/bin/activate
-          arch -x86_64 python -m pip install --upgrade pip setuptools wheel
-          arch -x86_64 pip install numba==0.62.1
-          arch -x86_64 pip install -r requirements.txt
-          arch -x86_64 pip install pyinstaller
-          arch -x86_64 pip install wheels/*.whl
-
-      - name: Build x86_64 app
-        run: |
-          source venv-x86_64/bin/activate
-          arch -x86_64 python bundle/macos_bundle.py --dist-dir bundle/MacOS/x86_64 --work-dir bundle/build/MacOS/x86_64
-
-      - name: Normalize x86_64 app location
-        run: |
-          set -euo pipefail
-          APP_PATH="$(find bundle/MacOS/x86_64 -type d -name 'SYNCmoss.app' | head -n 1)"
-          if [ -z "$APP_PATH" ]; then
-            echo "SYNCmoss.app not found in x86_64 build output"
-            find bundle/MacOS/x86_64 -maxdepth 5 -print
-            exit 1
-          fi
-          mkdir -p bundle/MacOS/x86_64/artifact
-          rm -rf bundle/MacOS/x86_64/artifact/SYNCmoss.app
-          cp -R "$APP_PATH" bundle/MacOS/x86_64/artifact/SYNCmoss.app
-
-      - name: Upload x86_64 app artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: macos-x86_64-app
-          path: bundle/MacOS/x86_64/artifact/SYNCmoss.app
-          if-no-files-found: error
-          retention-days: 5
-
-  macos_universal2:
-    runs-on: macos-latest
-    needs:
-      - macos_arm64_app
-      - macos_x86_64_app
-    env:
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
-      CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
-      KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
-      APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APPLICATION_SPECIFIC_PASSWORD }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Download arm64 app
+      - name: Download the x86_64 app
         uses: actions/download-artifact@v6
         with:
-          name: macos-arm64-app
-          path: dist/arm64
+          name: macos-app-x86_64
+          path: bundles/x86_64
 
-      - name: Download x86_64 app
-        uses: actions/download-artifact@v6
-        with:
-          name: macos-x86_64-app
-          path: dist/x86_64
-
-      - name: Merge into universal2 app
+      - name: Check both builds used the same packages
         run: |
-          set -euo pipefail
-          ARM_APP="$(find dist/arm64 -type d -name 'SYNCmoss.app' | head -n 1)"
-          X86_APP="$(find dist/x86_64 -type d -name 'SYNCmoss.app' | head -n 1)"
-
-          # actions/download-artifact may sometimes restore the app without the
-          # outer *.app directory, leaving Contents/ directly in target folder.
-          if [ -z "$ARM_APP" ] && [ -d dist/arm64/Contents ]; then
-            ARM_APP="dist/arm64"
-          fi
-          if [ -z "$X86_APP" ] && [ -d dist/x86_64/Contents ]; then
-            X86_APP="dist/x86_64"
-          fi
-
-          if [ -z "$ARM_APP" ] || [ -z "$X86_APP" ]; then
-            echo "Could not locate arm64/x86_64 apps after artifact download"
-            find dist -maxdepth 6 -print
+          if ! diff -u bundles/arm64/pip-freeze.txt bundles/x86_64/pip-freeze.txt; then
+            echo "::error::arm64 and x86_64 resolved different package versions, so the universal2 app would mix them; pin the differing packages in the build job's install step"
             exit 1
           fi
 
-          mkdir -p dist/universal2
-          if [ "$(basename "$ARM_APP")" = "SYNCmoss.app" ]; then
-            cp -R "$ARM_APP" dist/universal2/
+      - name: Extract the app bundles
+        run: |
+          set -euo pipefail
+          mkdir -p arm64 x86_64
+          tar -xpf bundles/arm64/SYNCmoss.app.tar.gz -C arm64
+          tar -xpf bundles/x86_64/SYNCmoss.app.tar.gz -C x86_64
+
+      # Adapted from crispy's package/merge-universal.py: walk both bundles,
+      # fuse every pair of thin Mach-O files with lipo, copy everything else
+      # (identical files, already-universal binaries, data files, symlinks),
+      # then require every Mach-O file of the result to carry both slices.
+      - name: Merge into a universal2 app
+        shell: python
+        run: |
+          import filecmp
+          import os
+          import shutil
+          import subprocess
+          import sys
+
+          ARM_APP = "arm64/SYNCmoss.app"
+          X86_APP = "x86_64/SYNCmoss.app"
+          OUT_APP = "dist/universal2/SYNCmoss.app"
+
+          THIN_MAGICS = {b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe"}
+          FAT_MAGICS = {b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
+
+
+          def macho_kind(path):
+              """'thin', 'fat' or None, from the magic bytes: PyInstaller ships
+              extension-less Mach-O files. Java .class files share the fat magic,
+              but a real universal binary has only a few architectures."""
+              with open(path, "rb") as f:
+                  header = f.read(8)
+              if len(header) < 8:
+                  return None
+              if header[:4] in THIN_MAGICS:
+                  return "thin"
+              if header[:4] in FAT_MAGICS:
+                  byteorder = "big" if header[:4] == b"\xca\xfe\xba\xbe" else "little"
+                  return "fat" if int.from_bytes(header[4:8], byteorder) < 30 else None
+              return None
+
+
+          def collect(root):
+              """Relative path -> 'dir', 'symlink' or 'file' (symlinked dirs are not descended)."""
+              entries = {}
+              for current, dirnames, filenames in os.walk(root):
+                  for name in dirnames + filenames:
+                      path = os.path.join(current, name)
+                      if os.path.islink(path):
+                          kind = "symlink"
+                      elif os.path.isdir(path):
+                          kind = "dir"
+                      else:
+                          kind = "file"
+                      entries[os.path.relpath(path, root)] = kind
+              return entries
+
+
+          arm = collect(ARM_APP)
+          x86 = collect(X86_APP)
+          os.makedirs(OUT_APP)
+          single_arch = []
+          fused = 0
+
+          for rel in sorted(set(arm) | set(x86)):
+              arm_kind, x86_kind = arm.get(rel), x86.get(rel)
+              arm_path = os.path.join(ARM_APP, rel)
+              x86_path = os.path.join(X86_APP, rel)
+              out_path = os.path.join(OUT_APP, rel)
+
+              if "dir" in (arm_kind, x86_kind):
+                  os.makedirs(out_path, exist_ok=True)
+                  continue
+              os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+              if "symlink" in (arm_kind, x86_kind):
+                  if arm_kind == x86_kind and os.readlink(arm_path) != os.readlink(x86_path):
+                      print(f"WARNING: symlink target differs, using arm64: {rel}")
+                  os.symlink(os.readlink(arm_path if arm_kind == "symlink" else x86_path), out_path)
+                  continue
+
+              if arm_kind is None or x86_kind is None:
+                  present = arm_path if arm_kind else x86_path
+                  if macho_kind(present):
+                      single_arch.append(rel)
+                  else:
+                      print(f"WARNING: data file present in one build only: {rel}")
+                      shutil.copy2(present, out_path)
+                  continue
+
+              if filecmp.cmp(arm_path, x86_path, shallow=False):
+                  shutil.copy2(arm_path, out_path)
+                  continue
+
+              arm_macho, x86_macho = macho_kind(arm_path), macho_kind(x86_path)
+              if arm_macho == x86_macho == "thin":
+                  subprocess.run(["lipo", "-create", arm_path, x86_path, "-output", out_path], check=True)
+                  shutil.copymode(arm_path, out_path)
+                  fused += 1
+              elif "fat" in (arm_macho, x86_macho):
+                  # Already universal; the two copies differ only in their signature.
+                  shutil.copy2(arm_path if arm_macho == "fat" else x86_path, out_path)
+              elif arm_macho or x86_macho:
+                  single_arch.append(rel)
+              else:
+                  print(f"WARNING: data file differs, using arm64: {rel}")
+                  shutil.copy2(arm_path, out_path)
+
+          if single_arch:
+              sys.exit(
+                  "ERROR: these Mach-O binaries exist for one architecture only, so the "
+                  "app would crash on the other:\n" + "\n".join(f"  - {p}" for p in single_arch)
+              )
+
+          not_universal = []
+          checked = 0
+          for rel, kind in sorted(collect(OUT_APP).items()):
+              path = os.path.join(OUT_APP, rel)
+              if kind != "file" or not macho_kind(path):
+                  continue
+              checked += 1
+              archs = subprocess.run(["lipo", "-archs", path], capture_output=True, text=True).stdout.split()
+              if not {"arm64", "x86_64"} <= set(archs):
+                  not_universal.append(f"  - {rel}: {' '.join(archs) or 'unreadable'}")
+
+          print(f"Fused {fused} binaries, checked {checked} Mach-O files")
+          if not_universal:
+              sys.exit("ERROR: these binaries are not universal2:\n" + "\n".join(not_universal))
+          print(f"Universal2 app written to {OUT_APP}")
+
+      # The merge leaves the bundle's seal stale, so the app is always re-signed:
+      # with the Developer ID when the certificate secrets are set, otherwise
+      # ad-hoc (so macOS reports "unverified developer", not "damaged").
+      - name: Sign the app
+        id: sign
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APP="dist/universal2/SYNCmoss.app"
+
+          # The hardened runtime needs these for the numba/llvmlite JIT (writable
+          # + executable memory) and for loading the bundled Python extensions.
+          ENTITLEMENTS="${RUNNER_TEMP}/entitlements.plist"
+          cat > "${ENTITLEMENTS}" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.cs.allow-jit</key>
+              <true/>
+              <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+              <true/>
+              <key>com.apple.security.cs.disable-library-validation</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+          # Extended attributes would invalidate the signature.
+          xattr -cr "${APP}"
+
+          if [ -n "${CERTIFICATE_BASE64}" ] && [ -n "${CERTIFICATE_PASSWORD}" ]; then
+            KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
+            CERTIFICATE_PATH="${RUNNER_TEMP}/certificate.p12"
+            if [ -z "${KEYCHAIN_PASSWORD}" ]; then
+              KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+              echo "::add-mask::${KEYCHAIN_PASSWORD}"
+            fi
+
+            echo "Creating a temporary keychain and importing the certificate"
+            echo "${CERTIFICATE_BASE64}" | base64 --decode -o "${CERTIFICATE_PATH}"
+            security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+            security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
+            security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+            security import "${CERTIFICATE_PATH}" -P "${CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${KEYCHAIN_PATH}"
+            rm -f "${CERTIFICATE_PATH}"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}" > /dev/null
+            security list-keychains -d user -s "${KEYCHAIN_PATH}"
+
+            IDENTITY="$(security find-identity -v -p codesigning "${KEYCHAIN_PATH}" | awk '/"Developer ID Application/ && !found { print $2; found = 1 }')"
+            if [ -z "${IDENTITY}" ]; then
+              echo "::error::the certificate holds no 'Developer ID Application' identity"
+              security find-identity -v -p codesigning "${KEYCHAIN_PATH}"
+              exit 1
+            fi
+
+            echo "Signing with the Developer ID (hardened runtime)"
+            codesign --force --deep --timestamp --options runtime \
+              --entitlements "${ENTITLEMENTS}" \
+              --keychain "${KEYCHAIN_PATH}" \
+              --sign "${IDENTITY}" \
+              "${APP}"
+            security delete-keychain "${KEYCHAIN_PATH}"
+            echo "developer_id=true" >> "${GITHUB_OUTPUT}"
           else
-            mkdir -p dist/universal2/SYNCmoss.app
-            cp -R "$ARM_APP/Contents" dist/universal2/SYNCmoss.app/
+            echo "::warning::Apple certificate secrets are not set: the macOS DMG is ad-hoc signed and not notarized"
+            codesign --force --deep --sign - "${APP}"
+            echo "developer_id=false" >> "${GITHUB_OUTPUT}"
           fi
-          UNI_APP="dist/universal2/SYNCmoss.app"
 
-          echo "Merging executables in Contents/MacOS..."
-          for exe in "$ARM_APP/Contents/MacOS/"*; do
-            if [ ! -f "$exe" ]; then
-              continue
-            fi
-            exe_name=$(basename "$exe")
-            x86_exe="$X86_APP/Contents/MacOS/$exe_name"
-            out_exe="$UNI_APP/Contents/MacOS/$exe_name"
+          codesign --verify --deep --strict --verbose=2 "${APP}"
+          echo "Universal executable architectures: $(lipo -archs "${APP}/Contents/MacOS/SYNCmoss")"
 
-            if [ ! -f "$x86_exe" ]; then
-              continue
-            fi
-
-            if file "$exe" | grep -q 'Mach-O'; then
-              lipo -create "$exe" "$x86_exe" -output "$out_exe"
-            fi
-          done
-
-          get_archs() {
-            echo "$1" | grep -oE 'arm64|x86_64' | sort | tr '\n' ' ' || true
-          }
-
-          contains_all_archs() {
-            local container=($1)
-            local contained=($2)
-
-            for arch in "${contained[@]}"; do
-              local found=0
-              for c in "${container[@]}"; do
-                if [ "$arch" = "$c" ]; then
-                  found=1
-                  break
-                fi
-              done
-              if [ $found -eq 0 ]; then
-                return 1
-              fi
-            done
-            return 0
-          }
-
-          echo "Merging Mach-O files in Frameworks and Resources..."
-          for section in Frameworks Resources; do
-            section_dir="$ARM_APP/Contents/$section"
-            if [ ! -d "$section_dir" ]; then
-              continue
-            fi
-
-            find "$section_dir" -type f | while read -r arm_file; do
-              if ! file "$arm_file" | grep -q 'Mach-O'; then
-                continue
-              fi
-
-              rel_path="${arm_file#$ARM_APP/}"
-              x86_file="$X86_APP/$rel_path"
-              out_file="$UNI_APP/$rel_path"
-
-              if [ ! -f "$x86_file" ]; then
-                continue
-              fi
-
-              arch_arm64=$(lipo -info "$arm_file" 2>&1 || true)
-              arch_x86_64=$(lipo -info "$x86_file" 2>&1 || true)
-
-              archs_arm64=$(get_archs "$arch_arm64")
-              archs_x86_64=$(get_archs "$arch_x86_64")
-
-              is_arm64_universal2=false
-              is_x86_64_universal2=false
-
-              if [[ "$archs_arm64" == *"arm64"* && "$archs_arm64" == *"x86_64"* ]]; then
-                is_arm64_universal2=true
-              fi
-
-              if [[ "$archs_x86_64" == *"arm64"* && "$archs_x86_64" == *"x86_64"* ]]; then
-                is_x86_64_universal2=true
-              fi
-
-              if [ "$is_arm64_universal2" = true ] && [ "$is_x86_64_universal2" = false ]; then
-                cp "$arm_file" "$out_file"
-              elif [ "$is_x86_64_universal2" = true ] && [ "$is_arm64_universal2" = false ]; then
-                cp "$x86_file" "$out_file"
-              else
-                if contains_all_archs "$archs_arm64" "$archs_x86_64" && contains_all_archs "$archs_x86_64" "$archs_arm64"; then
-                  if [ "$is_arm64_universal2" = false ]; then
-                    cp "$x86_file" "$out_file"
-                  fi
-                else
-                  lipo -create "$arm_file" "$x86_file" -output "$out_file"
-                fi
-              fi
-            done
-          done
-
-          echo "Universal2 app built at $UNI_APP"
-
-      - name: Run smoke test on universal2 app
-        run: |
-          xattr -cr dist/universal2/SYNCmoss.app
-          chmod +x dist/universal2/SYNCmoss.app/Contents/MacOS/SYNCmoss
-          dist/universal2/SYNCmoss.app/Contents/MacOS/SYNCmoss --test
-
-      - name: Create unsigned universal2 DMG
-        run: |
-          hdiutil create -volname SYNCmoss -srcfolder dist/universal2/SYNCmoss.app -ov -format UDZO dist/SYNCmoss-macOS-universal2.dmg
-
-      - name: Sign + notarize (optional)
-        if: env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.CERTIFICATE_BASE64 != '' && env.CERTIFICATE_PASSWORD != '' && env.KEYCHAIN_PASSWORD != '' && env.APPLICATION_SPECIFIC_PASSWORD != ''
+      # On a copy, so files the test writes never reach the DMG. For a Developer
+      # ID build this runs under the hardened runtime, i.e. it also checks that
+      # the entitlements above are enough for numba.
+      - name: Smoke-test the signed universal2 app
         run: |
           set -euo pipefail
-          echo "$CERTIFICATE_BASE64" | base64 --decode > cert.p12
+          mkdir -p "${RUNNER_TEMP}/smoke"
+          ditto dist/universal2/SYNCmoss.app "${RUNNER_TEMP}/smoke/SYNCmoss.app"
+          "${RUNNER_TEMP}/smoke/SYNCmoss.app/Contents/MacOS/SYNCmoss" --test
 
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -lut 21600 build.keychain
-          security import cert.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+      - name: Create the DMG
+        run: |
+          set -euo pipefail
+          STAGING="${RUNNER_TEMP}/dmg"
+          mkdir -p "${STAGING}"
+          ditto dist/universal2/SYNCmoss.app "${STAGING}/SYNCmoss.app"
+          ln -s /Applications "${STAGING}/Applications"
+          # hdiutil is occasionally "Resource busy" on hosted runners: retry.
+          for attempt in 1 2 3; do
+            if hdiutil create -volname SYNCmoss -srcfolder "${STAGING}" -ov -format UDZO -imagekey zlib-level=9 dist/SYNCmoss.dmg; then
+              break
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              exit 1
+            fi
+            echo "hdiutil failed, retrying in 10 s"
+            sleep 10
+          done
 
-          IDENTITY=$(security find-identity -v -p codesigning build.keychain | head -n 1 | sed -E 's/.*"([^"]+)"/\1/')
-          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" dist/universal2/SYNCmoss.app
-          codesign --verify --deep --strict --verbose=2 dist/universal2/SYNCmoss.app
+      - name: Notarize and staple the DMG
+        id: notarize
+        if: steps.sign.outputs.developer_id == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APPLICATION_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_ID}" ] || [ -z "${APPLE_TEAM_ID}" ] || [ -z "${APPLICATION_SPECIFIC_PASSWORD}" ]; then
+            echo "::warning::APPLE_ID / APPLE_TEAM_ID / APPLE_APPLICATION_SPECIFIC_PASSWORD are not set: the DMG is signed but not notarized, so Gatekeeper will still block it"
+            exit 0
+          fi
+          DMG="dist/SYNCmoss.dmg"
 
-          hdiutil create -volname SYNCmoss -srcfolder dist/universal2/SYNCmoss.app -ov -format UDZO dist/SYNCmoss-macOS-universal2-signed.dmg
-          xcrun notarytool submit dist/SYNCmoss-macOS-universal2-signed.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLICATION_SPECIFIC_PASSWORD" --wait
-          xcrun stapler staple dist/SYNCmoss-macOS-universal2-signed.dmg
+          echo "Submitting ${DMG} for notarization"
+          RESULT="$(xcrun notarytool submit "${DMG}" \
+            --apple-id "${APPLE_ID}" --team-id "${APPLE_TEAM_ID}" --password "${APPLICATION_SPECIFIC_PASSWORD}" \
+            --wait --timeout 1h --output-format json)" || true
+          echo "${RESULT}"
+          SUBMISSION_ID="$(python -c 'import json, sys; print(json.loads(sys.argv[1]).get("id", ""))' "${RESULT}" 2> /dev/null || true)"
+          STATUS="$(python -c 'import json, sys; print(json.loads(sys.argv[1]).get("status", ""))' "${RESULT}" 2> /dev/null || true)"
+          if [ "${STATUS}" != "Accepted" ]; then
+            echo "::error::notarization did not succeed (status: '${STATUS:-none}')"
+            if [ -n "${SUBMISSION_ID}" ]; then
+              xcrun notarytool log "${SUBMISSION_ID}" \
+                --apple-id "${APPLE_ID}" --team-id "${APPLE_TEAM_ID}" --password "${APPLICATION_SPECIFIC_PASSWORD}" || true
+            fi
+            exit 1
+          fi
 
-      - name: Upload universal2 macOS artifacts
+          xcrun stapler staple "${DMG}"
+          xcrun stapler validate "${DMG}"
+          echo "notarized=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Name the DMG
+        env:
+          NOTARIZED: ${{ steps.notarize.outputs.notarized }}
+        run: |
+          if [ "${NOTARIZED}" = "true" ]; then
+            mv dist/SYNCmoss.dmg dist/SYNCmoss-macOS-universal2-signed.dmg
+          else
+            mv dist/SYNCmoss.dmg dist/SYNCmoss-macOS-universal2.dmg
+          fi
+          ls -lh dist/*.dmg
+
+      - name: Upload the universal2 DMG
         uses: actions/upload-artifact@v5
         with:
           name: macos-universal2
-          path: |
-            dist/SYNCmoss-macOS-universal2.dmg
-            dist/SYNCmoss-macOS-universal2-signed.dmg
-          if-no-files-found: ignore
+          path: dist/SYNCmoss-macOS-universal2*.dmg
+          if-no-files-found: error
           retention-days: 5

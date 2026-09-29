@@ -119,7 +119,7 @@ def save_to_library_via_dialog(main_window):
 
 def open_library_model_dialog(main_window, parent_widget, insert_row, model_options=None):
     """Open internal Library browser with filters and detailed preview."""
-    library_dir = os.path.join(main_window.dir_path, 'Library')
+    library_dir = main_window.library_dir
     if not os.path.isdir(library_dir):
         main_window.set_status(f"Library folder not found: {library_dir}", "red")
         return

@@ -580,13 +580,14 @@ def open_hamiltonian_helper(main_window):
 
 def export_library_pressed(main_window):
     """Export internal Library folder to a selected destination."""
+    # The Library dialogs open in the Library folder itself, not the work folder.
     destination = QFileDialog.getExistingDirectory(
-        main_window, "Select destination folder", main_window.workfolder or main_window.dir_path)
+        main_window, "Select destination folder", main_window.library_dir)
     if not destination:
         main_window.set_status("Export Library canceled", "orange")
         return
     try:
-        library_dir = os.path.join(main_window.dir_path, 'Library')
+        library_dir = main_window.library_dir
         target = export_library(library_dir, destination)
         main_window.set_status(f"Library exported to: {target}", "green")
     except Exception as e:
@@ -596,12 +597,12 @@ def export_library_pressed(main_window):
 def import_library_pressed(main_window):
     """Import .mdl files from selected folder into internal Library folder."""
     source = QFileDialog.getExistingDirectory(
-        main_window, "Select source folder", main_window.workfolder or main_window.dir_path)
+        main_window, "Select source folder", main_window.library_dir)
     if not source:
         main_window.set_status("Import Library canceled", "orange")
         return
     try:
-        library_dir = os.path.join(main_window.dir_path, 'Library')
+        library_dir = main_window.library_dir
         result = import_library(source, library_dir)
         if isinstance(result, dict):
             copied = int(result.get('copied', 0))
