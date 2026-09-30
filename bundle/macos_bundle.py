@@ -117,6 +117,12 @@ def verify(app_dir: str):
         "Contents/MacOS/parameters/Calibration.dat",
         "Contents/MacOS/theme_dark.json",
         "Contents/MacOS/theme_light.json",
+        # third-party license texts (MacOS.spec -> third_party_licenses.py);
+        # PyInstaller puts data files in Contents/Resources
+        "Contents/Resources/licenses/LGPL-3.0.txt",
+        "Contents/Resources/licenses/GPL-3.0.txt",
+        "Contents/Resources/licenses/numba",
+        "Contents/Resources/licenses/llvmlite",
     ]
     ok = True
     for rel in required:

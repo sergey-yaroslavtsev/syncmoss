@@ -122,6 +122,11 @@ def verify():
         "COPYING.txt",
         "NOTICE.txt",
         "LICENSE",
+        # third-party license texts (Windows.spec -> third_party_licenses.py)
+        "_internal/licenses/LGPL-3.0.txt",
+        "_internal/licenses/GPL-3.0.txt",
+        "_internal/licenses/numba",
+        "_internal/licenses/llvmlite",
     ]
     ok = True
     for rel in required:

@@ -5,8 +5,9 @@ Everything reachable from the Supp button in the main window lives here:
 the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
 and the handlers for the small settings dialogs (integral points, instrumental
 lines, polarization), the Library export/import, the two markdown viewers
-(models description and quick help), the (parked) Hamiltonian initial-guess
-helper and the highlighted "Contact the author" entry that closes the menu.
+(models description and quick help), the License window, the (parked)
+Hamiltonian initial-guess helper and the highlighted "Contact the author"
+entry that closes the menu.
 
 The values edited by the dialogs are stored in hidden QLineEdit widgets on
 the main window (``jn0_input``, ``instrumental_number``,
@@ -34,6 +35,7 @@ from syncmoss.Library_io import export_library, import_library
 from syncmoss.models_description_window import (
     ModelsDescriptionWindow, resolve_help_path, resolve_models_description_path,
 )
+from syncmoss.license_window import LicenseWindow
 import syncmoss.sms_theory as smst
 from syncmoss.instrumental_io import (
     DEFAULT_INSTRUMENTAL_METHOD, THEORY_BOUNDS, THEORY_START,
@@ -124,6 +126,8 @@ def build_supp_menu(main_window):
     models_description_action.triggered.connect(lambda: open_models_description_pressed(main_window))
     help_action = QAction("Help (hidden features)", main_window)
     help_action.triggered.connect(lambda: open_help_pressed(main_window))
+    license_action = QAction("License", main_window)
+    license_action.triggered.connect(lambda: open_license_pressed(main_window))
 
     # Last entry, highlighted: bold + the accent envelope. Kept on the window as
     # ``main_window.contact_action`` so _apply_theme can re-color the icon.
@@ -155,6 +159,7 @@ def build_supp_menu(main_window):
     menu.addAction(import_lib_action)
     menu.addAction(models_description_action)
     menu.addAction(help_action)
+    menu.addAction(license_action)
     menu.addSeparator()
     menu.addAction(contact_action)
     return menu
@@ -801,7 +806,11 @@ def _open_markdown_document(main_window, doc_path, attribute, label):
     else:
         window.markdown_path = doc_path
         window.reload_document()
+    _bring_to_front(main_window, window)
 
+
+def _bring_to_front(main_window, window):
+    """Show a helper window with the app icon, above the main window."""
     app_icon = main_window.windowIcon()
     if not app_icon.isNull():
         window.setWindowIcon(app_icon)
@@ -824,3 +833,14 @@ def open_help_pressed(main_window):
     _open_markdown_document(main_window,
                             resolve_help_path(main_window.dir_path),
                             'help_window', "Help")
+
+
+def open_license_pressed(main_window):
+    """The license of SYNCmoss and of the third-party components it ships with."""
+    window = getattr(main_window, 'license_window', None)
+    if window is None:
+        window = LicenseWindow(main_window.dir_path)
+        main_window.license_window = window
+    else:
+        window.reload()
+    _bring_to_front(main_window, window)

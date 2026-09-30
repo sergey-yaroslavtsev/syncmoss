@@ -5,6 +5,13 @@ This project is licensed under the MIT License. See LICENSE for details.
 It uses the following third-party libraries, each distributed under
 their own license terms.
 
+The Windows and macOS bundles contain the full license text of every
+third-party package they include -- the libraries below, their own
+dependencies and the Python runtime -- in a "licenses" folder:
+  - Windows: _internal/licenses/
+  - macOS:   SYNCmoss.app/Contents/Resources/licenses/
+In the program, Supp -> License shows this notice and all of those texts.
+
 PySide6 (Qt for Python)
 -----------------------
 Licensed under the GNU Lesser General Public License (LGPL) v3.0
@@ -18,33 +25,96 @@ LGPL v3.0, you may:
   - Replace the PySide6 library with any compatible version.
   - Obtain PySide6 source code at:
     https://code.qt.io/cgit/pyside/pyside-setup.git/
-  - Read the full LGPL v3.0 license at:
+  - Read the full LGPL v3.0 license, and the GNU GPL v3.0 it builds on,
+    in the bundles' licenses/LGPL-3.0.txt and licenses/GPL-3.0.txt, or at:
     https://www.gnu.org/licenses/lgpl-3.0.html
+(The PySide6 wheels themselves carry only a Qt commercial-license notice,
+which is why the two texts are shipped separately.) Qt itself contains
+third-party components (FreeType, HarfBuzz, libpng, zlib, ...) under their
+own licenses; The Qt Company lists them at
+https://doc.qt.io/qt-6/licenses-used-in-qt.html
 
 NumPy
 -----
 Licensed under the BSD 3-Clause License
-Copyright (c) 2005-2024, NumPy Developers
+Copyright (c) 2005-2025, NumPy Developers
 https://numpy.org/doc/stable/license.html
 
 SciPy
 -----
 Licensed under the BSD 3-Clause License
-Copyright (c) 2001-2024, SciPy Developers
+Copyright (c) 2001-2002 Enthought, Inc. 2003, SciPy Developers
 https://scipy.org/scipylib/license.html
 
 Matplotlib
 ----------
 Licensed under the Matplotlib License (BSD-compatible)
-Copyright (c) 2002-2024, Matplotlib Development Team
+Copyright (c) 2012- Matplotlib Development Team
+Copyright (c) 2002-2011 John D. Hunter
 https://matplotlib.org/stable/users/project/license.html
+
+Numba
+-----
+Licensed under the BSD 2-Clause License
+Copyright (c) 2012, Anaconda, Inc.
+https://github.com/numba/numba/blob/main/LICENSE
+
+llvmlite
+--------
+Licensed under the BSD 2-Clause License
+Copyright (c) 2014, Anaconda, Inc.
+https://github.com/numba/llvmlite/blob/main/LICENSE
+It contains LLVM, licensed under the Apache License v2.0 with LLVM
+Exceptions (https://llvm.org/LICENSE.txt).
+
+Python
+------
+Licensed under the Python Software Foundation License
+Copyright (c) Python Software Foundation; All Rights Reserved
+https://docs.python.org/3/license.html
+The bundles contain the Python runtime; its LICENSE.txt is included as
+licenses/Python/LICENSE.txt. The C libraries built into the runtime
+(OpenSSL, expat, libffi, zlib, libmpdec, ...) and their licenses are
+listed at the address above.
+
+Microsoft Visual C++ Runtime (Windows bundle only)
+--------------------------------------------------
+Copyright (c) Microsoft Corporation
+The Windows bundle contains Microsoft's C and C++ run-time libraries
+(VCRUNTIME140*.dll, MSVCP140*.dll, VCOMP140.dll and, where present,
+ucrtbase.dll with the api-ms-win-*.dll forwarders). They are "Microsoft
+Distributable Code", which Microsoft allows to be redistributed unmodified
+with the programs that use them, provided that whoever uses or passes on
+the Windows bundle does not:
+  - alter any copyright, trademark or patent notice in Microsoft's
+    Distributable Code;
+  - use Microsoft's trademarks in their programs' names or in a way that
+    suggests the programs come from or are endorsed by Microsoft;
+  - distribute Microsoft's Distributable Code to run on a platform other
+    than Microsoft operating systems, run-time technologies or application
+    platforms; or
+  - include Microsoft Distributable Code in malicious, deceptive or
+    unlawful programs.
+These conditions apply only to Microsoft's files, not to SYNCmoss or to
+the other components. The full terms are in Microsoft's documentation
+(included in its developer tools and on microsoft.com).
+
+Bliss (optional -- NOT included)
+--------------------------------
+Licensed under the GNU Lesser General Public License (LGPL) v3.0
+Copyright (c) Beamline Control Unit, ESRF
+https://gitlab.esrf.fr/bliss/bliss
+SYNCmoss neither contains nor distributes Bliss, and the Windows and macOS
+bundles never include it. Only when Bliss has been installed separately
+(Linux beamline installations) does SYNCmoss import it at run time, to read
+spectra online from a Bliss channel.
 
 PyInstaller (bundling only)
 ---------------------------
 Licensed under the GPL 2.0 with a special bootloader exception that
 permits distributing non-GPL applications bundled with PyInstaller.
-Copyright (c) 2010-2024, PyInstaller Development Team
+Copyright (c) 2010-2023, PyInstaller Development Team
 https://pyinstaller.org/en/stable/license.html
-The bundled Windows executable is created with PyInstaller. The
+The Windows and macOS bundles are created with PyInstaller. The
 bootloader exception explicitly allows this use without requiring
 the application itself to be GPL-licensed.

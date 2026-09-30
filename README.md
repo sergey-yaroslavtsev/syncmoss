@@ -116,5 +116,13 @@ This software uses third-party libraries that are distributed under their own li
 - **NumPy**: BSD 3-Clause License
 - **SciPy**: BSD 3-Clause License  
 - **Matplotlib**: Matplotlib License (BSD-compatible)
+- **Numba**: BSD 2-Clause License
+- **llvmlite**: BSD 2-Clause License (contains LLVM: Apache License 2.0 with LLVM Exceptions)
+- **Bliss** (optional, not included): LGPL v3.0 — imported only if installed
+  separately (Linux beamline installations), to read spectra online from a Bliss
+  channel; never part of the bundles
 
-For complete third-party license information, see [NOTICE.txt](NOTICE.txt).
+For complete third-party license information, see [NOTICE.txt](NOTICE.txt). The
+Windows and macOS bundles also carry the full license text of every third-party
+package they contain, in a `licenses` folder; in the program, **Supp → License**
+shows all of it.

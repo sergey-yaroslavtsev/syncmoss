@@ -791,6 +791,7 @@ class PhysicsApp(QMainWindow):
         self.last_fitting_data = None
         self.models_description_window = None
         self.help_window = None
+        self.license_window = None
         self._fit_links_snapshot = {}
         self._fit_model_snapshot = None
 

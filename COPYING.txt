@@ -10,5 +10,11 @@ Third-party components are used under their respective licenses:
   - NumPy: BSD 3-Clause
   - SciPy: BSD 3-Clause
   - Matplotlib: BSD-compatible
+  - Numba: BSD 2-Clause
+  - llvmlite: BSD 2-Clause (contains LLVM: Apache 2.0 with LLVM Exceptions)
+  - Bliss (optional, not included; used only if installed separately):
+    LGPL v3.0
 
-For complete third-party license details, see NOTICE.txt.
+For complete third-party license details, see NOTICE.txt. The Windows and
+macOS bundles also carry the full license text of every third-party package
+they contain, in a "licenses" folder.

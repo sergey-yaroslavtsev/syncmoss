@@ -1,6 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 import os
+import sys
+
+sys.path.insert(0, SPECPATH)  # third_party_licenses.py lives next to this spec
+from third_party_licenses import license_datas
 
 # ── Hidden imports ──────────────────────────────────────────────
 # numba/llvmlite/scipy do a lot of dynamic importing, so collect their submodules
@@ -95,6 +99,8 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+# The license texts of every bundled third-party package, under licenses/
+a.datas += license_datas(a)
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
