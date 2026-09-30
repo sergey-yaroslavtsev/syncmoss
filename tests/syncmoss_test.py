@@ -65,8 +65,10 @@ if pytest is not None:
 
 # How often to re-check whether an async operation has finished (ms)
 _POLL_MS = 500
-# Max polls before giving up on one async step (~60 s at 500 ms each)
-_TIMEOUT_POLLS = 120
+# Max polls before giving up on one async step (~3 min at 500 ms each). The
+# first calculation pays for numba compiling in every pool worker, which takes
+# about a minute on the slow macOS x86_64 CI runner.
+_TIMEOUT_POLLS = 360
 
 # Upper bound on the final reduced chi-square (see step_check_results).
 _MAX_CHI2 = 3.0
