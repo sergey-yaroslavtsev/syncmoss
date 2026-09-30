@@ -169,6 +169,12 @@ an explicit message and reddened fields rather than failing halfway through.
   spectrum).
 - A path ending in `/` or `\` is read as a folder: the first `.dat`/`.mca` in it
   is used.
+- On Linux with the `bliss` package installed (it is not a dependency), a Bliss
+  channel name `McaAcq_channel_<...>` can stand in for a file: the spectrum the
+  MCA is accumulating is read from Bliss and folded like an `.mca` file with the
+  current calibration, afresh on every **Show spectrum**, **Show model** and
+  **Fit**. The beacon server is taken from the `BEACON_HOST` environment
+  variable, or is `id14:25000` when that is unset.
 
 ## 8. Saving
 

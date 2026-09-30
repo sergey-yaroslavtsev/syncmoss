@@ -85,6 +85,7 @@ from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
     half_points, calculate_backgrounds,
 )
+from syncmoss import bliss_channel
 from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
     plot_distribution, plot_calibration, plot_model, plot_model_with_nbaseline,
@@ -500,7 +501,7 @@ class ShowModelThread(QThread):
                 A_list = []
                 B_list = []
                 for i in range(len(self.path_list)):
-                    file = os.path.abspath(self.path_list[i])
+                    file = bliss_channel.abspath(self.path_list[i])
                     A_temp, B_temp = load_spectrum(self.main_window, [file], calibration_path=self.main_window.calibration_path)
                     if not A_temp or not B_temp:
                         self.error.emit(f"Could not load spectrum {i+1}: {file}")
@@ -513,7 +514,7 @@ class ShowModelThread(QThread):
                 B = np.concatenate(B_list)
             else:
                 # Single spectrum case
-                file = os.path.abspath(self.path_list[0])
+                file = bliss_channel.abspath(self.path_list[0])
                 A_list, B_list = load_spectrum(self.main_window, [file], calibration_path=self.main_window.calibration_path)
                 if not A_list or not B_list:
                     self.error.emit("Could not load spectrum")
@@ -2152,8 +2153,20 @@ class PhysicsApp(QMainWindow):
         worker thread: the spectrum loader reports its own failures through the
         main window's status widget, which is not safe to touch from a thread —
         a bad path getting that far used to take the application down.
+
+        A Bliss channel name is READ here instead of looked up on disk, for a
+        similar reason: Bliss may be used from the main thread only, so the
+        worker threads get the spectrum read now (see bliss_channel).
         """
-        missing = [path for path in paths if not os.path.exists(path)]
+        missing = []
+        for path in paths:
+            if bliss_channel.is_channel(path):
+                try:
+                    bliss_channel.refresh(path)
+                except Exception as e:
+                    return f"Could not read Bliss channel {path}: {e}"
+            elif not os.path.exists(path):
+                missing.append(path)
         if not missing:
             return None
         return ("Not a spectrum file: " + ", ".join(missing)

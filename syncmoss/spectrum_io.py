@@ -11,6 +11,7 @@ from syncmoss.models import TI
 from syncmoss.model_io import read_model
 from syncmoss.constants import SMS_POL_DEFAULT
 import syncmoss.minimi_lib as mi
+from syncmoss import bliss_channel
 # NOTE: instrumental_io is imported lazily inside functions below — it imports
 # load_spectrum from this module, so a top-level import here would be circular.
 
@@ -177,7 +178,8 @@ def load_spectrum(main_window, file_paths, calibration_path=None, points_match=T
                     main_window.set_status("Directory does not exist", "yellow")
                 continue
 
-        in_format_list = file.lower().endswith(tuple(acceptable_formats))
+        is_channel = bliss_channel.is_channel(file)
+        in_format_list = is_channel or file.lower().endswith(tuple(acceptable_formats))
 
         # Text-based files
         if file.endswith('.dat') or file.endswith('.txt') or file.endswith('.exp') or not in_format_list:
@@ -202,8 +204,8 @@ def load_spectrum(main_window, file_paths, calibration_path=None, points_match=T
                         main_window.set_status("Unexpected problem while opening file. Please check the file.", "red")
                 continue
 
-        # MCA files
-        elif file.endswith('.mca') or file.endswith('.cmca') or file == 'tango':
+        # MCA files, and a Bliss channel: the counts of an MCA, read online
+        elif file.endswith('.mca') or file.endswith('.cmca') or file == 'tango' or is_channel:
             A_list_single, cal_method, n1, n2 = _read_calibration_axis(
                 calibration_path, skip_angle_brackets=False)
 
@@ -212,6 +214,12 @@ def load_spectrum(main_window, file_paths, calibration_path=None, points_match=T
                 if main_window is not None:
                     main_window.set_status("Tango not supported", "orange")
                 continue
+            elif is_channel:
+                # Read by the path check on the main thread (see bliss_channel)
+                id_data = bliss_channel.counts(file)
+                if id_data is None:
+                    print(f"[Bliss] {file} has not been read")
+                    continue
             else:
                 LS = len(open(file, 'r').readlines())
                 with open(file, 'r') as fi:
