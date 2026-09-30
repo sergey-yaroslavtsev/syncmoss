@@ -79,7 +79,8 @@ from syncmoss.parameters_table import ParametersTable
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def,
-    validate_user_expressions,
+    model_file_rows, fitted_model_rows, save_result_model, result_model_path,
+    strip_known_extension, validate_user_expressions,
 )
 from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
@@ -106,7 +107,7 @@ from syncmoss.instrumental_io import (
 )
 from syncmoss.Library_window import save_to_library_via_dialog
 from syncmoss.supp_menu import (
-    build_supp_menu, open_theory_find_dialog, theme_action_text,
+    build_supp_menu, contact_icon, open_theory_find_dialog, theme_action_text,
 )
 
 
@@ -783,6 +784,7 @@ class PhysicsApp(QMainWindow):
         self.models_description_window = None
         self.help_window = None
         self._fit_links_snapshot = {}
+        self._fit_model_snapshot = None
 
         self.setWindowTitle('SYNCMoss ESRF ID14')
         self.setGeometry(50, 50, 1600, 900)
@@ -2289,6 +2291,8 @@ class PhysicsApp(QMainWindow):
 
         # Relabel the Supp-menu theme entry (no setStyleSheet — palette handles colors)
         self.theme_action.setText(theme_action_text(self._is_dark_mode))
+        # ... and repaint the "Contact the author" accent for the new background.
+        self.contact_action.setIcon(contact_icon(self._is_dark_mode))
 
         # Style instrumental buttons with a color distinct from background
         if self._is_dark_mode:
@@ -2928,8 +2932,10 @@ class PhysicsApp(QMainWindow):
                 self.inprogress = False
                 return
 
-            # Snapshot current parameter links (=[X,Y]) at fit start.
+            # Snapshot current parameter links (=[X,Y]) and the whole model at
+            # fit start; the latter becomes the model "Save result" writes.
             self._fit_links_snapshot = self.params_table.get_link_snapshot()
+            self._fit_model_snapshot = model_file_rows(self)
 
             spectrum_file = spectrum_files[0]
             self.set_status(f"Fitting spectrum: {os.path.basename(spectrum_file)}", "cyan")
@@ -2961,10 +2967,11 @@ class PhysicsApp(QMainWindow):
         # Initialize sequence_params for result mode (None for initial mode)
         self.sequence_params = None
 
-        # Snapshot links once at batch start so UI edits during fitting do not
-        # leak into the stored result-table metadata.
+        # Snapshot links (and the model) once at batch start so UI edits during
+        # fitting do not leak into the stored result-table metadata.
         self._fit_links_snapshot = self.params_table.get_link_snapshot()
-        
+        self._fit_model_snapshot = model_file_rows(self)
+
         # Calculate backgrounds for all spectra upfront
         self.set_status(f"Calculating backgrounds for {len(spectrum_files)} spectra...", "cyan")
         
@@ -3012,8 +3019,10 @@ class PhysicsApp(QMainWindow):
                 expression_texts
             )
             self.results_table.current_links = dict(self._fit_links_snapshot)
+            self.results_table.current_model_rows = fitted_model_rows(
+                self._fit_model_snapshot, fitted_parameters, result.get('Recon', []))
             self.results_table.current_chi2 = chi2
-            
+
             # Plot the result
             self.plot_fitting_result(result)
             
@@ -3075,7 +3084,7 @@ class PhysicsApp(QMainWindow):
         try:
             # Get base path from save_path and spectrum filename
             save_dir = os.path.dirname(self.save_path.text())
-            spectrum_basename = os.path.splitext(os.path.basename(spectrum_file))[0]
+            spectrum_basename = strip_known_extension(os.path.basename(spectrum_file))
             base_path = os.path.join(save_dir, spectrum_basename)
 
             # Create directory if needed
@@ -3251,6 +3260,11 @@ class PhysicsApp(QMainWindow):
         """Handle fitting completion"""
         try:
             if not result['success']:
+                # fit_single_spectrum puts the whole traceback in 'message'. Print
+                # it like every other error handler here: the status box can only
+                # show the first line, and the terminal is what the bug reporter
+                # watches.
+                print(result['message'])
                 self.set_status(f"Fitting failed: {result['message']}", "red")
                 return
             
@@ -3289,7 +3303,10 @@ class PhysicsApp(QMainWindow):
                 expression_texts
             )
             self.results_table.current_links = dict(self._fit_links_snapshot)
-            
+            # ... and the model it was fitted with, fitted values written in
+            self.results_table.current_model_rows = fitted_model_rows(
+                self._fit_model_snapshot, fitted_parameters, result.get('Recon', []))
+
             # Store chi2 for saving
             self.results_table.current_chi2 = chi2
             
@@ -3307,6 +3324,12 @@ class PhysicsApp(QMainWindow):
         """Handle fitting error"""
         self.set_status(f"Fitting error: {error_msg}", "red")
         self.inprogress = False
+
+    def _result_base_path(self):
+        """The base every result file is named from: the save path without the
+        spectrum's extension (``Fe_4.2K.dat`` -> ``Fe_4.2K_param.txt``, ...)."""
+        return strip_known_extension(self.save_path.text().strip())
+
     def save_result_pressed(self):
         """Save fitting results to file"""
         # Check if we have results to save
@@ -3320,7 +3343,7 @@ class PhysicsApp(QMainWindow):
             return
         
         # Check if file exists and ask user
-        param_file = self.save_path.text() + '_param.txt'
+        param_file = self._result_base_path() + '_param.txt'
         if os.path.exists(param_file):
             reply = QMessageBox.question(
                 self, 'File exists',
@@ -3359,8 +3382,9 @@ class PhysicsApp(QMainWindow):
         )
         
         if file_path:
-            # Remove extension if user added one
-            base_path = os.path.splitext(file_path)[0]
+            # Remove extension if user added one — only a real one, so a typed
+            # name like Fe_4.2K is kept whole
+            base_path = strip_known_extension(file_path)
             self.save_path.setText(base_path)
             self._save_result_files('new')
         else:
@@ -3368,11 +3392,18 @@ class PhysicsApp(QMainWindow):
     
     def _save_result_files(self, mode):
         """
-        Save all result files
-        mode: 'new', 'append', or 'overwrite'
+        Save all result files, then the fitted model.
+
+        mode: 'new', 'append', or 'overwrite' — applies to the result files only.
+        The model goes to ``<base>_result_model.mdl`` (its own name, so it can
+        never overwrite the model file the user is working on): the model the
+        fit started from with the fitted values written in, links, fixes, bounds
+        and expressions as they were fitted. It asks its own overwrite question.
+        Sequential fitting bypasses this and calls ``_write_result_files``
+        directly, so it never pops a dialog per spectrum.
         """
         try:
-            base_path = self.save_path.text()
+            base_path = self._result_base_path()
 
             # Create directory if needed
             save_dir = os.path.dirname(base_path)
@@ -3389,11 +3420,27 @@ class PhysicsApp(QMainWindow):
                 spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
             self._write_result_files(base_path, spectrum_file, mode)
 
-            # Success message
             if mode == 'append':
-                self.set_status("Results appended to parameter file, others overwritten", "green")
+                message = "Results appended to parameter file, others overwritten"
             else:
-                self.set_status("Results saved successfully", "green")
+                message = "Results saved successfully"
+
+            # A result is only reproducible together with the model that produced
+            # it, so the fitted model (taken at fit start, whatever the table
+            # holds by now) is written next to the other artifacts. It runs its
+            # own, independent overwrite question: answering "No" there must
+            # leave the already-written result files alone.
+            model_rows = self.results_table.current_model_rows
+            model_path = result_model_path(base_path)
+            if model_rows is None:
+                self.set_status(f"{message}. Model NOT saved: no fitted model with this result", "orange")
+            elif save_result_model(self, model_path, model_rows):
+                self.set_status(f"{message}; model saved as {os.path.basename(model_path)}", "green")
+            else:
+                # Keep save_result_model's own reason (canceled / could not
+                # write) — it is the only place it was reported.
+                reason = self.log.toPlainText().strip() or "canceled"
+                self.set_status(f"{message}. Model NOT saved: {reason}", "orange")
 
         except Exception as e:
             print(f"Error saving results: {e}\n{traceback.format_exc()}")

@@ -2,6 +2,7 @@ import os
 import sys
 import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
+import syncmoss.error_reporter as error_reporter
 from syncmoss.syncmoss_main import PhysicsApp
 __VERSION__ = "0.4.1"
 
@@ -41,8 +42,21 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("SYNCmoss")
-    window = PhysicsApp(pool=pool)
-    window.show()
+
+    # From here on every traceback that reaches the terminal — uncaught, or
+    # caught-and-printed somewhere in the app — also raises the "report a bug"
+    # window. Installed after QApplication (it needs the GUI thread's event
+    # loop) and before the main window, so a crash while building it is covered.
+    error_reporter.install()
+
+    try:
+        window = PhysicsApp(pool=pool)
+        window.show()
+    except Exception:
+        # No event loop yet, so the normal deferred window would never open.
+        error_reporter.report_exception(blocking=True)
+        return 1
+
     return app.exec()
 
 if __name__ == "__main__":

@@ -101,7 +101,10 @@ class ResultsTable(QWidget):
         self.current_parameter_names = []
         self.current_chi2 = 0.0
         self.current_links = {}
-        
+        # The fitted model (model_io.fitted_model_rows) that "Save result"
+        # writes as <base>_result_model.mdl; set by the fit handlers.
+        self.current_model_rows = None
+
         # Initialize layout
         layout = QVBoxLayout(self)
         layout.setSpacing(0)

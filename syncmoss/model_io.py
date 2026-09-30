@@ -415,14 +415,105 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
         main_window.set_status(f"Could not load model: {str(e)}", "red")
 
 
-def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
-    """
-    Internal function to save the model data to a file.
+def model_file_rows(main_window):
+    """The parameters table as a .mdl file holds it: ``(names, colors, rows)``.
 
-    Args:
-        main_window: The main PhysicsApp window instance
-        file_path: The path to save the file to
+    ``rows[k]`` has one ``[value, lower, upper, name, fix]`` entry per column of
+    the k-th written row (``fix`` is 'True'/'False'). Always keeps the baseline
+    (row 0) and drops empty model rows (model name 'None') so the saved file
+    stays clean. Empty rows carry no parameters, so dropping them keeps the
+    parameter references (=[X,Y] / p[X]) intact for loading.
     """
+    kept_rows = []
+    for row_idx, row_widget in enumerate(main_window.params_table.row_widgets):
+        model_btn = row_widget.layout().itemAt(0).widget().layout().itemAt(1).widget()
+        if row_idx == 0 or model_btn.text() != 'None':
+            kept_rows.append((row_idx, row_widget, model_btn.text()))
+
+    model_names = [name for _, _, name in kept_rows]
+    colors = [main_window.model_colors[row_idx]
+              if row_idx < len(main_window.model_colors) else ''
+              for row_idx, _, _ in kept_rows]
+
+    rows = []
+    for row_idx, row_widget, _ in kept_rows:
+        row_data = []
+        for param_idx in range(1, row_widget.layout().count()):
+            param_widget = row_widget.layout().itemAt(param_idx).widget()
+            if param_widget:
+                # Value
+                value_input = param_widget.layout().itemAt(1).widget()
+                value = value_input.text()
+
+                # Bounds
+                bounds_layout = param_widget.layout().itemAt(2).layout()
+                lower_input = bounds_layout.itemAt(0).widget()
+                upper_input = bounds_layout.itemAt(1).widget()
+                lower = lower_input.text()
+                upper = upper_input.text()
+
+                # Name (not used in current implementation, empty)
+                name = ''
+
+                # Fix
+                top_layout = param_widget.layout().itemAt(0).layout()
+                fix_cb = top_layout.itemAt(1).widget()
+                fix = 'True' if fix_cb.isChecked() else 'False'
+
+                row_data.append([value, lower, upper, name, fix])
+        rows.append(row_data)
+
+    return model_names, colors, rows
+
+
+# Components whose LAST slot is a text — the expression, the PDF string or the
+# Recon weight vector — with only a placeholder entry in the flat parameters.
+TEXT_SLOT_MODELS = ('Expression', 'Distr', 'Corr', 'Recon')
+
+
+def fitted_model_rows(model_rows, parameters, recon_weights=()):
+    """*model_rows* with a fit's result written in: the model a result is saved with.
+
+    *model_rows* is :func:`model_file_rows` taken when the fit started, so the
+    links, fixed values, bounds and expressions are exactly the fitted ones,
+    whatever the table holds by now. The walk is read_model's: the baseline's
+    parameters, then ``mod_len_def(name)`` columns per component, so column j
+    of a row is one entry of *parameters*. A free number takes its fitted value
+    (the digits ``_param.txt`` carries); a link ``=[X,Y]``, a fixed value and an
+    expression text stay as they are. The one text a fit changes, a Recon's
+    weight vector, gets the fitted weights (*recon_weights*, in table order).
+
+    Returns None for no *model_rows* (a result that no fit produced).
+    """
+    if model_rows is None:
+        return None
+    model_names, colors, rows = model_rows
+    recon_iter = iter(recon_weights)
+    fitted_rows = []
+    start = 0
+    for k, (name, row_data) in enumerate(zip(model_names, rows)):
+        row_data = [list(field) for field in row_data]
+        count = number_of_baseline_parameters if k == 0 else mod_len_def(name)
+        for col in range(min(count, len(row_data))):
+            field = row_data[col]
+            if name in TEXT_SLOT_MODELS and col == count - 1:
+                weights = next(recon_iter, None) if name == 'Recon' else None
+                if weights is not None:
+                    field[0] = ','.join(repr(float(w)) for w in np.ravel(weights))
+            elif (not field[0].strip().startswith('=[') and field[4] != 'True'
+                  and start + col < len(parameters)):
+                field[0] = repr(float(parameters[start + col]))
+        start += count
+        fitted_rows.append(row_data)
+    return model_names, colors, fitted_rows
+
+
+def _write_model_file(main_window, file_path, model_rows, comment=None, metadata=None):
+    """Write *model_rows* (see :func:`model_file_rows`) as the .mdl *file_path*.
+
+    Returns True when the file was written, False when that failed.
+    """
+    model_names, colors, rows = model_rows
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             if isinstance(metadata, dict):
@@ -437,58 +528,98 @@ def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
                 for line in str(comment).splitlines():
                     f.write(f"#@Comment {line}\n")
 
-            # Determine which rows to write: always keep baseline (row 0),
-            # drop empty model rows (model name 'None') so the saved file stays clean.
-            # Empty rows carry no parameters, so dropping them keeps the parameter
-            # references (=[X,Y] / p[X]) intact for loading.
-            kept_rows = []
-            for row_idx, row_widget in enumerate(main_window.params_table.row_widgets):
-                model_btn = row_widget.layout().itemAt(0).widget().layout().itemAt(1).widget()
-                if row_idx == 0 or model_btn.text() != 'None':
-                    kept_rows.append((row_idx, row_widget, model_btn.text()))
-
-            # Write model names (first row)
-            model_names = [name for _, _, name in kept_rows]
+            # Model names (first row), colors (second row), then one line of
+            # parameter data per kept row
             f.write('\t'.join(model_names) + '\n')
-
-            # Write colors (second row)
-            colors = [main_window.model_colors[row_idx]
-                      if row_idx < len(main_window.model_colors) else ''
-                      for row_idx, _, _ in kept_rows]
             f.write('\t'.join(colors) + '\n')
-
-            # Write parameter data for each kept row
-            for row_idx, row_widget, _ in kept_rows:
-                row_data = []
-                for param_idx in range(1, row_widget.layout().count()):
-                    param_widget = row_widget.layout().itemAt(param_idx).widget()
-                    if param_widget:
-                        # Value
-                        value_input = param_widget.layout().itemAt(1).widget()
-                        value = value_input.text()
-
-                        # Bounds
-                        bounds_layout = param_widget.layout().itemAt(2).layout()
-                        lower_input = bounds_layout.itemAt(0).widget()
-                        upper_input = bounds_layout.itemAt(1).widget()
-                        lower = lower_input.text()
-                        upper = upper_input.text()
-
-                        # Name (not used in current implementation, empty)
-                        name = ''
-
-                        # Fix
-                        top_layout = param_widget.layout().itemAt(0).layout()
-                        fix_cb = top_layout.itemAt(1).widget()
-                        fix = 'True' if fix_cb.isChecked() else 'False'
-
-                        row_data.extend([value, lower, upper, name, fix])
-                f.write('\t'.join(row_data) + '\n')
+            for row_data in rows:
+                f.write('\t'.join(text for field in row_data for text in field) + '\n')
 
         main_window.set_status("Model saved successfully", "green")
+        return True
 
     except Exception as e:
         main_window.set_status(f"Could not save model: {str(e)}", "red")
+        return False
+
+
+def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
+    """
+    Internal function to save the model data to a file.
+
+    Args:
+        main_window: The main PhysicsApp window instance
+        file_path: The path to save the file to
+    """
+    return _write_model_file(main_window, file_path, model_file_rows(main_window),
+                             comment=comment, metadata=metadata)
+
+
+# The model saved alongside a fit result is named apart from the user's own
+# "Save model" file, so saving a result can never overwrite the model they are
+# working on: <base>_result_model.mdl next to <base>_param.txt & co.
+RESULT_MODEL_SUFFIX = '_result_model'
+
+# The file types SYNCmoss reads or writes. Only these count as an extension when
+# a save path is turned into a base name, so a sample called Fe_4.2K keeps its
+# ".2K" (os.path.splitext would cut it to Fe_4).
+KNOWN_EXTENSIONS = ('.dat', '.spc', '.exp', '.txt', '.mdl',
+                    '.mca', '.cmca', '.ws5', '.w98', '.moe', '.m1', '.mcs')
+
+
+def strip_known_extension(path):
+    """*path* without its extension, when that is one of KNOWN_EXTENSIONS.
+
+    ``Fe_4.2K.dat`` -> ``Fe_4.2K``; ``Fe_4.2K`` and ``my.data/run1`` stay as they are.
+    """
+    root, extension = os.path.splitext(path)
+    return root if extension.lower() in KNOWN_EXTENSIONS else path
+
+
+def result_model_path(base_path):
+    """The .mdl saved together with a fit result: ``<base>_result_model.mdl``.
+
+    *base_path* is the base every result file is named from, so the model sits
+    next to ``<base>_param.txt`` under the same name.
+    """
+    return base_path + RESULT_MODEL_SUFFIX + '.mdl'
+
+
+def model_path_for_save_path(save_path_text, workfolder):
+    """The .mdl file the "Save model" button writes for *save_path_text*.
+
+    ``save_path`` is often the spectrum path itself, extension included, and the
+    model gets ``.mdl`` in place of that extension. Only a known extension is
+    replaced (:func:`strip_known_extension`), so neither a dotted sample name
+    (``Fe_4.2K``) nor a dotted folder name loses anything.
+    """
+    save_path_text = (save_path_text or '').strip()
+    if not save_path_text:
+        return os.path.join(workfolder, "model.mdl")
+    if os.path.isdir(save_path_text):
+        return os.path.join(save_path_text, "model.mdl")
+
+    file_path = strip_known_extension(save_path_text) + '.mdl'
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(workfolder, file_path)
+    return file_path
+
+
+def _confirm_overwrite(main_window, file_path):
+    """True unless *file_path* exists and the user declines to overwrite it."""
+    if not os.path.exists(file_path):
+        return True
+    reply = QMessageBox.question(
+        main_window,
+        'File exists',
+        f'File {file_path} already exists. Overwrite?',
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No
+    )
+    if reply == QMessageBox.StandardButton.No:
+        main_window.set_status("Saving canceled", "orange")
+        return False
+    return True
 
 
 def save_model(main_window):
@@ -497,39 +628,25 @@ def save_model(main_window):
 
     Args:
         main_window: The main PhysicsApp window instance
+
+    Returns:
+        True when the file was written, False when it was canceled or failed.
     """
-    save_path_text = main_window.save_path.text().strip()
     workfolder = main_window.workfolder or os.getcwd()
+    file_path = model_path_for_save_path(main_window.save_path.text(), workfolder)
+    if not _confirm_overwrite(main_window, file_path):
+        return False
+    return _save_model_to_file(main_window, file_path)
 
-    # Determine the file path
-    if not save_path_text:
-        file_path = os.path.join(workfolder, "model.mdl")
-    elif os.path.isdir(save_path_text):
-        file_path = os.path.join(save_path_text, "model.mdl")
-    elif os.path.isfile(save_path_text) or '.' in save_path_text:
-        if '.' in save_path_text:
-            base = save_path_text.rsplit('.', 1)[0]
-            file_path = base + '.mdl'
-        else:
-            file_path = save_path_text + '.mdl'
-    else:
-        # Single name
-        file_path = os.path.join(workfolder, save_path_text + '.mdl')
 
-    # Check if file exists and ask for overwrite
-    if os.path.exists(file_path):
-        reply = QMessageBox.question(
-            main_window,
-            'File exists',
-            f'File {file_path} already exists. Overwrite?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.No:
-            main_window.set_status("Saving canceled", "orange")
-            return
+def save_result_model(main_window, file_path, model_rows):
+    """Write a fit result's model (:func:`fitted_model_rows`) to *file_path*.
 
-    _save_model_to_file(main_window, file_path)
+    Asks before overwriting, like "Save model". True when the file was written.
+    """
+    if not _confirm_overwrite(main_window, file_path):
+        return False
+    return _write_model_file(main_window, file_path, model_rows)
 
 
 def save_model_as(main_window):
@@ -538,6 +655,9 @@ def save_model_as(main_window):
 
     Args:
         main_window: The main PhysicsApp window instance
+
+    Returns:
+        True when the file was written, False when it was canceled or failed.
     """
     workfolder = main_window.workfolder or os.getcwd()
     file_path, _ = QFileDialog.getSaveFileName(
@@ -549,13 +669,13 @@ def save_model_as(main_window):
 
     if not file_path:
         main_window.set_status("Saving canceled", "orange")
-        return
+        return False
 
     # Ensure .mdl extension
     if not file_path.lower().endswith('.mdl'):
         file_path += '.mdl'
 
-    _save_model_to_file(main_window, file_path)
+    return _save_model_to_file(main_window, file_path)
 
 
 def save_model_to_library(main_window, title, comment=None, metadata=None, notify_rename=False):
@@ -589,8 +709,7 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
             main_window.set_status("Saving to library canceled", "orange")
             return False
 
-    _save_model_to_file(main_window, file_path, comment=comment, metadata=metadata)
-    return True
+    return _save_model_to_file(main_window, file_path, comment=comment, metadata=metadata)
 
 
 def split_link_field(text):

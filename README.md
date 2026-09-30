@@ -70,6 +70,34 @@ syncmoss
   magnetic polar order `Am` on the Faraday-active ones - a random powder,
   a textured foil and a single crystal are the same model at different values
 
+## Bug report and Feature request
+
+Both are very welcome — SYNCmoss gets better mainly from user feedback.
+
+* write to **sergey.yaroslavtsev@esrf.fr** or open an issue: https://github.com/sergey-yaroslavtsev/syncmoss/issues
+
+When something goes wrong the program opens a *report a bug* window containing
+the error message.
+
+### Reporting a bug
+
+Please describe the problem and provide all related material:
+
+* **what you did** — which button or action created the problem, and what you
+  expected to happen instead;
+* **the error message** — copy it from the *report a bug* window (or from the
+  terminal);
+* **the spectrum file(s)** and **the model** (`.mdl`) you were working with —
+  without them most problems cannot be reproduced;
+* the SYNCmoss version and your operating system;
+* a screenshot, if the problem is about what is drawn or displayed.
+
+### Requesting a feature
+
+Please describe what exactly is needed: the physics or the workflow behind it,
+where in the program it should appear, and — if it exists elsewhere — a
+reference, an article or an example file showing the expected result.
+
 ## Author
 
 Yaroslavtsev Sergey (ESRF | ADA and ID14)

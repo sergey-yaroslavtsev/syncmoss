@@ -5,8 +5,8 @@ Everything reachable from the Supp button in the main window lives here:
 the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
 and the handlers for the small settings dialogs (integral points, instrumental
 lines, polarization), the Library export/import, the two markdown viewers
-(models description and quick help) and the (parked) Hamiltonian initial-guess
-helper.
+(models description and quick help), the (parked) Hamiltonian initial-guess
+helper and the highlighted "Contact the author" entry that closes the menu.
 
 The values edited by the dialogs are stored in hidden QLineEdit widgets on
 the main window (``jn0_input``, ``instrumental_number``,
@@ -19,12 +19,17 @@ import os
 
 import numpy as np
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMenu, QMessageBox, QPushButton, QVBoxLayout,
+    QApplication, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel,
+    QLineEdit, QMenu, QMessageBox, QPushButton, QVBoxLayout,
 )
-from PySide6.QtGui import QAction, QDoubleValidator, QIntValidator
-from PySide6.QtCore import QLocale
+from PySide6.QtGui import (
+    QAction, QColor, QDoubleValidator, QIcon, QIntValidator, QPainter, QPen,
+    QPixmap,
+)
+from PySide6.QtCore import QLocale, QPointF, QRectF, Qt
 
+from syncmoss.constants import AUTHOR_EMAIL, ISSUES_URL
+from syncmoss.error_reporter import app_version
 from syncmoss.Library_io import export_library, import_library
 from syncmoss.models_description_window import (
     ModelsDescriptionWindow, resolve_help_path, resolve_models_description_path,
@@ -37,19 +42,61 @@ from syncmoss.instrumental_io import (
 )
 from syncmoss.instrumental_window import InstrumentalFunctionWindow
 
+# Accent used to highlight the "Contact the author" entry, per mode. Qt offers
+# no per-action text color (a QMenu stylesheet would repaint every item), so the
+# entry is set apart by a bold font plus the envelope icon below — and the icon
+# is the only colored part, which is why it gets one color per mode instead of
+# a single "safe" one that would be washed out on one of the two backgrounds.
+CONTACT_ACCENT_DARK = '#5aa9ff'
+CONTACT_ACCENT_LIGHT = '#0b57d0'
+
 
 def theme_action_text(is_dark_mode):
     """Label for the theme entry: it names the mode the click switches TO."""
     return "Switch to light mode" if is_dark_mode else "Switch to dark mode"
 
 
+def contact_accent_color(is_dark_mode):
+    """Accent color of the "Contact the author" entry for the active mode."""
+    return CONTACT_ACCENT_DARK if is_dark_mode else CONTACT_ACCENT_LIGHT
+
+
+def contact_icon(is_dark_mode):
+    """A small envelope drawn in the accent color of the active mode.
+
+    Painted rather than shipped as a file so it re-colors on every theme
+    switch (``PhysicsApp._apply_theme`` re-sets it) and never sits invisibly
+    on a background of its own color.
+    """
+    size = 32
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(contact_accent_color(is_dark_mode)))
+        pen.setWidthF(2.6)
+        pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        painter.setPen(pen)
+        painter.drawRect(QRectF(3.5, 7.5, 25.0, 17.0))       # envelope body
+        painter.drawLine(QPointF(3.5, 7.5), QPointF(16.0, 18.0))   # flap, left
+        painter.drawLine(QPointF(28.5, 7.5), QPointF(16.0, 18.0))  # flap, right
+    finally:
+        painter.end()
+    return QIcon(pixmap)
+
+
 def build_supp_menu(main_window):
     """Create the Supp QMenu wired to *main_window* and return it.
 
     The theme entry is kept on the window as ``main_window.theme_action`` so
-    ``PhysicsApp._apply_theme`` can relabel it whenever the mode changes.
+    ``PhysicsApp._apply_theme`` can relabel it whenever the mode changes; the
+    contact entry is kept as ``main_window.contact_action`` for the same reason
+    (its accent icon is repainted there).
     """
     menu = QMenu(main_window)
+    menu.setToolTipsVisible(True)  # only the contact entry sets one
 
     theme_action = QAction(theme_action_text(main_window._is_dark_mode), main_window)
     theme_action.triggered.connect(main_window.toggle_theme)
@@ -78,6 +125,17 @@ def build_supp_menu(main_window):
     help_action = QAction("Help (hidden features)", main_window)
     help_action.triggered.connect(lambda: open_help_pressed(main_window))
 
+    # Last entry, highlighted: bold + the accent envelope. Kept on the window as
+    # ``main_window.contact_action`` so _apply_theme can re-color the icon.
+    contact_action = QAction(contact_icon(main_window._is_dark_mode),
+                             "Contact the author", main_window)
+    contact_font = contact_action.font()
+    contact_font.setBold(True)
+    contact_action.setFont(contact_font)
+    contact_action.setToolTip(f"Write to {AUTHOR_EMAIL}")
+    contact_action.triggered.connect(lambda: contact_author_pressed(main_window))
+    main_window.contact_action = contact_action
+
     menu.addAction(theme_action)
     menu.addSeparator()
     menu.addAction(ham_guess_action)
@@ -97,7 +155,91 @@ def build_supp_menu(main_window):
     menu.addAction(import_lib_action)
     menu.addAction(models_description_action)
     menu.addAction(help_action)
+    menu.addSeparator()
+    menu.addAction(contact_action)
     return menu
+
+
+def _wrapped_label(text, parent):
+    """A word-wrapping QLabel — the dialog below is mostly these."""
+    label = QLabel(text, parent)
+    label.setWordWrap(True)
+    return label
+
+
+class ContactDialog(QDialog):
+    """Small window with the author's address and the issue-tracker link.
+
+    Deliberately does NOT open a ``mailto:`` URL. That hands the message to
+    whatever mail client the machine has registered — Outlook, typically —
+    which is rarely the one the user actually writes from, and on a machine
+    with none registered it does nothing visible at all. The address is simply
+    shown, selectable, with a button that copies it.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Contact the author")
+        self.setMinimumWidth(460)
+
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(_wrapped_label(
+            "Questions, bug reports and feature requests are all welcome.", self))
+
+        self.email_label = QLabel(AUTHOR_EMAIL, self)
+        email_font = self.email_label.font()
+        email_font.setBold(True)
+        email_font.setPointSize(email_font.pointSize() + 2)
+        self.email_label.setFont(email_font)
+        self.email_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        layout.addWidget(self.email_label)
+
+        issues = QLabel(f'or open an issue: <a href="{ISSUES_URL}">{ISSUES_URL}</a>', self)
+        issues.setTextFormat(Qt.TextFormat.RichText)
+        issues.setOpenExternalLinks(True)   # a browser, not a mail client
+        issues.setWordWrap(True)
+        layout.addWidget(issues)
+
+        layout.addWidget(_wrapped_label(
+            "For a bug report please attach the spectrum and the model (.mdl) "
+            "file, and say which button or action caused the problem.", self))
+
+        version = app_version()
+        if version:
+            layout.addWidget(_wrapped_label(f"This is SYNCmoss {version}.", self))
+
+        self.hint = QLabel("", self)
+        self.hint.setWordWrap(True)
+        layout.addWidget(self.hint)
+
+        buttons = QHBoxLayout()
+        self.copy_btn = QPushButton("Copy the e-mail address", self)
+        self.copy_btn.clicked.connect(self.copy_email)
+        close_btn = QPushButton("Close", self)
+        close_btn.setDefault(True)
+        close_btn.clicked.connect(self.reject)
+        buttons.addWidget(self.copy_btn)
+        buttons.addStretch(1)
+        buttons.addWidget(close_btn)
+        layout.addLayout(buttons)
+
+    def copy_email(self):
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            self.hint.setText("No clipboard available - please select the address and copy it.")
+            return False
+        clipboard.setText(AUTHOR_EMAIL)
+        self.hint.setText("Address copied to the clipboard.")
+        return True
+
+
+def contact_author_pressed(main_window):
+    """Show the author's address and the issue tracker."""
+    main_window.set_status(f"Write to {AUTHOR_EMAIL}", "blue")
+    ContactDialog(main_window).exec()
 
 
 def _open_value_setting_dialog(main_window, title, label_text, target_input,

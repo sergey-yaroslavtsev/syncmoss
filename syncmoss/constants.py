@@ -81,6 +81,11 @@ SIGMA0_A2 = (2 * 3.141592653589793 * (LAMBDA_A / (2 * 3.141592653589793))**2
 # the `pol` / `sms_pol` argument. 0.98 is a realistic synchrotron beam.
 SMS_POL_DEFAULT = 0.98
 
+# Where users reach the author: the Supp -> "Contact the author" entry, the
+# bug-report window raised by error_reporter and the README all use these.
+AUTHOR_EMAIL = 'sergey.yaroslavtsev@esrf.fr'
+ISSUES_URL = 'https://github.com/sergey-yaroslavtsev/syncmoss/issues'
+
 # Number of baseline parameters
 number_of_baseline_parameters = 8
 

@@ -172,7 +172,9 @@ an explicit message and reddened fields rather than failing halfway through.
 
 ## 8. Saving
 
-**Save result** writes five files next to the save path, not one:
+**Save result** writes six files next to the save path, not one. `<base>` is the
+save path without the spectrum's extension: `Fe_4.2K.dat` gives
+`Fe_4.2K_param.txt`, and a dot inside the name itself (the `4.2K`) is kept.
 
 - `<base>_param.txt` — parameters, errors, χ²  (appended in sequence mode)
 - `<base>_graf.txt` — the plotted curves: velocity, data, baseline, fit, then
@@ -183,6 +185,16 @@ an explicit message and reddened fields rather than failing halfway through.
 - `<base>_combo.png` — the figure together with the rendered results table
 - `<base>.svg` — the figure alone
 - `<base>_distributions.png` — every `Distr`/`Corr`/`Recon` curve, when present
+- `<base>_result_model.mdl` — the fitted model: the model the fit started from,
+  with every free parameter at its fitted value (the numbers of `_param.txt`)
+  and the links, fixed values, bounds and expressions exactly as they were
+  fitted; a `Recon` gets its fitted weights. Changing the table after the fit
+  does not reach it. Loading it puts the result back into the table, ready for
+  another fit. Its own name, so it never overwrites the `.mdl` you are working
+  on with **Save model**. It is saved last and asks its **own** overwrite
+  question, separate from the one for the result files: answering "no" there
+  keeps the older file and leaves the five result files as they were just
+  written. (Sequence fitting skips this — it would ask once per spectrum.)
 
 ## 9. Other
 
@@ -204,3 +216,19 @@ an explicit message and reddened fields rather than failing halfway through.
   halve the number of points.
 - Distributions are drawn in the plot area: the **Distribution / Spectrum**
   button toggles the view once a model with `Distr`/`Recon` has been shown.
+
+## 10. When something goes wrong
+
+Any error that reaches the terminal — whether SYNCmoss caught it or not — also
+opens a **report a bug** window with the message in it and a *Copy the error
+message* button. The terminal output is unchanged; the window is just a copy,
+and it matters mostly for the packaged builds, which have no terminal at all.
+
+- The program usually keeps working afterwards. Tick *do not show this window
+  again* to silence it until the next restart.
+- Please do send the report: the message alone is rarely enough, so add what you
+  were doing (which button or action) and attach the spectrum and the `.mdl`.
+- *Supp -> **Contact the author*** (last entry) shows the address and the issue
+  tracker — for bug reports, feature requests and questions alike. Nothing here
+  opens a mail client for you: copy the address and write from wherever you
+  normally do.
