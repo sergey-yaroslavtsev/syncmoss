@@ -488,7 +488,18 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 p0[constrained_idx] = p0[source_idx] * multiplier
         else:
             confu = np.array([[-1], [-1], [-1]])
-        
+
+        # Start from the model Show model draws: evaluate every Expression on p0
+        # and carry the parameters linked to it along, in the order minimi_hi
+        # uses on every trial point. read_model leaves 0 in an Expression's slot
+        # and minimi_hi takes p0 as given, so a parameter linked to an Expression
+        # used to start at 0; when 0 fitted as well as the Expression's value the
+        # fit never moved and returned the parameter as 0.
+        for e_i in range(len(Expr)):
+            p0[NExpr[e_i]] = mi._eval_expr(str(Expr[e_i]), p0)
+            for c_i in np.where(confu[1] == NExpr[e_i])[0]:
+                p0[int(confu[0][c_i])] = p0[int(confu[1][c_i])] * confu[2][c_i]
+
         # --- Recon (distribution reconstruction) fit expansion --------------
         # Every 'Recon' contributes Num FREE weights. They are appended to the TAIL
         # of the working vector the minimiser varies (the canonical head keeps its
@@ -533,7 +544,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         eps = 10 ** -6
 
         print('[Fitting] Starting minimization...')
-        print(f'[Fitting] Initial parameters: {p}')
+        print(f'[Fitting] Initial parameters: {p0}')
         print(f'[Fitting] Model: {model}')
         print(f'[Fitting] Fixed parameters (indices): {fix}')
         print(f'[Fitting] Constraints (confu): {confu}')
