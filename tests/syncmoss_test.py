@@ -19,6 +19,8 @@ The flow:
      row before Nbaseline; turn that row into a Be model; add a Sextet after
      Nbaseline  ->  Sextet, Be(=Doublet), Nbaseline, Sextet
   6. show the model
+  6a. start a fit and press Interrupt; with a real pool the pool is forced to
+     be killed and recreated. The fit of step 7 then shows the app still works
   7. fit (simultaneous, because of Nbaseline + two spectra)
   8. assert reduced chi-square < 3
   9. assert the per-model colours match between the parameters table and the
@@ -39,6 +41,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import multiprocessing as mp
 from multiprocessing.pool import ThreadPool
 
@@ -275,7 +278,47 @@ class _TestRunner:
     def step_show_model(self) -> None:
         print("[TEST] Step: show model ...")
         self.window.showM_pressed()
-        self._wait(self.step_fit, "show model")
+        self._wait(self.step_interrupt_fit, "show model")
+
+    # -- Step 6a: interrupt a fit (async) -----------------------------
+    #
+    # Fit, then press Interrupt (twice: extra clicks must do nothing). With a
+    # real process pool a 3-second job is handed to the pool first, so a worker
+    # is still busy after the 1-second grace period and the pool is killed and
+    # recreated -- in the frozen apps, real worker processes respawned from the
+    # bundle. Step 6 is then the "fit again" on whatever pool that left.
+
+    def step_interrupt_fit(self) -> None:
+        print("[TEST] Step: interrupt a fit ...")
+        w = self.window
+        self._expect_kill = not isinstance(w.pool, ThreadPool)
+        w.fit_pressed()
+        if self._expect_kill:
+            w.pool.starmap_async(time.sleep, [(3,)])
+        QTimer.singleShot(500, w.interrupt)
+        QTimer.singleShot(600, w.interrupt)
+        self._poll_count = 0
+        QTimer.singleShot(1000, self._poll_interrupt)
+
+    def _poll_interrupt(self) -> None:
+        w = self.window
+        if w.inprogress or w._interrupting:
+            if self._poll_count >= _TIMEOUT_POLLS:
+                self.errors.append("interrupt a fit: timeout")
+                self._finish()
+                return
+            self._poll_count += 1
+            QTimer.singleShot(_POLL_MS, self._poll_interrupt)
+            return
+        expected = ("Interrupted (pool terminated and recreated)"
+                    if self._expect_kill else "Interrupted")
+        if w.log.toPlainText() != expected or w.fitting_thread.isRunning():
+            self.errors.append(f"interrupt a fit: expected '{expected}' and the "
+                               f"fit thread ended, got '{w.log.toPlainText()}'")
+            self._finish()
+            return
+        print(f"[TEST] interrupt a fit OK ({expected})")
+        QTimer.singleShot(300, self.step_fit)
 
     # -- Step 6: fit (async, simultaneous) ----------------------------
 
@@ -533,6 +576,9 @@ def run_gui_smoke() -> int:
     finally:
         pool.close()
         pool.join()
+        if window.pool is not pool:      # recreated by the Interrupt step
+            window.pool.close()
+            window.pool.join()
 
     return 1 if runner.errors else 0
 

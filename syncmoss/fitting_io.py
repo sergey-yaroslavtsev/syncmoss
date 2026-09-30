@@ -711,6 +711,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'instrumental_note': instrumental_note,
             }
     
+    except m5.FitInterrupted:
+        raise   # not a failure; the thread reports it (without a traceback)
     except Exception as e:
         return {
             'success': False,

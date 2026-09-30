@@ -39,6 +39,7 @@ import syncmoss.minimi_lib as mi
 import os
 import platform
 import time
+import threading
 from numba import njit, prange
 import scipy
 import scipy.linalg
@@ -2952,6 +2953,41 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
         return(CH)
 
 
+# Set by "! INTERRUPT !" (PhysicsApp.interrupt, where it is ``fit_cancel``).
+# Every calculation that uses the pool goes through TI, so checking it there
+# stops the fit, the sequential fit, Show model, calibration and both
+# instrumental-function searches.
+FIT_CANCEL = threading.Event()
+
+
+class FitInterrupted(Exception):
+    """Raised in a calculation thread when the user presses "! INTERRUPT !"."""
+
+    def __init__(self, message="Interrupted by the user"):
+        super().__init__(message)
+
+
+def _pool_starmap(pool, func, args):
+    """``pool.starmap`` that gives up as soon as FIT_CANCEL is set.
+
+    Same work and same result as ``pool.starmap`` (which is itself
+    ``starmap_async(...).get()``), but waited for in short slices: a plain
+    starmap waits for ever once Interrupt has terminated the pool, leaving the
+    calculation thread stuck.
+    """
+    if FIT_CANCEL.is_set():
+        raise FitInterrupted()
+    if not hasattr(pool, 'starmap_async'):      # serial stand-ins in the tests
+        return pool.starmap(func, args)
+    result = pool.starmap_async(func, args)
+    while not result.ready():
+        # a terminated pool never completes the result, flag or not
+        if FIT_CANCEL.is_set() or getattr(pool, '_state', None) == 'TERMINATE':
+            raise FitInterrupted()
+        result.wait(0.05)
+    return result.get()
+
+
 def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0]):  # num - number of Gausians # PS - spc, p - InsFun
     """Compute the Mossbauer transmission spectrum (full transmission integral).
 
@@ -2988,7 +3024,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         # Recon travels after the default-valued middle args (Mett,O,Di,Co,V,
         # return_layer_matrix) so the parallel weight list reaches every TImod
         # worker positionally (starmap cannot pass keywords).
-        H = pool.starmap(TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon) for Ex in E])
+        H = _pool_starmap(pool, TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon) for Ex in E])
         H = np.array(H, dtype=object).sum(axis=0)
 
         # Ht = np.array([[float(0)] * len(x_exp)] * JN)
@@ -3036,7 +3072,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
             N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
             V = V + number_of_baseline_parameters
-            H = pool.starmap(TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V, False, Recon, Re) for Ex in E])
+            H = _pool_starmap(pool, TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V, False, Recon, Re) for Ex in E])
             # Di = H[0][1]
             # Co = H[0][2]
             # V = H[0][3]

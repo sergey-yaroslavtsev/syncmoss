@@ -116,14 +116,8 @@ def test_every_calculation_entry_point_is_guarded(physics_app):
         assert '_reject_if_busy(' in body, f"{name} is not guarded"
 
 
-def test_interrupt_sets_the_cooperative_flag(physics_app):
-    """Same mechanism and name as SYNCtime: an Event, set before the pool is
-    touched, because a thread cannot be killed."""
+def test_interrupt_flag_is_an_event(physics_app):
+    """Same mechanism and name as SYNCtime: an Event, because a thread cannot
+    be killed. What interrupt() does with it: test_interrupt.py."""
     assert isinstance(physics_app.fit_cancel, threading.Event)
     assert not physics_app.fit_cancel.is_set()
-    physics_app.interrupt()
-    try:
-        assert physics_app.fit_cancel.is_set()
-    finally:
-        physics_app.fit_cancel.clear()
-        physics_app.inprogress = False

@@ -36,7 +36,6 @@ import shutil
 import warnings
 import traceback
 import ast
-import threading
 import multiprocessing as mp
 
 # ---------------------------------------------------------------------------
@@ -64,14 +63,14 @@ from PySide6.QtGui import (
     QImage, QFont, QIcon, QAction, QDoubleValidator, QIntValidator,
     QPalette, QShortcut, QKeySequence
 )
-from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, QCoreApplication
+from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, QCoreApplication, QTimer
 
 # ---------------------------------------------------------------------------
 # Local package
 # ---------------------------------------------------------------------------
 import syncmoss.minimi_lib as mi
 import syncmoss.fitting_io as fitting_io
-from syncmoss.models import TI
+from syncmoss.models import TI, FIT_CANCEL, FitInterrupted
 from syncmoss.Calibration import Calibration
 from syncmoss.constants import (model_colors, number_of_baseline_parameters,
                                SMS_POL_DEFAULT)
@@ -312,6 +311,8 @@ class InstrumentalThread(QThread):
                 result = instrumental(self.main_window, self.ref, self.mode, pool=self.pool)
             print(f"[DEBUG] InstrumentalThread completed successfully")
             self.finished.emit(result)
+        except FitInterrupted as e:
+            self.error.emit(str(e))
         except Exception as e:
             error_msg = f"{e}\n{traceback.format_exc()}"
             print(f"[ERROR] InstrumentalThread failed: {error_msg}")
@@ -334,6 +335,8 @@ class FittingThread(QThread):
             result = fitting_io.fit_single_spectrum(self.main_window, self.spectrum_file, self.pool)
             print(f"[DEBUG] FittingThread completed successfully")
             self.finished.emit(result)
+        except FitInterrupted as e:
+            self.error.emit(str(e))
         except Exception as e:
             error_msg = f"{e}\n{traceback.format_exc()}"
             print(f"[ERROR] FittingThread failed: {error_msg}")
@@ -390,7 +393,9 @@ class SequentialFittingThread(QThread):
                 else:
                     errors.append((spectrum_file, result['message']))
                     self.progress.emit(index, total, spectrum_file, 'failed')
-                    
+
+            except FitInterrupted:
+                break   # the rest of the batch is not attempted
             except Exception as e:
                 error_msg = f"{e}\n{traceback.format_exc()}"
                 errors.append((spectrum_file, error_msg))
@@ -647,6 +652,8 @@ class ShowModelThread(QThread):
                 # Emit with single list of subspectra
                 self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon)
 
+        except FitInterrupted as e:
+            self.error.emit(str(e))
         except Exception as e:
             traceback.print_exc()
             self.error.emit(str(e))
@@ -794,7 +801,9 @@ class PhysicsApp(QMainWindow):
         # polls it (see interrupt()). An Event rather than a bool so a worker
         # THREAD reads it without a lock. Same mechanism and same name as the
         # SYNCtime branch, so the two stay portable.
-        self.fit_cancel = threading.Event()
+        # It is models.FIT_CANCEL, so the pool calls in TI see it too.
+        self.fit_cancel = FIT_CANCEL
+        self._interrupting = False  # from an Interrupt click until the work stopped
 
         # Icon
         if getattr(sys, 'frozen', False):
@@ -2185,6 +2194,10 @@ class PhysicsApp(QMainWindow):
         ``return`` silently, so clicking Fit during a search did nothing at all
         and looked like a broken button rather than a refusal.
         """
+        if self._interrupting:
+            self.set_status(f"{what} is not available right now: the "
+                            f"interrupted calculation is still stopping.", "orange")
+            return True
         if not self.inprogress:
             return False
         running = getattr(self, 'busy_with', 'another calculation')
@@ -2210,21 +2223,51 @@ class PhysicsApp(QMainWindow):
 
         The flag is set FIRST: a pool terminated while the search is between
         evaluations would otherwise let it run on to the next one.
+
+        Every pool call in TI checks the flag too (models._pool_starmap), so
+        the fit, sequential fit, Show model, calibration and the Gaussian search
+        stop within ~50 ms as well, without anything being killed.
+
+        Gentle first: the pool is killed only if its workers are STILL busy a
+        second after the click (a long evaluation already handed out). The app
+        is released only once the calculation thread has ended, so a new
+        calculation never starts next to a dying one. Clicks while waiting, or
+        with nothing running, touch nothing.
         """
+        if self._interrupting:
+            return
+        if not self.inprogress:
+            self.set_status("Nothing to interrupt", "orange")
+            return
+        self._interrupting = True
+        self._pool_killed = False
         self.fit_cancel.set()
-        try:
-            # Terminate the old pool
-            if self.pool:
+        self.set_status("Interrupting...", "orange")
+        QTimer.singleShot(1000, self._finish_interrupt)
+
+    def _finish_interrupt(self, first=True):
+        """Second half of interrupt(): kill the pool if still needed, then wait
+        for the calculation thread to end."""
+        # _cache holds the pool's unfinished jobs (multiprocessing internals)
+        if first and self.pool is not None and getattr(self.pool, '_cache', None):
+            try:
+                # Terminate the old pool
                 self.pool.terminate()
                 self.pool.join()
-            # Create a new pool
-            num_processes = mp.cpu_count() if mp.cpu_count() <= 4 else mp.cpu_count() - 1
-            self.pool = mp.Pool(processes=num_processes)
-            self.set_status("Pool terminated and recreated", "orange")
-        except Exception as e:
-            self.set_status(f"Error during interrupt: {str(e)}", "red")
-        finally:
-            self.inprogress = False
+                # Create a new pool
+                num_processes = mp.cpu_count() if mp.cpu_count() <= 4 else mp.cpu_count() - 1
+                self.pool = mp.Pool(processes=num_processes)
+                self._pool_killed = True
+            except Exception as e:
+                self.set_status(f"Error during interrupt: {str(e)}", "red")
+        if any(isinstance(t, QThread) and t.isRunning() for t in vars(self).values()):
+            QTimer.singleShot(100, lambda: self._finish_interrupt(first=False))
+            return
+        self.fit_cancel.clear()
+        self.inprogress = False
+        self._interrupting = False
+        self.set_status("Interrupted (pool terminated and recreated)"
+                        if self._pool_killed else "Interrupted", "orange")
 
     @staticmethod
     def _detect_os_dark_mode():

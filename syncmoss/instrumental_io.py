@@ -203,11 +203,10 @@ def write_accurate_instrumental(app, INS):
     print(f"[Instrumental function] wrote {path}")
 
 
-class FitInterrupted(Exception):
-    """Raised inside the theory search when the user presses "! INTERRUPT !".
-
-    Same name and role as the SYNCtime branch's, so the mechanism is portable.
-    """
+# Raised inside the theory search when the user presses "! INTERRUPT !"; lives
+# in models.py because TI raises it too. Same name and role as the SYNCtime
+# branch's, so the mechanism is portable.
+FitInterrupted = m5.FitInterrupted
 
 
 def search_cancelled(app):
