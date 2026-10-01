@@ -131,6 +131,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='SYNCmoss.app',
-    icon=None,
+    # Next to this spec; PyInstaller converts the PNG to .icns (with Pillow).
+    icon='SYNCmoss.png',
     bundle_identifier=None,
 )

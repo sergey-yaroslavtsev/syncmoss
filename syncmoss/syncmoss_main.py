@@ -33,7 +33,11 @@ import re
 import sys
 import json
 import shutil
+import time
+import errno
+import base64
 import warnings
+from html import escape as html_escape
 import traceback
 import ast
 import multiprocessing as mp
@@ -86,6 +90,11 @@ from syncmoss.spectrum_io import (
     half_points, calculate_backgrounds,
 )
 from syncmoss import bliss_channel
+from syncmoss.spectrum_parameters import (
+    SpectrumParameters, parse_path_box, format_path_box, read_parameters_file,
+    apply_parameters, write_parameters_file, sequence_problems, table_uses_names,
+    looks_like_entries, PATH_BOX_UNREADABLE,
+)
 from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
     plot_distribution, plot_calibration, plot_model, plot_model_with_nbaseline,
@@ -350,13 +359,19 @@ class SequentialFittingThread(QThread):
     spectrum_fitted = Signal(str, dict)  # spectrum_file, result (for GUI updates in main thread)
     finished = Signal(dict)  # summary dictionary
     
-    def __init__(self, main_window, spectrum_files, pool, sequence_fitting_type, backgrounds):
+    def __init__(self, main_window, spectrum_files, pool, sequence_fitting_type, backgrounds,
+                 spectrum_parameters=None):
         super().__init__()
         self.main_window = main_window
         self.spectrum_files = spectrum_files
         self.pool = pool
         self.sequence_fitting_type = sequence_fitting_type  # 0=initial, 1=result
         self.backgrounds = backgrounds  # Pre-calculated backgrounds for all spectra
+        # N, N1, ... of every spectrum; by default N alone (the position)
+        if spectrum_parameters is None:
+            spectrum_parameters = [SpectrumParameters(i + 1, (), path)
+                                   for i, path in enumerate(spectrum_files)]
+        self.spectrum_parameters = spectrum_parameters
     
     def run(self):
         """Simple loop through spectra, fitting each one"""
@@ -377,8 +392,9 @@ class SequentialFittingThread(QThread):
                 
                 # Fit this spectrum
                 result = fitting_io.fit_single_spectrum(
-                    self.main_window, spectrum_file, self.pool, 
-                    background=background, sequence_params=sequence_params
+                    self.main_window, spectrum_file, self.pool,
+                    background=background, sequence_params=sequence_params,
+                    spectrum_parameters=self.spectrum_parameters[index]
                 )
                 
                 if result['success']:
@@ -413,6 +429,19 @@ class SequentialFittingThread(QThread):
             'failed': failed,
             'errors': errors
         })
+
+
+def _write_problem(path, error):
+    """'<file>: <reason>' for a result file that could not be written.
+
+    A file another program holds -- an image viewer showing the old picture,
+    Explorer's preview -- refuses to be overwritten, and Windows reports that
+    as 'Invalid argument' or 'Permission denied', so the likely cause is named.
+    """
+    text = f"{os.path.basename(path)}: {getattr(error, 'strerror', None) or error}"
+    if isinstance(error, OSError) and error.errno in (errno.EINVAL, errno.EACCES):
+        text += " (is it open in another program, e.g. an image viewer? Close it and save again)"
+    return text
 
 
 def _recon_weight_texts(model_list, recon_weights):
@@ -2158,6 +2187,10 @@ class PhysicsApp(QMainWindow):
         A Bliss channel name is READ here instead of looked up on disk, for a
         similar reason: Bliss may be used from the main thread only, so the
         worker threads get the spectrum read now (see bliss_channel).
+
+        A "path" that is really a broken ('file', N1, ...) entry -- the whole
+        path-box text, when it could not be read -- gets its own message about
+        the brackets instead.
         """
         missing = []
         for path in paths:
@@ -2170,31 +2203,28 @@ class PhysicsApp(QMainWindow):
                 missing.append(path)
         if not missing:
             return None
+        if any(looks_like_entries(path) for path in missing):
+            return PATH_BOX_UNREADABLE     # a broken ('file', N1, ...) entry, not a file
         return ("Not a spectrum file: " + ", ".join(missing)
                 + ". Enter an existing path, or 'Model_<range>' (e.g. 'Model_6') "
                   "to calculate the model without a spectrum.")
 
-    def parse_process_path(self):
-        """Parse the process_path text field to extract file paths"""
+    def parse_process_entries(self):
+        """The path box as ``(path, values)`` entries: a plain path has no values,
+        a ``('path', N1, N2, ...)`` tuple carries the spectrum's parameters.
+
+        An item that is neither (``('a.dat', 'x')``) makes the whole text one
+        "path", so the path check names it as not a spectrum file.
+        """
+        text = self.process_path.toPlainText()
         try:
-            text = self.process_path.toPlainText().strip()
-            # Try to evaluate as Python list
-            paths = ast.literal_eval(text)
-            if isinstance(paths, list):
-                return paths
-            elif isinstance(paths, str):
-                return [paths]
-            else:
-                return []
-        except:
-            # If parsing fails, try simple comma-separated values
-            text = self.process_path.toPlainText().strip()
-            if not text:
-                return []
-            # Remove brackets and quotes, split by comma
-            text = text.strip("[]'\"")
-            paths = [p.strip().strip("'\" ") for p in text.split(',') if p.strip()]
-            return paths
+            return parse_path_box(text)
+        except ValueError:
+            return [(text.strip(), ())]
+
+    def parse_process_path(self):
+        """The spectrum paths of the path box (without their parameters)."""
+        return [path for path, _ in self.parse_process_entries()]
 
     def _reject_if_busy(self, what):
         """True -- and SAYS SO -- when another calculation is already running.
@@ -2664,9 +2694,83 @@ class PhysicsApp(QMainWindow):
         result_action = QAction("Take result as initial guess for the sequence of spectra", self)
         result_action.triggered.connect(lambda: self.set_sequence_fitting_type(1))
         menu.addAction(result_action)
-        
+
+        # The parameters of the spectra (N1, N2, ... in the formulas)
+        menu.addSeparator()
+        load_action = QAction("Load parameters of the spectra (N1, N2, …) from a file", self)
+        load_action.triggered.connect(self.load_spectrum_parameters)
+        menu.addAction(load_action)
+        save_action = QAction("Save parameters of the spectra (N1, N2, …) to a file", self)
+        save_action.triggered.connect(self.save_spectrum_parameters)
+        menu.addAction(save_action)
+
         # Show menu at button position
         menu.exec(self.seq_fit_btn.mapToGlobal(self.seq_fit_btn.rect().bottomLeft()))
+
+    def load_spectrum_parameters(self):
+        """Pick a parameters file and apply it to the spectra of the path box."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load parameters of the spectra", self.workfolder,
+            "Text files (*.txt);;All files (*.*)")
+        if not path:
+            self.set_status("Loading parameters of the spectra was canceled", "orange")
+            return
+        self.apply_spectrum_parameters_file(path)
+
+    def apply_spectrum_parameters_file(self, path):
+        """Rewrite the path box with the parameters in *path* (see spectrum_parameters).
+
+        ``['a.dat', 'b.dat']`` becomes ``[('a.dat', N1, ...), ('b.dat', N1, ...)]``,
+        reordered when the file has #number. When the file does not fit the
+        spectra nothing changes and the log says why. Returns True when applied.
+        """
+        name = os.path.basename(path)
+        if self.parse_model_only_request()[0]:
+            self.set_status(f"Parameters from {name} not applied: the path box holds "
+                            f"Model_<range>, not spectra", "orange")
+            return False
+        try:
+            entries = parse_path_box(self.process_path.toPlainText())
+            table = read_parameters_file(path)
+            new_entries, notes = apply_parameters(entries, table)
+        except (OSError, ValueError) as e:
+            self.set_status(f"Parameters from {name} not applied: {e}", "orange")
+            return False
+        self.process_path.setPlainText(format_path_box(new_entries))
+        self.path_list = [p for p, _ in new_entries]
+        count = len(table['rows'])
+        what = {0: "no parameters", 1: "N1"}.get(count, f"N1…N{count}")
+        self.set_status(f"Applied {what} from {name} to {len(new_entries)} spectra"
+                        + "".join(f"; {note}" for note in notes), "green")
+        return True
+
+    def save_spectrum_parameters(self):
+        """Save the parameters of the spectra, as the path box holds them now."""
+        try:
+            entries = parse_path_box(self.process_path.toPlainText())
+        except ValueError as e:
+            self.set_status(f"Parameters of the spectra not saved: {e}", "orange")
+            return
+        if not entries or self.parse_model_only_request()[0]:
+            self.set_status("Parameters of the spectra not saved: there are no spectra "
+                            "in the path box", "orange")
+            return
+        base = self._result_base_path()
+        start = (base + '_inputs.txt' if base
+                 else os.path.join(self.workfolder, 'inputs.txt'))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save parameters of the spectra", start,
+            "Text files (*.txt);;All files (*.*)")
+        if not path:
+            self.set_status("Saving parameters of the spectra was canceled", "orange")
+            return
+        try:
+            write_parameters_file(path, entries)
+        except (OSError, ValueError) as e:
+            self.set_status(f"Parameters of the spectra not saved: {e}", "orange")
+            return
+        self.set_status(f"Parameters of {len(entries)} spectra saved to "
+                        f"{os.path.basename(path)}", "green")
 
     def set_sequence_fitting_type(self, fitting_type):
         """Set sequence fitting type and update button text"""
@@ -2963,18 +3067,34 @@ class PhysicsApp(QMainWindow):
                     self, 'Sequential Fitting',
                     f"Do you want to start sequential fitting of {len(spectrum_files)} spectra?\n\n"
                     f"Please check the save path:\n{self.save_path.text() or 'NOT SET'}\n\n"
-                    f"Results will be saved with spectrum basenames.",
+                    f"The parameters of all spectra go into ONE <save path>_param.txt "
+                    f"(a line per spectrum) and their pictures into "
+                    f"<save path>_result_table_PNG.html -- both replaced if they exist. "
+                    f"Curves and pictures of each spectrum are saved under its own name.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
                 
                 if reply == QMessageBox.StandardButton.Yes:
+                    # Every spectrum must have a value for each N1, N2, ... the
+                    # formulas use -- found now, not at spectrum 37 of 50.
+                    entries = self.parse_process_entries()
+                    typed = read_model(self, substitute_names=False)
+                    lacking = sequence_problems(typed[5] + typed[6] + typed[7], entries)
+                    if lacking:
+                        self.set_status(
+                            "Sequence fitting was not started — the formulas use parameters "
+                            "some spectra have no value for (give them in the path box as "
+                            "('file', N1, N2, …) or load them from the Sequence Fitting "
+                            "menu):\n" + "\n".join(lacking), "red")
+                        self.inprogress = False
+                        return
                     # Batch = each spectrum fitted on its own (its own metadata).
                     # Confirm any method override / different instrumental
                     # functions across the batch before starting.
                     if not self.confirm_instrumental_methods(spectrum_files, 'sequential'):
                         self.inprogress = False
                         return
-                    self.start_sequential_fitting(spectrum_files)
+                    self.start_sequential_fitting(spectrum_files, entries)
                     return
                 else:
                     # User declined - fit only first spectrum
@@ -3009,18 +3129,34 @@ class PhysicsApp(QMainWindow):
             self.set_status(f"Fit error: {e}", "red")
             self.inprogress = False
     
-    def start_sequential_fitting(self, spectrum_files):
+    def start_sequential_fitting(self, spectrum_files, entries=None):
         """
         Start sequential fitting of multiple spectra using fitting_io logic.
-        
+
         Args:
             spectrum_files: List of spectrum file paths to fit sequentially
+            entries: The path box as (path, values) entries, in the same order;
+                spectrum i is fitted with N = i + 1 and its values as N1, N2, ...
         """
         # Check if save path is set
         if not self.save_path.text().strip():
             self.set_status("Sequential fitting requires save path to be set", "red")
+            self.inprogress = False
             return
-        
+
+        if entries is None:
+            entries = [(path, ()) for path in spectrum_files]
+        spectrum_parameters = [SpectrumParameters(i + 1, values, path)
+                               for i, (path, values) in enumerate(entries)]
+        # The parameters of the whole run, next to its results -- what was used
+        if any(values for _, values in entries) or table_uses_names(self):
+            self._write_spectrum_parameters_file(
+                self._result_base_path() + '_inputs.txt', entries)
+        # One _param.txt (a line per spectrum) and one HTML page per run
+        self._sequence_rows_written = 0
+        self._sequence_save_problems = []
+        self._start_sequence_html()
+
         # Initialize sequence_params for result mode (None for initial mode)
         self.sequence_params = None
 
@@ -3042,7 +3178,8 @@ class PhysicsApp(QMainWindow):
         
         # Start sequential fitting thread
         self.sequential_fitting_thread = SequentialFittingThread(
-            self, spectrum_files, self.pool, self.sequence_fitting_type, backgrounds
+            self, spectrum_files, self.pool, self.sequence_fitting_type, backgrounds,
+            spectrum_parameters
         )
         self.sequential_fitting_thread.progress.connect(self._on_sequential_progress)
         self.sequential_fitting_thread.spectrum_fitted.connect(self._on_spectrum_fitted)
@@ -3073,7 +3210,8 @@ class PhysicsApp(QMainWindow):
                 covariance_matrix,
                 errors,
                 fix,
-                expression_texts
+                expression_texts,
+                spectrum_parameters=result.get('spectrum_parameters'),
             )
             self.results_table.current_links = dict(self._fit_links_snapshot)
             self.results_table.current_model_rows = fitted_model_rows(
@@ -3121,23 +3259,44 @@ class PhysicsApp(QMainWindow):
         
         # Clean up sequence_params
         self.sequence_params = None
-        
+        self._finish_sequence_html()
+        saved = (f"{os.path.basename(self._sequence_file('_param.txt'))} and "
+                 f"{os.path.basename(self._sequence_file('_result_table_PNG.html'))}")
+        # Result files that could not be written (the fits themselves are fine)
+        not_written = getattr(self, '_sequence_save_problems', [])
+        save_note = ""
+        if not_written:
+            save_note = ("\nNot written:\n" + "\n".join(f"  - {text}" for text in not_written[:5])
+                         + (f"\n  ... and {len(not_written) - 5} more" if len(not_written) > 5 else ""))
+
         if failed == 0:
-            self.set_status(f"Sequential fitting complete! All {total} spectra fitted and saved.", "green")
+            self.set_status(f"Sequential fitting complete! All {total} spectra fitted and "
+                            f"saved in {saved}.{save_note}", "orange" if not_written else "green")
         else:
             error_summary = "\n".join([f"  - {os.path.basename(f)}: {e}" for f, e in errors[:5]])  # Show first 5 errors
             if len(errors) > 5:
                 error_summary += f"\n  ... and {len(errors) - 5} more errors"
-            
+
             self.set_status(
                 f"Sequential fitting complete: {succeeded}/{total} succeeded, {failed} failed.\n"
-                f"Errors:\n{error_summary}",
+                f"Errors:\n{error_summary}{save_note}",
                 "orange",
             )
         self.inprogress = False
     
+    def _sequence_file(self, suffix):
+        """A file of the whole sequence run: the save path's base + *suffix*."""
+        return self._result_base_path() + suffix
+
     def _save_sequential_result_files(self, spectrum_file):
-        """Save result files for one spectrum (file I/O only, called from main thread)"""
+        """Save result files for one spectrum (file I/O only, called from main thread).
+
+        The parameters go into ONE file for the whole run,
+        ``<save base>_param.txt``: its names line, then one line per spectrum
+        (started afresh by the run's first spectrum). The spectrum's own curves
+        and pictures go next to it under the spectrum's name, and its pictures
+        are added to the run's ``<save base>_result_table_PNG.html``.
+        """
         try:
             # Get base path from save_path and spectrum filename
             save_dir = os.path.dirname(self.save_path.text())
@@ -3148,14 +3307,74 @@ class PhysicsApp(QMainWindow):
             if save_dir and not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
-            # Append to an existing parameter file, otherwise start a new one
-            mode = 'append' if os.path.exists(base_path + '_param.txt') else 'new'
-            self._write_result_files(base_path, os.path.basename(spectrum_file), mode)
+            rows = getattr(self, '_sequence_rows_written', 0)
+            param_path = self._sequence_file('_param.txt')
+            started = time.time()
+            problems = self._write_result_files(base_path, os.path.basename(spectrum_file),
+                                                'append' if rows else 'new', param_file=param_path)
+            # Count the row as soon as it is in the file, whatever failed after
+            # it: the next spectrum must append to it, not start the file afresh
+            if param_path not in [path for path, _ in problems]:
+                self._sequence_rows_written = rows + 1
+            if not hasattr(self, '_sequence_save_problems'):
+                self._sequence_save_problems = []
+            self._sequence_save_problems.extend(text for _, text in problems)
+            self._add_to_sequence_html(spectrum_file, rows + 1, started,
+                                       [base_path + '_combo.png', base_path + '_distributions.png'],
+                                       problems)
 
             print(f"[Sequential] Saved results for {spectrum_basename}")
 
         except Exception as e:
             print(f"Error saving sequential result: {e}\n{traceback.format_exc()}")
+
+    def _start_sequence_html(self):
+        """Start the run's HTML page of pictures (replacing an older one)."""
+        path = self._sequence_file('_result_table_PNG.html')
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                title = html_escape(os.path.basename(self._result_base_path()))
+                f.write(f'<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8">'
+                        f'<title>{title}: sequence fit</title></head>\n<body>\n')
+            self._sequence_html = path
+        except OSError as e:
+            print(f"[Sequential] {os.path.basename(path)} not started: {e}")
+            self._sequence_html = None
+
+    def _add_to_sequence_html(self, spectrum_file, row, started, png_paths, problems=()):
+        """Append one spectrum's pictures -- only those written for it just now
+        (a failed plot must not bring back a picture of an older run). A
+        picture that could not be written (*problems*) is named instead."""
+        path = getattr(self, '_sequence_html', None)
+        if not path:
+            return
+        failed = dict(problems)
+        used = self.results_table.current_spectrum_parameters
+        number = used.number if used is not None else row
+        heading = f"{number}. {os.path.basename(spectrum_file)}"
+        if used is not None and used.values:
+            heading += ": " + ", ".join(f"N{k + 1} = {v:g}" for k, v in enumerate(used.values))
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(f'<h3>{html_escape(heading)}</h3>\n')
+            for png in png_paths:
+                if png in failed:
+                    f.write(f'<p>Picture not saved: {html_escape(failed[png])}</p>\n')
+                elif os.path.exists(png) and os.path.getmtime(png) >= started - 1:
+                    with open(png, 'rb') as image:
+                        data = base64.b64encode(image.read()).decode('ascii')
+                    f.write(f'<img src="data:image/png;base64,{data}" '
+                            f'alt="{html_escape(os.path.basename(png))}"><br>\n')
+
+    def _finish_sequence_html(self):
+        """Close the run's HTML page."""
+        path = getattr(self, '_sequence_html', None)
+        if path:
+            try:
+                with open(path, 'a', encoding='utf-8') as f:
+                    f.write('</body>\n</html>\n')
+            except OSError as e:
+                print(f"[Sequential] {os.path.basename(path)} not closed: {e}")
+        self._sequence_html = None
     
     def plot_fitting_result(self, result):
         """
@@ -3357,7 +3576,8 @@ class PhysicsApp(QMainWindow):
                 covariance_matrix,
                 errors,
                 fix,
-                expression_texts
+                expression_texts,
+                spectrum_parameters=result.get('spectrum_parameters'),
             )
             self.results_table.current_links = dict(self._fit_links_snapshot)
             # ... and the model it was fitted with, fitted values written in
@@ -3475,12 +3695,22 @@ class PhysicsApp(QMainWindow):
                 spectrum_file = '; '.join(os.path.basename(f) for f in sim_files)
             else:
                 spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
-            self._write_result_files(base_path, spectrum_file, mode)
+            problems = self._write_result_files(base_path, spectrum_file, mode)
+
+            # The spectrum's N, N1, N2, ... the fit used (a sequence writes the
+            # file of its whole run when it starts instead)
+            used = self.results_table.current_spectrum_parameters
+            if used is not None:
+                self._write_spectrum_parameters_file(
+                    base_path + '_inputs.txt',
+                    [(used.path or spectrum_file, used.values)], numbers=[used.number])
 
             if mode == 'append':
                 message = "Results appended to parameter file, others overwritten"
             else:
                 message = "Results saved successfully"
+            if problems:
+                message = ("Results saved, except: " + "; ".join(text for _, text in problems))
 
             # A result is only reproducible together with the model that produced
             # it, so the fitted model (taken at fit start, whatever the table
@@ -3492,7 +3722,8 @@ class PhysicsApp(QMainWindow):
             if model_rows is None:
                 self.set_status(f"{message}. Model NOT saved: no fitted model with this result", "orange")
             elif save_result_model(self, model_path, model_rows):
-                self.set_status(f"{message}; model saved as {os.path.basename(model_path)}", "green")
+                self.set_status(f"{message}; model saved as {os.path.basename(model_path)}",
+                                "orange" if problems else "green")
             else:
                 # Keep save_result_model's own reason (canceled / could not
                 # write) — it is the only place it was reported.
@@ -3503,44 +3734,75 @@ class PhysicsApp(QMainWindow):
             print(f"Error saving results: {e}\n{traceback.format_exc()}")
             self.set_status(f"Error saving results: {e}", "red")
 
-    def _write_result_files(self, base_path, spectrum_file, mode):
+    def _write_result_files(self, base_path, spectrum_file, mode, param_file=None):
         """Write the four result artifacts of the current fit next to *base_path*.
 
         Shared by "Save result"/"Save result as" and by sequential fitting:
         ``<base>_param.txt`` (parameters + errors; appended in 'append' mode),
         ``<base>_graf.txt`` (the plotted curves), ``<base>_combo.png`` (figure +
         rendered results table) and ``<base>.svg`` (copy of the last figure the
-        plot functions saved into the app directory).
+        plot functions saved into the app directory). *param_file* sends the
+        parameters row elsewhere -- a sequence collects all of them in one file.
+
+        Each file is written on its own: one that cannot be written (open in
+        another program, say) does not stop the others. Returns the
+        ``(path, reason)`` of every file that was not written.
         """
+        problems = []
+
+        def write(path, how):
+            try:
+                how()
+            except Exception as e:
+                print(f"[Saving] {os.path.basename(path)} not written: {e}\n{traceback.format_exc()}")
+                problems.append((path, _write_problem(path, e)))
+
         # 1. Parameters + errors table
-        self._save_parameters_file(base_path + '_param.txt',
-                                   self.results_table.current_parameters,
-                                   self.results_table.current_errors,
-                                   self.results_table.current_model_list,
-                                   self.results_table.current_parameter_names,
-                                   spectrum_file,
-                                   self.results_table.current_chi2,
-                                   mode)
+        param_path = param_file or base_path + '_param.txt'
+        write(param_path, lambda: self._save_parameters_file(
+            param_path,
+            self.results_table.current_parameters,
+            self.results_table.current_errors,
+            self.results_table.current_model_list,
+            self.results_table.current_parameter_names,
+            spectrum_file,
+            self.results_table.current_chi2,
+            mode,
+            self.results_table.current_spectrum_parameters))
 
         # 2. Graph data from the fitting arrays
         if self.last_fitting_data:
-            self._save_graf_file(base_path + '_graf.txt', self.last_fitting_data)
+            write(base_path + '_graf.txt',
+                  lambda: self._save_graf_file(base_path + '_graf.txt', self.last_fitting_data))
 
         # 3. Combo image (figure png rendered by the plot functions + table)
         result_png_src = os.path.join(self.dir_path, 'result.png')
-        table_image = self.results_table.render_table_to_image()
         if os.path.exists(result_png_src):
-            self._save_combo_image_from_qimage(result_png_src, table_image,
-                                               base_path + '_combo.png')
+            write(base_path + '_combo.png', lambda: self._save_combo_image_from_qimage(
+                result_png_src, self.results_table.render_table_to_image(),
+                base_path + '_combo.png'))
 
         # 4. Copy SVG
         result_svg_src = os.path.join(self.dir_path, 'result.svg')
         if os.path.exists(result_svg_src):
-            shutil.copyfile(result_svg_src, base_path + '.svg')
+            write(base_path + '.svg', lambda: shutil.copyfile(result_svg_src, base_path + '.svg'))
 
         # 5. Distributions image (all Distr/Corr/Recon curves in one PNG), only
         #    when the model has a distribution. No separate SVG.
         self._save_distributions_png(base_path + '_distributions.png')
+        return problems
+
+    def _write_spectrum_parameters_file(self, filepath, entries, numbers=None):
+        """Write a parameters file (see spectrum_parameters); a failure is logged
+        in the terminal and never blocks the fit or the other result files."""
+        try:
+            folder = os.path.dirname(filepath)
+            if folder and not os.path.exists(folder):
+                os.makedirs(folder)
+            write_parameters_file(filepath, entries, numbers)
+            print(f"[Spectrum parameters] saved {filepath}")
+        except (OSError, ValueError) as e:
+            print(f"[Spectrum parameters] {os.path.basename(filepath)} not saved: {e}")
 
     def _save_distributions_png(self, filepath):
         """Render every distribution/correlation (Distr, Corr, Recon) into one PNG.
@@ -3679,13 +3941,24 @@ class PhysicsApp(QMainWindow):
         np.savetxt(filepath, data_array, delimiter='\t', fmt='%.6e',
                    header=header, comments='')
     
-    def _save_parameters_file(self, filepath, parameters, errors, model_list, 
-                             parameter_names, spectrum_file, chi2, mode):
-        """Save parameters and errors to text file with proper names and model info"""
+    def _save_parameters_file(self, filepath, parameters, errors, model_list,
+                             parameter_names, spectrum_file, chi2, mode,
+                             spectrum_parameters=None):
+        """Save parameters and errors to text file with proper names and model info.
+
+        When the fit used N, N1, N2, ... (*spectrum_parameters*), their values
+        follow the file name as the columns N, N1, N2, ...
+        """
         # Build header row with model names and parameter/error pairs
         names = ['#File']
         values = []
-        
+        if spectrum_parameters is not None:
+            names.append('N')
+            values.append(spectrum_parameters.number)
+            for k, value in enumerate(spectrum_parameters.values):
+                names.append(f'N{k + 1}')
+                values.append(value)
+
         # Process each model component
         param_idx = 0
         for comp_idx, (model_name, param_names) in enumerate(zip(model_list, parameter_names)):

@@ -74,6 +74,15 @@ These rows take **text**, not numbers:
   (Tikhonov) knobs on the first and second derivative of the reconstructed
   distribution — raise them if the result oscillates.
 
+Every one of these texts may also use the **parameters of the spectrum** (see
+section 7): `N` is the spectrum's number in the sequence — its position in the
+path box, counted from 1 — and `N1`, `N2`, … are the numbers given with it
+(a temperature, an angle, …). So `p[9]+N*2` or `p[9]+0.01*N1`, linked into a
+parameter with `=[X,1]`, forces that parameter to follow the spectrum number or
+the temperature through a sequence. A single fit and **Show model** use the
+first spectrum (`N` = 1). A value a spectrum does not have blocks the start with
+a message, and the names are refused in a model with `Nbaseline`.
+
 The `par` field of `Distr`/`Corr`/`Recon` is **not** the flat `p[i]` number: it
 counts the parameters of the model row it attaches to, `1` being that row's
 second parameter (`δ` for most models). The amplitude (`T`, column 0) cannot be
@@ -167,6 +176,28 @@ an explicit message and reddened fields rather than failing halfway through.
   mean **sequence** fitting — unless the model contains `Nbaseline` rows, in
   which case they are fitted **simultaneously** (one `Nbaseline` per extra
   spectrum).
+- A spectrum in the path box may carry parameters of its own, used as `N1`,
+  `N2`, … in the formulas (section 4): write it as a tuple,
+  `[('Fe_4K.dat', 4.2, 0), ('Fe_77K.dat', 77, 0)]`. Plain paths and tuples may
+  be mixed.
+- *Sequence Fitting → Load parameters of the spectra* fills those tuples in from
+  a text file, one parameter per line, one number per spectrum, separated by
+  spaces and/or tabs. Lines starting with `#` are comments (e.g. `#N1`), except
+  two reserved names: `#basename`, whose next line names the spectrum of each
+  column (the numbers then go by name, not by position), and `#number`, whose
+  next line gives each spectrum's `N` and reorders the path box accordingly —
+  it needs `#basename`. Without `#basename` every line needs at least one number
+  per spectrum. When the file does not fit, nothing changes and the log says
+  why. *Save parameters of the spectra* writes the path box as it is now, always
+  with `#basename` and `#number`:
+
+      #basename
+      Fe_4K.dat	Fe_77K.dat
+      #number
+      1	2
+      #N1
+      4.2	77
+
 - A path ending in `/` or `\` is read as a folder: the first `.dat`/`.mca` in it
   is used.
 - On Linux with the `bliss` package installed (it is not a dependency), a Bliss
@@ -178,11 +209,15 @@ an explicit message and reddened fields rather than failing halfway through.
 
 ## 8. Saving
 
-**Save result** writes six files next to the save path, not one. `<base>` is the
+**Save result** writes six or seven files next to the save path, not one. `<base>` is the
 save path without the spectrum's extension: `Fe_4.2K.dat` gives
 `Fe_4.2K_param.txt`, and a dot inside the name itself (the `4.2K`) is kept.
 
-- `<base>_param.txt` — parameters, errors, χ²  (appended in sequence mode)
+- `<base>_param.txt` — parameters, errors, χ²; when the fit used the parameters
+  of the spectrum, `N`, `N1`, `N2`, … follow the file name
+- `<base>_inputs.txt` — those parameters as the fit used them, in the
+  format of *Load parameters of the spectra* (only when there are any; a
+  sequence writes one for its whole run when it starts)
 - `<base>_graf.txt` — the plotted curves: velocity, data, baseline, fit, then
   one column per component (and the distribution curves, if any). A simultaneous
   (`Nbaseline`) fit writes that whole block for every spectrum, prefixed
@@ -201,6 +236,13 @@ save path without the spectrum's extension: `Fe_4.2K.dat` gives
   question, separate from the one for the result files: answering "no" there
   keeps the older file and leaves the five result files as they were just
   written. (Sequence fitting skips this — it would ask once per spectrum.)
+
+A **sequence** saves as it goes, without asking: ONE `<base>_param.txt` for the
+whole run — a line of names, then one line per fitted spectrum — and ONE
+`<base>_result_table_PNG.html` with the pictures of every spectrum (figure +
+table, and the distributions when there are any). Both are started afresh by
+each run. The curves, figure and pictures of each spectrum are also saved next
+to them under the spectrum's own name (`Fe_4K_graf.txt`, `Fe_4K_combo.png`, …).
 
 ## 9. Other
 

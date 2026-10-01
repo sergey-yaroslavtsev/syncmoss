@@ -3,7 +3,8 @@ name: _macOS (PyInstaller universal2 app)
 # Modelled on crispy's release workflow (github.com/mretegan/crispy):
 #   1. build the app natively on an Apple Silicon AND an Intel runner,
 #   2. fuse the two bundles into one universal2 SYNCmoss.app,
-#   3. sign it (Developer ID + hardened runtime), pack the DMG, notarize, staple.
+#   3. sign it (Developer ID + hardened runtime), pack the drag-and-drop DMG
+#      (window laid out as crispy's create-dmg.sh does), notarize, staple.
 #
 # Signing and notarization run only when the Apple secrets are set (repository
 # Settings -> Secrets and variables -> Actions; release.yml forwards them).
@@ -136,6 +137,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -377,24 +380,118 @@ jobs:
           ditto dist/universal2/SYNCmoss.app "${RUNNER_TEMP}/smoke/SYNCmoss.app"
           "${RUNNER_TEMP}/smoke/SYNCmoss.app/Contents/MacOS/SYNCmoss" --test
 
+      # The drag-and-drop installer window, built as crispy's
+      # package/create-dmg.sh does: a writable image holding the app, a link to
+      # /Applications, the background picture (bundle/dmg_background.pdf) and
+      # the volume icon; Finder lays the window out (positions match the
+      # picture); then it is converted to the compressed read-only DMG.
       - name: Create the DMG
         run: |
           set -euo pipefail
+          APP="dist/universal2/SYNCmoss.app"
           STAGING="${RUNNER_TEMP}/dmg"
-          mkdir -p "${STAGING}"
-          ditto dist/universal2/SYNCmoss.app "${STAGING}/SYNCmoss.app"
+          RW_DMG="${RUNNER_TEMP}/SYNCmoss-rw.dmg"
+          rm -rf "${STAGING}" "${RW_DMG}"
+
+          mkdir -p "${STAGING}/.background" "${STAGING}/.fseventsd"
+          ditto "${APP}" "${STAGING}/SYNCmoss.app"
           ln -s /Applications "${STAGING}/Applications"
-          # hdiutil is occasionally "Resource busy" on hosted runners: retry.
+          cp bundle/dmg_background.pdf "${STAGING}/.background/background.pdf"
+          # The volume shows the app's own icon.
+          ICON_FILE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "${APP}/Contents/Info.plist")"
+          case "${ICON_FILE}" in *.icns) ;; *) ICON_FILE="${ICON_FILE}.icns" ;; esac
+          cp "${APP}/Contents/Resources/${ICON_FILE}" "${STAGING}/.VolumeIcon.icns"
+          touch "${STAGING}/.fseventsd/no_log"
+
+          # Room for the .DS_Store Finder writes. hdiutil is occasionally
+          # "Resource busy" on hosted runners: retry.
+          SIZE_MB=$(( $(du -sm "${STAGING}" | cut -f1) + 50 ))
           for attempt in 1 2 3; do
-            if hdiutil create -volname SYNCmoss -srcfolder "${STAGING}" -ov -format UDZO -imagekey zlib-level=9 dist/SYNCmoss.dmg; then
+            if hdiutil create -format UDRW -fs APFS -volname SYNCmoss -size "${SIZE_MB}m" \
+                -srcfolder "${STAGING}" -ov "${RW_DMG}"; then
               break
             fi
             if [ "${attempt}" -eq 3 ]; then
               exit 1
             fi
-            echo "hdiutil failed, retrying in 10 s"
+            echo "hdiutil create failed, retrying in 10 s"
             sleep 10
           done
+
+          ATTACH="$(hdiutil attach -readwrite -noverify -noautoopen "${RW_DMG}" | grep '^/dev/')"
+          DEVICE="$(echo "${ATTACH}" | head -n 1 | awk '{print $1}')"
+          MOUNT_POINT="$(echo "${ATTACH}" | awk -F'\t' '$3 != "" {print $3}' | tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "Attached ${DEVICE} at ${MOUNT_POINT}"
+          if [ ! -d "${MOUNT_POINT}" ]; then
+            echo "::error::could not find where the image was mounted"
+            echo "${ATTACH}"
+            exit 1
+          fi
+          SetFile -a C "${MOUNT_POINT}"
+          SetFile -a V "${MOUNT_POINT}/.background"
+
+          LAYOUT="${RUNNER_TEMP}/dmg-layout.applescript"
+          cat > "${LAYOUT}" <<'EOF'
+          on run argv
+              tell application "Finder"
+                  tell disk (item 1 of argv)
+                      open
+                      set current view of container window to icon view
+                      set toolbar visible of container window to false
+                      set statusbar visible of container window to false
+                      set bounds of container window to {200, 120, 700, 420}
+                      set viewOptions to the icon view options of container window
+                      set arrangement of viewOptions to not arranged
+                      set icon size of viewOptions to 96
+                      set background picture of viewOptions to file ".background:background.pdf"
+                      set position of item "SYNCmoss.app" to {114, 124}
+                      set position of item "Applications" to {386, 124}
+                      close
+                      open
+                      delay 1
+                      update without registering applications
+                      delay 2
+                      close
+                  end tell
+              end tell
+          end run
+          EOF
+          # Finder scripting can time out on a busy runner: retry.
+          for attempt in 1 2 3; do
+            if osascript "${LAYOUT}" "$(basename "${MOUNT_POINT}")"; then
+              break
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "::error::Finder could not lay out the DMG window"
+              exit 1
+            fi
+            echo "Finder layout failed, retrying in 5 s"
+            sleep 5
+          done
+          # Finder saves the layout in .DS_Store when the window closes.
+          for _ in $(seq 1 30); do
+            [ -f "${MOUNT_POINT}/.DS_Store" ] && break
+            sleep 1
+          done
+          if [ ! -f "${MOUNT_POINT}/.DS_Store" ]; then
+            echo "::error::Finder did not save the DMG window layout (.DS_Store)"
+            exit 1
+          fi
+
+          sync
+          for attempt in 1 2 3 4 5; do
+            if hdiutil detach "${DEVICE}"; then
+              break
+            fi
+            if [ "${attempt}" -eq 5 ]; then
+              hdiutil detach "${DEVICE}" -force
+              break
+            fi
+            echo "volume still busy, retrying in 5 s"
+            sleep 5
+          done
+          hdiutil convert "${RW_DMG}" -format UDZO -imagekey zlib-level=9 -ov -o dist/SYNCmoss.dmg
+          rm -f "${RW_DMG}"
 
       - name: Notarize and staple the DMG
         id: notarize

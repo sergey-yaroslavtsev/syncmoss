@@ -39,6 +39,7 @@ from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortcut, QTextDocument
 from syncmoss.constants import numro, numco, contrast_text_color
 from syncmoss.support_math import calculate_intensity_percentage_error
+from syncmoss.spectrum_parameters import substitute
 # NOTE: the eval() calls in this module run against an explicit math_namespace
 # built from np.* — no bare ``from numpy import ...`` block is needed here.
 
@@ -100,6 +101,7 @@ class ResultsTable(QWidget):
         self.current_model_colors = []
         self.current_parameter_names = []
         self.current_chi2 = 0.0
+        self.current_spectrum_parameters = None   # N, N1, ... the fit used
         self.current_links = {}
         # The fitted model (model_io.fitted_model_rows) that "Save result"
         # writes as <base>_result_model.mdl; set by the fit handlers.
@@ -251,7 +253,8 @@ class ResultsTable(QWidget):
         QApplication.clipboard().setText(text)
         return text
 
-    def fill_table(self, parameters, model_list, model_colors, parameter_names, covariance_matrix, errors=None, fix=None, expression_texts=None):
+    def fill_table(self, parameters, model_list, model_colors, parameter_names, covariance_matrix, errors=None, fix=None, expression_texts=None,
+                   spectrum_parameters=None):
         """
         Main function to fill the results table with fitting results.
         
@@ -264,7 +267,10 @@ class ResultsTable(QWidget):
             errors: Array of parameter errors from fitting (optional)
             fix: Array of indices of fixed parameters (optional)
             expression_texts: Dict {component_index: expression_text} for Distr/Corr/Expression models (optional)
-        
+            spectrum_parameters: SpectrumParameters the fit used for N, N1, ... (optional).
+                The texts are kept as typed ("Take result" puts them back into
+                the table); the values are substituted only to evaluate them.
+
         Workflow:
             1. Clear existing table
             2. Fill parameter values (rows 1, 4, 7, ...)
@@ -280,7 +286,8 @@ class ResultsTable(QWidget):
         self.current_model_colors = model_colors
         self.current_parameter_names = parameter_names
         self.current_chi2 = 0.0  # Will be set separately by main window
-        
+        self.current_spectrum_parameters = spectrum_parameters
+
         # Store expression texts
         self.expression_texts = expression_texts if expression_texts is not None else {}
         
@@ -648,7 +655,7 @@ class ResultsTable(QWidget):
         if component not in self.expression_texts:
             return None, None
         
-        expr_text = self.expression_texts[component]
+        expr_text = substitute(self.expression_texts[component], self.current_spectrum_parameters)
         params = self.fit_parameters
         errors = self.errors
         cov = self.covariance_matrix
@@ -752,8 +759,16 @@ class ResultsTable(QWidget):
                     for table_row in [name_row, value_row, error_row]:
                         if table_row < self.num_rows and label_idx < len(self.labels[table_row]):
                             text = self.labels[table_row][label_idx].text()
-                            # Remove the QLabel widget and use a QTableWidgetItem instead
+                            # Remove the QLabel widget and use a QTableWidgetItem instead.
+                            # removeCellWidget only unregisters the label: it stays a
+                            # visible child of the table until Qt deletes it later, so
+                            # the picture of the table taken right after a fit drew it
+                            # under the item (the texts on top of each other). Hide it now.
+                            old_label = self.interactive_table.cellWidget(table_row, last_col)
                             self.interactive_table.removeCellWidget(table_row, last_col)
+                            if old_label is not None:
+                                old_label.hide()
+                                old_label.deleteLater()
                             item = QTableWidgetItem(text)
                             item.setFont(QFont('Arial', 10))
                             item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
@@ -925,31 +940,35 @@ class ResultsTable(QWidget):
         self.correlation_table.resizeColumnsToContents()
         self.correlation_table.resizeRowsToContents()
     
+    def _rows_with_content(self):
+        """Table rows with something in them: a button, a label or a table item.
+
+        The items matter: the spanned last column of Distr/Corr/Expression is a
+        QTableWidgetItem, not a label (see _apply_expression_spanning), and an
+        Expression's value and ± rows have nothing else in them.
+        """
+        rows = []
+        table = self.interactive_table
+        for row in range(table.rowCount()):
+            for col in range(table.columnCount()):
+                widget = table.cellWidget(row, col)
+                item = table.item(row, col)
+                if (widget is not None and hasattr(widget, 'text') and widget.text().strip()) \
+                        or (item is not None and item.text().strip()):
+                    rows.append(row)
+                    break
+        return rows
+
     def render_table_to_image(self):
         """
         Render the interactive results table to a QImage (full content, no scrollbars, no empty rows).
-        
+
         Returns:
             QImage: Rendered table image
         """
         # Find non-empty rows (rows where at least one cell has content)
-        non_empty_rows = []
-        for row in range(self.interactive_table.rowCount()):
-            has_content = False
-            # Check button column (column 0)
-            button = self.interactive_table.cellWidget(row, 0)
-            if button and button.text().strip():
-                has_content = True
-            # Check label columns
-            if not has_content:
-                for col in range(1, self.interactive_table.columnCount()):
-                    widget = self.interactive_table.cellWidget(row, col)
-                    if widget and hasattr(widget, 'text') and widget.text().strip():
-                        has_content = True
-                        break
-            if has_content:
-                non_empty_rows.append(row)
-        
+        non_empty_rows = self._rows_with_content()
+
         if not non_empty_rows:
             # Return a minimal black image if no content
             image = QImage(100, 100, QImage.Format.Format_ARGB32)

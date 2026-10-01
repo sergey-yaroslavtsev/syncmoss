@@ -13,6 +13,7 @@ declining it must not touch what was already written.
 -> ``Fe_4.2K``), and never cut at the dot of a sample name (``Fe_4.2K`` stays).
 """
 import copy
+import errno
 import os
 
 import numpy as np
@@ -299,14 +300,71 @@ def test_save_result_as_keeps_a_dotted_name(physics_app, tmp_path, monkeypatch, 
 
 
 @pytest.mark.gui
-def test_sequential_results_are_named_after_the_spectrum(physics_app, tmp_path):
+def test_a_sequence_writes_one_param_file_with_a_line_per_spectrum(physics_app, tmp_path):
+    """<save base>_param.txt: the names line, then one line per spectrum --
+    started afresh by the run, whatever an older run left there."""
     app = physics_app
     _fit(app)
-    app.save_path.setText(os.path.join(str(tmp_path), 'first.dat'))
+    app.save_path.setText(os.path.join(str(tmp_path), 'run.dat'))
+    run_file = os.path.join(str(tmp_path), 'run_param.txt')
+    with open(run_file, 'w', encoding='utf-8') as f:
+        f.write('#File\told run\nold.dat\t1\n')
+    app._sequence_rows_written = 0                  # what start_sequential_fitting does
 
-    app._save_sequential_result_files(os.path.join('elsewhere', 'Fe_4.2K.dat'))
+    for name in ('Fe_4.2K.dat', 'Fe_77K.dat'):
+        app._save_sequential_result_files(os.path.join('elsewhere', name))
 
-    assert os.path.exists(os.path.join(str(tmp_path), 'Fe_4.2K_param.txt'))
+    with open(run_file, encoding='utf-8') as f:
+        lines = f.read().splitlines()
+    assert len(lines) == 3
+    assert lines[0].startswith('#File\tmodel')
+    assert [line.split('\t')[0] for line in lines[1:]] == ['Fe_4.2K.dat', 'Fe_77K.dat']
+    # no file per spectrum, and the sample name's dot is kept
+    assert not os.path.exists(os.path.join(str(tmp_path), 'Fe_4.2K_param.txt'))
+    assert not os.path.exists(os.path.join(str(tmp_path), 'Fe_4_param.txt'))
+
+
+@pytest.mark.gui
+def test_a_picture_that_cannot_be_written_costs_neither_the_row_nor_the_rest(
+        physics_app, tmp_path, monkeypatch):
+    """An image viewer showing the old 005_combo.png makes Windows refuse to
+    overwrite it ('Invalid argument'). That error used to skip the run's row
+    count, so the next spectrum started the run's _param.txt afresh and the
+    first spectrum's row was lost; it also skipped its HTML entry."""
+    app = physics_app
+    _fit(app)
+    out = tmp_path / 'out'
+    out.mkdir()
+    app.save_path.setText(str(out / 'run'))
+    figures = tmp_path / 'figures'
+    figures.mkdir()
+    (figures / 'result.png').write_bytes(b'')    # a figure exists, so a combo is made
+    app.dir_path = str(figures)
+    app._sequence_rows_written = 0               # what start_sequential_fitting does
+    app._sequence_save_problems = []
+    app._start_sequence_html()
+
+    def combo(plot_path, table_qimage, output_path):
+        if os.path.basename(output_path) == '005_combo.png':
+            raise OSError(errno.EINVAL, 'Invalid argument', output_path)
+        with open(output_path, 'wb') as f:
+            f.write(b'png')
+
+    monkeypatch.setattr(app, '_save_combo_image_from_qimage', combo)
+    for name in ('005.dat', '009.dat'):
+        app._save_sequential_result_files(os.path.join('elsewhere', name))
+    app._finish_sequence_html()
+
+    with open(out / 'run_param.txt', encoding='utf-8') as f:
+        rows = [line.split('\t')[0] for line in f.read().splitlines()[1:]]
+    assert rows == ['005.dat', '009.dat']                  # 005's row survived
+    assert (out / '009_combo.png').exists()
+    assert len(app._sequence_save_problems) == 1
+    assert app._sequence_save_problems[0].startswith('005_combo.png: Invalid argument')
+    assert 'open in another program' in app._sequence_save_problems[0]
+    page = (out / 'run_result_table_PNG.html').read_text(encoding='utf-8')
+    assert 'Picture not saved: 005_combo.png' in page
+    assert page.count('<img src="data:image/png;base64,') == 1   # 009's picture
 
 
 @pytest.mark.gui

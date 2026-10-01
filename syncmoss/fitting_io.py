@@ -19,6 +19,7 @@ from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_b
 from syncmoss.models_positions import mod_pos
 from syncmoss.constants import SMS_POL_DEFAULT
 from syncmoss.spectrum_io import load_spectrum
+from syncmoss.spectrum_parameters import first_spectrum_parameters, table_uses_names
 from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
     compute_norm,
@@ -287,17 +288,21 @@ def chi2_spread(n_points, n_free):
     return float(np.sqrt(2.0 / dof))
 
 
-def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_params=None):
+def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_params=None,
+                        spectrum_parameters=None):
     """
     Fit single or multiple Mössbauer spectra (simultaneous fitting with Nbaseline).
-    
+
     Args:
         app: Main application object
         spectrum_file: Path to spectrum file (or list of files for simultaneous fitting)
         pool: Multiprocessing pool for parallel computation
         background: Optional background value (Ns) to override parameter table (for sequential fitting)
         sequence_params: Optional parameter array to use instead of reading from table (for sequential fitting)
-    
+        spectrum_parameters: SpectrumParameters -- what N, N1, N2, ... stand for in
+            this fit (for sequential fitting); by default the first spectrum
+            of the path box
+
     Returns:
         dict with keys:
             - 'success': bool
@@ -313,8 +318,16 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
     try:
         instrumental_note = ''
 
-        # Read model configuration using the full read_model function
-        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model_full(app)
+        # Read model configuration using the full read_model function, with the
+        # names N, N1, N2, ... replaced by this spectrum's values
+        if spectrum_parameters is None:
+            spectrum_parameters = first_spectrum_parameters(app)
+        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = \
+            read_model_full(app, spectrum_parameters=spectrum_parameters)
+        # Recorded with the result (the _param.txt columns and the parameters
+        # file) when the spectrum has values or the formulas use the names
+        if 'Nbaseline' in model or not (spectrum_parameters.values or table_uses_names(app)):
+            spectrum_parameters = None
 
         p = np.array(p, dtype=float)
         
@@ -720,6 +733,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'Cor_substituted': list(Cor_t),  # Correlation expressions (substituted)
                 'Recon': [np.asarray(w, dtype=float) for w in Recon],  # fitted reconstruction weights
                 'instrumental_note': instrumental_note,
+                'spectrum_parameters': spectrum_parameters,  # N, N1, ... of this fit (or None)
             }
     
     except m5.FitInterrupted:

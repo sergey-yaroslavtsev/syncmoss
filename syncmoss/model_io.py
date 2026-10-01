@@ -19,6 +19,8 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from syncmoss.constants import numco, number_of_baseline_parameters, mdl_color_names, contrast_text_color
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
 from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
+from syncmoss.spectrum_parameters import (
+    substitute, names_used, missing_names, first_spectrum_parameters)
 
 
 def mod_len_def(mod, include_special=True):
@@ -757,7 +759,7 @@ def parse_recon_weights(text, num):
     return np.full(num, 1.0 / num, dtype=float)
 
 
-def read_model(main_window):
+def read_model(main_window, spectrum_parameters=None, substitute_names=True):
     """
     Read model parameters from the parameters table.
 
@@ -765,8 +767,18 @@ def read_model(main_window):
     Library_window and syncmoss_main to turn the on-screen table into the flat
     parameter array, constraints and expression lists the solver expects.
 
+    The names N, N1, N2, ... in the Expression/Distr/Corr texts are replaced
+    by the values of one spectrum (see spectrum_parameters), so every consumer
+    gets texts it can evaluate: *spectrum_parameters* when given (a sequence
+    passes each spectrum's own), else the first spectrum of the path box. A
+    model with Nbaseline is left alone -- the names are refused there (see
+    validate_user_expressions) -- and so is everything when
+    *substitute_names* is False.
+
     Args:
         main_window: The main PhysicsApp window instance
+        spectrum_parameters: SpectrumParameters of the spectrum being computed
+        substitute_names: False returns the texts exactly as typed
 
     Returns:
         tuple: (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN,
@@ -897,6 +909,13 @@ def read_model(main_window):
             Recon.append(parse_recon_weights(weights_text, num))
             ReconN = np.append(ReconN, len(p) - 1)
 
+    if substitute_names and 'Nbaseline' not in model:
+        if spectrum_parameters is None:
+            spectrum_parameters = first_spectrum_parameters(main_window)
+        Expr = [substitute(text, spectrum_parameters) for text in Expr]
+        Distri = [substitute(text, spectrum_parameters) for text in Distri]
+        Cor = [substitute(text, spectrum_parameters) for text in Cor]
+
     return (model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN)
 
 
@@ -965,30 +984,49 @@ def validate_user_expressions(main_window):
     Distr/Corr in the models-module namespace with the distribution axis ``X``
     and ``p`` available (mimicking ``eval(...) + 0*X`` in models.TImod).
 
+    The names N, N1, N2, ... are evaluated with the values of the first
+    spectrum of the path box, as read_model gives them; a name that spectrum
+    has no value for, or any of them in a model with Nbaseline, is a problem.
+
     Returns:
         list of problem dicts ``{'kind', 'occurrence', 'row', 'text', 'error'}``;
         empty when everything evaluates. ``row`` is the parameters-table row of
-        the offending field (None if it could not be located).
+        the offending field (None if it could not be located). ``text`` is the
+        text as typed.
     """
     import syncmoss.minimi_lib as mi
     import syncmoss.models as m5
 
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
+    typed = read_model(main_window, substitute_names=False)
+    typed = {'Expression': typed[7], 'Distr': typed[5], 'Corr': typed[6]}
+    parameters = first_spectrum_parameters(main_window)
     X = np.linspace(-1.0, 1.0, 8)
     rows = main_window.params_table.get_expression_rows()
     problems = []
 
     def _check(kind, occurrence, text, evaluator):
+        as_typed = typed[kind][occurrence]
         try:
             if not str(text).strip():
                 raise ValueError("expression is empty")
+            if names_used([as_typed]) and 'Nbaseline' in model:
+                raise ValueError("N, N1, N2, ... work only when every spectrum is fitted "
+                                 "on its own (single or sequence fit), not in a model "
+                                 "with Nbaseline")
+            missing = missing_names([as_typed], parameters)
+            if missing:
+                spectrum = os.path.basename(parameters.path) if parameters.path else "the spectrum"
+                raise ValueError(f"{', '.join(missing)} has no value for {spectrum} -- give the "
+                                 f"numbers in the path box as ('file', N1, N2, ...) or load "
+                                 f"them from the Sequence Fitting menu")
             value = evaluator(str(text))
             np.asarray(value, dtype=float)
         except Exception as e:
             kind_rows = rows.get(kind, [])
             row = kind_rows[occurrence] if occurrence < len(kind_rows) else None
             problems.append({'kind': kind, 'occurrence': occurrence, 'row': row,
-                             'text': text, 'error': e})
+                             'text': as_typed, 'error': e})
 
     for k, text in enumerate(Expr):
         _check('Expression', k, text, lambda s: float(mi._eval_expr(s, p)))
