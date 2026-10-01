@@ -4,7 +4,7 @@ import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
 import syncmoss.error_reporter as error_reporter
 from syncmoss.syncmoss_main import PhysicsApp
-__VERSION__ = "0.4.1"
+__VERSION__ = "0.4.2"
 
 
 def _run_gui_smoke():
