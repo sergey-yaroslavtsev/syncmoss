@@ -148,6 +148,13 @@ an explicit message and reddened fields rather than failing halfway through.
   the added parameters are re-indexed). `Copy`/`Paste`, `Insert`/`Delete` act on
   the row you picked them from.
 - The light/dark theme toggle lives in the *Supp* menu (first entry).
+- *Supp* → **Set parameters of Be (optics impurity)** / **of KB (Nanoscope
+  impurity)** edit the two impurity Doublets (`Be.txt`, `KB.txt`): the current
+  state of the beamline, used by the `Be`/`KB_nano` model entries, the
+  calibration and the results table, which lists a row equal to one of them as
+  *Impurity* and leaves it out of the percentages. Rows already in the table keep
+  their numbers — pick the entry again to load new ones; for old data, set the
+  values the beamline had then.
 
 ## 7. Spectrum files and instrumental function
 

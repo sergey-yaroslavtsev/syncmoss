@@ -305,13 +305,15 @@ single (Sextet-equivalent) sextet at the same Am.
 ## 3. Presets and utility component rows
 
 ### Be
-Preset impurity component (pre-filled Doublet-like row loaded from Be.txt).
+Preset impurity component (pre-filled Doublet-like row loaded from Be.txt): the
+beamline optics. Edit it in Supp → "Set parameters of Be (optics impurity)".
 
 Parameters are identical to Doublet:
 - T, $\delta$, $\varepsilon$, L, G, $\theta_k$, $\varphi_h$, A, G2/G1.
 
 ### KB_nano
-Preset impurity component (pre-filled Doublet-like row loaded from KB.txt).
+Preset impurity component (pre-filled Doublet-like row loaded from KB.txt): the
+Nanoscope. Edit it in Supp → "Set parameters of KB (Nanoscope impurity)".
 
 Parameters are identical to Doublet:
 - T, $\delta$, $\varepsilon$, L, G, $\theta_k$, $\varphi_h$, A, G2/G1.

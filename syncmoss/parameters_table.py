@@ -145,6 +145,10 @@ MODEL_OPTIONS = [
 # to visually split: fittable models | presets/utility.
 _MENU_SEPARATOR_BEFORE = {'Be'}
 
+# Parameter names of a (polarized) Doublet row -- also those of the Be / KB
+# impurity presets, which are Doublets, and of their Supp editors.
+DOUBLET_NAMES = ('T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1')
+
 # Rows that do not stand on their own: each one re-shoots the fittable component
 # in front of it, replacing that component's parameter number 'par'. Consecutive
 # ones form a single chain over one base component (see get_distribution_chains).
@@ -1167,7 +1171,7 @@ class ParametersTable(QWidget):
         # unmagnetised, Am=1 fully magnetised at the axis). The angles (theta_k,
         # phi_h; alpha_k), A and Am are FIXED by default -- untick "fix" to refine. ---
         elif model == 'Doublet':
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1']
+            names = DOUBLET_NAMES
             values = ['1.0', '0.0', '1.0', _NAT, '0.1', theta_default, '0.0', '0', '1.0']
             lowers = ['0', '', '', _NAT, '0', '-180', '-360', '-0.5', '0']
             uppers = ['', '', '', '', '', '180', '360', '1', '']
@@ -1254,7 +1258,7 @@ class ParametersTable(QWidget):
         elif model == 'Be':
             # Impurity preset based on the polarized Doublet, loaded from Be.txt
             # (9-value polarized layout: T, d, e, L, G, theta_k, phi_h, A, G2/G1).
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1']
+            names = DOUBLET_NAMES
             try:
                 be_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'Be.txt'), delimiter='\t')
                 values = [str(be_param[i]) for i in range(9)]
@@ -1268,7 +1272,7 @@ class ParametersTable(QWidget):
         elif model == 'KB_nano':
             # Impurity preset based on the polarized Doublet, loaded from KB.txt
             # (9-value polarized layout, as for 'Be').
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'L, mm/s', 'G, mm/s', 'θk, °', 'φh, °', 'A', 'G2/G1']
+            names = DOUBLET_NAMES
             try:
                 kb_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'KB.txt'), delimiter='\t')
                 values = [str(kb_param[i]) for i in range(9)]

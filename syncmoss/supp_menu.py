@@ -4,7 +4,8 @@ The "Supp" (support) button menu and its actions.
 Everything reachable from the Supp button in the main window lives here:
 the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
 and the handlers for the small settings dialogs (integral points, instrumental
-lines, polarization), the Library export/import, the two markdown viewers
+lines, polarization, the Be / KB impurity presets), the Library export/import,
+the two markdown viewers
 (models description and quick help), the License window, the (parked)
 Hamiltonian initial-guess helper and the highlighted "Contact the author"
 entry that closes the menu.
@@ -43,6 +44,18 @@ from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
 )
 from syncmoss.instrumental_window import InstrumentalFunctionWindow
+from syncmoss.parameters_table import DOUBLET_NAMES
+
+# The two impurity presets of the model menu ('Be' and 'KB_nano'): a Doublet
+# each, kept in params_dir as one tab-separated line of its nine values. They
+# describe the CURRENT state of the beamline and change with it (data of
+# another time may need other values), so they are editable here. The model
+# menu, the calibration, the instrumental-function search and the results
+# table (which reports a row equal to one as the impurity) all read the files.
+IMPURITY_PRESETS = (
+    ('Be.txt', "Be (optics impurity)"),
+    ('KB.txt', "KB (Nanoscope impurity)"),
+)
 
 # Accent used to highlight the "Contact the author" entry, per mode. Qt offers
 # no per-action text color (a QMenu stylesheet would repaint every item), so the
@@ -114,6 +127,13 @@ def build_supp_menu(main_window):
         "Choose how to approximate instrumental function", main_window)
     ins_method_action.triggered.connect(
         lambda: open_instrumental_method_dialog(main_window))
+    preset_actions = []
+    for file_name, label in IMPURITY_PRESETS:
+        action = QAction(f"Set parameters of {label}", main_window)
+        action.triggered.connect(
+            lambda _checked=False, f=file_name, l=label:
+                open_impurity_preset_dialog(main_window, f, l))
+        preset_actions.append(action)
     plot_ins_memory_action = QAction("Plot instrumental function from memory", main_window)
     plot_ins_memory_action.triggered.connect(lambda: plot_instrumental_from_memory(main_window))
     plot_ins_spectrum_action = QAction("Plot instrumental function from spectrum", main_window)
@@ -151,6 +171,8 @@ def build_supp_menu(main_window):
     # still want the standalone editor.
     menu.addAction(set_polarization_action)
     menu.addAction(ins_method_action)
+    for action in preset_actions:
+        menu.addAction(action)
     menu.addSeparator()
     menu.addAction(plot_ins_memory_action)
     menu.addAction(plot_ins_spectrum_action)
@@ -595,6 +617,89 @@ def open_polarization_dialog(main_window):
     if changed:
         main_window.SMS_pol = float(main_window.polarization_input.text())
         main_window.set_status(f"Polarization set to: {main_window.polarization_input.text()}", "blue")
+
+
+def open_impurity_preset_dialog(main_window, file_name, label):
+    """Edit an impurity preset: the nine Doublet values in params_dir/*file_name*.
+
+    The fields show the file's own texts, so OK without a change writes the same
+    numbers back. On OK every field must hold a number; the file is then
+    rewritten as one tab-separated line. Rows already in the table keep their
+    numbers -- picking the preset in a row again loads the new ones. Returns
+    True when the file was written.
+    """
+    path = os.path.join(main_window.params_dir, file_name)
+    try:
+        with open(path, encoding='utf-8') as f:
+            current = f.read().split()
+    except OSError:
+        current = []
+    unreadable = len(current) != len(DOUBLET_NAMES)
+    if unreadable:
+        current = [''] * len(DOUBLET_NAMES)
+
+    title = f"Set parameters of {label}"
+    dialog = QDialog(main_window)
+    dialog.setWindowTitle(title)
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(_wrapped_label(
+        f"The Doublet the model menu puts in a row for {label} -- the current "
+        f"state of the beamline, kept in {file_name}. Rows already in the table "
+        f"keep their numbers; pick it again in a row to load the new ones.", dialog))
+    if unreadable:
+        layout.addWidget(_wrapped_label(
+            f"{file_name} could not be read: enter all {len(DOUBLET_NAMES)} values.", dialog))
+
+    editors = []
+    for name, text in zip(DOUBLET_NAMES, current):
+        row = QHBoxLayout()
+        name_label = QLabel(name)
+        name_label.setMinimumWidth(90)
+        row.addWidget(name_label)
+        editor = QLineEdit(text, dialog)
+        validator = QDoubleValidator(-1e9, 1e9, 10, dialog)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        validator.setLocale(QLocale(QLocale.Language.C))
+        editor.setValidator(validator)
+        editor.setMaximumWidth(140)
+        row.addWidget(editor)
+        row.addStretch(1)
+        layout.addLayout(row)
+        editors.append(editor)
+
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                               | QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    dialog.setMinimumWidth(420)
+
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return False
+
+    # validate all nine before writing any of them
+    texts = []
+    for name, editor in zip(DOUBLET_NAMES, editors):
+        text = editor.text().strip()
+        try:
+            valid = bool(np.isfinite(float(text)))
+        except ValueError:
+            valid = False
+        if not valid:
+            QMessageBox.warning(main_window, title,
+                                f"{name}: please enter a number; {file_name} was not changed.")
+            return False
+        texts.append(text)
+
+    try:
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('\t'.join(texts) + '\n')
+    except OSError as e:
+        QMessageBox.warning(main_window, title, f"Could not write {path}:\n{e}")
+        main_window.set_status(f"Could not save the parameters of {label}: {e}", "red")
+        return False
+    main_window.set_status(f"Parameters of {label} saved to {path}", "blue")
+    return True
 
 
 def _draw_instrumental(main_window, curves, title, note):

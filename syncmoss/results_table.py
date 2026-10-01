@@ -45,7 +45,7 @@ from syncmoss.spectrum_parameters import substitute
 
 # How close a Doublet must be to the Be/KB preset to count as that impurity
 # (see _calculate_intensities). Rounding to four decimals moves a value by at
-# most 5e-5, so this takes a preset in either form.
+# most 5e-5, so this takes a preset rounded or not.
 _PRESET_ATOL = 1e-4
 
 class ClickableResultButton(QPushButton):
@@ -509,11 +509,11 @@ class ResultsTable(QWidget):
             
             if model_name == 'Doublet':
                 try:
-                    # Be.txt / KB.txt hold the polarized Doublet preset (9 values);
-                    # a Be/KB_nano row is fixed to those, so a match flags it. To
-                    # 1e-4, not exactly: the shipped presets are rounded to four
-                    # decimals, while a model saved with the earlier ones still
-                    # carries their long digits (A = 0.427037824 for today's 0.427).
+                    # Be.txt / KB.txt hold the polarized Doublet preset (9 values,
+                    # the CURRENT beamline state, edited in Supp); a Be/KB_nano row
+                    # is fixed to those, so a match flags it. To 1e-4, not exactly:
+                    # a model saved before the presets were rounded to four
+                    # decimals still carries the longer digits.
                     be_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'Be.txt'), delimiter='\t')
                     kb_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'KB.txt'), delimiter='\t')
                     fitted = self.fit_parameters[param_index:param_index+len(param_names)]

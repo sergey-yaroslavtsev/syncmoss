@@ -77,7 +77,7 @@ def test_four_decimals_and_never_an_exponent(value, text):
 
 
 def test_every_digit_is_kept_on_request_still_without_exponent():
-    assert format_parameter_value(0.427037824, decimals=None) == "0.427037824"
+    assert format_parameter_value(0.987654321, decimals=None) == "0.987654321"
     assert format_parameter_value(1.5e-05, decimals=None) == "0.000015"
 
 
@@ -85,7 +85,7 @@ def test_rounding_never_crosses_a_bound():
     # 0.12345 rounds to 0.1235, above an upper bound of 0.12346: keep it whole
     assert result_value_text(0.12345, False, '', '0.12346') == "0.12345"
     assert result_value_text(0.12345, False, '0.1234', '') == "0.1235"
-    assert result_value_text(0.427037824, True) == "0.427037824"
+    assert result_value_text(0.987654321, True) == "0.987654321"
 
 
 # --- the whole round trip ----------------------------------------------------
@@ -116,7 +116,7 @@ def test_user_bounds_survive_a_parameter_stopping_on_them(physics_app):
 def test_fitted_values_are_short_fixed_ones_exact(physics_app):
     pt = physics_app.params_table
     pt.select_model(1, 'Sextet')
-    _widgets(pt, 1, 8)[0].setText('0.427037824')     # A, fixed by default
+    _widgets(pt, 1, 8)[0].setText('0.987654321')     # A, fixed by default
     _widgets(pt, 1, 5)[2].setText('0.12346')         # G: an upper bound with 5 decimals
 
     _fake_fit(physics_app, {NS: 1234567.891234, T: 1.5e-05, DELTA: 0.123456789,
@@ -126,7 +126,7 @@ def test_fitted_values_are_short_fixed_ones_exact(physics_app):
     texts = {index: _widgets(pt, *where)[0].text() for index, where in
              {NS: (0, 0), T: (1, 0), DELTA: (1, 1), EPS: (1, 2), G: (1, 5), A: (1, 8)}.items()}
     assert texts == {NS: '1234567.8912', T: '0', DELTA: '0.1235', EPS: '0',
-                     G: '0.12345', A: '0.427037824'}
+                     G: '0.12345', A: '0.987654321'}
     for row in range(len(pt.row_widgets)):
         for col in range(pt.row_params[row]):
             assert 'e' not in _widgets(pt, row, col)[0].text().lower()
