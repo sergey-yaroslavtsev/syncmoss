@@ -78,7 +78,7 @@ from syncmoss.models import TI, FIT_CANCEL, FitInterrupted
 from syncmoss.Calibration import Calibration
 from syncmoss.constants import (model_colors, number_of_baseline_parameters,
                                SMS_POL_DEFAULT)
-from syncmoss.parameters_table import ParametersTable
+from syncmoss.parameters_table import ParametersTable, result_value_text
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def,
@@ -1442,6 +1442,9 @@ class PhysicsApp(QMainWindow):
         elif changed_checkbox == self.SMS_fit:  # SMS unchecked
             self.MS_fit.setChecked(True)  # Check MS
         self.refresh_jn0_for_mode()
+        # Nnr 0 <-> =[0,0.67] with the mode (idempotent, so the nested call the
+        # mutual exclusivity above makes is harmless)
+        self.params_table.match_nnr_to_mode(self.MS_fit.isChecked())
 
     def refresh_jn0_for_mode(self):
         """Point ``jn0_input`` at the SMS or the CMS setting, whichever applies.
@@ -1534,6 +1537,17 @@ class PhysicsApp(QMainWindow):
             errors = self.results_table.current_errors
             expression_texts = getattr(self.results_table, 'expression_texts', {})
             result_links = getattr(self.results_table, 'current_links', {})
+            # The rows of the model the result was fitted with
+            # (model_io.fitted_model_rows): their bounds go back into the table.
+            # select_model below refills every row with the model's DEFAULT
+            # bounds, so a bound the user had set used to vanish -- noticed when
+            # a parameter stopped on it and came back fixed. Used only while it
+            # still describes the same components.
+            result_rows = self.results_table.current_model_rows
+            result_rows = (result_rows[2] if result_rows is not None
+                           and list(result_rows[0]) == list(model_list) else None)
+            # Fixed when the fit started: these values keep every digit
+            fixed_at_start = {int(i) for i in np.ravel(getattr(self.results_table, 'fix', []))}
 
             if self.params_table.get_model_list() != model_list:
                 msg = QMessageBox(self)
@@ -1583,7 +1597,15 @@ class PhysicsApp(QMainWindow):
                     value_input = param_widget.layout().itemAt(1).widget()
                     top_layout = param_widget.layout().itemAt(0).layout()
                     fix_cb = top_layout.itemAt(1).widget()
-                    
+                    bounds_layout = param_widget.layout().itemAt(2).layout()
+                    lower_input = bounds_layout.itemAt(0).widget()
+                    upper_input = bounds_layout.itemAt(1).widget()
+
+                    # The bounds the result was fitted with (see result_rows)
+                    if result_rows is not None and col < len(result_rows[model_idx]):
+                        lower_input.setText(result_rows[model_idx][col][1])
+                        upper_input.setText(result_rows[model_idx][col][2])
+
                     # Expression / weight-vector placeholders carry no numeric value.
                     if model_name in ['Distr', 'Corr', 'Recon', 'Expression'] and col == num_params - 1:
                         expr_text = expression_texts.get(model_idx)
@@ -1599,18 +1621,19 @@ class PhysicsApp(QMainWindow):
                         param_index += 1
                         continue
                     
-                    # Set parameter value
+                    # Set parameter value: four decimals for a fitted one, every
+                    # digit for one the fit did not move (result_value_text)
                     value = parameters[param_index]
-                    value_input.setText(f"{value:.6g}")
-                    
+                    error = (errors[param_index]
+                             if errors is not None and param_index < len(errors) else None)
+                    fixed = param_index in fixed_at_start or (error is not None and np.isnan(error))
+                    value_input.setText(result_value_text(
+                        value, fixed, lower_input.text(), upper_input.text()))
+
                     # Check fix checkbox if error is nan
-                    if errors is not None and param_index < len(errors):
-                        error = errors[param_index]
-                        if np.isnan(error):
-                            fix_cb.setChecked(True)
-                        else:
-                            fix_cb.setChecked(False)
-                    
+                    if error is not None:
+                        fix_cb.setChecked(bool(np.isnan(error)))
+
                     param_index += 1
 
             # Write equations last, after any model insert/delete operations,
@@ -1759,6 +1782,34 @@ class PhysicsApp(QMainWindow):
             lines.append(f"{label}: '{prob['text']}' could not be evaluated: {prob['error']}")
         self.set_status(
             f"{action_label} was not started — invalid expression(s):\n" + "\n".join(lines),
+            "red",
+        )
+        return False
+
+    def check_values_within_bounds(self, action_label):
+        """Refuse a fit whose start value lies outside its own bounds.
+
+        minimi_hi would only print a warning and fit on from a point its bounds
+        forbid. Like the checks of check_user_expressions, the offending fields
+        turn red (they recover as soon as the user clicks into them) and the log
+        box names each one. Returns False when the fit must not start.
+        """
+        outside = self.params_table.get_out_of_bounds_parameters()
+        if not outside:
+            return True
+        lines = []
+        for slot in outside:
+            self.params_table.mark_parameter_error(slot['row'], slot['col'])
+            param = slot['param'] or f"column {slot['col']}"
+            if slot['lower']:
+                where = f"below its lower bound {slot['lower']}"
+            else:
+                where = f"above its upper bound {slot['upper']}"
+            lines.append(f"{slot['model']} (table row {slot['row']}): parameter "
+                         f"'{param}' = {slot['text']} is {where}")
+        self.set_status(
+            f"{action_label} was not started — value(s) outside their bounds "
+            f"(bring the value inside, or change the bound):\n" + "\n".join(lines),
             "red",
         )
         return False
@@ -2449,7 +2500,11 @@ class PhysicsApp(QMainWindow):
         self._load_theme()
         self._apply_theme()
         mode_name = self._theme.get('name', 'Dark mode' if self._is_dark_mode else 'Light mode')
-        self.set_status(f"Switched to {mode_name}")
+        # With a color on purpose: the log has a stylesheet, and such a widget
+        # keeps painting the old scheme's background until its stylesheet is
+        # set again -- which set_status does. (On Windows _force_color_scheme
+        # has already applied the new palette by now.)
+        self.set_status(f"Switched to {mode_name}", 'white' if self._is_dark_mode else 'black')
 
     def choose_file(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -3037,8 +3092,9 @@ class PhysicsApp(QMainWindow):
             self.inprogress = False
             return
 
-        # Refuse to start when an Expression/Distr/Corr text does not evaluate
-        if not self.check_user_expressions("Fit"):
+        # Refuse to start when an Expression/Distr/Corr text does not evaluate,
+        # or when a value starts outside its own bounds
+        if not self.check_user_expressions("Fit") or not self.check_values_within_bounds("Fit"):
             self.inprogress = False
             return
 

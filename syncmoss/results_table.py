@@ -43,6 +43,11 @@ from syncmoss.spectrum_parameters import substitute
 # NOTE: the eval() calls in this module run against an explicit math_namespace
 # built from np.* — no bare ``from numpy import ...`` block is needed here.
 
+# How close a Doublet must be to the Be/KB preset to count as that impurity
+# (see _calculate_intensities). Rounding to four decimals moves a value by at
+# most 5e-5, so this takes a preset in either form.
+_PRESET_ATOL = 1e-4
+
 class ClickableResultButton(QPushButton):
     """Clickable button for result table rows that triggers replotting."""
     
@@ -505,12 +510,15 @@ class ResultsTable(QWidget):
             if model_name == 'Doublet':
                 try:
                     # Be.txt / KB.txt hold the polarized Doublet preset (9 values);
-                    # a Be/KB_nano row is fixed to those, so an exact match flags it.
+                    # a Be/KB_nano row is fixed to those, so a match flags it. To
+                    # 1e-4, not exactly: the shipped presets are rounded to four
+                    # decimals, while a model saved with the earlier ones still
+                    # carries their long digits (A = 0.427037824 for today's 0.427).
                     be_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'Be.txt'), delimiter='\t')
                     kb_param = np.genfromtxt(os.path.join(self.main_window.params_dir, 'KB.txt'), delimiter='\t')
                     fitted = self.fit_parameters[param_index:param_index+len(param_names)]
-                    if (len(fitted) == len(be_param) and np.allclose(fitted, be_param)) \
-                        or (len(fitted) == len(kb_param) and np.allclose(fitted, kb_param)):
+                    if (len(fitted) == len(be_param) and np.allclose(fitted, be_param, rtol=0, atol=_PRESET_ATOL)) \
+                        or (len(fitted) == len(kb_param) and np.allclose(fitted, kb_param, rtol=0, atol=_PRESET_ATOL)):
                             self.buttons[i*3 + 1].setText('Impurity')
                             self.buttons[i*3 + 2].setText('no %')
                             param_index += len(param_names)

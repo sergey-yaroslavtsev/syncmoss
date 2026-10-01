@@ -42,10 +42,85 @@ _VALUE_INPUT_PATTERN = r'^(-?\d+(\.\d+)?|=\[\d*,-?(\d+(\.\d+)?)?\])$'
 # cursor parked on the empty source-index half (before the comma).
 _EMPTY_LINK = '=[,1]'
 
+# A value field holding a finished link is shown like this, so a parameter that
+# FOLLOWS another one is told apart from a fitted one at a glance. Both colors
+# are given, so it reads the same in the light and the dark theme.
+_LINK_STYLE = "background-color: darkorange; color: black;"
+
+# The baseline's non-resonant counts in CMS: Nnr = 0.67 * Ns. Switching to CMS
+# puts this link into an Nnr of 0, and switching back to SMS turns exactly this
+# link into 0 again (see ParametersTable.match_nnr_to_mode).
+_CMS_NNR_LINK = '=[0,0.67]'
+_NNR_COL = 4    # Nnr in the baseline row ('Ns', 'Os', 'c²s', 'lins', 'Nnr', ...)
+
 
 def _make_value_validator():
     """Validator of a numeric parameter value field (number or =[X,Y] link)."""
     return QRegularExpressionValidator(QRegularExpression(_VALUE_INPUT_PATTERN))
+
+
+def style_value_field(value_input):
+    """Give a value field its resting look: darkorange while it holds a finished
+    link ``=[X,Y]``, plain otherwise.
+
+    A half-written link ('=[,1]') is not a link yet (model_io.split_link_field)
+    and stays plain, so the field turns orange the moment the link is complete.
+    The free-text columns (Expression / PDF / dependency texts, Recon weights)
+    are never highlighted.
+    """
+    is_link = (not value_input.property('free_text')
+               and split_link_field(value_input.text()) is not None)
+    value_input.setStyleSheet(_LINK_STYLE if is_link else "")
+
+
+def format_parameter_value(value, decimals=4):
+    """*value* as a value field shows it: plain digits, never an exponent.
+
+    At most *decimals* digits follow the point and trailing zeros are dropped
+    (1234567.12345 -> '1234567.1235', 33.0 -> '33', 1.5e-05 -> '0'). With
+    ``decimals=None`` every digit of the float is kept instead -- the shortest
+    text that reads back as the very same number, still without an exponent.
+    The field's own validator accepts no exponent either.
+    """
+    value = float(value)
+    if decimals is None:
+        text = np.format_float_positional(value, trim='-')
+    else:
+        text = f"{value:.{decimals}f}"
+        if '.' in text:
+            text = text.rstrip('0').rstrip('.')
+    return '0' if text == '-0' else text
+
+
+def _bound_value(text):
+    """A bound field as a number; None when it is empty (no bound) or unreadable."""
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def result_value_text(value, fixed, lower='', upper=''):
+    """The text "Take result as model" writes into a value field for *value*.
+
+    A fitted number gets format_parameter_value's four decimals. Every digit is
+    kept instead (still without an exponent) when
+
+    * the value is *fixed* -- the fit did not move it: fixed by the user (a
+      preset such as Be/KB among them) or stopped on a bound, which it then
+      equals -- so rounding would only alter the model;
+    * rounding would carry it across its own *lower* / *upper* bound (a bound
+      with more decimals, the value on or next to it): the next fit would then
+      be refused for starting out of bounds.
+    """
+    if fixed:
+        return format_parameter_value(value, decimals=None)
+    text = format_parameter_value(value)
+    rounded = float(text)
+    low, high = _bound_value(lower), _bound_value(upper)
+    if (low is not None and rounded < low) or (high is not None and rounded > high):
+        return format_parameter_value(value, decimals=None)
+    return text
 
 
 MODEL_OPTIONS = [
@@ -913,7 +988,7 @@ class ParametersTable(QWidget):
                 # field) clears that, so an unrelated refresh elsewhere in the
                 # table cannot hide the reason a fit was refused.
                 if not value_input.property('expression_error'):
-                    value_input.setStyleSheet("")
+                    style_value_field(value_input)
 
     def update_references(self, start_index, delta):
         for r in range(len(self.row_widgets)):
@@ -936,12 +1011,12 @@ class ParametersTable(QWidget):
                                 # shift down
                                 new_index = ref_index + delta
                                 value_input.setText(f"=[{new_index},{value_part}]")
-                                value_input.setStyleSheet("")
+                                style_value_field(value_input)
                         elif delta > 0:  # inserting
                             if ref_index >= start_index:
                                 new_index = ref_index + delta
                                 value_input.setText(f"=[{new_index},{value_part}]")
-                                value_input.setStyleSheet("")
+                                style_value_field(value_input)
                     elif 'p[' in text:
                         # Free-text expression field (Distr/Corr/Expression): shift
                         # every p[N] parameter reference the same way as =[X,y].
@@ -1012,9 +1087,10 @@ class ParametersTable(QWidget):
             self.update_distr_corr_highlights()
 
     def check_reference(self, input):
-        text = input.text()
-        if not re.match(r'=\[\d+,.+\]', text):
-            input.setStyleSheet("")
+        # Every edit puts the field back to its resting look: orange for a
+        # finished link, plain otherwise (which also drops a red mark once the
+        # text that earned it has changed).
+        style_value_field(input)
 
     def _install_value_context_menu(self, value_input):
         """Replace the QLineEdit right-click menu of a value field with our own
@@ -1184,7 +1260,7 @@ class ParametersTable(QWidget):
                 values = [str(be_param[i]) for i in range(9)]
                 self.main_window.set_status("Be.txt loaded successfully.")
             except:
-                values = ['0.048', '0.103', '-0.259', _NAT, '0.105', '90', '0', '-0.1880264375', '1.0']
+                values = ['0.048', '0.103', '-0.259', _NAT, '0.105', '90', '0', '-0.188', '1.0']
                 self.main_window.set_status("Default Be values used. Could not load Be.txt.")
             lowers = ['0', '', '', _NAT, '0', '-180', '-360', '-0.5', '0']
             uppers = ['', '', '', '', '', '180', '360', '1', '']
@@ -1511,7 +1587,26 @@ class ParametersTable(QWidget):
         # Update Ns value
         ns_value_input.setText(str(new_ns))
         self.main_window.set_status(f"Baseline Ns updated to {new_ns} (BG={int(round(BG))})", "green")
-    
+
+    def match_nnr_to_mode(self, cms):
+        """Follow a CMS/SMS switch with the baseline's non-resonant counts Nnr.
+
+        Into CMS an Nnr of 0 becomes ``=[0,0.67]`` (0.67 times Ns); back into SMS
+        exactly that link becomes 0 again. Any other Nnr is the user's and stays.
+        Only the baseline row: an Nbaseline section has its own Ns to link to.
+        """
+        nnr_input = self._value_input(0, _NNR_COL)
+        text = nnr_input.text().strip()
+        if cms:
+            try:
+                is_zero = float(text) == 0
+            except ValueError:
+                is_zero = False
+            if is_zero:
+                nnr_input.setText(_CMS_NNR_LINK)
+        elif split_link_field(text) == split_link_field(_CMS_NNR_LINK):
+            nnr_input.setText('0')
+
     def get_current_colors(self):
         """Get current colors from all table rows (fresh read after delete/insert)"""
         colors = []
@@ -1668,6 +1763,55 @@ class ParametersTable(QWidget):
                                 'model': model_name, 'text': text, 'reason': reason})
         return empties
 
+    def get_out_of_bounds_parameters(self):
+        """Plain-number values that lie outside their own bounds.
+
+        minimi_hi only prints a warning for such a start and then steps on from
+        a point its bounds forbid, so Fit refuses it up front instead. Bounds
+        are inclusive, as in minimi_hi, and an empty bound is no bound. Fixed
+        values are checked too: a structural one such as a Distr's Num must stay
+        inside its range as well.
+
+        Not checked: a link ``=[X,Y]`` (it follows its source), the free-text
+        column, and a read-only field -- the grey target of a Distr/Corr/Recon,
+        whose number the distribution axis replaces (and which cannot be edited).
+        Empty and half-written fields are get_empty_parameter_slots' to report.
+
+        Returns:
+            list of dicts ``{'row', 'col', 'param', 'model', 'text', 'lower',
+            'upper'}`` -- 'lower' / 'upper' is the text of the bound that is
+            crossed, the other one ''.
+        """
+        outside = []
+        for row in range(len(self.row_widgets)):
+            model_name = self.model_name_at(row)
+            expr_layout_col = self._EXPRESSION_COLUMNS.get(model_name)
+            for col in range(self.row_params[row]):
+                if expr_layout_col is not None and col == expr_layout_col - 1:
+                    continue
+                param_widget = self.row_widgets[row].layout().itemAt(col + 1).widget()
+                value_input = param_widget.layout().itemAt(1).widget()
+                if value_input.isReadOnly():
+                    continue
+                text = value_input.text().strip()
+                try:
+                    value = float(text)
+                except ValueError:
+                    continue        # a link, or an empty / half-written field
+                bounds_layout = param_widget.layout().itemAt(2).layout()
+                lower = bounds_layout.itemAt(0).widget().text().strip()
+                upper = bounds_layout.itemAt(1).widget().text().strip()
+                low, high = _bound_value(lower), _bound_value(upper)
+                below = low is not None and value < low
+                above = high is not None and value > high
+                if below or above:
+                    outside.append({'row': row, 'col': col,
+                                    'param': self._parameter_name(row, col),
+                                    'model': model_name, 'text': text,
+                                    'lower': lower if below else '',
+                                    'upper': upper if above else ''})
+        return outside
+
     def mark_parameter_error(self, row, col):
         """Turn an empty/invalid numeric parameter field red, cleared as soon as
         the user clicks into it (reuses the expression-error eventFilter)."""
@@ -1708,8 +1852,8 @@ class ParametersTable(QWidget):
         # into or focuses the offending field.
         if isinstance(obj, QLineEdit) and obj.property('expression_error'):
             if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.FocusIn):
-                obj.setStyleSheet("")
                 obj.setProperty('expression_error', False)
+                style_value_field(obj)
                 obj.removeEventFilter(self)
         return super().eventFilter(obj, event)
 

@@ -701,7 +701,7 @@ def _load_be_param(params_dir):
         Be_param = np.genfromtxt(be_path, delimiter='\t', skip_footer=0)
         print('Be file was read')
     except Exception:
-        Be_param = np.array([0.057, 0.066, -0.261, NAT_WIDTH, 0.375, 90, 0, 0.427037824, 1])
+        Be_param = np.array([0.057, 0.066, -0.261, NAT_WIDTH, 0.375, 90, 0, 0.427, 1])
         print('COULD NOT READ Be.txt')
     return Be_param
 

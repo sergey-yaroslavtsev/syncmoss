@@ -858,7 +858,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
                 print('Be.txt was read')
             except Exception:
                 Be_param = np.array([0.057, 0.066, -0.261, NAT_WIDTH, 0.375, 90, 0,
-                                     0.427037824, 1])
+                                     0.427, 1])
                 print('COULD NOT READ Be.txt')
             # baseline(8) + two polarized Sextets(14 each) + Be Doublet(9).
             pCAL = np.array([p[0], 0, 0, 0, 0, 0, 0, 0,

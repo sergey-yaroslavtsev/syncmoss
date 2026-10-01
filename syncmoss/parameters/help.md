@@ -31,6 +31,9 @@ parameter then follows another one:
 parameter 12", `=[12,0.5]` means "half of parameter 12", `=[12,-1]` means
 "minus parameter 12".
 
+- A finished link is shown on a **darkorange** field, so a parameter that
+  follows another one stands apart from the fitted ones. A half-typed link
+  (`=[,1]`) stays plain until both numbers are in.
 - Links are kept in step when you insert or delete model rows: the referenced
   numbers are renumbered for you. The same holds for every `p[i]` inside an
   `Expression`, `Distr` or `Corr` text.
@@ -124,7 +127,15 @@ an explicit message and reddened fields rather than failing halfway through.
   be fitted: `par`/`Num` of `Distr`, `par` of `Corr`, `par`/`Num`/`D_dif`/`D_dif2`
   of `Recon`, `S` of `Relax_MS`, `Num` of `ASM`, `N/Γ` of `SCDW`.
 - The two small fields under each value are the **lower and upper bound**. Leave
-  a bound empty for "unbounded".
+  a bound empty for "unbounded". A value outside its own bounds (a value on a
+  bound is inside) blocks **Fit** with a message and a reddened field.
+- **Take result as model** writes fitted values with at most four decimals and
+  never in `1e-05` notation; a value the fit did not move (fixed, a preset, or
+  stopped on a bound) keeps all its digits. The bounds come back as the fit had
+  them.
+- Switching **CMS** on turns a baseline `Nnr` of `0` into `=[0,0.67]` (the
+  non-resonant counts as 0.67 of `Ns`); switching back to **SMS** turns exactly
+  that link into `0` again. Any other `Nnr` is left as you set it.
 - Empty rows between models are harmless — they are dropped when the model is
   saved.
 - `Layer` is a marker, not a component: components above and below it are
