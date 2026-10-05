@@ -85,3 +85,82 @@ def test_intensity_percentage_zero_total_returns_zeros():
     )
     assert np.all(intensities == 0)
     assert np.all(errors == 0)
+
+
+# --- the error propagation, computed each derivative once ---------------------
+# The double loop over the parameter pairs used to recompute BOTH partial
+# derivatives for every pair: ~4n^3 evaluations of an n-term expression for the
+# % errors of n components of one spectrum -- 1.8 s for 20 components, minutes
+# for 60. Every derivative is now computed once; the numbers must not change.
+
+def _error_as_it_was(expr_str, parameters, errors, covariance_matrix, fixed_params=None):
+    """calculate_expression_error before each derivative was computed once."""
+    import re
+    param_indices = sorted({int(m.group(1)) for m in re.finditer(r'p\[(\d+)\]', expr_str)})
+    if not param_indices:
+        return 0.0
+    if fixed_params is None:
+        fixed_params = np.array([i for i in range(len(errors)) if np.isnan(errors[i])], dtype=int)
+    variable_params = [i for i in range(len(parameters)) if i not in fixed_params]
+    param_to_cov_idx = {param: cov_idx for cov_idx, param in enumerate(variable_params)}
+    variable_param_indices = [idx for idx in param_indices if idx not in fixed_params]
+    if not variable_param_indices:
+        return 0.0
+
+    def expr_func(p):
+        return eval(expr_str)
+
+    variance = 0.0
+    for i in variable_param_indices:
+        for j in variable_param_indices:
+            cov_i = param_to_cov_idx.get(i)
+            cov_j = param_to_cov_idx.get(j)
+            if cov_i is None or cov_j is None:
+                continue
+            if cov_i >= covariance_matrix.shape[0] or cov_j >= covariance_matrix.shape[1]:
+                continue
+            df_di = calculate_partial_derivative_numerical(expr_func, parameters, i)
+            df_dj = calculate_partial_derivative_numerical(expr_func, parameters, j)
+            variance += df_di * df_dj * covariance_matrix[cov_i, cov_j]
+    return np.sqrt(abs(variance))
+
+
+def _correlated_case(seed, n, fixed_share):
+    rng = np.random.default_rng(seed)
+    params = rng.uniform(0.1, 5.0, n)
+    errors = rng.uniform(0.01, 0.2, n)
+    errors[rng.random(n) < fixed_share] = np.nan
+    n_free = int(np.sum(~np.isnan(errors)))
+    root = rng.normal(size=(n_free, n_free))
+    return params, errors, root @ root.T * 1e-3        # a correlated covariance
+
+
+@pytest.mark.parametrize("seed, fixed_share", [(1, 0.0), (2, 0.3), (3, 0.7)])
+@pytest.mark.parametrize("fixed_given", [False, True])
+def test_expression_error_is_unchanged(seed, fixed_share, fixed_given):
+    params, errors, cov = _correlated_case(seed, 24, fixed_share)
+    fixed = [i for i in range(len(errors)) if np.isnan(errors[i])] if fixed_given else None
+    for expr in ("p[3]*2+p[7]", "100*p[2]/(p[2]+p[5]+p[11]+p[23])",
+                 "sqrt(p[1]**2+p[4]**2)".replace("sqrt", "np.sqrt"), "p[0]"):
+        assert calculate_expression_error(expr, params, errors, cov, fixed) == \
+            _error_as_it_was(expr, params, errors, cov, fixed), expr
+
+
+def test_intensity_errors_are_unchanged():
+    params, errors, cov = _correlated_case(4, 8 + 20, 0.3)
+    t_indices = list(range(8, 28))                       # 20 components, one spectrum
+    intensities, intensity_errors = calculate_intensity_percentage_error(
+        params, errors, cov, t_indices)
+    assert intensities.sum() == pytest.approx(100.0)
+    sum_expr = '+'.join(f'p[{i}]' for i in t_indices)
+    for k in (0, 13, 19):
+        assert intensity_errors[k] == _error_as_it_was(
+            f'100*p[{t_indices[k]}]/({sum_expr})', params, errors, cov)
+
+
+def test_intensity_errors_of_many_components_are_quick():
+    import time
+    params, errors, cov = _correlated_case(5, 8 + 60, 0.0)
+    start = time.perf_counter()
+    calculate_intensity_percentage_error(params, errors, cov, list(range(8, 68)))
+    assert time.perf_counter() - start < 10.0             # ~1 s; it was minutes

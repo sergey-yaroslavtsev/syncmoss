@@ -4,13 +4,18 @@ Displays fitting results in a tabbed interface with interactive controls.
 
 Structure:
 -----------
-The table has numro*3 rows, organized in groups of 3 for each component:
+The table holds the current result and nothing else: a group of 3 rows per
+component,
     Row i*3 + 0: Parameter names
     Row i*3 + 1: Parameter values (from fitting)
     Row i*3 + 2: Parameter errors (calculated from correlation matrix)
+created by fill_table for exactly as many components as the result has, and no
+row at all before the first fit or after Show model (clear_table). The row limit
+of the parameters table (constants.numro) does not apply here: a result may have
+more components than the parameters table has rows.
 
 Column 0: Model names with colors
-Columns 1-15: Parameter data
+Columns 1-numco: Parameter data
 
 Usage Example:
 --------------
@@ -37,7 +42,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortcut, QTextDocument
-from syncmoss.constants import numro, numco, contrast_text_color
+from syncmoss.constants import numco, contrast_text_color
 from syncmoss.support_math import calculate_intensity_percentage_error
 from syncmoss.spectrum_parameters import substitute
 # NOTE: the eval() calls in this module run against an explicit math_namespace
@@ -76,15 +81,15 @@ class ResultsTable(QWidget):
     Features:
     - Tab 1: Interactive results table (buttons + labels) like original
     - Tab 2: Correlation matrix display
-    - numro*3 rows (parameter name, value, error for each component)
+    - 3 rows (parameter name, value, error) per component of the current
+      result, none without a result
     - First column contains model names/colors
     - Rows organized as: name (1,4,7...), value (2,5,8...), error (3,6,9...)
     """
-    
+
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
-        self.num_rows = numro * 3
         self.num_cols = numco + 1  # +1 for model column
         
         # Storage for correlation matrix and fitting results.
@@ -130,15 +135,11 @@ class ResultsTable(QWidget):
         self.tabs.addTab(self.correlation_tab, "Correlation Matrix")
         
         layout.addWidget(self.tabs)
-        
-        # Storage for results data
-        self.results_data = [['' for _ in range(numco)] for _ in range(self.num_rows)]
-        self.row_labels = ['' for _ in range(self.num_rows)]
-    
+
     def create_interactive_tab(self):
         """
         Create the interactive results tab (Tab 1).
-        
+
         Structure:
         - First column: model names/colors (buttons or labels)
         - Remaining columns: parameter data
@@ -146,14 +147,16 @@ class ResultsTable(QWidget):
           - Row i*3: parameter names
           - Row i*3+1: parameter values
           - Row i*3+2: parameter errors
+
+        The table starts without rows; fill_table creates them (_set_row_count).
         """
         tab_widget = QWidget()
         tab_layout = QVBoxLayout(tab_widget)
         tab_layout.setSpacing(0)
         tab_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # Create table widget for interactive display
-        self.interactive_table = QTableWidget(self.num_rows, self.num_cols)
+        self.interactive_table = QTableWidget(0, self.num_cols)
         self.interactive_table.setFont(QFont('Arial', 14))
         self.interactive_table.horizontalHeader().setVisible(False)
         self.interactive_table.verticalHeader().setVisible(False)
@@ -164,36 +167,44 @@ class ResultsTable(QWidget):
         # Set column widths
         for col in range(self.num_cols):
             self.interactive_table.setColumnWidth(col, 64)
-        
-        # Set row heights
-        for row in range(self.num_rows):
-            self.interactive_table.setRowHeight(row, 22)
-        
-        # Populate table with buttons and labels
+
+        # The widgets of each row: a model button and one label per parameter
+        # column (self.buttons[row], self.labels[row][col - 1])
         self.buttons = []
         self.labels = []
-        
-        for row in range(self.num_rows):
-            row_widgets = []
-            
+
+        tab_layout.addWidget(self.interactive_table)
+        return tab_widget
+
+    def _set_row_count(self, rows):
+        """Give the interactive table exactly *rows* rows.
+
+        Every new row gets its widgets: the clickable model button in column 0
+        and a label in each parameter column. Rows that go take their widgets
+        with them (the table hides and deletes them).
+        """
+        table = self.interactive_table
+        table.setRowCount(rows)
+        del self.buttons[rows:]
+        del self.labels[rows:]
+        for row in range(len(self.buttons), rows):
+            table.setRowHeight(row, 22)
+
             # First column: model name/color indicator (clickable button)
             btn = ClickableResultButton('', row, self)
             self.buttons.append(btn)
-            self.interactive_table.setCellWidget(row, 0, btn)
-            
+            table.setCellWidget(row, 0, btn)
+
             # Remaining columns: labels for displaying results
+            row_widgets = []
             for col in range(1, self.num_cols):
                 label = QLabel('')
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 label.setFont(QFont('Arial', 10))
                 label.setTextFormat(Qt.TextFormat.RichText)  # Support markup
                 row_widgets.append(label)
-                self.interactive_table.setCellWidget(row, col, label)
-            
+                table.setCellWidget(row, col, label)
             self.labels.append(row_widgets)
-        
-        tab_layout.addWidget(self.interactive_table)
-        return tab_widget
     
     def create_correlation_tab(self):
         """
@@ -252,7 +263,7 @@ class ResultsTable(QWidget):
         for row in sorted({r for r, _ in cells}):
             texts = [self._cell_text(table, row, c) if (row, c) in cells else ''
                      for c in cols]
-            if any(texts):  # skip the empty rows of the fixed-size results grid
+            if any(texts):  # skip empty rows (a baseline's % rows, ...)
                 rows.append(texts)
         text = '\n'.join('\t'.join(r) for r in rows)
         QApplication.clipboard().setText(text)
@@ -277,7 +288,7 @@ class ResultsTable(QWidget):
                 the table); the values are substituted only to evaluate them.
 
         Workflow:
-            1. Clear existing table
+            1. Clear existing table, then create 3 rows per component
             2. Fill parameter values (rows 1, 4, 7, ...)
             3. Fill model names/colors (column 0)
             4. Fill parameter names (rows 0, 3, 6, ...)
@@ -305,50 +316,26 @@ class ResultsTable(QWidget):
         self.errors = errors
         self.fix = fix if fix is not None else np.array([], dtype=int)
         
-        # Orchestrate filling
+        # Orchestrate filling, on fresh rows: exactly three per component
         self.clear_table()
+        self._set_row_count(3 * max(len(model_list), len(parameter_names)))
         self.fill_values(parameters)
         self.fill_model_column(model_list, model_colors)
         self.fill_parameter_names(parameter_names)
         self.fill_errors(errors)
         self._apply_expression_spanning()
         self.display_correlation_matrix(covariance_matrix)
-    
+
     def clear_table(self):
-        """Clear all data from the results table."""
-        # Clear any column spanning first
+        """Remove every row of the results table, and the correlation matrix.
+
+        Show model leaves the table like this -- a model is not a fit result --
+        and fill_table starts from it, so nothing of an earlier result (a text,
+        a colour, a spanned Expression cell) can survive into the next one.
+        """
         self.interactive_table.clearSpans()
-        
-        for row in range(self.num_rows):
-            
-            # insert swapper from QTableWidgetItem(text) to QLabel(text) for all cells to reset any spanned cells back to normal
+        self._set_row_count(0)
 
-            # Clear button text
-            self.buttons[row].setText('')
-            self.buttons[row].setStyleSheet('')
-            
-            # Clear labels - restore center alignment.
-            # Some cells may have been temporarily converted to QTableWidgetItem
-            # for column spanning; restore QLabel widgets in-place.
-            for col in range(len(self.labels[row])):
-                table_col = col + 1  # labels are stored for columns 1..num_cols-1
-
-                # If an item was inserted in this cell (spanning mode), remove it.
-                if self.interactive_table.item(row, table_col) is not None:
-                    self.interactive_table.takeItem(row, table_col)
-
-                label = self.interactive_table.cellWidget(row, table_col)
-                if not isinstance(label, QLabel):
-                    label = QLabel('')
-                    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    label.setFont(QFont('Arial', 10))
-                    label.setTextFormat(Qt.TextFormat.RichText)
-                    self.interactive_table.setCellWidget(row, table_col, label)
-
-                label.setText('')
-                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.labels[row][col] = label
-        
         # Clear correlation matrix
         self.correlation_table.clear()
         self.correlation_table.setRowCount(0)
@@ -370,10 +357,7 @@ class ResultsTable(QWidget):
         # Process each component
         for component in range(len(self.model_list)):
             value_row = component * 3 + 1  # Rows 1, 4, 7, ...
-            
-            if value_row >= self.num_rows:
-                break
-            
+
             # Get number of parameters for this component from parameter_names
             if component < len(self.parameter_names):
                 num_params = len(self.parameter_names[component])
@@ -433,10 +417,7 @@ class ResultsTable(QWidget):
         for i, (model_name, color) in enumerate(zip(model_list, model_colors)):
             # Each model occupies 3 rows (name, value, error)
             base_row = i * 3
-            
-            if base_row >= self.num_rows:
-                break
-            
+
             # Baseline should always be light gray
             if model_name == 'baseline':
                 color = 'lightgray'
@@ -581,10 +562,7 @@ class ResultsTable(QWidget):
         
         for component, names in enumerate(parameter_names):
             name_row = component * 3  # Rows 0, 3, 6, ...
-            
-            if name_row >= self.num_rows:
-                break
-            
+
             model_name = self.model_list[component] if component < len(self.model_list) else ''
             
             # Fill names starting from column 1
@@ -615,10 +593,7 @@ class ResultsTable(QWidget):
         # Process each component
         for component in range(len(self.model_list)):
             error_row = component * 3 + 2  # Rows 2, 5, 8, ...
-            
-            if error_row >= self.num_rows:
-                break
-            
+
             # Get number of parameters for this component
             if component < len(self.parameter_names):
                 num_params = len(self.parameter_names[component])
@@ -758,14 +733,13 @@ class ResultsTable(QWidget):
 
                     # Apply span for all 3 rows (name, value, error)
                     for table_row in [name_row, value_row, error_row]:
-                        if table_row < self.num_rows:
-                            self.interactive_table.setSpan(table_row, last_col, 1, span_cols)
+                        self.interactive_table.setSpan(table_row, last_col, 1, span_cols)
 
                     # Replace QLabel cell widgets with QTableWidgetItems for spanned cells
                     # so the text naturally fills the full spanned width
                     label_idx = num_params - 1  # index into self.labels[row]
                     for table_row in [name_row, value_row, error_row]:
-                        if table_row < self.num_rows and label_idx < len(self.labels[table_row]):
+                        if label_idx < len(self.labels[table_row]):
                             text = self.labels[table_row][label_idx].text()
                             # Remove the QLabel widget and use a QTableWidgetItem instead.
                             # removeCellWidget only unregisters the label: it stays a

@@ -107,17 +107,19 @@ def calculate_expression_error(expr_str, parameters, errors, covariance_matrix, 
     if not param_indices:
         return 0.0
     
-    # Determine fixed parameters (where error is nan)
+    # Determine fixed parameters (where error is nan); a set, since it is
+    # looked up once per parameter of the whole model
     if fixed_params is None:
         fixed_params = np.array([i for i in range(len(errors)) if np.isnan(errors[i])], dtype=int)
+    fixed = {int(i) for i in np.ravel(fixed_params)}
     
     # Create mapping from full parameter index to covariance matrix index
     # Covariance matrix only includes variable (non-fixed) parameters
-    variable_params = [i for i in range(len(parameters)) if i not in fixed_params]
+    variable_params = [i for i in range(len(parameters)) if i not in fixed]
     param_to_cov_idx = {param: cov_idx for cov_idx, param in enumerate(variable_params)}
     
     # Filter out fixed parameters from expression calculation
-    variable_param_indices = [idx for idx in param_indices if idx not in fixed_params]
+    variable_param_indices = [idx for idx in param_indices if idx not in fixed]
     
     if not variable_param_indices:
         return 0.0  # All parameters in expression are fixed
@@ -125,6 +127,16 @@ def calculate_expression_error(expr_str, parameters, errors, covariance_matrix, 
     # Define function for expression
     def expr_func(p):
         return eval(expr_str)
+
+    # Each numerical partial derivative is computed once. The double loop below
+    # used to recompute both of them for every pair -- ~4n^3 evaluations of an
+    # n-term expression for the % errors of n components of one spectrum.
+    derivatives = {}
+
+    def partial(k):
+        if k not in derivatives:
+            derivatives[k] = calculate_partial_derivative_numerical(expr_func, parameters, k)
+        return derivatives[k]
     
     # Calculate variance using covariance matrix
     variance = 0.0
@@ -143,8 +155,8 @@ def calculate_expression_error(expr_str, parameters, errors, covariance_matrix, 
                 continue
             
             # Numerical partial derivatives
-            df_di = calculate_partial_derivative_numerical(expr_func, parameters, i)
-            df_dj = calculate_partial_derivative_numerical(expr_func, parameters, j)
+            df_di = partial(i)
+            df_dj = partial(j)
             
             # Add contribution from covariance
             variance += df_di * df_dj * covariance_matrix[cov_i, cov_j]

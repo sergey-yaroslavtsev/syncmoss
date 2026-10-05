@@ -1524,8 +1524,12 @@ class PhysicsApp(QMainWindow):
     def take_result(self):
         """Copy fitting results to parameter table as new model"""
         try:
-            # Check if results are available
-            if not hasattr(self.results_table, 'current_model_list') or not self.results_table.current_model_list:
+            # Check if results are available. Show model clears them (a model is
+            # not a fit result) by dropping the parameters only, so the model
+            # list of the last fit is still there: without this the table was
+            # rebuilt with default values before the missing numbers stopped it.
+            if (self.results_table.current_parameters is None
+                    or not self.results_table.current_model_list):
                 self.set_status("No fitting results available", "orange")
                 return
             
@@ -1548,6 +1552,16 @@ class PhysicsApp(QMainWindow):
                            and list(result_rows[0]) == list(model_list) else None)
             # Fixed when the fit started: these values keep every digit
             fixed_at_start = {int(i) for i in np.ravel(getattr(self.results_table, 'fix', []))}
+
+            # The results table grows with the result, the parameters table has a
+            # fixed number of rows: a result it cannot hold is refused BEFORE its
+            # rows are cleared, so the model in it is left as it is.
+            if len(model_list) > len(self.params_table.row_widgets):
+                self.set_status(
+                    f"Take result was not done: the result has {len(model_list) - 1} "
+                    f"components, the parameters table holds at most "
+                    f"{len(self.params_table.row_widgets) - 1}", "red")
+                return
 
             if self.params_table.get_model_list() != model_list:
                 msg = QMessageBox(self)
