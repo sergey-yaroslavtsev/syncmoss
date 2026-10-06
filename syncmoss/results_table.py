@@ -101,9 +101,10 @@ class ResultsTable(QWidget):
         self.parameter_names = []
         self.covariance_matrix = None
         self.errors = None
+        self.whole_fit = None
         self.model_list = []
         self.model_colors = []
-        
+
         # Storage for current results (for saving)
         self.current_parameters = None
         self.current_errors = None
@@ -116,6 +117,10 @@ class ResultsTable(QWidget):
         # The fitted model (model_io.fitted_model_rows) that "Save result"
         # writes as <base>_result_model.mdl; set by the fit handlers.
         self.current_model_rows = None
+        # A simultaneous one-model fit's result (one_model.OneModelResult) when
+        # the table shows one -- set after fill_table, dropped by clear_table.
+        # "Take result" and "Save result" work on it instead of the table.
+        self.one_model = None
 
         # Initialize layout
         layout = QVBoxLayout(self)
@@ -270,7 +275,7 @@ class ResultsTable(QWidget):
         return text
 
     def fill_table(self, parameters, model_list, model_colors, parameter_names, covariance_matrix, errors=None, fix=None, expression_texts=None,
-                   spectrum_parameters=None):
+                   spectrum_parameters=None, whole_fit=None):
         """
         Main function to fill the results table with fitting results.
         
@@ -286,6 +291,10 @@ class ResultsTable(QWidget):
             spectrum_parameters: SpectrumParameters the fit used for N, N1, ... (optional).
                 The texts are kept as typed ("Take result" puts them back into
                 the table); the values are substituted only to evaluate them.
+            whole_fit: (parameters, errors, covariance_matrix) of the whole fit when
+                *parameters* are one spectrum's part of it (optional). The
+                Expressions are typed with the whole model's p[i] and may use other
+                spectra's parameters, so they are evaluated with it.
 
         Workflow:
             1. Clear existing table, then create 3 rows per component
@@ -314,6 +323,7 @@ class ResultsTable(QWidget):
         self.parameter_names = parameter_names
         self.covariance_matrix = covariance_matrix
         self.errors = errors
+        self.whole_fit = whole_fit
         self.fix = fix if fix is not None else np.array([], dtype=int)
         
         # Orchestrate filling, on fresh rows: exactly three per component
@@ -335,6 +345,7 @@ class ResultsTable(QWidget):
         """
         self.interactive_table.clearSpans()
         self._set_row_count(0)
+        self.one_model = None
 
         # Clear correlation matrix
         self.correlation_table.clear()
@@ -639,10 +650,9 @@ class ResultsTable(QWidget):
             return None, None
         
         expr_text = substitute(self.expression_texts[component], self.current_spectrum_parameters)
-        params = self.fit_parameters
-        errors = self.errors
-        cov = self.covariance_matrix
-        
+        params, errors, cov = self.whole_fit or (self.fit_parameters, self.errors,
+                                                 self.covariance_matrix)
+
         if params is None:
             return None, None
         

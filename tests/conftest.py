@@ -211,6 +211,14 @@ def physics_app(qapp, tmp_path):
     try:
         yield window
     finally:
+        # Run what the window still has queued while it exists. matplotlib's
+        # canvas posts its idle redraw with a bare QTimer.singleShot -- showing
+        # or resizing a canvas does it, and so does drawing a tall results
+        # table -- so left pending it fires on the deleted canvas in whichever
+        # LATER test processes events, failing that test with "Internal C++
+        # object (FigureCanvasQTAgg) already deleted".
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
         window.close()
         window.setParent(None)
         try:

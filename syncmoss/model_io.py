@@ -473,7 +473,7 @@ def model_file_rows(main_window):
 TEXT_SLOT_MODELS = ('Expression', 'Distr', 'Corr', 'Recon')
 
 
-def fitted_model_rows(model_rows, parameters, recon_weights=()):
+def fitted_model_rows(model_rows, parameters, recon_weights=(), keep_independent=False):
     """*model_rows* with a fit's result written in: the model a result is saved with.
 
     *model_rows* is :func:`model_file_rows` taken when the fit started, so the
@@ -484,6 +484,11 @@ def fitted_model_rows(model_rows, parameters, recon_weights=()):
     (the digits ``_param.txt`` carries); a link ``=[X,Y]``, a fixed value and an
     expression text stay as they are. The one text a fit changes, a Recon's
     weight vector, gets the fitted weights (*recon_weights*, in table order).
+
+    A free independent ``=(X)`` keeps its brackets around the fitted value --
+    a fit of one spectrum fits it like any parameter -- unless
+    *keep_independent*: the simultaneous one-model fit gave it a value per
+    spectrum, so its X stays the start value it was.
 
     Returns None for no *model_rows* (a result that no fit produced).
     """
@@ -504,7 +509,11 @@ def fitted_model_rows(model_rows, parameters, recon_weights=()):
                     field[0] = ','.join(repr(float(w)) for w in np.ravel(weights))
             elif (not field[0].strip().startswith('=[') and field[4] != 'True'
                   and start + col < len(parameters)):
-                field[0] = repr(float(parameters[start + col]))
+                fitted = repr(float(parameters[start + col]))
+                if not field[0].strip().startswith('=('):
+                    field[0] = fitted
+                elif not keep_independent:
+                    field[0] = f'=({fitted})'
         start += count
         fitted_rows.append(row_data)
     return model_names, colors, fitted_rows
@@ -736,6 +745,24 @@ def split_link_field(text):
         return None
 
 
+def split_independent_field(text):
+    """Start value X of an INDEPENDENT parameter field ``=(X)``.
+
+    ``=(X)`` marks a parameter the simultaneous one-model fit fits with a value
+    of its own in every spectrum, all of them starting from X (every other free
+    parameter has one value shared by all the spectra). Any other calculation
+    takes it as the plain number X. Returns None when the text is not a finished
+    one: a number, a link, or ``=()`` still waiting for its X.
+    """
+    text = str(text).strip()
+    if not (text.startswith('=(') and text.endswith(')')):
+        return None
+    try:
+        return float(text[2:-1])
+    except ValueError:
+        return None
+
+
 def parse_recon_weights(text, num):
     """Parse a 'Recon' weight-vector text field into a length-``num`` float array.
 
@@ -821,18 +848,22 @@ def read_model(main_window, spectrum_parameters=None, substitute_names=True):
 
         A ``=[source,factor]`` text registers a linear constraint (con1 gets
         this slot's index, con2/con3 the source index and factor; the slot
-        itself receives placeholder 1). Anything else is parsed as a float; an
-        empty field, or a half-written link such as ``=[,1]``, reads as 0.0
-        (Show model / Fit refuse both before they get here, see
-        ParametersTable.get_empty_parameter_slots).
+        itself receives placeholder 1). An independent ``=(X)`` is the number X
+        (which slots are independent: ParametersTable.get_independent_slots).
+        Anything else is parsed as a float; an empty field, or a half-written
+        link such as ``=[,1]``, reads as 0.0 (Show model / Fit refuse both
+        before they get here, see ParametersTable.get_empty_parameter_slots).
         """
         nonlocal p, con1, con2, con3
         link = split_link_field(param_text)
+        independent = split_independent_field(param_text)
         if link is not None:
             con1 = np.append(con1, len(p))
             con2 = np.append(con2, link[0])
             con3 = np.append(con3, link[1])
             p = np.append(p, 1)
+        elif independent is not None:
+            p = np.append(p, independent)
         else:
             try:
                 p = np.append(p, float(param_text))
@@ -1019,7 +1050,7 @@ def validate_user_expressions(main_window):
                 spectrum = os.path.basename(parameters.path) if parameters.path else "the spectrum"
                 raise ValueError(f"{', '.join(missing)} has no value for {spectrum} -- give the "
                                  f"numbers in the path box as ('file', N1, N2, ...) or load "
-                                 f"them from the Sequence Fitting menu")
+                                 f"them from the Multispectra settings menu")
             value = evaluator(str(text))
             np.asarray(value, dtype=float)
         except Exception as e:

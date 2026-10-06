@@ -75,8 +75,10 @@ _MAX_CHI2 = 3.0
 
 # Expected final model component colours (baseline excluded). The user verified
 # these are produced by the delete/insert/Be sequence below; the key invariant is
-# that the parameters table and the results table agree on them.
-_EXPECTED_MODEL_COLORS = ['red', 'cyan', 'cyan', 'yellow']
+# that the parameters table and the results table agree on them. Selecting
+# Nbaseline greys its row (silver), and the row inserted in front of it copies
+# that colour.
+_EXPECTED_MODEL_COLORS = ['red', 'silver', 'silver', 'yellow']
 # get_model_list() reports a Be model as a "Doublet" (it is a Doublet preset).
 _EXPECTED_MODEL_LIST = ['baseline', 'Sextet', 'Doublet', 'Nbaseline', 'Sextet']
 

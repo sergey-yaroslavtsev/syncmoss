@@ -7,13 +7,16 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QRegularExpression, QEvent
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
-from syncmoss.constants import numro, numco, model_colors, number_of_baseline_parameters, contrast_text_color, NAT_WIDTH
+from syncmoss.constants import (numro, numco, model_colors, number_of_baseline_parameters,
+                                contrast_text_color, NAT_WIDTH, NBASELINE_COLOR)
 
 # Natural line width as a table string: the default and the lower bound of every
 # Lorentzian width L (a fitted line can never be narrower than the natural width).
 _NAT = str(NAT_WIDTH)
 from syncmoss.spectrum_io import calculate_backgrounds
-from syncmoss.model_io import mod_len_def, append_model_via_dialog, split_link_field
+from syncmoss.model_io import (mod_len_def, append_model_via_dialog, split_link_field,
+                               split_independent_field)
+from syncmoss.spectrum_parameters import path_box_entries
 from syncmoss.Library_window import open_library_model_dialog
 
 # Absolute path to the icons directory.
@@ -36,16 +39,26 @@ _CBL2 = f"{_ICONS_DIR}/CheckBox_L2.png"
 # and type another, instead of having to overtype it; they are not links yet, so
 # Show model / Fit refuse them (see ParametersTable.get_empty_parameter_slots)
 # and model_io.split_link_field reads them as "not a link".
-_VALUE_INPUT_PATTERN = r'^(-?\d+(\.\d+)?|=\[\d*,-?(\d+(\.\d+)?)?\])$'
+# Or an independent value '=(X)' (model_io.split_independent_field): its own
+# value in every spectrum of a simultaneous one-model fit, all starting from X;
+# '=()' is accepted while X is being typed, and refused the same way.
+_VALUE_INPUT_PATTERN = r'^(-?\d+(\.\d+)?|=\[\d*,-?(\d+(\.\d+)?)?\]|=\((-?\d+(\.\d+)?)?\))$'
 
 # Prefilled by the "link to another parameter" context-menu entry, with the
 # cursor parked on the empty source-index half (before the comma).
 _EMPTY_LINK = '=[,1]'
 
+# Put in by the "make it independent" entry, the cursor between the brackets:
+# the start value is the user's to type.
+_EMPTY_INDEPENDENT = '=()'
+
 # A value field holding a finished link is shown like this, so a parameter that
 # FOLLOWS another one is told apart from a fitted one at a glance. Both colors
 # are given, so it reads the same in the light and the dark theme.
 _LINK_STYLE = "background-color: darkorange; color: black;"
+
+# ... and one holding a finished independent value '=(X)'.
+_INDEPENDENT_STYLE = "background-color: lightgreen; color: black;"
 
 # The baseline's non-resonant counts in CMS: Nnr = 0.67 * Ns. Switching to CMS
 # puts this link into an Nnr of 0, and switching back to SMS turns exactly this
@@ -61,16 +74,21 @@ def _make_value_validator():
 
 def style_value_field(value_input):
     """Give a value field its resting look: darkorange while it holds a finished
-    link ``=[X,Y]``, plain otherwise.
+    link ``=[X,Y]``, lightgreen while it holds a finished independent value
+    ``=(X)``, plain otherwise.
 
     A half-written link ('=[,1]') is not a link yet (model_io.split_link_field)
-    and stays plain, so the field turns orange the moment the link is complete.
-    The free-text columns (Expression / PDF / dependency texts, Recon weights)
-    are never highlighted.
+    and stays plain, so the field turns orange the moment the link is complete;
+    likewise '=()' turns green once its X is typed. The free-text columns
+    (Expression / PDF / dependency texts, Recon weights) are never highlighted.
     """
-    is_link = (not value_input.property('free_text')
-               and split_link_field(value_input.text()) is not None)
-    value_input.setStyleSheet(_LINK_STYLE if is_link else "")
+    style = ""
+    if not value_input.property('free_text'):
+        if split_link_field(value_input.text()) is not None:
+            style = _LINK_STYLE
+        elif split_independent_field(value_input.text()) is not None:
+            style = _INDEPENDENT_STYLE
+    value_input.setStyleSheet(style)
 
 
 def format_parameter_value(value, decimals=4):
@@ -844,6 +862,18 @@ class ParametersTable(QWidget):
             if row < len(self.row_fix_locked) and self.row_fix_locked[row]:
                 self._set_row_fix_states(row, [True] * numco)
 
+            # An Nbaseline row is grey: it opens a spectrum's section, it is no
+            # component
+            if model == 'Nbaseline':
+                self.select_color(row, NBASELINE_COLOR)
+
+    def get_component_colors(self):
+        """Colours of the components get_model_list() lists, baseline first --
+        get_current_colors gives one per table ROW, empty rows included."""
+        colors = self.get_current_colors()
+        return [colors[0]] + [colors[row] for row in range(1, len(self.row_widgets))
+                              if row < len(colors) and self.model_name_at(row) != 'None']
+
     def model_name_at(self, row):
         """Model button text of a table row ('baseline' for row 0, 'None' for an
         empty row)."""
@@ -1120,7 +1150,25 @@ class ParametersTable(QWidget):
         action.setEnabled(not value_input.isReadOnly())
         action.triggered.connect(
             lambda checked=False, inp=value_input: self.start_parameter_link(inp))
+        if self.offers_independent_value(value_input):
+            action = menu.addAction("make it independent (own value in every spectrum)")
+            fix_cb = value_input.parentWidget().layout().itemAt(0).layout().itemAt(1).widget()
+            # Not on a field the fit never varies: read-only (a distribution's
+            # target) or structural (a hard-locked fix box: par, Num, ...)
+            action.setEnabled(not value_input.isReadOnly() and fix_cb.isEnabled())
+            action.triggered.connect(
+                lambda checked=False, inp=value_input: self.start_independent_value(inp))
         return menu
+
+    def offers_independent_value(self, value_input):
+        """True when the right-click menu of *value_input* offers "make it
+        independent": the path box holds several spectra (a simultaneous
+        one-model fit is possible), the model has no Nbaseline (the one-model
+        fit makes those sections itself) and the field is not in the baseline
+        row (every spectrum has its own baseline anyway)."""
+        return (len(path_box_entries(self.main_window)) > 1
+                and 'Nbaseline' not in self.get_model_list()
+                and self._row_of_value_input(value_input, 0) > 0)
 
     def _show_value_context_menu(self, value_input, pos):
         menu = self.value_context_menu(value_input)
@@ -1146,6 +1194,20 @@ class ParametersTable(QWidget):
         value_input.selectAll()
         value_input.insert(_EMPTY_LINK)
         value_input.setCursorPosition(_EMPTY_LINK.index(','))
+
+    def start_independent_value(self, value_input):
+        """Put an empty independent value ``=()`` into a value field, the cursor
+        between the brackets: the start value X is the user's to type.
+
+        Like start_parameter_link it replaces the selection instead of using
+        setText(), so Ctrl+Z still brings back the value that was there.
+        """
+        if value_input.isReadOnly():
+            return
+        value_input.setFocus()
+        value_input.selectAll()
+        value_input.insert(_EMPTY_INDEPENDENT)
+        value_input.setCursorPosition(_EMPTY_INDEPENDENT.index(')'))
 
     def auto_fill_params(self, row, model):
         # Auto-fill params based on model, mimicking original
@@ -1732,7 +1794,9 @@ class ParametersTable(QWidget):
         * the field holds a HALF-WRITTEN link — '=[,1]', '=[3,]', '=[,]'. The
           value validator (_VALUE_INPUT_PATTERN) accepts those on purpose, so
           that either of the two numbers can be deleted and retyped; until both
-          are there it is not a link, and read_model() would again read 0.0.
+          are there it is not a link, and read_model() would again read 0.0;
+        * the field holds an independent value still without its start value,
+          '=()' (or an '=(' never closed).
 
         Either way show/fit must be blocked until the field is filled in. The
         free-text expression column of Distr/Corr/Expression/Recon rows is
@@ -1740,7 +1804,7 @@ class ParametersTable(QWidget):
 
         Returns:
             list of dicts ``{'row', 'col', 'param', 'model', 'text', 'reason'}``,
-            'reason' being 'empty' or 'unfinished link'.
+            'reason' being 'empty', 'unfinished link' or 'unfinished independent'.
         """
         empties = []
         for row in range(len(self.row_widgets)):
@@ -1759,6 +1823,8 @@ class ParametersTable(QWidget):
                     reason = 'empty'
                 elif text.startswith('=[') and split_link_field(text) is None:
                     reason = 'unfinished link'
+                elif text.startswith('=(') and split_independent_field(text) is None:
+                    reason = 'unfinished independent'
                 else:
                     continue
                 name_label = param_widget.layout().itemAt(0).layout().itemAt(0).widget()
@@ -1798,8 +1864,10 @@ class ParametersTable(QWidget):
                 if value_input.isReadOnly():
                     continue
                 text = value_input.text().strip()
+                independent = split_independent_field(text)
                 try:
-                    value = float(text)
+                    # an independent =(X): X starts every spectrum's value
+                    value = independent if independent is not None else float(text)
                 except ValueError:
                     continue        # a link, or an empty / half-written field
                 bounds_layout = param_widget.layout().itemAt(2).layout()
@@ -1903,16 +1971,30 @@ class ParametersTable(QWidget):
         return param_names_list
 
     def get_link_snapshot(self):
-        """Snapshot parameter-link fields (``=[X,Y]``) keyed by flat parameter index.
+        """Snapshot the link fields (``=[X,Y]``) and independent values
+        (``=(X)``) keyed by flat parameter index.
 
         The flat index matches the parameter traversal used by read_model() and
         the results table (baseline first, then each active model row in table
-        order, including special-model placeholder slots).
+        order, including special-model placeholder slots). Taken when a fit
+        starts, it is what "Take result" writes back into those fields.
 
         Returns:
-            dict[int, str]: ``{flat_param_index: '=[X,Y]'}`` for link fields.
+            dict[int, str]: ``{flat_param_index: '=[X,Y]' or '=(X)'}``.
         """
-        links = {}
+        return {index: text for index, text in self._value_texts()
+                if text.startswith('=[') or text.startswith('=(')}
+
+    def get_independent_slots(self):
+        """Flat indices of the parameters holding a finished independent value
+        ``=(X)`` (model_io.split_independent_field), in the order read_model()
+        reads them."""
+        return [index for index, text in self._value_texts()
+                if split_independent_field(text) is not None]
+
+    def _value_texts(self):
+        """``(flat parameter index, value text)`` of every active parameter."""
+        texts = []
         param_index = 0
 
         for row_idx, row_widget in enumerate(self.row_widgets):
@@ -1930,9 +2012,7 @@ class ParametersTable(QWidget):
             for col in range(num_params):
                 param_widget = row_widget.layout().itemAt(col + 1).widget()
                 value_input = param_widget.layout().itemAt(1).widget()
-                text = value_input.text().strip()
-                if text.startswith('=['):
-                    links[param_index] = text
+                texts.append((param_index, value_input.text().strip()))
                 param_index += 1
 
-        return links
+        return texts

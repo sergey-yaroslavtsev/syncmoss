@@ -92,6 +92,10 @@ number_of_baseline_parameters = 8
 # Default color sequence for plotting models
 model_colors = ['red', 'blue', 'cyan', 'yellow', 'fuchsia', 'lime', 'darkorange', 'blueviolet', 'green', 'tomato', 'white', 'silver', 'lightgreen', 'pink']
 
+# An Nbaseline row is shown light grey: it opens the next spectrum's section,
+# it is not a component. 'silver' is a colour every .mdl reader already knows.
+NBASELINE_COLOR = 'silver'
+
 # Every color name a .mdl color row may contain (used to recognise the color
 # line when loading model files — shared by model_io and Library_io so both
 # accept the same files).

@@ -496,11 +496,15 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             # --- If the step crossed any bound, shorten it to land exactly on the
             #     closest violated bound (keeps the step feasible) --------------
             if np.any(bound_flags != 0):
+                # Each parameter's fraction of the step at the bound it crossed.
+                # (The original ran both lines; for a lower crossing the upper
+                # line's factor 0 overwrote the fraction with 0, so with two
+                # finite bounds the whole step was frozen.)
                 for i in range(0, len(params)):
-                    if bounds[0][i] != -np.inf and params[i] != trial[i] and bound_flags[i] != 0:
-                        bound_frac[i] = (params[i] - bounds[0][i]) / (params[i] - trial[i]) * (np.abs(bound_flags[i]) - np.sign(bound_flags[i])) / 2
-                    if bounds[1][i] != np.inf and params[i] != trial[i] and bound_flags[i] != 0:
-                        bound_frac[i] = (params[i] - bounds[1][i]) / (params[i] - trial[i]) * (np.abs(bound_flags[i]) + np.sign(bound_flags[i])) / 2
+                    if bound_flags[i] == -1 and params[i] != trial[i]:
+                        bound_frac[i] = (params[i] - bounds[0][i]) / (params[i] - trial[i])
+                    if bound_flags[i] == 1 and params[i] != trial[i]:
+                        bound_frac[i] = (params[i] - bounds[1][i]) / (params[i] - trial[i])
                 step_clamped = step * np.min(bound_frac)   # scale step by the tightest ratio
                 bound_hit = int(np.where(bound_frac == np.min(bound_frac))[0][0])
                 free_i = 0
@@ -512,7 +516,10 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                     if np.any(i == confu[0]):
                         src = int(np.where(confu[0] == i)[0][0])
                         trial[i] = trial[int(confu[1][src])] * confu[2][src]
-                trial[bound_hit] = bounds[int((np.abs(bound_flags[i]) + np.sign(bound_flags[i])) / 2)][bound_hit]
+                # On the side of the bound it crossed: the flag of bound_hit (the
+                # original read it with the loop index above, i.e. the last
+                # parameter's, and put an upper-bound hit on the lower bound)
+                trial[bound_hit] = bounds[int((np.abs(bound_flags[bound_hit]) + np.sign(bound_flags[bound_hit])) / 2)][bound_hit]
 
             # --- Re-evaluate linked expressions at the trial point -------------
             params_saved = np.copy(params)

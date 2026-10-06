@@ -44,6 +44,17 @@ parameter 12", `=[12,0.5]` means "half of parameter 12", `=[12,-1]` means
 - A link is also how a parameter is shared between components — e.g. one common
   central shift for two sextets.
 
+**Independent values.** Type `=(X)` instead of a number to make a parameter
+*independent*: in a simultaneous one-model fit (section 7) every spectrum gets a
+value of its own, all of them starting from X — every other free parameter has
+one value shared by all the spectra. Anywhere else it is simply the number X (so
+the model can be tried on one spectrum first). It is shown on a **lightgreen**
+field; `=()` without its X stays plain and blocks **Show model** and **Fit**,
+and X must lie inside the parameter's bounds. With several spectra in the path
+box and no `Nbaseline` row, the right-click menu of a value field offers *make
+it independent*, which puts in `=()` with the cursor between the brackets. An
+`=(X)` with its fix box ticked is fixed at X in every spectrum.
+
 ## 3. Finding a parameter number
 
 **Click and hold** a parameter's name in the parameters table: the label turns
@@ -83,8 +94,9 @@ path box, counted from 1 — and `N1`, `N2`, … are the numbers given with it
 (a temperature, an angle, …). So `p[9]+N*2` or `p[9]+0.01*N1`, linked into a
 parameter with `=[X,1]`, forces that parameter to follow the spectrum number or
 the temperature through a sequence. A single fit and **Show model** use the
-first spectrum (`N` = 1). A value a spectrum does not have blocks the start with
-a message, and the names are refused in a model with `Nbaseline`.
+first spectrum (`N` = 1); in a simultaneous one-model fit every spectrum uses
+its own. A value a spectrum does not have blocks the start with a message, and
+the names are refused in a model with `Nbaseline`.
 
 The `par` field of `Distr`/`Corr`/`Recon` is **not** the flat `p[i]` number: it
 counts the parameters of the model row it attaches to, `1` being that row's
@@ -138,6 +150,8 @@ an explicit message and reddened fields rather than failing halfway through.
   that link into `0` again. Any other `Nnr` is left as you set it.
 - Empty rows between models are harmless — they are dropped when the model is
   saved.
+- Selecting `Nbaseline` turns its row light grey (silver): it opens the next
+  spectrum's section, it is not a component.
 - `Layer` is a marker, not a component: components above and below it are
   propagated as separate layers of the sample (correct for a stack of different
   orientation or of different phases, where the transmission matrices do not
@@ -191,14 +205,52 @@ an explicit message and reddened fields rather than failing halfway through.
   folding and the raw-channel range. Without it, `sin` folding over all channels
   is assumed.
 - Several files in the path box (a Python-style list, or just comma-separated)
-  mean **sequence** fitting — unless the model contains `Nbaseline` rows, in
-  which case they are fitted **simultaneously** (one `Nbaseline` per extra
-  spectrum).
+  are fitted the way *Multispectra settings* says (the mode is shown on the
+  button): a **sequence** — each spectrum on its own, starting from the initial
+  guess or from the previous spectrum's result — or a **simultaneous one-model
+  fit**. A model with independent `=(X)` values is always fitted the second way.
+  A model with `Nbaseline` rows is fitted **simultaneously** as you built it
+  (one `Nbaseline` per extra spectrum), with a sequence mode chosen.
+- The **simultaneous one-model fit** fits the model of the table — built for ONE
+  spectrum — to all the spectra at once. Every free parameter has one value
+  shared by all the spectra, except the independent `=(X)` ones (section 2),
+  which get a value per spectrum. Every spectrum has its own baseline: its `Ns`
+  starts from its own counts (as in a sequence), the other values are the
+  table's, and a link in the baseline (e.g. `Nnr = =[0,0.67]`) stays inside each
+  spectrum. A link to an independent or fixed parameter follows that spectrum's
+  own copy, a link to a shared one the common value. `N`, `N1`, … are every
+  spectrum's own. The model must not have `Nbaseline` rows (the fit makes every
+  spectrum's section itself). There is one χ² for all the spectra.
+  - The main window shows the **first and the last** spectrum; a separate
+    **result window**, opened at the end of the fit, shows every one of them,
+    chosen with the slider at its bottom, with that spectrum's `N`, `N1`, … and
+    its part of the results (no correlation matrix: one spectrum's part of a
+    joint fit has none of its own).
+  - The results table lists the whole fit: every spectrum's baseline and
+    components, as if you had built the model with `Nbaseline` rows. A click on
+    a component of a spectrum the main window does not show offers to open the
+    result window there.
+  - *Take result as model* puts back only the model for one spectrum: the first
+    spectrum's values, and every link and independent value as it was when the
+    fit started — the X of an `=(X)` stays the start value it was.
+  - `Recon` is not recommended in such a fit: its weights are always shared, so
+    every spectrum gets the same reconstructed distribution — if the
+    distribution really changes from spectrum to spectrum (with temperature,
+    say), expect a compromise shape that fits none of them well, and a slower
+    fit.
+- The **result window** also opens at the end of a **sequence** — every fitted
+  spectrum with its own χ² and its own correlation matrix — and of an
+  **`Nbaseline` fit** — every spectrum with its own components, the fit's one χ²
+  and no correlation matrix.
+- In the result window a formula (`Expression`, `Distr`, `Corr`) reads as in the
+  whole fitted model — after a one-model fit with that spectrum's own `p[i]` and
+  its `N1`, … filled in — and is evaluated with the whole fit, so one spectrum's
+  formula may use another spectrum's parameters.
 - A spectrum in the path box may carry parameters of its own, used as `N1`,
   `N2`, … in the formulas (section 4): write it as a tuple,
   `[('Fe_4K.dat', 4.2, 0), ('Fe_77K.dat', 77, 0)]`. Plain paths and tuples may
   be mixed.
-- *Sequence Fitting → Load parameters of the spectra* fills those tuples in from
+- *Multispectra settings → Load parameters of the spectra* fills those tuples in from
   a text file, one parameter per line, one number per spectrum, separated by
   spaces and/or tabs. Lines starting with `#` are comments (e.g. `#N1`), except
   two reserved names: `#basename`, whose next line names the spectrum of each
@@ -261,6 +313,14 @@ whole run — a line of names, then one line per fitted spectrum — and ONE
 table, and the distributions when there are any). Both are started afresh by
 each run. The curves, figure and pictures of each spectrum are also saved next
 to them under the spectrum's own name (`Fe_4K_graf.txt`, `Fe_4K_combo.png`, …).
+
+A **simultaneous one-model fit** saves the same way, but only when you press
+**Save result**: ONE `<base>_param.txt` with a line per spectrum (the model's
+parameters for that spectrum — the shared ones repeat on every line — and the
+fit's one χ² on every line), ONE `<base>_result_table_PNG.html`, the
+`<base>_inputs.txt` of all the spectra, and every spectrum's curves and pictures
+under its own name. `<base>_result_model.mdl` is the model for one spectrum, the
+independent `=(X)` values with the X they started from — ready for another fit.
 
 ## 9. Other
 

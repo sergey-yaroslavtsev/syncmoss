@@ -15,8 +15,8 @@ The spectrum path box. A plain path is a spectrum without parameters, a tuple
     [('Fe_4K.dat', 4.2, 0),
     ('Fe_77K.dat', 77, 0)]
 
-The parameters file, loaded into and saved from the path box (Sequence Fitting
-menu), holds one parameter per line with one number per spectrum, separated by
+The parameters file, loaded into and saved from the path box (Multispectra
+settings menu), holds one parameter per line with one number per spectrum, separated by
 spaces and/or tabs::
 
     #basename

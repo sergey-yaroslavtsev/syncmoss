@@ -91,7 +91,7 @@ def _recon_lambda(d):
     return d / (1.0 - d + _RECON_EPS)
 
 
-def recon_fit_layout(model, p):
+def recon_fit_layout(model, p, share=None):
     """Locate every 'Recon' block in the flat p.
 
     Returns ``(infos, n_weights)`` where each info is a dict with the block's
@@ -99,18 +99,31 @@ def recon_fit_layout(model, p):
     (the D_dif/D_dif2 knobs), ``re`` (its index into the parallel Recon list) and
     ``wstart`` (offset of its weights within the appended weight tail). Walks the
     model with mod_len_def, so it is correct across Nbaseline sections.
+
+    *share* (optional) gives, for every Recon block in model order, the block
+    whose weights it uses -- itself when it has its own. The simultaneous
+    one-model fit makes every spectrum's copy of a Recon use the first
+    spectrum's weights. Only the blocks with weights of their own get an info
+    (so weights in the tail and smoothness rows); each lists in ``followers``
+    the Recon-list indices of the blocks that use its weights.
     """
     infos = []
+    owners = {}
     V = number_of_baseline_parameters
     re = 0
     wstart = 0
     for name in model:
         if name == 'Recon':
-            num = max(1, int(round(float(p[V + 3]))))
-            infos.append({'off': int(V), 'num': num,
-                          'd1': float(p[V + 4]), 'd2': float(p[V + 5]),
-                          're': re, 'wstart': wstart})
-            wstart += num
+            owner = re if share is None else int(share[re])
+            if owner == re:
+                num = max(1, int(round(float(p[V + 3]))))
+                owners[re] = {'off': int(V), 'num': num,
+                              'd1': float(p[V + 4]), 'd2': float(p[V + 5]),
+                              're': re, 'wstart': wstart, 'followers': []}
+                infos.append(owners[re])
+                wstart += num
+            else:
+                owners[owner]['followers'].append(re)
             re += 1
         V += mod_len_def(name, include_special=True)
     return infos, wstart
@@ -288,10 +301,42 @@ def chi2_spread(n_points, n_free):
     return float(np.sqrt(2.0 / dof))
 
 
+def section_starts(model):
+    """Flat index at which each spectrum's parameters start in a model with
+    Nbaseline sections: 0, then the slot of every Nbaseline (the next spectrum's
+    baseline). Walks the model with mod_len_def, as TI does."""
+    starts = [0]
+    index = number_of_baseline_parameters
+    for name in model:
+        if name == 'Nbaseline':
+            starts.append(index)
+        index += mod_len_def(name, include_special=True)
+    return starts
+
+
+def read_fit_inputs(app, spectrum_parameters=None):
+    """The model of the parameters table as fit_model takes it.
+
+    The names N, N1, N2, ... are replaced by *spectrum_parameters*' values (see
+    read_model). Keys: model, p, con1, con2, con3, Distri, Cor, Expr, NExpr,
+    DistriN, Recon, ReconN (read_model's) and bounds, fix (read_bounds_and_fix's).
+    """
+    model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = \
+        read_model_full(app, spectrum_parameters=spectrum_parameters)
+    p = np.array(p, dtype=float)
+    bounds, fix = read_bounds_and_fix(app, len(p))
+    return {'model': model, 'p': p, 'con1': con1, 'con2': con2, 'con3': con3,
+            'Distri': Distri, 'Cor': Cor, 'Expr': Expr, 'NExpr': NExpr,
+            'DistriN': DistriN, 'Recon': Recon, 'ReconN': ReconN,
+            'bounds': bounds, 'fix': fix}
+
+
 def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_params=None,
                         spectrum_parameters=None):
     """
     Fit single or multiple Mössbauer spectra (simultaneous fitting with Nbaseline).
+
+    Reads the model from the parameters table and fits it with fit_model.
 
     Args:
         app: Main application object
@@ -316,30 +361,64 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             - 'is_simultaneous': bool (True if Nbaseline fitting)
     """
     try:
-        instrumental_note = ''
-
         # Read model configuration using the full read_model function, with the
         # names N, N1, N2, ... replaced by this spectrum's values
         if spectrum_parameters is None:
             spectrum_parameters = first_spectrum_parameters(app)
-        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = \
-            read_model_full(app, spectrum_parameters=spectrum_parameters)
+        inputs = read_fit_inputs(app, spectrum_parameters)
+        model = inputs['model']
         # Recorded with the result (the _param.txt columns and the parameters
         # file) when the spectrum has values or the formulas use the names
         if 'Nbaseline' in model or not (spectrum_parameters.values or table_uses_names(app)):
             spectrum_parameters = None
 
-        p = np.array(p, dtype=float)
-        
         # Override parameters if sequence_params provided (for sequential fitting)
         if sequence_params is not None:
-            p = np.array(sequence_params, dtype=float)
+            inputs['p'] = np.array(sequence_params, dtype=float)
             print(f"[Fitting] Using sequence parameters (result mode)")
         
         # Override background (Ns, p[1]) if provided (for sequential fitting)
         if background is not None:
-            p[0] = background
+            inputs['p'][0] = background
             print(f"[Fitting] Using provided background: Ns = {background}")
+
+        # An Nbaseline model is fitted to every spectrum of the path box
+        spectrum_files = app.parse_process_path() if 'Nbaseline' in model else [spectrum_file]
+    except m5.FitInterrupted:
+        raise   # not a failure; the thread reports it (without a traceback)
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f'Fitting failed: {str(e)}\n{traceback.format_exc()}'
+        }
+
+    result = fit_model(app, inputs, spectrum_files, pool)
+    if result.get('success') and not result.get('is_simultaneous'):
+        result['spectrum_parameters'] = spectrum_parameters   # N, N1, ... of this fit (or None)
+    return result
+
+
+def fit_model(app, inputs, spectrum_files, pool):
+    """Fit *spectrum_files* with the model *inputs* -- the core of every fit.
+
+    *inputs* is what read_fit_inputs makes of the parameters table, or a model
+    built elsewhere: the simultaneous one-model fit expands the table's model
+    over its spectra (one_model.expand) and adds 'recon_share' (see
+    recon_fit_layout). A model with Nbaseline sections is fitted to the spectra
+    together, one section per spectrum; otherwise *spectrum_files* holds the one
+    spectrum. *inputs* is not changed, except that its Recon list receives the
+    fitted weights.
+
+    Returns the dict described in fit_single_spectrum; raises FitInterrupted
+    when the fit is stopped.
+    """
+    try:
+        instrumental_note = ''
+        model = inputs['model']
+        p = np.array(inputs['p'], dtype=float)
+        con1, con2, con3 = inputs['con1'], inputs['con2'], inputs['con3']
+        Distri, Cor, Expr, NExpr = inputs['Distri'], inputs['Cor'], inputs['Expr'], inputs['NExpr']
+        DistriN, Recon, ReconN = inputs['DistriN'], inputs['Recon'], inputs['ReconN']
         
         p0 = np.copy(p)
         
@@ -355,9 +434,6 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             # Simultaneous fitting mode
             number_of_spectra = num_nbaseline + 1
             print(f"[Fitting] Simultaneous fitting mode: {number_of_spectra} spectra expected")
-            
-            # Get list of spectrum files from path_list
-            spectrum_files = app.parse_process_path()
             
             if len(spectrum_files) != number_of_spectra:
                 return {
@@ -381,13 +457,19 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             
             print(f"[Fitting] Total concatenated spectrum: {len(A)} points")
             
+            # Where each spectrum ends in the joined data, for TI -- whichever
+            # way its velocities run
+            lengths = [len(a) for a in A_list]
+
         else:
             # Single spectrum fitting mode
+            spectrum_file = spectrum_files[0]
             A, B = load_spectrum(app, spectrum_file,
                                  calibration_path=app.calibration_path)
             A, B = A[0], B[0]  # Unpack from list
             A_list, B_list = [A], [B]
-            
+            lengths = None
+
             print(f"[Fitting] Single spectrum loaded: {len(A)} points")
             print(f"[Fitting] X range: {A[0]:.2f} to {A[-1]:.2f}")
             print(f"[Fitting] Y range: {B.min():.2f} to {B.max():.2f}")
@@ -428,16 +510,7 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             model_separate = split_model_sections(model)
 
             # Calculate parameter indices for each spectrum
-            begining_spc = [0]
-            start_cont_par = number_of_baseline_parameters
-            param_names_full = app.params_table.get_parameter_names()
-            for i in range(1, len(param_names_full)):
-                param_names = param_names_full[i]
-                if len(param_names) > 0 and param_names[0] == 'Ns':  # Start of new spectrum
-                    begining_spc.append(start_cont_par)
-                for j in range(len(param_names)):
-                    if param_names[j] != '':
-                        start_cont_par += 1
+            begining_spc = section_starts(model)
 
             print(f"[Fitting] Simultaneous - model_separate: {model_separate}")
             print(f"[Fitting] Simultaneous - begining_spc: {begining_spc}")
@@ -457,10 +530,12 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
 
         if not is_simultaneous or uniform_method:
             # Uniform instrumental settings: a single TI call over the whole model
-            # (TI splits Nbaseline sections internally) — the original code path.
+            # (TI splits Nbaseline sections internally, at the spectra's lengths)
+            # — the original code path.
             def func(x, p, recon=Recon):
                 return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
-                             Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol, Recon=recon)
+                             Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol, Recon=recon,
+                             lengths=lengths)
         else:
             # Dedicated per-section instrumental parameters (e.g. mixing CMS and
             # SMS): TI receives one value per section as lists. The full model and
@@ -475,10 +550,11 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
 
             def func(x, p, recon=Recon):
                 return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
-                             Distri, Cor, Met=met_list, Norm=norm_list, pol=pol, Recon=recon)
+                             Distri, Cor, Met=met_list, Norm=norm_list, pol=pol, Recon=recon,
+                             lengths=lengths)
 
-        # Box bounds and user-fixed parameters straight from the table
-        bounds, fix = read_bounds_and_fix(app, len(p))
+        # Box bounds and user-fixed parameters (from the table: read_fit_inputs)
+        bounds, fix = inputs['bounds'], inputs['fix']
 
         # Add automatic fixes for constraints, distribution expressions, expression
         # models and Recon weight-vector placeholder slots (the real weights are
@@ -522,14 +598,16 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         # but not in the reported chi-square / covariance. When there is no Recon,
         # func_fit/A_fit/B_fit/p0_fit collapse to the original inputs (n_reg == 0),
         # so this path is byte-identical to the previous behaviour.
-        recon_infos, n_weights = recon_fit_layout(model, p)
+        recon_infos, n_weights = recon_fit_layout(model, p, share=inputs.get('recon_share'))
         base_len = len(p0)
         if recon_infos:
             def _rebuild_recon(pw):
                 rl = list(Recon)
                 for info in recon_infos:
                     s = base_len + info['wstart']
-                    rl[info['re']] = np.asarray(pw[s:s + info['num']], dtype=float)
+                    weights = np.asarray(pw[s:s + info['num']], dtype=float)
+                    for re in [info['re']] + info['followers']:
+                        rl[re] = weights
                 return rl
 
             init_w = np.concatenate([
@@ -606,7 +684,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         er = np.asarray(er[:base_len], dtype=float) if np.ndim(er) and len(er) >= base_len else er
         for info in recon_infos:
             s = base_len + info['wstart']
-            Recon[info['re']] = np.asarray(pfit[s:s + info['num']], dtype=float)
+            for re in [info['re']] + info['followers']:
+                Recon[re] = np.asarray(pfit[s:s + info['num']], dtype=float)
 
         # Degrees of freedom as the minimiser counts them: the real data rows (not
         # the Recon penalty rows) minus the free entries of the working vector
@@ -733,7 +812,6 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
                 'Cor_substituted': list(Cor_t),  # Correlation expressions (substituted)
                 'Recon': [np.asarray(w, dtype=float) for w in Recon],  # fitted reconstruction weights
                 'instrumental_note': instrumental_note,
-                'spectrum_parameters': spectrum_parameters,  # N, N1, ... of this fit (or None)
             }
     
     except m5.FitInterrupted:

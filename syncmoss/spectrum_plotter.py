@@ -306,7 +306,7 @@ def plot_calibration(figure, A, B, C, gridcolor='white', theme=None):
     figure.tight_layout()
     figure.canvas.draw()
 
-def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, model, model_colors, backgrounds=None, gridcolor='white', theme=None, hires_diff=None):
+def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, model, model_colors, backgrounds=None, gridcolor='white', theme=None, hires_diff=None, labels=None, lengths=None):
     """
     Plot model with Nbaseline separators - creates separate subplots for each spectrum.
     
@@ -323,6 +323,10 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     - backgrounds: list of background values for normalization (optional)
     - gridcolor: color for grid lines (default: 'white')
     - theme: theme dict for colors (default: None → dark mode)
+    - labels: a caption under each panel, e.g. '12 of 12 · Fe_300K.dat' (optional)
+    - lengths: the number of points of each spectrum in A (optional); without
+      it the spectra are found from the velocity steps, which fails for spectra
+      running in opposite directions
     """
     tc = _tc(theme)
     figure.clear()
@@ -348,39 +352,49 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
             start_idx = i + 1
     model_sections.append(model[start_idx:])
     
-    # Split concatenated arrays into separate spectra by detecting sign changes in step
-    step_sign = np.sign(A[1] - A[0])
-    x_separate = []
-    y_separate = []
-    start = 0
-    for i in range(1, len(A)):
-        if step_sign != np.sign(A[i] - A[i-1]):
-            x_separate.append(A[start:i])
-            y_separate.append(B[start:i])
-            start = i
-    x_separate.append(A[start:])
-    y_separate.append(B[start:])
-    
-    # Split SPC_f the same way
-    spc_separate = []
-    start = 0
-    for i in range(1, len(A)):
-        if step_sign != np.sign(A[i] - A[i-1]):
-            spc_separate.append(SPC_f[start:i])
-            start = i
-    spc_separate.append(SPC_f[start:])
-
-    # Split the (concatenated) high-resolution difference the same way
-    diff_separate = None
-    if hires_diff is not None:
-        hires_diff = np.asarray(hires_diff, dtype=float)
-        diff_separate = []
+    if lengths is not None:
+        # Every spectrum's own number of points: nothing to guess
+        ends = np.cumsum(lengths)
+        pieces = [slice(end - length, end) for length, end in zip(lengths, ends)]
+        x_separate = [A[s] for s in pieces]
+        y_separate = [B[s] for s in pieces]
+        spc_separate = [SPC_f[s] for s in pieces]
+        diff_separate = (None if hires_diff is None
+                         else [np.asarray(hires_diff, dtype=float)[s] for s in pieces])
+    else:
+        # Split concatenated arrays into separate spectra by detecting sign changes in step
+        step_sign = np.sign(A[1] - A[0])
+        x_separate = []
+        y_separate = []
         start = 0
         for i in range(1, len(A)):
             if step_sign != np.sign(A[i] - A[i-1]):
-                diff_separate.append(hires_diff[start:i])
+                x_separate.append(A[start:i])
+                y_separate.append(B[start:i])
                 start = i
-        diff_separate.append(hires_diff[start:])
+        x_separate.append(A[start:])
+        y_separate.append(B[start:])
+
+        # Split SPC_f the same way
+        spc_separate = []
+        start = 0
+        for i in range(1, len(A)):
+            if step_sign != np.sign(A[i] - A[i-1]):
+                spc_separate.append(SPC_f[start:i])
+                start = i
+        spc_separate.append(SPC_f[start:])
+
+        # Split the (concatenated) high-resolution difference the same way
+        diff_separate = None
+        if hires_diff is not None:
+            hires_diff = np.asarray(hires_diff, dtype=float)
+            diff_separate = []
+            start = 0
+            for i in range(1, len(A)):
+                if step_sign != np.sign(A[i] - A[i-1]):
+                    diff_separate.append(hires_diff[start:i])
+                    start = i
+            diff_separate.append(hires_diff[start:])
 
     num_spectra = len(x_separate)
     
@@ -471,6 +485,11 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
         ax.plot(x, spc_plot, color='r', zorder=len(FS)+2 if FS else 2, label='Fit')
         ax.plot(x, y_plot, linestyle='None', marker='x', color='m', zorder=len(FS)+1 if FS else 1, label='Data')
         
+        # Caption under the panel (which spectrum this is)
+        if labels is not None and spc_idx < len(labels):
+            ax.text(0, -0.1, labels[spc_idx], horizontalalignment='left',
+                    verticalalignment='center', color='m', transform=ax.transAxes)
+
         # Formatting
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
         ax.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
@@ -499,7 +518,7 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     return all_position_artists
 
 
-def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None, chi2_spread=None):
+def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None, chi2_spread=None, labels=None):
     """
     Plot simultaneous fitting results with multiple spectra in separate subplots.
 
@@ -517,6 +536,8 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     - gridcolor: grid line color
     - theme: theme dict for colors
     - model: model list with Nbaseline separators for correct color mapping
+    - labels: the caption under each panel instead of the file name, e.g.
+      '12 of 12 · Fe_300K.dat' (optional)
     """
     tc = _tc(theme)
     figure.clear()
@@ -643,8 +664,11 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         ax.plot(x, spc, color='r', zorder=max_z+2, label='Fit')
         ax.plot(x, y, linestyle='None', marker='x', color='m', zorder=max_z+1, label='Data')
         
-        # Add spectrum filename at bottom
-        if spc_idx < len(spectrum_files):
+        # Add spectrum filename (or the caption given) at bottom
+        if labels is not None and spc_idx < len(labels):
+            ax.text(0, -0.1, labels[spc_idx], horizontalalignment='left',
+                    verticalalignment='center', color='m', transform=ax.transAxes)
+        elif spc_idx < len(spectrum_files):
             ax.text(0, -0.1, os.path.basename(spectrum_files[spc_idx]), 
                    horizontalalignment='left', verticalalignment='center', 
                    color='m', transform=ax.transAxes)
@@ -1019,11 +1043,13 @@ def plot_instrumental_function(figure, curves, title, dir_path, gridcolor='gray'
     return result_svg, result_png
 
 
-def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None, chi2_spread=None):
+def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None, chi2_spread=None, save=True):
     """
     Plot spectrum fitting results on the given figure and save to files.
 
     ``chi2_spread`` (optional) is shown next to the chi-square as ``± value``.
+    The figure goes to result.svg / result.png in *dir_path* (what "Save
+    result" picks up) unless *save* is False or it is a replot (*z_order*).
     """
     tc = _tc(theme)
     figure.clear()
@@ -1087,7 +1113,7 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
     # Save plots only if not in replot mode (z_order was None initially)
     result_svg = None
     result_png = None
-    if z_order_was_none:
+    if z_order_was_none and save:
         result_svg = os.path.join(dir_path, 'result.svg')
         figure.savefig(result_svg, bbox_inches='tight', facecolor=tc['figure_facecolor'], dpi=300)
         

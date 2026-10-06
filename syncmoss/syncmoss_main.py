@@ -77,7 +77,7 @@ import syncmoss.fitting_io as fitting_io
 from syncmoss.models import TI, FIT_CANCEL, FitInterrupted
 from syncmoss.Calibration import Calibration
 from syncmoss.constants import (model_colors, number_of_baseline_parameters,
-                               SMS_POL_DEFAULT)
+                               SMS_POL_DEFAULT, NBASELINE_COLOR)
 from syncmoss.parameters_table import ParametersTable, result_value_text
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
@@ -93,7 +93,7 @@ from syncmoss import bliss_channel
 from syncmoss.spectrum_parameters import (
     SpectrumParameters, parse_path_box, format_path_box, read_parameters_file,
     apply_parameters, write_parameters_file, sequence_problems, table_uses_names,
-    looks_like_entries, PATH_BOX_UNREADABLE,
+    looks_like_entries, names_used, PATH_BOX_UNREADABLE,
 )
 from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
@@ -118,6 +118,21 @@ from syncmoss.Library_window import save_to_library_via_dialog
 from syncmoss.supp_menu import (
     build_supp_menu, contact_icon, open_theory_find_dialog, theme_action_text,
 )
+import syncmoss.one_model as one_model
+from syncmoss.result_window import ResultWindow, SequenceSeries, NbaselineSeries
+
+
+# What Fit does with several spectra in the path box: the Multispectra settings
+# menu (self.sequence_fitting_type). A model with independent =(X) values is
+# always fitted simultaneously with one model, whatever is chosen there.
+ONE_MODEL = 2
+_MULTISPECTRA_MODES = {0: "sequence - initial", 1: "sequence - result",
+                       ONE_MODEL: "simultaneous - one model"}
+
+
+def _multispectra_label(fitting_type):
+    """Text of the Multispectra settings button for *fitting_type*."""
+    return f"Multispectra settings\n({_MULTISPECTRA_MODES[fitting_type]})"
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -353,6 +368,35 @@ class FittingThread(QThread):
             self.error.emit(error_msg)
 
 
+class OneModelFitThread(QThread):
+    """Thread for the simultaneous one-model fit (one_model.fit).
+
+    Its signal is 'done', not 'finished': a custom signal of that name shadows
+    QThread.finished. Stored on the main window (one_model_fit_thread), so
+    Interrupt waits for it like for every other calculation thread.
+    """
+    done = Signal(dict)  # result dictionary
+    error = Signal(str)
+
+    def __init__(self, main_window, template, spectra, pool):
+        super().__init__()
+        self.main_window = main_window
+        self.template = template
+        self.spectra = spectra
+        self.pool = pool
+
+    def run(self):
+        try:
+            result = one_model.fit(self.main_window, self.template, self.spectra, self.pool)
+            self.done.emit(result)
+        except FitInterrupted as e:
+            self.error.emit(str(e))
+        except Exception as e:
+            error_msg = f"{e}\n{traceback.format_exc()}"
+            print(f"[ERROR] OneModelFitThread failed: {error_msg}")
+            self.error.emit(error_msg)
+
+
 class SequentialFittingThread(QThread):
     """Thread for running sequential fitting of multiple spectra"""
     progress = Signal(int, int, str, str)  # index, total, spectrum_file, status
@@ -466,21 +510,36 @@ def _recon_weight_texts(model_list, recon_weights):
 
 class ShowModelThread(QThread):
     """Thread for running show model calculation without blocking the UI"""
-    finished = Signal(object, object, object, object, object, object, object, object, object, str, object, object, object, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon
+    finished = Signal(object, object, object, object, object, object, object, object, object, str, object, object, object, object, object)  # A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon, lengths (points of each joined spectrum, or None)
     error = Signal(str)
     
-    def __init__(self, main_window, path_list, pool, velocity_range=15.0):
+    def __init__(self, main_window, path_list, pool, velocity_range=15.0, one_model_show=None):
         super().__init__()
         self.main_window = main_window
         self.path_list = path_list
         self.pool = pool
         # ± x-axis range (mm/s) for the synthetic grid used in model-only mode.
         self.velocity_range = velocity_range
+        # For a simultaneous one-model fit: the template and the two spectra
+        # shown (path_list holds their files), see PhysicsApp.showM_pressed
+        self.one_model_show = one_model_show
 
     def run(self):
         try:
-            # Read model from parameter table
-            model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(self.main_window)
+            if self.one_model_show is not None:
+                # The table's model expanded over the two spectra shown, as the
+                # one-model fit expands it over all of them
+                show = self.one_model_show
+                inputs = one_model.expand(
+                    show['template'], show['spectra'],
+                    calculate_backgrounds(self.path_list, self.main_window.calibration_path))
+                model, p = inputs['model'], inputs['p'].copy()
+                con1, con2, con3 = inputs['con1'], inputs['con2'], inputs['con3']
+                Distri, Cor, Expr, NExpr = inputs['Distri'], inputs['Cor'], inputs['Expr'], inputs['NExpr']
+                DistriN, Recon, ReconN = inputs['DistriN'], inputs['Recon'], inputs['ReconN']
+            else:
+                # Read model from parameter table
+                model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(self.main_window)
             no_spectrum_mode = len(self.path_list) == 0
             
             # Validate Nbaseline count matches number of spectra
@@ -660,12 +719,12 @@ class ShowModelThread(QThread):
                 if no_spectrum_mode:
                     # Keep sectioned arrays for dedicated model-only plotting;
                     # the hires diff stays a per-section list to match.
-                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections, Distri_sub, Cor_sub, Recon)
+                    self.finished.emit(A, B, SPC_f_sections, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff_sections, Distri_sub, Cor_sub, Recon, None)
                 else:
                     # Concatenate fitted spectrum and hires diff (plot splits them back)
                     SPC_f = np.concatenate(SPC_f_sections)
                     hires_diff = np.concatenate(hires_diff_sections) if hires_diff_sections else None
-                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon)
+                    self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon, [len(a) for a in A_list])
             else:
                 # Single spectrum case: full spectrum + convergence check
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
@@ -680,7 +739,7 @@ class ShowModelThread(QThread):
                     A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_params, pol, Recon=Recon)
 
                 # Emit with single list of subspectra
-                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon)
+                self.finished.emit(A, B, SPC_f, FS, FS_pos, p, model, False, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon, None)
 
         except FitInterrupted as e:
             self.error.emit(str(e))
@@ -821,6 +880,9 @@ class PhysicsApp(QMainWindow):
         self.models_description_window = None
         self.help_window = None
         self.license_window = None
+        self.result_window = None         # the spectra of a fit of several spectra
+        self._sequence_series = None      # what a running sequence gives that window
+        self._show_one_model = None       # what Show model draws for a one-model fit
         self._fit_links_snapshot = {}
         self._fit_model_snapshot = None
 
@@ -1186,9 +1248,9 @@ class PhysicsApp(QMainWindow):
         self.choose_workfolder_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.choose_workfolder_btn.clicked.connect(self.choose_workfolder)
         
-        # Sequence fitting button
-        self.sequence_fitting_type = 0  # 0 = initial, 1 = result
-        self.seq_fit_btn = QPushButton("Sequence Fitting\n(initial)")
+        # Multispectra settings button: what Fit does with several spectra
+        self.sequence_fitting_type = 0  # 0 = initial, 1 = result, 2 = one model
+        self.seq_fit_btn = QPushButton(_multispectra_label(self.sequence_fitting_type))
         self.seq_fit_btn.setFont(QFont('Arial', 16))
         self.seq_fit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.seq_fit_btn.clicked.connect(self.show_sequence_fitting_options)
@@ -1533,25 +1595,37 @@ class PhysicsApp(QMainWindow):
                 self.set_status("No fitting results available", "orange")
                 return
             
-            # Get data from results table
-            model_list = self.results_table.current_model_list
-            model_colors = self.results_table.current_model_colors
-            parameter_names = self.results_table.current_parameter_names
-            parameters = self.results_table.current_parameters
-            errors = self.results_table.current_errors
-            expression_texts = getattr(self.results_table, 'expression_texts', {})
-            result_links = getattr(self.results_table, 'current_links', {})
+            one_model_fit = self.results_table.one_model
+            if one_model_fit is not None:
+                # A simultaneous one-model fit: only the model the fit started
+                # from goes back, with spectrum 1's values; its links and
+                # independent =(X) values as they were when the fit started
+                view = one_model_fit.template_view()
+                model_list, model_colors = view['model_list'], view['colors']
+                parameter_names, parameters, errors = view['names'], view['parameters'], view['errors']
+                expression_texts, result_links = view['texts'], view['links']
+                result_rows = view['rows']
+                fixed_at_start = {int(i) for i in view['fix']}
+            else:
+                # Get data from results table
+                model_list = self.results_table.current_model_list
+                model_colors = self.results_table.current_model_colors
+                parameter_names = self.results_table.current_parameter_names
+                parameters = self.results_table.current_parameters
+                errors = self.results_table.current_errors
+                expression_texts = getattr(self.results_table, 'expression_texts', {})
+                result_links = getattr(self.results_table, 'current_links', {})
+                result_rows = self.results_table.current_model_rows
+                # Fixed when the fit started: these values keep every digit
+                fixed_at_start = {int(i) for i in np.ravel(getattr(self.results_table, 'fix', []))}
             # The rows of the model the result was fitted with
             # (model_io.fitted_model_rows): their bounds go back into the table.
             # select_model below refills every row with the model's DEFAULT
             # bounds, so a bound the user had set used to vanish -- noticed when
             # a parameter stopped on it and came back fixed. Used only while it
             # still describes the same components.
-            result_rows = self.results_table.current_model_rows
             result_rows = (result_rows[2] if result_rows is not None
                            and list(result_rows[0]) == list(model_list) else None)
-            # Fixed when the fit started: these values keep every digit
-            fixed_at_start = {int(i) for i in np.ravel(getattr(self.results_table, 'fix', []))}
 
             # The results table grows with the result, the parameters table has a
             # fixed number of rows: a result it cannot hold is refused BEFORE its
@@ -1630,8 +1704,9 @@ class PhysicsApp(QMainWindow):
 
                     # Restore links captured at fit time, if available and model
                     # layout index is present in the saved snapshot.
-                    if param_index in result_links:
-                        value_input.setText(result_links[param_index])
+                    special = result_links.get(param_index, '')
+                    if special.startswith('=['):
+                        value_input.setText(special)
                         param_index += 1
                         continue
                     
@@ -1641,8 +1716,13 @@ class PhysicsApp(QMainWindow):
                     error = (errors[param_index]
                              if errors is not None and param_index < len(errors) else None)
                     fixed = param_index in fixed_at_start or (error is not None and np.isnan(error))
-                    value_input.setText(result_value_text(
-                        value, fixed, lower_input.text(), upper_input.text()))
+                    text = result_value_text(value, fixed, lower_input.text(), upper_input.text())
+                    if special.startswith('=('):
+                        # An independent value: a one-model fit gave every
+                        # spectrum its own, so X stays the start value it was; a
+                        # fit of one spectrum fitted it like any parameter
+                        text = special if one_model_fit is not None else f"=({text})"
+                    value_input.setText(text)
 
                     # Check fix checkbox if error is nan
                     if error is not None:
@@ -1738,6 +1818,9 @@ class PhysicsApp(QMainWindow):
                 param = slot['param'] or f"column {slot['col']}"
                 if slot['reason'] == 'empty':
                     what = "is empty"
+                elif slot['reason'] == 'unfinished independent':
+                    what = (f"holds '{slot['text']}' without its start value — type "
+                            f"it between the brackets, =(value)")
                 else:
                     what = (f"holds an unfinished link '{slot['text']}' — a link "
                             f"needs both numbers, =[parameter,factor]")
@@ -2058,6 +2141,31 @@ class PhysicsApp(QMainWindow):
             self.inprogress = False
             return
 
+        # A simultaneous one-model fit's model: the first and the last spectrum,
+        # each with its own baseline and N, N1, ...
+        self._show_one_model = None
+        if self.path_list:
+            one_model_show, refused = self.one_model_request(self.path_list)
+            if refused:
+                self.set_status(f"Show model was not started — {refused}", "red")
+                self.inprogress = False
+                return
+            if one_model_show:
+                entries = self.parse_process_entries()
+                template = self._one_model_template("Show model", [entries[0], entries[-1]])
+                if template is None:
+                    self.inprogress = False
+                    return
+                spectra = one_model.spectra_of(entries)
+                shown = [spectra[0], spectra[-1]]
+                self._show_one_model = {
+                    'template': template, 'spectra': shown,
+                    'colors': list(template['colors']) + [NBASELINE_COLOR] + list(template['colors'][1:]),
+                    'labels': [f"{s.number} of {len(spectra)} · {os.path.basename(s.path)}"
+                               for s in shown],
+                }
+                self.path_list = [s.path for s in shown]
+
         # Start model calculation in a separate thread
         if not self.path_list:
             self.set_status(
@@ -2067,12 +2175,13 @@ class PhysicsApp(QMainWindow):
         else:
             self.set_status("Calculating model...", "blue")
 
-        self.show_model_thread = ShowModelThread(self, self.path_list, self.pool, velocity_range=velocity_range)
+        self.show_model_thread = ShowModelThread(self, self.path_list, self.pool, velocity_range=velocity_range,
+                                                 one_model_show=self._show_one_model)
         self.show_model_thread.finished.connect(self.on_show_model_finished)
         self.show_model_thread.error.connect(self.on_show_model_error)
         self.show_model_thread.start()
     
-    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None, Distri=None, Cor=None, Recon=None):
+    def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None, Distri=None, Cor=None, Recon=None, lengths=None):
         """Handle show model completion"""
         try:
             # Show-model is not a fit result: wipe stale fit table content so
@@ -2085,8 +2194,12 @@ class PhysicsApp(QMainWindow):
                 self._showing_distribution = False
                 self.SP_DI.setText('Distribution')
 
-            # Get current colors from table (fresh read to handle delete/insert)
+            # Get current colors from table (fresh read to handle delete/insert);
+            # a one-model fit's two spectra take the template's colours twice
             current_colors = self.params_table.get_current_colors()
+            show = self._show_one_model
+            if show is not None:
+                current_colors = show['colors']
 
             flat_p = p if not has_nbaseline else np.concatenate(p)
             
@@ -2115,6 +2228,8 @@ class PhysicsApp(QMainWindow):
                 'Distri': Distri or [],
                 'Cor': Cor or [],
                 'Recon': Recon or [],
+                'labels': show['labels'] if show is not None else None,
+                'lengths': lengths,
             }
 
             self._plot_show_model_data(self.last_plot_data)
@@ -2143,7 +2258,8 @@ class PhysicsApp(QMainWindow):
                 self.figure, data['A'], data['B'], data['SPC_f'], data['FS'],
                 data['FS_pos'], data['p'], data.get('model', []), current_colors,
                 data.get('backgrounds'), gridcolor=self.gridcolor,
-                theme=self._theme, hires_diff=data.get('hires_diff')
+                theme=self._theme, hires_diff=data.get('hires_diff'),
+                labels=data.get('labels'), lengths=data.get('lengths')
             )
         else:
             position_artists = plot_model(
@@ -2609,6 +2725,16 @@ class PhysicsApp(QMainWindow):
                 self.inprogress = False
                 return
         
+            # An independent =(X) has a value per spectrum only in a simultaneous
+            # one-model fit; the search fits one spectrum with the model as it is
+            if self.params_table.get_independent_slots():
+                self.set_status(
+                    "The instrumental-function search with the model was not started — "
+                    "the model has independent =(X) values, which only the simultaneous "
+                    "one-model fit understands: write plain values for the search.", "red")
+                self.inprogress = False
+                return
+
         if (self.MS_fit.isChecked() and mode == 0):
             self.set_status("This will not work...", "red")
             self.inprogress = False
@@ -2752,17 +2878,22 @@ class PhysicsApp(QMainWindow):
             self.set_status("Workfolder selection canceled", "orange")
 
     def show_sequence_fitting_options(self):
-        """Show dropdown menu for sequence fitting options"""
+        """Show the Multispectra settings menu: what Fit does with several spectra"""
         menu = QMenu(self)
         
         # Add options
-        initial_action = QAction("Take always initial guess for the sequence of spectra", self)
+        initial_action = QAction("Sequence: take always initial guess for the sequence of spectra", self)
         initial_action.triggered.connect(lambda: self.set_sequence_fitting_type(0))
         menu.addAction(initial_action)
         
-        result_action = QAction("Take result as initial guess for the sequence of spectra", self)
+        result_action = QAction("Sequence: take result as initial guess for the sequence of spectra", self)
         result_action.triggered.connect(lambda: self.set_sequence_fitting_type(1))
         menu.addAction(result_action)
+
+        one_model_action = QAction("Simultaneous, one model: fit all the spectra at once with "
+                                   "the model of the table", self)
+        one_model_action.triggered.connect(lambda: self.set_sequence_fitting_type(ONE_MODEL))
+        menu.addAction(one_model_action)
 
         # The parameters of the spectra (N1, N2, ... in the formulas)
         menu.addSeparator()
@@ -2842,13 +2973,10 @@ class PhysicsApp(QMainWindow):
                         f"{os.path.basename(path)}", "green")
 
     def set_sequence_fitting_type(self, fitting_type):
-        """Set sequence fitting type and update button text"""
+        """Set what Fit does with several spectra and show it on the button"""
         self.sequence_fitting_type = fitting_type
-        if fitting_type == 0:
-            self.seq_fit_btn.setText("Sequence Fitting\n(initial)")
-        else:
-            self.seq_fit_btn.setText("Sequence Fitting\n(result)")
-        self.set_status(f"Sequence fitting type set to: {'initial' if fitting_type == 0 else 'result'}", "blue")
+        self.seq_fit_btn.setText(_multispectra_label(fitting_type))
+        self.set_status(f"Several spectra are fitted: {_MULTISPECTRA_MODES[fitting_type]}", "blue")
 
     def replot_result(self, row_index):
         """
@@ -2879,23 +3007,32 @@ class PhysicsApp(QMainWindow):
                 self.set_status("Cannot reorder baseline", "orange")
                 return
             
-            # Get model list to check for special models
-            model_list = self.params_table.get_model_list()
+            if self.results_table.one_model is not None:
+                # A one-model fit: the table lists every spectrum, the plot two
+                located = self._one_model_component(self.results_table.one_model, component_index)
+                if located is None:
+                    return
+                subspectrum_index, model_name = located
+            else:
+                # Get model list to check for special models
+                model_list = self.params_table.get_model_list()
             
-            # Special models that don't produce individual subspectra
-            non_subspectrum_models = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
+                # Special models that don't produce individual subspectra
+                non_subspectrum_models = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
             
-            # Skip special models when counting subspectra
-            # Count how many actual subspectra appear before this component
-            subspectrum_index = 0
-            for i in range(1, component_index):  # Start from 1 to skip baseline
-                if i < len(model_list) and model_list[i] not in non_subspectrum_models:
-                    subspectrum_index += 1
+                # Skip special models when counting subspectra
+                # Count how many actual subspectra appear before this component
+                subspectrum_index = 0
+                for i in range(1, component_index):  # Start from 1 to skip baseline
+                    if i < len(model_list) and model_list[i] not in non_subspectrum_models:
+                        subspectrum_index += 1
             
-            # Check if clicked component is a special model (no reordering)
-            if component_index < len(model_list) and model_list[component_index] in non_subspectrum_models:
-                self.set_status(f"Cannot reorder {model_list[component_index]}", "orange")
-                return
+                # Check if clicked component is a special model (no reordering)
+                if component_index < len(model_list) and model_list[component_index] in non_subspectrum_models:
+                    self.set_status(f"Cannot reorder {model_list[component_index]}", "orange")
+                    return
+                model_name = (model_list[component_index] if component_index < len(model_list)
+                              else f"Component {component_index}")
             
             # Handle simultaneous vs single fitting
             if self.last_plot_data['is_simultaneous']:
@@ -2932,7 +3069,6 @@ class PhysicsApp(QMainWindow):
             # Replot with custom z-order
             self._replot_with_custom_order()
             
-            model_name = self.params_table.get_model_list()[component_index] if component_index < len(self.params_table.get_model_list()) else f"Component {component_index}"
             self.set_status(f"Brought '{model_name}' to top", "green")
             
         except Exception as e:
@@ -2963,7 +3099,7 @@ class PhysicsApp(QMainWindow):
                 self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
                 theme=self._theme, model=data.get('model'),
                 hires_diff_list=data.get('hires_diff_list'),
-                chi2_spread=data.get('chi2_spread')
+                chi2_spread=data.get('chi2_spread'), labels=data.get('labels')
             )
             self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         else:
@@ -3010,7 +3146,7 @@ class PhysicsApp(QMainWindow):
                     self.set_status("No distribution in the model", "orange")
                     return
 
-                parameter_names = self.params_table.get_parameter_names()
+                parameter_names = data.get('names') or self.params_table.get_parameter_names()
                 gridcolor = self.gridcolor
                 p_for_distribution = data.get('p_flat', data['p'])
 
@@ -3128,6 +3264,17 @@ class PhysicsApp(QMainWindow):
                 self.inprogress = False
                 return
             
+            # Several spectra and independent =(X) values (or the one-model mode
+            # of Multispectra settings): one model fitted to all of them at once
+            one_model_fit, refused = self.one_model_request(spectrum_files)
+            if refused:
+                self.set_status(f"Fit was not started — {refused}", "red")
+                self.inprogress = False
+                return
+            if one_model_fit:
+                self.start_one_model_fit()
+                return
+
             # Check for sequential fitting: no Nbaseline AND multiple spectra
             fitting_mode = fitting_io.determine_fitting_mode(self, spectrum_files)
             
@@ -3154,8 +3301,8 @@ class PhysicsApp(QMainWindow):
                         self.set_status(
                             "Sequence fitting was not started — the formulas use parameters "
                             "some spectra have no value for (give them in the path box as "
-                            "('file', N1, N2, …) or load them from the Sequence Fitting "
-                            "menu):\n" + "\n".join(lacking), "red")
+                            "('file', N1, N2, …) or load them from the Multispectra "
+                            "settings menu):\n" + "\n".join(lacking), "red")
                         self.inprogress = False
                         return
                     # Batch = each spectrum fitted on its own (its own metadata).
@@ -3199,6 +3346,189 @@ class PhysicsApp(QMainWindow):
             self.set_status(f"Fit error: {e}", "red")
             self.inprogress = False
     
+    def one_model_request(self, spectrum_files):
+        """Whether Fit / Show model work as a simultaneous one-model fit.
+
+        They do with several spectra and either independent =(X) values in the
+        model or the one-model mode of Multispectra settings. Returns
+        ``(True, None)`` then, ``(False, reason)`` when the model asks for it
+        but cannot have it (Nbaseline rows: the one-model fit makes every
+        spectrum's section itself), ``(False, None)`` otherwise -- with one
+        spectrum an =(X) is simply the parameter's value.
+        """
+        has_nbaseline = 'Nbaseline' in self.params_table.get_model_list()
+        independent = bool(self.params_table.get_independent_slots())
+        chosen = self.sequence_fitting_type == ONE_MODEL
+        if has_nbaseline and independent:
+            return False, ("the model has independent =(X) values and Nbaseline rows. "
+                           "Independent values belong to the simultaneous one-model fit, "
+                           "which makes every spectrum's section itself: remove the "
+                           "Nbaseline rows, or write plain values.")
+        if has_nbaseline and chosen and len(spectrum_files) > 1:
+            return False, ("Multispectra settings is on 'simultaneous - one model', which "
+                           "makes every spectrum's section itself, but the model has "
+                           "Nbaseline rows: remove them, or choose a sequence mode for an "
+                           "Nbaseline fit.")
+        if len(spectrum_files) > 1 and (independent or chosen):
+            return True, None
+        return False, None
+
+    def _one_model_template(self, action_label, entries):
+        """The template of the table for a one-model fit of *entries* -- None
+        (after saying why) when a formula uses a parameter some spectrum lacks."""
+        typed = read_model(self, substitute_names=False)
+        lacking = sequence_problems(typed[5] + typed[6] + typed[7], entries)
+        if lacking:
+            self.set_status(
+                f"{action_label} was not started — the formulas use parameters some "
+                f"spectra have no value for (give them in the path box as "
+                f"('file', N1, N2, …) or load them from the Multispectra settings "
+                f"menu):\n" + "\n".join(lacking), "red")
+            return None
+        return one_model.read_template(self)
+
+    def start_one_model_fit(self):
+        """Fit the model of the table to all the spectra of the path box at once
+        (one_model): shared parameters one value for all, =(X) ones a value per
+        spectrum, every spectrum its own baseline."""
+        entries = self.parse_process_entries()
+        template = self._one_model_template("The simultaneous one-model fit", entries)
+        if template is None:
+            self.inprogress = False
+            return
+        spectra = one_model.spectra_of(entries)
+        if not self.confirm_instrumental_methods([s.path for s in spectra], 'simultaneous'):
+            self.inprogress = False
+            return
+
+        # Snapshot links (and the model) at fit start, as for every fit: what
+        # Take result and Save result write back, whatever the table holds then
+        self._fit_links_snapshot = self.params_table.get_link_snapshot()
+        self._fit_model_snapshot = model_file_rows(self)
+
+        why = ("the model has independent =(X) values" if template['independent']
+               else "Multispectra settings")
+        self.set_status(f"Simultaneous one-model fit of {len(spectra)} spectra ({why})...", "cyan")
+        self.one_model_fit_thread = OneModelFitThread(self, template, spectra, self.pool)
+        self.one_model_fit_thread.done.connect(self.on_one_model_fit_done)
+        self.one_model_fit_thread.error.connect(self.on_fitting_error)
+        self.one_model_fit_thread.start()
+
+    def on_one_model_fit_done(self, result):
+        """Show a finished one-model fit: the whole expanded model in the results
+        table, the first and the last spectrum here, every one of them in the
+        result window."""
+        try:
+            if not result['success']:
+                print(result['message'])
+                self.set_status(f"Fitting failed: {result['message']}", "red")
+                return
+            fit = result['one_model']
+            self.results_table.fill_table(
+                fit.p, fit.expanded_model_list(), fit.expanded_colors(), fit.expanded_names(),
+                result['covariance_matrix'], result['errors'],
+                result.get('fix', np.array([], dtype=int)), fit.expanded_texts())
+            # The marker Take result and Save result go by: only the template is
+            # taken back, and the files are written spectrum by spectrum
+            self.results_table.one_model = fit
+            self.results_table.current_links = dict(self._fit_links_snapshot)
+            self.results_table.current_model_rows = fit.model_rows()
+            self.results_table.current_chi2 = result['chi2']
+            self.plot_one_model_result(fit)
+            self.show_result_window(fit)
+        except Exception as e:
+            print(f"Error processing fit results: {e}\n{traceback.format_exc()}")
+            self.set_status(f"Error processing fit results: {e}", "red")
+        finally:
+            self.inprogress = False
+
+    def plot_one_model_result(self, fit):
+        """The first and the last spectrum of a one-model fit in the main window
+        (all of them: the result window)."""
+        shown = fit.displayed()
+        curves = [fit.curves(k) for k in shown]
+        labels = [fit.label(k) for k in shown]
+        self.current_FS_pos = curves[0][4]
+        self.last_plot_data = {
+            'A_list': [c[0] for c in curves],
+            'B_list': [c[1] for c in curves],
+            'SPC_f_list': [c[2] for c in curves],
+            'hires_diff_list': [c[5] for c in curves],
+            'FS_list': [c[3] for c in curves],
+            'FS_pos_list': [c[4] for c in curves],
+            'p': fit.displayed_parameters(),
+            'begining_spc': [i * fit.L for i in range(len(shown))],
+            'model_colors': fit.displayed_colors(),
+            'chi2': fit.chi2,
+            'chi2_spread': fit.chi2_spread,
+            'spectrum_files': [fit.spectra[k].path for k in shown],
+            'labels': labels,
+            'is_simultaneous': True,
+            'z_order': None,
+            'model': fit.displayed_model(),
+            'names': fit.displayed_names(),
+            'Distri': [d for k in shown for d in fit.distri(k)],
+            'Cor': [c for k in shown for c in fit.cor(k)],
+            'Recon': [w for k in shown for w in fit.recon(k)],
+        }
+        # Save result writes the spectra from the one-model result itself
+        self.last_fitting_data = None
+        self._showing_distribution = False
+        self.SP_DI.setText('Distribution')
+
+        data = self.last_plot_data
+        _, _, position_artists_list = plot_simultaneous_fitting_result(
+            self.figure, data['A_list'], data['B_list'], data['SPC_f_list'],
+            data['FS_list'], data['FS_pos_list'], data['p'], data['begining_spc'],
+            data['model_colors'], fit.chi2, data['spectrum_files'], self.dir_path,
+            z_order=None, gridcolor=self.gridcolor, theme=self._theme, model=data['model'],
+            hires_diff_list=data['hires_diff_list'], chi2_spread=fit.chi2_spread, labels=labels)
+        self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
+        self.toolbar.toggle_positions_action.setEnabled(bool(self.position_artists))
+        self.toolbar.toggle_positions_action.setChecked(bool(self.position_artists))
+        self._update_legend_toggle()
+        self.canvas.draw()
+        self.toolbar.push_current()
+        note = str(fit.result.get('instrumental_note', '') or '').strip()
+        self.set_status(f"Simultaneous one-model fit of {fit.count()} spectra completed! "
+                        f"χ² = {fit.chi2:.3f}" + (f"\n{note}" if note else ""), "green")
+
+    def show_result_window(self, series, spectrum=None):
+        """Show the spectra of *series* -- a one-model fit, a sequence or an
+        Nbaseline fit (see result_window) -- in the result window, made once
+        and then reused."""
+        if self.result_window is None:
+            self.result_window = ResultWindow(self)
+        self.result_window.show_result(series, spectrum)
+
+    def _one_model_component(self, fit, component_index):
+        """``(index among the drawn subspectra, model name)`` of a component of a
+        one-model result -- None, after saying why, when it is not drawn here."""
+        spectrum, position = fit.section_of_component(component_index)
+        if position == 0:
+            self.set_status("Cannot reorder baseline", "orange")
+            return None
+        if spectrum not in fit.displayed():
+            answer = QMessageBox.question(
+                self, "Spectrum not shown here",
+                f"Spectrum {fit.label(spectrum)} is not shown in the main window: a "
+                f"simultaneous one-model fit shows only the first and the last spectrum "
+                f"here.\n\nOpen the result window at this spectrum?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if answer == QMessageBox.StandardButton.Yes:
+                self.show_result_window(fit, spectrum)
+            return None
+        model = fit.template['model']
+        name = model[position - 1]
+        not_drawn = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
+        if name in not_drawn:
+            self.set_status(f"Cannot reorder {name}", "orange")
+            return None
+        within = sum(1 for m in model[:position - 1] if m not in not_drawn)
+        before = sum(len(self.last_plot_data['FS_list'][d])
+                     for d in range(fit.displayed().index(spectrum)))
+        return before + within, name
+    
     def start_sequential_fitting(self, spectrum_files, entries=None):
         """
         Start sequential fitting of multiple spectra using fitting_io logic.
@@ -3234,6 +3564,12 @@ class PhysicsApp(QMainWindow):
         # fitting do not leak into the stored result-table metadata.
         self._fit_links_snapshot = self.params_table.get_link_snapshot()
         self._fit_model_snapshot = model_file_rows(self)
+
+        # Every fitted spectrum, for the result window at the end of the run
+        pt = self.params_table
+        self._sequence_series = SequenceSeries(
+            pt.get_model_list(), pt.get_component_colors(), pt.get_parameter_names(),
+            pt.get_expression_texts(), spectrum_parameters)
 
         # Calculate backgrounds for all spectra upfront
         self.set_status(f"Calculating backgrounds for {len(spectrum_files)} spectra...", "cyan")
@@ -3290,10 +3626,13 @@ class PhysicsApp(QMainWindow):
 
             # Plot the result
             self.plot_fitting_result(result)
-            
+
             # Save files
             self._save_sequential_result_files(spectrum_file)
-            
+
+            if self._sequence_series is not None:
+                self._sequence_series.add(spectrum_file, result)
+
         except Exception as e:
             print(f"Error handling fitted spectrum: {e}\n{traceback.format_exc()}")
     
@@ -3352,6 +3691,13 @@ class PhysicsApp(QMainWindow):
                 f"Errors:\n{error_summary}{save_note}",
                 "orange",
             )
+        # Every fitted spectrum, one at a time, each with its own correlations
+        series, self._sequence_series = self._sequence_series, None
+        if series is not None and series.count():
+            try:
+                self.show_result_window(series)
+            except Exception as e:
+                print(f"Result window not shown: {e}\n{traceback.format_exc()}")
         self.inprogress = False
     
     def _sequence_file(self, suffix):
@@ -3398,28 +3744,31 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             print(f"Error saving sequential result: {e}\n{traceback.format_exc()}")
 
-    def _start_sequence_html(self):
+    def _start_sequence_html(self, what='sequence fit'):
         """Start the run's HTML page of pictures (replacing an older one)."""
         path = self._sequence_file('_result_table_PNG.html')
         try:
             with open(path, 'w', encoding='utf-8') as f:
                 title = html_escape(os.path.basename(self._result_base_path()))
                 f.write(f'<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8">'
-                        f'<title>{title}: sequence fit</title></head>\n<body>\n')
+                        f'<title>{title}: {html_escape(what)}</title></head>\n<body>\n')
             self._sequence_html = path
         except OSError as e:
             print(f"[Sequential] {os.path.basename(path)} not started: {e}")
             self._sequence_html = None
 
-    def _add_to_sequence_html(self, spectrum_file, row, started, png_paths, problems=()):
+    def _add_to_sequence_html(self, spectrum_file, row, started, png_paths, problems=(), used=None):
         """Append one spectrum's pictures -- only those written for it just now
         (a failed plot must not bring back a picture of an older run). A
-        picture that could not be written (*problems*) is named instead."""
+        picture that could not be written (*problems*) is named instead. The
+        heading carries the spectrum's N, N1, ... (*used*; by default those of
+        the result in the results table)."""
         path = getattr(self, '_sequence_html', None)
         if not path:
             return
         failed = dict(problems)
-        used = self.results_table.current_spectrum_parameters
+        if used is None:
+            used = self.results_table.current_spectrum_parameters
         number = used.number if used is not None else row
         heading = f"{number}. {os.path.basename(spectrum_file)}"
         if used is not None and used.values:
@@ -3656,10 +4005,16 @@ class PhysicsApp(QMainWindow):
 
             # Store chi2 for saving
             self.results_table.current_chi2 = chi2
-            
+
             # Plot results
             self.plot_fitting_result(result)
-            
+
+            # A simultaneous (Nbaseline) fit: every spectrum, one at a time
+            if is_simultaneous:
+                self.show_result_window(NbaselineSeries(
+                    result, model_list, self.params_table.get_component_colors(),
+                    parameter_names, expression_texts, self.parse_process_entries()))
+
         except Exception as e:
             error_msg = f"Error processing fit results: {e}\n{traceback.format_exc()}"
             print(error_msg)
@@ -3757,23 +4112,28 @@ class PhysicsApp(QMainWindow):
             if save_dir and not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
-            # A simultaneous fit produced ONE parameter row for several spectra —
-            # name them all, otherwise the saved row looks like a single-file fit.
-            fit_data = self.last_fitting_data or {}
-            sim_files = fit_data.get('spectrum_files') if fit_data.get('is_simultaneous') else None
-            if sim_files:
-                spectrum_file = '; '.join(os.path.basename(f) for f in sim_files)
+            one_model_fit = self.results_table.one_model
+            if one_model_fit is not None:
+                # A one-model fit is saved spectrum by spectrum, as a sequence
+                problems = self._write_one_model_files(base_path, one_model_fit, mode)
             else:
-                spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
-            problems = self._write_result_files(base_path, spectrum_file, mode)
+                # A simultaneous fit produced ONE parameter row for several spectra —
+                # name them all, otherwise the saved row looks like a single-file fit.
+                fit_data = self.last_fitting_data or {}
+                sim_files = fit_data.get('spectrum_files') if fit_data.get('is_simultaneous') else None
+                if sim_files:
+                    spectrum_file = '; '.join(os.path.basename(f) for f in sim_files)
+                else:
+                    spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
+                problems = self._write_result_files(base_path, spectrum_file, mode)
 
-            # The spectrum's N, N1, N2, ... the fit used (a sequence writes the
-            # file of its whole run when it starts instead)
-            used = self.results_table.current_spectrum_parameters
-            if used is not None:
-                self._write_spectrum_parameters_file(
-                    base_path + '_inputs.txt',
-                    [(used.path or spectrum_file, used.values)], numbers=[used.number])
+                # The spectrum's N, N1, N2, ... the fit used (a sequence writes the
+                # file of its whole run when it starts instead)
+                used = self.results_table.current_spectrum_parameters
+                if used is not None:
+                    self._write_spectrum_parameters_file(
+                        base_path + '_inputs.txt',
+                        [(used.path or spectrum_file, used.values)], numbers=[used.number])
 
             if mode == 'append':
                 message = "Results appended to parameter file, others overwritten"
@@ -3862,6 +4222,105 @@ class PhysicsApp(QMainWindow):
         self._save_distributions_png(base_path + '_distributions.png')
         return problems
 
+    def _write_one_model_files(self, base_path, fit, mode):
+        """The result files of a simultaneous one-model fit *fit*, written as a
+        sequence writes them.
+
+        ONE ``<base>_param.txt`` with a line per spectrum -- in the layout of the
+        model the fit started from, the shared parameters repeated on every
+        line, the fit's one chi2 on every line -- and ONE
+        ``<base>_result_table_PNG.html`` with every spectrum's pictures. Next to
+        them, under each spectrum's own name, its curves (``_graf.txt``), its
+        figure (``.svg``), the figure with its part of the result
+        (``_combo.png``) and its distributions; and ``<base>_inputs.txt`` with
+        the N1, N2, ... of all the spectra. Everything is drawn here from the
+        result: nothing was saved while the fit ran. *mode* 'append' adds the
+        lines to an existing ``_param.txt``.
+
+        Returns the ``(path, reason)`` of every file that was not written.
+        """
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+        problems = []
+
+        def write(path, how):
+            try:
+                how()
+            except Exception as e:
+                print(f"[Saving] {os.path.basename(path)} not written: {e}\n{traceback.format_exc()}")
+                problems.append((path, _write_problem(path, e)))
+
+        template = fit.template
+        model_list = fit.model_list()
+        colors = list(template['colors'])
+        names = [list(n) for n in template['names']]
+        typed = list(template['Expr']) + list(template['Distri']) + list(template['Cor'])
+        uses_parameters = any(s.values for s in fit.spectra) or bool(names_used(typed))
+        save_dir = os.path.dirname(base_path)
+        param_path = base_path + '_param.txt'
+        picture = os.path.join(self.dir_path, 'result_one_model.png')   # the combo's figure
+        figure = Figure(figsize=(10, 6))
+        FigureCanvasAgg(figure)
+        table = ResultsTable(self)       # off screen: each spectrum's part of the result
+
+        self._start_sequence_html('simultaneous one-model fit')
+        for k, spectrum in enumerate(fit.spectra):
+            started = time.time()
+            name = os.path.basename(spectrum.path)
+            spectrum_base = os.path.join(save_dir, strip_known_extension(name))
+            values, errors = fit.values(k), fit.errors_of(k)
+            A, B, curve, components, positions, hires = fit.curves(k)
+
+            write(param_path, lambda: self._save_parameters_file(
+                param_path, values, errors, model_list, names, name, fit.chi2,
+                'append' if (k > 0 or mode == 'append') else 'new',
+                spectrum if uses_parameters else None))
+
+            plot_fitting_result(
+                figure, A, B, curve, components, positions, values, colors, fit.chi2,
+                spectrum.path, self.dir_path, gridcolor=self.gridcolor, theme=self._theme,
+                model=list(template['model']), hires_diff=hires,
+                chi2_spread=fit.chi2_spread, save=False)
+            write(spectrum_base + '.svg', lambda: figure.savefig(
+                spectrum_base + '.svg', bbox_inches='tight', facecolor=figure.get_facecolor()))
+            table.fill_table(values, model_list, colors, names, fit.covariance_of(k), errors,
+                             fit.fix_of(k), fit.texts_of(k), spectrum_parameters=spectrum,
+                             whole_fit=fit.whole_fit())
+
+            def combo():
+                figure.savefig(picture, bbox_inches='tight', facecolor=figure.get_facecolor(), dpi=300)
+                self._save_combo_image_from_qimage(picture, table.render_table_to_image(),
+                                                   spectrum_base + '_combo.png')
+            write(spectrum_base + '_combo.png', combo)
+
+            drawn = {'model': list(template['model']), 'p': values, 'Distri': fit.distri(k),
+                     'Cor': fit.cor(k), 'Recon': fit.recon(k), 'model_colors': colors,
+                     'names': names}
+
+            def graf():
+                column_names, columns = self._graf_section_columns(
+                    A, B, curve, components, values, list(template['model']))
+                for column, data in distribution_curves(drawn['model'], values, drawn['Distri'],
+                                                        drawn['Cor'], drawn['Recon']):
+                    column_names.append(column)
+                    columns.append(np.asarray(data, dtype=float))
+                self._write_graf_columns(spectrum_base + '_graf.txt', column_names, columns)
+            write(spectrum_base + '_graf.txt', graf)
+
+            self._save_distributions_png(spectrum_base + '_distributions.png', data=drawn)
+            self._add_to_sequence_html(spectrum.path, k + 1, started,
+                                       [spectrum_base + '_combo.png',
+                                        spectrum_base + '_distributions.png'],
+                                       problems, used=spectrum)
+        self._finish_sequence_html()
+        table.deleteLater()
+
+        if uses_parameters:
+            self._write_spectrum_parameters_file(
+                base_path + '_inputs.txt', [(s.path, s.values) for s in fit.spectra])
+        return problems
+
     def _write_spectrum_parameters_file(self, filepath, entries, numbers=None):
         """Write a parameters file (see spectrum_parameters); a failure is logged
         in the terminal and never blocks the fit or the other result files."""
@@ -3874,14 +4333,17 @@ class PhysicsApp(QMainWindow):
         except (OSError, ValueError) as e:
             print(f"[Spectrum parameters] {os.path.basename(filepath)} not saved: {e}")
 
-    def _save_distributions_png(self, filepath):
+    def _save_distributions_png(self, filepath, data=None):
         """Render every distribution/correlation (Distr, Corr, Recon) into one PNG.
 
         Reuses :func:`plot_distribution` (the same view as the Distribution toggle)
         on a stand-alone Agg figure. Writes nothing when the model has no
         distribution; failures are logged but never block the other result files.
+        *data* is what is drawn (model, p, Distri, Cor, Recon, model_colors and
+        optionally the parameter names); by default the plot on screen.
         """
-        data = getattr(self, 'last_plot_data', None)
+        if data is None:
+            data = getattr(self, 'last_plot_data', None)
         if not data:
             return
         model = data.get('model', []) or []
@@ -3897,7 +4359,7 @@ class PhysicsApp(QMainWindow):
             ok = plot_distribution(
                 fig, model, data.get('p_flat', data.get('p')),
                 Distri, data.get('Cor', []),
-                self.params_table.get_parameter_names(),
+                data.get('names') or self.params_table.get_parameter_names(),
                 model_colors=data.get('model_colors'),
                 gridcolor=self.gridcolor, theme=self._theme,
                 Recon=data.get('Recon', []),
@@ -3994,6 +4456,11 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             print(f"[graf] could not add distribution columns: {e}")
 
+        self._write_graf_columns(filepath, column_names, data_columns)
+
+    def _write_graf_columns(self, filepath, column_names, data_columns):
+        """Write a graf file: a header line of *column_names*, then the columns
+        side by side, tab-separated, every one NaN-padded to the longest."""
         # Pad every column to the longest length with NaN, then stack.
         n_rows = max(len(np.atleast_1d(c)) for c in data_columns)
         padded = []

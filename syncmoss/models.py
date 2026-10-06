@@ -2988,13 +2988,20 @@ def _pool_starmap(pool, func, args):
     return result.get()
 
 
-def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0]):  # num - number of Gausians # PS - spc, p - InsFun
+def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0], lengths=None):  # num - number of Gausians # PS - spc, p - InsFun
     """Compute the Mossbauer transmission spectrum (full transmission integral).
 
     Integrates the per-energy model ``TImod`` over the source line shape using
     ``pool`` (multiprocessing) and adds the polynomial baseline. ``model`` is the
     list of component names, ``p`` the flat parameter array, ``JN`` the number of
     integration samples and ``INS`` the instrumental-function parameters.
+
+    For a model with Nbaseline sections ``x_exp`` holds the velocities of every
+    spectrum, one spectrum after the other. ``lengths`` gives the number of
+    points of each of them. Without it the spectra are found from the velocity
+    steps -- a new one starts wherever a step does not have the sign of the very
+    first step -- which cuts wrongly spectra running in opposite directions or
+    with a repeated velocity.
 
     Core physics entry point: used outside this module by Calibration.py,
     fitting_io.py and syncmoss_main.py to simulate and fit every spectrum.
@@ -3039,16 +3046,28 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         Di, Co, V, MV = 0, 0, 0, 0
         Re = 0
         Hc = []
-        step_sign = np.sign(x_exp[1]-x_exp[0])
-        x_separate = []
-        start = 0
-        Num_x = 0
-        for i in range(1, len(x_exp)):
-            if step_sign != np.sign(x_exp[i]-x_exp[i-1]):
-                x_separate.append(x_exp[start:i])
-                start = i
-                Num_x += 1
-        x_separate.append(x_exp[start:])
+        if lengths is not None:
+            # Every spectrum's own number of points: nothing to guess
+            if len(lengths) != model.count('Nbaseline') + 1 or sum(lengths) != len(x_exp):
+                raise ValueError(f"spectra of {list(lengths)} points do not match the "
+                                 f"{model.count('Nbaseline') + 1} sections of the model and "
+                                 f"the {len(x_exp)} velocities given")
+            x_separate = []
+            start = 0
+            for length in lengths:
+                x_separate.append(x_exp[start:start + length])
+                start += length
+        else:
+            step_sign = np.sign(x_exp[1]-x_exp[0])
+            x_separate = []
+            start = 0
+            Num_x = 0
+            for i in range(1, len(x_exp)):
+                if step_sign != np.sign(x_exp[i]-x_exp[i-1]):
+                    x_separate.append(x_exp[start:i])
+                    start = i
+                    Num_x += 1
+            x_separate.append(x_exp[start:])
         model_separate = []
         startM = 0
         Num_m = 0
