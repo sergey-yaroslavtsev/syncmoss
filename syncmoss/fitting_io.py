@@ -14,6 +14,7 @@ import traceback
 import numpy as np
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
+from syncmoss import exclusion_regions
 from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_bounds_and_fix
 from syncmoss.models_positions import mod_pos
@@ -319,7 +320,8 @@ def read_fit_inputs(app, spectrum_parameters=None):
 
     The names N, N1, N2, ... are replaced by *spectrum_parameters*' values (see
     read_model). Keys: model, p, con1, con2, con3, Distri, Cor, Expr, NExpr,
-    DistriN, Recon, ReconN (read_model's) and bounds, fix (read_bounds_and_fix's).
+    DistriN, Recon, ReconN (read_model's), bounds, fix (read_bounds_and_fix's)
+    and exclusion_regions (the applied ones; () when none).
     """
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = \
         read_model_full(app, spectrum_parameters=spectrum_parameters)
@@ -328,7 +330,36 @@ def read_fit_inputs(app, spectrum_parameters=None):
     return {'model': model, 'p': p, 'con1': con1, 'con2': con2, 'con3': con3,
             'Distri': Distri, 'Cor': Cor, 'Expr': Expr, 'NExpr': NExpr,
             'DistriN': DistriN, 'Recon': Recon, 'ReconN': ReconN,
-            'bounds': bounds, 'fix': fix}
+            'bounds': bounds, 'fix': fix,
+            'exclusion_regions': app.exclusion_regions_in_use()}
+
+
+def fixed_parameters(inputs):
+    """The slots of *inputs* the fit does not vary: the user's fixes and every
+    slot set by something else -- a link, a distribution expression, an
+    Expression, a Recon weight-vector placeholder (the weights themselves are
+    free and varied at the end of the working vector)."""
+    fix = inputs['fix']
+    for slots in (inputs['con1'], inputs['DistriN'], inputs['NExpr'], inputs['ReconN']):
+        if len(slots) > 0:
+            fix = np.concatenate((fix, np.asarray(slots).astype(int)), axis=0)
+    return np.unique(fix)
+
+
+def free_parameter_count(inputs):
+    """How many values a fit of *inputs* varies: its free slots plus every free
+    Recon weight."""
+    _, n_weights = recon_fit_layout(inputs['model'], inputs['p'], share=inputs.get('recon_share'))
+    return len(inputs['p']) + n_weights - len(fixed_parameters(inputs))
+
+
+def too_few_points(n_points, n_free, regions=()):
+    """Why a fit of *n_points* points with *n_free* free values cannot be
+    started, or None when it can."""
+    if n_points > n_free:
+        return None
+    left = "left after the exclusion regions" if regions else "in the spectrum"
+    return f"{n_points} points are {left}, but {n_free} parameters are free"
 
 
 def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_params=None,
@@ -473,7 +504,28 @@ def fit_model(app, inputs, spectrum_files, pool):
             print(f"[Fitting] Single spectrum loaded: {len(A)} points")
             print(f"[Fitting] X range: {A[0]:.2f} to {A[-1]:.2f}")
             print(f"[Fitting] Y range: {B.min():.2f} to {B.max():.2f}")
-        
+
+        # Exclusion regions: their points are left out of the fit. The model is
+        # computed velocity by velocity (tests/test_model_pointwise.py), so the
+        # fit takes just the points that are left (A_data, B_data); the curves
+        # drawn after it are computed on every point.
+        regions = tuple(inputs.get('exclusion_regions') or ())
+        if regions:
+            keeps = [exclusion_regions.kept(a, regions) for a in A_list]
+            emptied = [os.path.basename(f) for f, k in zip(spectrum_files, keeps) if not k.any()]
+            if emptied:
+                return {
+                    'success': False,
+                    'message': f"every point of {', '.join(emptied)} is in an exclusion region"
+                }
+            A_data = np.concatenate([a[k] for a, k in zip(A_list, keeps)])
+            B_data = np.concatenate([b[k] for b, k in zip(B_list, keeps)])
+            lengths_data = [int(k.sum()) for k in keeps] if is_simultaneous else None
+            print(f"[Fitting] Exclusion regions {exclusion_regions.format_regions(regions)}: "
+                  f"{len(A_data)} of {len(A)} points are fitted")
+        else:
+            A_data, B_data, lengths_data = A, B, lengths
+
         # A method checkbox must be selected (it is the fallback when a spectrum
         # carries no .dat instrumental metadata)
         if not app.MS_fit.isChecked() and not app.SMS_fit.isChecked():
@@ -532,7 +584,7 @@ def fit_model(app, inputs, spectrum_files, pool):
             # Uniform instrumental settings: a single TI call over the whole model
             # (TI splits Nbaseline sections internally, at the spectra's lengths)
             # — the original code path.
-            def func(x, p, recon=Recon):
+            def func(x, p, recon=Recon, lengths=lengths):
                 return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
                              Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol, Recon=recon,
                              lengths=lengths)
@@ -548,22 +600,25 @@ def fit_model(app, inputs, spectrum_files, pool):
             met_list = [mp_i['Met'] for mp_i in method_params_list]
             norm_list = [mp_i['Norm'] for mp_i in method_params_list]
 
-            def func(x, p, recon=Recon):
+            def func(x, p, recon=Recon, lengths=lengths):
                 return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
                              Distri, Cor, Met=met_list, Norm=norm_list, pol=pol, Recon=recon,
                              lengths=lengths)
 
-        # Box bounds and user-fixed parameters (from the table: read_fit_inputs)
-        bounds, fix = inputs['bounds'], inputs['fix']
+        # The model at the fitted points (each spectrum keeps its own number of
+        # them when exclusion regions are applied)
+        if regions:
+            def func_data(x, p, recon=Recon):
+                return func(x, p, recon, lengths_data)
+        else:
+            func_data = func
 
-        # Add automatic fixes for constraints, distribution expressions, expression
-        # models and Recon weight-vector placeholder slots (the real weights are
-        # free and appended to the working vector below, not fixed here).
-        fix = np.concatenate((fix, con1.astype(int)), axis=0) if len(con1) > 0 else fix
-        fix = np.concatenate((fix, DistriN.astype(int)), axis=0) if len(DistriN) > 0 else fix
-        fix = np.concatenate((fix, NExpr.astype(int)), axis=0) if len(NExpr) > 0 else fix
-        fix = np.concatenate((fix, ReconN.astype(int)), axis=0) if len(ReconN) > 0 else fix
-        fix = np.unique(fix)
+        # Box bounds (from the table: read_fit_inputs), and the user's fixes
+        # with the automatic ones: constraints, distribution expressions,
+        # expression models and Recon weight-vector placeholder slots (the real
+        # weights are free and appended to the working vector below).
+        bounds = inputs['bounds']
+        fix = fixed_parameters(inputs)
 
         # Set up constraints from con1, con2, con3
         if len(con1) > 0:
@@ -619,16 +674,22 @@ def fit_model(app, inputs, spectrum_files, pool):
             bounds_fit = np.concatenate(
                 (bounds, np.array([[0.0] * n_weights, [np.inf] * n_weights])), axis=1)
             n_reg = _recon_penalty_length(recon_infos)
-            reg_scale = float(np.sum((np.asarray(B, dtype=float) - np.mean(B)) ** 2)) or 1.0
-            A_fit = np.concatenate([np.asarray(A, dtype=float), np.zeros(n_reg)])
-            B_fit = np.concatenate([np.asarray(B, dtype=float), np.zeros(n_reg)])
+            reg_scale = float(np.sum((np.asarray(B_data, dtype=float) - np.mean(B_data)) ** 2)) or 1.0
+            A_fit = np.concatenate([np.asarray(A_data, dtype=float), np.zeros(n_reg)])
+            B_fit = np.concatenate([np.asarray(B_data, dtype=float), np.zeros(n_reg)])
 
             def func_fit(_x, pw):
-                spec = np.asarray(func(A, pw[:base_len], _rebuild_recon(pw)), dtype=float)
+                spec = np.asarray(func_data(A_data, pw[:base_len], _rebuild_recon(pw)), dtype=float)
                 pen = _recon_penalty_rows(pw[base_len:], recon_infos, reg_scale)
                 return np.concatenate([spec, pen])
         else:
-            func_fit, A_fit, B_fit, p0_fit, bounds_fit, n_reg = func, A, B, p0, bounds, 0
+            func_fit, A_fit, B_fit, p0_fit, bounds_fit, n_reg = func_data, A_data, B_data, p0, bounds, 0
+
+        # Not more free values than points: the fit is not started
+        n_free = len(p0_fit) - len(fix)
+        refusal = too_few_points(len(B_data), n_free, regions)
+        if refusal:
+            return {'success': False, 'message': f"{refusal}: the fit was not started"}
 
         # Perform minimization
         tau0 = 10 ** -3
@@ -687,11 +748,12 @@ def fit_model(app, inputs, spectrum_files, pool):
             for re in [info['re']] + info['followers']:
                 Recon[re] = np.asarray(pfit[s:s + info['num']], dtype=float)
 
-        # Degrees of freedom as the minimiser counts them: the real data rows (not
-        # the Recon penalty rows) minus the free entries of the working vector
-        # (the Recon weights are free). Parameters the minimiser pins to a bound
-        # on its own are not subtracted -- a shift far below the spread itself.
-        spread = chi2_spread(len(B), len(p0_fit) - len(fix))
+        # Degrees of freedom as the minimiser counts them: the fitted data rows
+        # (not the Recon penalty rows, not the excluded points) minus the free
+        # entries of the working vector (the Recon weights are free). Parameters
+        # the minimiser pins to a bound on its own are not subtracted -- a shift
+        # far below the spread itself.
+        spread = chi2_spread(len(B_data), n_free)
 
         print(f'[Fitting] Fitted parameters: {p}')
         print(f'[Fitting] Errors: {er}')
@@ -776,6 +838,7 @@ def fit_model(app, inputs, spectrum_files, pool):
                 'Cor_substituted': list(Cor_substituted),
                 'Recon': [np.asarray(w, dtype=float) for w in Recon],  # fitted reconstruction weights
                 'instrumental_note': instrumental_note,
+                'exclusion_regions': regions,  # their points were not fitted
             }
 
         else:
@@ -812,8 +875,9 @@ def fit_model(app, inputs, spectrum_files, pool):
                 'Cor_substituted': list(Cor_t),  # Correlation expressions (substituted)
                 'Recon': [np.asarray(w, dtype=float) for w in Recon],  # fitted reconstruction weights
                 'instrumental_note': instrumental_note,
+                'exclusion_regions': regions,  # their points were not fitted
             }
-    
+
     except m5.FitInterrupted:
         raise   # not a failure; the thread reports it (without a traceback)
     except Exception as e:

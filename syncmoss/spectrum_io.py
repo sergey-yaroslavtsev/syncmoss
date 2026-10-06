@@ -12,6 +12,7 @@ from syncmoss.model_io import read_model
 from syncmoss.constants import SMS_POL_DEFAULT
 import syncmoss.minimi_lib as mi
 from syncmoss import bliss_channel
+from syncmoss.exclusion_regions import kept, format_regions
 # NOTE: instrumental_io is imported lazily inside functions below — it imports
 # load_spectrum from this module, so a top-level import here would be circular.
 
@@ -92,6 +93,23 @@ def _fold_raw_channels(id_data, cal_method, n1, n2):
     return None
 
 
+# The spectrum files load_spectrum reads. All but .dat/.txt/.exp hold raw
+# counts, which it folds and calibrates with Calibration.dat.
+_SPECTRUM_FORMATS = ('.dat', '.txt', '.exp', '.ws5', '.w98', '.moe', '.m1', '.mca', '.cmca', 'tango', '.mcs')
+
+
+def _in_format_list(file):
+    return bliss_channel.is_channel(file) or file.lower().endswith(_SPECTRUM_FORMATS)
+
+
+def read_as_text(file):
+    """True when load_spectrum reads *file* as velocity/counts columns (whatever
+    a file in no known format is tried as); False for raw counts it calibrates
+    itself -- MCA and Wissel files, a Bliss channel."""
+    return (file.endswith('.dat') or file.endswith('.txt') or file.endswith('.exp')
+            or not _in_format_list(file))
+
+
 def resolve_calibration_path(main_window, calibration_path, file_paths):
     """Which Calibration.dat a load should use.
 
@@ -149,8 +167,6 @@ def load_spectrum(main_window, file_paths, calibration_path=None, points_match=T
     calibration_path = resolve_calibration_path(main_window, calibration_path,
                                                 file_paths)
 
-    acceptable_formats = ['.dat', '.txt', '.exp', '.ws5', '.w98', '.moe', '.m1', '.mca', '.cmca', 'tango', '.mcs']
-
     A_list = []
     B_list = []
 
@@ -179,10 +195,10 @@ def load_spectrum(main_window, file_paths, calibration_path=None, points_match=T
                 continue
 
         is_channel = bliss_channel.is_channel(file)
-        in_format_list = is_channel or file.lower().endswith(tuple(acceptable_formats))
+        in_format_list = _in_format_list(file)
 
         # Text-based files
-        if file.endswith('.dat') or file.endswith('.txt') or file.endswith('.exp') or not in_format_list:
+        if read_as_text(file):
             try:
                 with open(file, 'r') as catalog:
                     lines = (line.rstrip() for line in catalog)
@@ -589,37 +605,47 @@ def process_half_spectrum(main_window, spectrum_path, save_path, auto_load=False
         return False
 
 
+def _directory_for_several_spectra(main_window):
+    """Where an operation on several spectra writes them: the save path's
+    folder (or the save path itself when it names a folder), created if need
+    be. None, after saying why, when there is none."""
+    save_path_text = main_window.save_path.text().strip()
+
+    if not save_path_text:
+        main_window.set_status("Please specify save path", "orange")
+        return None
+
+    # Determine if save_path_text is a file path or directory path
+    if '.' in os.path.basename(save_path_text):
+        # Looks like a file path (has extension), use its directory
+        save_dir = os.path.dirname(save_path_text)
+    else:
+        # Looks like a directory path
+        save_dir = save_path_text
+
+    # Remove trailing slashes for consistency
+    save_dir = save_dir.rstrip('\\/')
+
+    # Create directory if it doesn't exist
+    if not os.path.exists(save_dir):
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except Exception as e:
+            main_window.set_status(f"Cannot create directory {save_dir}: {e}", "red")
+            return None
+
+    # Verify it's a directory
+    if not os.path.isdir(save_dir):
+        main_window.set_status("Save path must be a directory for multiple spectra", "orange")
+        return None
+    return save_dir
+
+
 def half_multiple_spectra(main_window):
     """Process multiple spectra - save to save_path directory"""
     try:
-        save_path_text = main_window.save_path.text().strip()
-
-        if not save_path_text:
-            main_window.set_status("Please specify save path", "orange")
-            return
-
-        # Determine if save_path_text is a file path or directory path
-        if '.' in os.path.basename(save_path_text):
-            # Looks like a file path (has extension), use its directory
-            save_dir = os.path.dirname(save_path_text)
-        else:
-            # Looks like a directory path
-            save_dir = save_path_text
-
-        # Remove trailing slashes for consistency
-        save_dir = save_dir.rstrip('\\/')
-
-        # Create directory if it doesn't exist
-        if not os.path.exists(save_dir):
-            try:
-                os.makedirs(save_dir, exist_ok=True)
-            except Exception as e:
-                main_window.set_status(f"Cannot create directory {save_dir}: {e}", "red")
-                return
-
-        # Verify it's a directory
-        if not os.path.isdir(save_dir):
-            main_window.set_status("Save path must be a directory for multiple spectra", "orange")
+        save_dir = _directory_for_several_spectra(main_window)
+        if save_dir is None:
             return
 
         processed_count = 0
@@ -648,6 +674,106 @@ def half_multiple_spectra(main_window):
 
     except Exception as e:
         main_window.set_status(f"Error processing multiple spectra: {str(e)}", "red")
+
+
+def save_without_excluded_points(main_window):
+    """Change spectrum(a) -> Save spectrum without excluded points: every
+    selected spectrum written as ``excl_<name>.dat`` with the points of the
+    applied exclusion regions removed -- for regions meant to stay, or a region
+    that only some spectra need. One spectrum goes where the user says and is
+    shown; several go to the save path's folder."""
+    try:
+        if not main_window._commit_exclusion_regions('Save spectrum without excluded points'):
+            return
+        regions = main_window.exclusion_regions_in_use()
+        if not regions:
+            main_window.set_status("Save spectrum without excluded points: apply exclusion "
+                                   "regions first ('Apply exclusion', above the plot)", "orange")
+            return
+        main_window.path_list = main_window.parse_process_path()
+        if not main_window.path_list:
+            main_window.set_status("No spectrum selected", "orange")
+            return
+
+        if len(main_window.path_list) == 1:
+            spectrum_path = main_window.path_list[0]
+            basename = os.path.splitext(os.path.basename(spectrum_path))[0]
+            save_path, _ = QFileDialog.getSaveFileName(
+                main_window,
+                "Save spectrum without excluded points",
+                os.path.join(main_window.workfolder or "", f"excl_{basename}.dat"),
+                "DAT files (*.dat);;TXT files (*.txt);;All files (*.*)"
+            )
+            if not save_path:
+                main_window.set_status("Save canceled", "orange")
+                return
+            kept_count = process_without_excluded(main_window, spectrum_path, save_path, regions)
+            if not kept_count:
+                main_window.set_status(f"{os.path.basename(spectrum_path)} not saved: every point "
+                                       f"is in an exclusion region", "orange")
+                return
+            main_window.process_path.setPlainText(f"['{save_path}']")
+            main_window.show_pressed()
+            main_window.set_status(f"Spectrum without excluded points ({kept_count} points) "
+                                   f"saved to {os.path.basename(save_path)}", "green")
+            return
+
+        reply = QMessageBox.question(
+            main_window,
+            "Process Multiple Spectra",
+            f"Save {len(main_window.path_list)} spectra without the points of the exclusion "
+            f"regions ({format_regions(regions)})?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            main_window.set_status("Save spectrum without excluded points canceled", "orange")
+            return
+        save_dir = _directory_for_several_spectra(main_window)
+        if save_dir is None:
+            return
+        saved, skipped = 0, []
+        for spectrum_path in main_window.path_list:
+            basename = os.path.splitext(os.path.basename(spectrum_path))[0]
+            if process_without_excluded(main_window, spectrum_path,
+                                        os.path.join(save_dir, f"excl_{basename}.dat"), regions):
+                saved += 1
+            else:
+                skipped.append(os.path.basename(spectrum_path))
+        message = f"{saved} spectra without excluded points saved to {save_dir}"
+        if skipped:
+            message += f"; not saved (no point left, or not readable): {', '.join(skipped)}"
+        main_window.set_status(message, "orange" if skipped else "green")
+
+    except Exception as e:
+        main_window.set_status(f"Error saving spectra without excluded points: {e}", "red")
+
+
+def process_without_excluded(main_window, spectrum_path, save_path, regions):
+    """Write *spectrum_path* to *save_path* (a .dat: velocity, counts) without
+    the points in *regions*. Returns how many points were written (0 -- nothing
+    written -- when none is left or the spectrum cannot be read).
+
+    The instrumental function goes into the header: a .dat keeps the one it
+    carries (none if it has none); raw counts (an .mca, ...), calibrated just
+    now, get the one in use -- CMS or SMS as the checkboxes say -- exactly as
+    the RAW -> .dat conversion writes it.
+    """
+    A_list, B_list = load_spectrum(main_window, [spectrum_path], calibration_path=main_window.calibration_path)
+    if not A_list or not B_list:
+        return 0
+    A, B = np.asarray(A_list[0], dtype=float), np.asarray(B_list[0], dtype=float)
+    keep = kept(A, regions)
+    if not keep.any():
+        return 0
+    from syncmoss.instrumental_io import read_dat_metadata_lines, build_dat_metadata_lines
+    if read_as_text(spectrum_path):
+        metadata_lines = read_dat_metadata_lines(spectrum_path)
+    else:
+        metadata_lines, _method = build_dat_metadata_lines(main_window)
+    metadata_lines = metadata_lines + [f"# Excluded regions, mm/s: {format_regions(regions)}"]
+    save_spectrum_with_metadata(save_path, A[keep], B[keep], metadata_lines)
+    return int(keep.sum())
 
 
 def calculate_backgrounds(paths, calibration_path="Calibration.dat"):

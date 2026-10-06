@@ -107,6 +107,10 @@ class SequenceSeries:
         r = self.items[k][1]
         return r['A'], r['B'], r['SPC_f'], r['FS'], r['FS_pos'], r.get('hires_diff')
 
+    def exclusion_regions_of(self, k):
+        """The exclusion regions spectrum k's fit left out."""
+        return tuple(self.items[k][1].get('exclusion_regions') or ())
+
     def values(self, k):
         return np.asarray(self.items[k][1]['parameters'], dtype=float)
 
@@ -197,6 +201,10 @@ class NbaselineSeries:
         hires = r.get('hires_diff_list') or [None] * self.count()
         return (r['A_list'][k], r['B_list'][k], r['SPC_f_list'][k], r['FS_list'][k],
                 r['FS_pos_list'][k], hires[k])
+
+    def exclusion_regions_of(self, k):
+        """The exclusion regions the fit left out (the same for every spectrum)."""
+        return tuple(self.result.get('exclusion_regions') or ())
 
     def values(self, k):
         start, end = self._slots[k]
@@ -380,7 +388,8 @@ class ResultWindow(QMainWindow):
             result.colors_of(k), result.chi2_of(k), result.path_of(k),
             main.dir_path, z_order=self.z_order, gridcolor=main.gridcolor,
             theme=main._theme, model=result.model_of(k), hires_diff=hires,
-            chi2_spread=result.chi2_spread_of(k), save=False)
+            chi2_spread=result.chi2_spread_of(k), save=False,
+            exclusion_regions=result.exclusion_regions_of(k))
         self.canvas.draw()
 
     def replot_result(self, row_index):

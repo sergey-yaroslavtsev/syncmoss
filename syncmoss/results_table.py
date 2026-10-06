@@ -113,6 +113,7 @@ class ResultsTable(QWidget):
         self.current_parameter_names = []
         self.current_chi2 = 0.0
         self.current_spectrum_parameters = None   # N, N1, ... the fit used
+        self.current_exclusion_regions = ()       # the regions the fit left out
         self.current_links = {}
         # The fitted model (model_io.fitted_model_rows) that "Save result"
         # writes as <base>_result_model.mdl; set by the fit handlers.

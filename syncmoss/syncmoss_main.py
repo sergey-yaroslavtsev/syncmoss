@@ -87,7 +87,7 @@ from syncmoss.model_io import (
 )
 from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
-    half_points, calculate_backgrounds,
+    half_points, calculate_backgrounds, save_without_excluded_points,
 )
 from syncmoss import bliss_channel
 from syncmoss.spectrum_parameters import (
@@ -99,8 +99,11 @@ from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
     plot_distribution, plot_calibration, plot_model, plot_model_with_nbaseline,
     plot_spectrum, plot_model_without_spectrum, calculate_z_order, distribution_curves,
-    calculate_baseline,
+    calculate_baseline, update_exclusion_regions, remove_chi2_title,
 )
+from syncmoss.exclusion_bar import ExclusionBar
+from syncmoss.exclusion_regions import format_regions, kept as kept_points
+import syncmoss.exclusion_regions as exclusion_regions
 from syncmoss.instrumental_io import (
     DEFAULT_INSTRUMENTAL_METHOD,
     instrumental,
@@ -159,7 +162,14 @@ class CustomNavigationToolbar(NavigationToolbar):
         self.toggle_legend_action.setChecked(False)  # Start as hidden (legend default OFF)
         self.toggle_legend_action.setToolTip('Show/Hide legend')
         self.toggle_legend_action.setEnabled(False)  # Disabled by default
-    
+
+        # Apply exclusion regions: off at every start, so a region forgotten in
+        # an earlier session never changes a fit silently
+        self.exclusion_action = self.addAction('Apply\nexclusion', self.toggle_exclusion)
+        self.exclusion_action.setCheckable(True)
+        self.exclusion_action.setChecked(False)
+        self.exclusion_action.setToolTip('Apply exclusion regions: their points are not fitted')
+
     def home(self, *args):
         """Reset view and reapply tight layout."""
         super().home(*args)
@@ -176,6 +186,11 @@ class CustomNavigationToolbar(NavigationToolbar):
         if hasattr(self.parent_window, 'toggle_legend_visibility'):
             show = self.toggle_legend_action.isChecked()
             self.parent_window.toggle_legend_visibility(show)
+
+    def toggle_exclusion(self):
+        """Apply the exclusion regions, or stop applying them."""
+        if hasattr(self.parent_window, 'toggle_exclusion_regions'):
+            self.parent_window.toggle_exclusion_regions(self.exclusion_action.isChecked())
 
 
 # ---------------------------------------------------------------------------
@@ -1326,18 +1341,28 @@ class PhysicsApp(QMainWindow):
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setMinimumSize(400, 300)
         self.toolbar = CustomNavigationToolbar(self.canvas, self)
-        
+
+        # Exclusion regions: shown while "Apply exclusion" is on
+        self.exclusion_bar = ExclusionBar(self)
+        self.exclusion_bar.hide()
+        self.exclusion_bar.regions_changed.connect(self._on_exclusion_changed)
+        self._exclusion_shown = ()      # the regions in use the plot shows
+
         # Store position markers data and artists
         self.current_FS_pos = None
         self.position_artists = []  # Store line artists for toggling
-        
+
         plot_layout = QVBoxLayout()
         plot_layout.addWidget(self.toolbar)
+        plot_layout.addWidget(self.exclusion_bar)
         plot_layout.addWidget(self.canvas)
         top_layout.addLayout(plot_layout)
 
         # Connect to scroll event for zoom
         self.canvas.mpl_connect('scroll_event', self.on_scroll_zoom)
+        # Pick on plot (exclusion regions): connected to the canvas, so it
+        # survives every redraw of the figure
+        self.canvas.mpl_connect('button_press_event', self.exclusion_bar.on_canvas_click)
 
         # Top controls for image
         image_controls = QHBoxLayout()
@@ -1429,11 +1454,69 @@ class PhysicsApp(QMainWindow):
             if A_list and B_list:
                 # Calculate background for calibration
                 backgrounds = calculate_backgrounds([self.calibration_path], self.calibration_path)
-                plot_spectrum(self.figure, A_list, B_list, ["Calibration.dat"], backgrounds=backgrounds, theme=self._theme)
+                plot_spectrum(self.figure, A_list, B_list, ["Calibration.dat"], backgrounds=backgrounds,
+                              theme=self._theme, exclusion_regions=self.exclusion_regions_in_use())
                 self._update_legend_toggle()
                 self.toolbar.push_current()  # Set current view as home
         except Exception as e:
             self.set_status(f"Could not load default spectrum: {e}", "red")
+
+    # --- exclusion regions ----------------------------------------------------
+
+    def exclusion_regions_in_use(self):
+        """The exclusion regions fits leave out: the applied ones, () while
+        "Apply exclusion" is off. Changing them is refused while a calculation
+        runs, so a fit reads at its start the regions it is fitted with."""
+        if not self.toolbar.exclusion_action.isChecked():
+            return ()
+        return self.exclusion_bar.regions
+
+    def toggle_exclusion_regions(self, checked):
+        """"Apply exclusion" switched: show or hide the regions bar."""
+        if self._reject_if_busy('Changing exclusion regions'):
+            self.toolbar.exclusion_action.setChecked(not checked)
+            return
+        if not checked:
+            self.exclusion_bar.cancel_pick()
+        self.exclusion_bar.setVisible(checked)
+        self._on_exclusion_changed()
+
+    def _commit_exclusion_regions(self, action_label):
+        """Apply what is typed in the regions box before *action_label* starts
+        (typed, then F5 without leaving the box). False -- *action_label* is not
+        started -- when the text holds no regions."""
+        if not self.toolbar.exclusion_action.isChecked():
+            return True
+        return self.exclusion_bar.commit(action_label)
+
+    def _on_exclusion_changed(self):
+        """The exclusion regions in use changed: change the bands of the plot on
+        screen (nothing is redrawn from scratch). A fit result shown there is no
+        longer a result of these regions: it is dropped as Show model drops one
+        -- its chi2 title goes, the curves stay -- so it can be neither saved
+        nor taken (F8)."""
+        regions = self.exclusion_regions_in_use()
+        if regions == self._exclusion_shown:
+            return
+        self._exclusion_shown = regions
+        update_exclusion_regions(self.figure, regions)
+        cleared = self.results_table.current_parameters is not None
+        if cleared:
+            remove_chi2_title(self.figure)
+            self.results_table.clear_table()
+            self.results_table.current_parameters = None
+            self.last_fitting_data = None
+        if self.last_plot_data is not None:
+            # a replot (Distribution and back) keeps the bands, without the chi2
+            self.last_plot_data['exclusion_regions'] = regions
+            if cleared:
+                self.last_plot_data['chi2'] = None
+        self.canvas.draw_idle()
+        text = format_regions(regions) or "none"
+        if cleared:
+            self.set_status(f"Exclusion regions changed ({text}): the fit result was cleared", "orange")
+        else:
+            self.set_status(f"Exclusion regions: {text}", "blue")
 
     def toggle_position_markers(self, show):
         """Toggle visibility of position marker artists."""
@@ -1774,8 +1857,9 @@ class PhysicsApp(QMainWindow):
         # Create actions for each option
         options = [
             ("Sum all\nspectra", "sum_all"),
-            ("Subtract\nmodel from\nspectrum", "subtract_model"), 
-            ("Half points", "half_points")
+            ("Subtract\nmodel from\nspectrum", "subtract_model"),
+            ("Half points", "half_points"),
+            ("Save spectrum\nwithout excluded points", "without_excluded"),
         ]
         
         for text, action_name in options:
@@ -1794,6 +1878,8 @@ class PhysicsApp(QMainWindow):
             subtract_model_from_spectrum(self)
         elif option == "half_points":
             half_points(self)
+        elif option == "without_excluded":
+            save_without_excluded_points(self)
         else:
             self.set_status(f"Unknown spectrum option: {option}", "red")
 
@@ -2114,6 +2200,8 @@ class PhysicsApp(QMainWindow):
         # Parse the current content of process_path
         if self._reject_if_busy('Show model'):
             return
+        if not self._commit_exclusion_regions('Show model'):
+            return
         self.inprogress = True
         self.busy_with = 'Show model'
 
@@ -2235,6 +2323,7 @@ class PhysicsApp(QMainWindow):
                 'Recon': Recon or [],
                 'labels': show['labels'] if show is not None else None,
                 'lengths': lengths,
+                'exclusion_regions': self.exclusion_regions_in_use(),
             }
 
             self._plot_show_model_data(self.last_plot_data)
@@ -2250,13 +2339,14 @@ class PhysicsApp(QMainWindow):
     def _plot_show_model_data(self, data):
         """Render a show-model dataset and refresh canvas/toolbar state."""
         current_colors = data.get('model_colors', self.params_table.get_current_colors())
+        regions = data.get('exclusion_regions')
         if data['B'] is None:
             position_artists = plot_model_without_spectrum(
                 self.figure, data['A'], data['SPC_f'], data['FS'], data['FS_pos'],
                 data['p'], current_colors, gridcolor=self.gridcolor,
                 theme=self._theme, model=data.get('model'),
                 has_nbaseline=data.get('has_nbaseline', False),
-                hires_diff=data.get('hires_diff')
+                hires_diff=data.get('hires_diff'), exclusion_regions=regions
             )
         elif data.get('has_nbaseline', False):
             position_artists = plot_model_with_nbaseline(
@@ -2264,14 +2354,16 @@ class PhysicsApp(QMainWindow):
                 data['FS_pos'], data['p'], data.get('model', []), current_colors,
                 data.get('backgrounds'), gridcolor=self.gridcolor,
                 theme=self._theme, hires_diff=data.get('hires_diff'),
-                labels=data.get('labels'), lengths=data.get('lengths')
+                labels=data.get('labels'), lengths=data.get('lengths'),
+                exclusion_regions=regions
             )
         else:
             position_artists = plot_model(
                 self.figure, data['A'], data['B'], data['SPC_f'], data['FS'],
                 data['FS_pos'], data['p'], current_colors, data.get('backgrounds'),
                 gridcolor=self.gridcolor, theme=self._theme,
-                model=data.get('model'), hires_diff=data.get('hires_diff')
+                model=data.get('model'), hires_diff=data.get('hires_diff'),
+                exclusion_regions=regions
             )
 
         self.position_artists = position_artists if position_artists else []
@@ -2833,6 +2925,8 @@ class PhysicsApp(QMainWindow):
         """Load and display the selected spectrum(s)"""
         if self._reject_if_busy('Show spectrum'):
             return
+        if not self._commit_exclusion_regions('Show spectrum'):
+            return
         self.inprogress = True
         self.busy_with = 'Show spectrum'
 
@@ -2860,7 +2954,8 @@ class PhysicsApp(QMainWindow):
             A_list, B_list = load_spectrum(self, self.path_list, calibration_path=self.calibration_path)
             if A_list and B_list:              
                 self.backgrounds = calculate_backgrounds(self.path_list, self.calibration_path)
-                plot_spectrum(self.figure, A_list, B_list, self.path_list, self.backgrounds, theme=self._theme)
+                plot_spectrum(self.figure, A_list, B_list, self.path_list, self.backgrounds,
+                              theme=self._theme, exclusion_regions=self.exclusion_regions_in_use())
                 self._update_legend_toggle()
                 self.toolbar.push_current()  # Set current view as home
                 self.set_status(f"Spectra displayed ({len(A_list)})", "green")
@@ -3110,7 +3205,8 @@ class PhysicsApp(QMainWindow):
                 self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
                 theme=self._theme, model=data.get('model'),
                 hires_diff_list=data.get('hires_diff_list'),
-                chi2_spread=data.get('chi2_spread'), labels=data.get('labels')
+                chi2_spread=data.get('chi2_spread'), labels=data.get('labels'),
+                exclusion_regions=data.get('exclusion_regions')
             )
             self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         else:
@@ -3121,10 +3217,11 @@ class PhysicsApp(QMainWindow):
                 data['filepath'], self.dir_path, z_order=data['z_order'], gridcolor=self.gridcolor,
                 theme=self._theme, model=data.get('model'),
                 hires_diff=data.get('hires_diff'),
-                chi2_spread=data.get('chi2_spread')
+                chi2_spread=data.get('chi2_spread'),
+                exclusion_regions=data.get('exclusion_regions')
             )
             self.position_artists = position_artists if position_artists else []
-        
+
         # Redraw canvas
         self._update_legend_toggle()
         self.canvas.draw()
@@ -3236,6 +3333,8 @@ class PhysicsApp(QMainWindow):
         5. Update results table and plot when finished
         """
         if self._reject_if_busy('Fitting'):
+            return
+        if not self._commit_exclusion_regions('Fit'):
             return
         self.inprogress = True
         self.busy_with = 'Fitting'
@@ -3381,6 +3480,8 @@ class PhysicsApp(QMainWindow):
             return
         if self._reject_if_busy('Fitting'):
             return
+        if not self._commit_exclusion_regions('Fit one spectrum'):
+            return
         dialog = OneSpectrumDialog(self, entries)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -3502,6 +3603,7 @@ class PhysicsApp(QMainWindow):
             self.results_table.current_links = dict(self._fit_links_snapshot)
             self.results_table.current_model_rows = fit.model_rows()
             self.results_table.current_chi2 = result['chi2']
+            self.results_table.current_exclusion_regions = fit.exclusion_regions_of(0)
             self.plot_one_model_result(fit)
             self.show_result_window(fit)
         except Exception as e:
@@ -3538,6 +3640,7 @@ class PhysicsApp(QMainWindow):
             'Distri': [d for k in shown for d in fit.distri(k)],
             'Cor': [c for k in shown for c in fit.cor(k)],
             'Recon': [w for k in shown for w in fit.recon(k)],
+            'exclusion_regions': fit.exclusion_regions_of(0),
         }
         # Save result writes the spectra from the one-model result itself
         self.last_fitting_data = None
@@ -3550,7 +3653,8 @@ class PhysicsApp(QMainWindow):
             data['FS_list'], data['FS_pos_list'], data['p'], data['begining_spc'],
             data['model_colors'], fit.chi2, data['spectrum_files'], self.dir_path,
             z_order=None, gridcolor=self.gridcolor, theme=self._theme, model=data['model'],
-            hires_diff_list=data['hires_diff_list'], chi2_spread=fit.chi2_spread, labels=labels)
+            hires_diff_list=data['hires_diff_list'], chi2_spread=fit.chi2_spread, labels=labels,
+            exclusion_regions=data['exclusion_regions'])
         self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         self.toolbar.toggle_positions_action.setEnabled(bool(self.position_artists))
         self.toolbar.toggle_positions_action.setChecked(bool(self.position_artists))
@@ -3616,6 +3720,20 @@ class PhysicsApp(QMainWindow):
             entries = [(path, ()) for path in spectrum_files]
         spectrum_parameters = [SpectrumParameters(i + 1, values, path)
                                for i, (path, values) in enumerate(entries)]
+
+        # Every spectrum must keep more points than there are free parameters
+        # after the exclusion regions -- found now, not at spectrum 37 of 50
+        regions = self.exclusion_regions_in_use()
+        if regions:
+            lacking = self._too_few_points_after_exclusion(spectrum_files, spectrum_parameters[0], regions)
+            if lacking:
+                self.set_status("Sequence fitting was not started — too few points are left "
+                                "after the exclusion regions:\n" + "\n".join(lacking), "red")
+                self.inprogress = False
+                return
+            # The regions of the run, for Load (each _param.txt line has them too)
+            self._write_exclusion_file(self._sequence_file(exclusion_regions.FILE_SUFFIX), regions)
+
         # The parameters of the whole run, next to its results -- what was used
         if any(values for _, values in entries) or table_uses_names(self):
             self._write_spectrum_parameters_file(
@@ -3661,6 +3779,32 @@ class PhysicsApp(QMainWindow):
         self.sequential_fitting_thread.finished.connect(self._on_sequential_finished)
         self.sequential_fitting_thread.start()
     
+    def _too_few_points_after_exclusion(self, spectrum_files, spectrum_parameters, regions):
+        """The spectra of *spectrum_files* that keep no more points outside
+        *regions* than the table's model has free parameters, as status lines."""
+        inputs = fitting_io.read_fit_inputs(self, spectrum_parameters)
+        n_free = fitting_io.free_parameter_count(inputs)
+        lines = []
+        for path in spectrum_files:
+            A_list, _ = load_spectrum(self, [path], calibration_path=self.calibration_path)
+            n_points = int(kept_points(A_list[0], regions).sum()) if A_list else 0
+            reason = fitting_io.too_few_points(n_points, n_free, regions)
+            if reason:
+                lines.append(f"{os.path.basename(path)}: {reason}")
+        return lines
+
+    def _write_exclusion_file(self, path, regions):
+        """Write an exclusion-regions file next to a result; a failure is
+        logged in the terminal and never stops the fit or the other files."""
+        try:
+            folder = os.path.dirname(path)
+            if folder and not os.path.exists(folder):
+                os.makedirs(folder)
+            exclusion_regions.write_file(path, regions)
+            print(f"[Exclusion regions] saved {path}")
+        except OSError as e:
+            print(f"[Exclusion regions] {os.path.basename(path)} not saved: {e}")
+
     def _on_spectrum_fitted(self, spectrum_file, result):
         """Handle GUI updates and file saving for one fitted spectrum (runs in main thread)"""
         try:
@@ -3692,6 +3836,7 @@ class PhysicsApp(QMainWindow):
             self.results_table.current_model_rows = fitted_model_rows(
                 self._fit_model_snapshot, fitted_parameters, result.get('Recon', []))
             self.results_table.current_chi2 = chi2
+            self.results_table.current_exclusion_regions = tuple(result.get('exclusion_regions') or ())
 
             # Plot the result
             self.plot_fitting_result(result)
@@ -3900,7 +4045,8 @@ class PhysicsApp(QMainWindow):
             is_simultaneous = result.get('is_simultaneous', False)
             instrumental_note = str(result.get('instrumental_note', '') or '').strip()
             note_suffix = f"\n{instrumental_note}" if instrumental_note else ""
-            
+            regions = tuple(result.get('exclusion_regions') or ())   # those of the fit
+
             if is_simultaneous:
                 # Simultaneous fitting - multiple spectra
                 gridcolor = self.gridcolor
@@ -3928,6 +4074,7 @@ class PhysicsApp(QMainWindow):
                     'Distri': result.get('Distri_substituted', []),
                     'Cor': result.get('Cor_substituted', []),
                     'Recon': result.get('Recon', []),
+                    'exclusion_regions': regions,
                 }
                 self._showing_distribution = False
                 self.SP_DI.setText('Distribution')
@@ -3943,8 +4090,9 @@ class PhysicsApp(QMainWindow):
                     'is_simultaneous': True,
                     'begining_spc': result['begining_spc'],
                     'spectrum_files': result['spectrum_files'],
+                    'exclusion_regions': regions,
                 }
-                
+
                 result_svg, result_png, position_artists_list = plot_simultaneous_fitting_result(
                     self.figure, result['A_list'], result['B_list'], result['SPC_f_list'],
                     result['FS_list'], result['FS_pos_list'], fitted_parameters,
@@ -3952,7 +4100,7 @@ class PhysicsApp(QMainWindow):
                     self.dir_path, z_order=None, gridcolor=gridcolor,
                     theme=self._theme, model=result.get('model'),
                     hires_diff_list=result.get('hires_diff_list'),
-                    chi2_spread=chi2_spread
+                    chi2_spread=chi2_spread, exclusion_regions=regions
                 )
                 
                 # Store position artists (from all subplots)
@@ -3987,6 +4135,7 @@ class PhysicsApp(QMainWindow):
                     'FS': result['FS'],
                     'is_simultaneous': False,
                     'spectrum_file': result.get('spectrum_file'),
+                    'exclusion_regions': regions,
                 }
                 
                 # Store data for replotting with z-order changes
@@ -4008,6 +4157,7 @@ class PhysicsApp(QMainWindow):
                     'Distri': result.get('Distri_substituted', []),
                     'Cor': result.get('Cor_substituted', []),
                     'Recon': result.get('Recon', []),
+                    'exclusion_regions': regions,
                 }
                 self._showing_distribution = False
                 self.SP_DI.setText('Distribution')
@@ -4018,7 +4168,7 @@ class PhysicsApp(QMainWindow):
                     self.dir_path, z_order=None, gridcolor=gridcolor,
                     theme=self._theme, model=result.get('model'),
                     hires_diff=result.get('hires_diff'),
-                    chi2_spread=chi2_spread
+                    chi2_spread=chi2_spread, exclusion_regions=regions
                 )
                 
                 # Store position artists and enable toggle button if positions exist
@@ -4094,8 +4244,9 @@ class PhysicsApp(QMainWindow):
             self.results_table.current_model_rows = fitted_model_rows(
                 self._fit_model_snapshot, fitted_parameters, result.get('Recon', []))
 
-            # Store chi2 for saving
+            # Store chi2 for saving, and the exclusion regions it was fitted with
             self.results_table.current_chi2 = chi2
+            self.results_table.current_exclusion_regions = tuple(result.get('exclusion_regions') or ())
 
             # Plot results
             self.plot_fitting_result(result)
@@ -4228,6 +4379,12 @@ class PhysicsApp(QMainWindow):
                         base_path + '_inputs.txt',
                         [(used.path or spectrum_file, used.values)], numbers=[used.number])
 
+            # The exclusion regions the fit left out, for Load (the _param.txt
+            # row has them too)
+            regions = self.results_table.current_exclusion_regions
+            if regions:
+                self._write_exclusion_file(base_path + exclusion_regions.FILE_SUFFIX, regions)
+
             if mode == 'append':
                 message = "Results appended to parameter file, others overwritten"
             else:
@@ -4291,7 +4448,8 @@ class PhysicsApp(QMainWindow):
             spectrum_file,
             self.results_table.current_chi2,
             mode,
-            self.results_table.current_spectrum_parameters))
+            self.results_table.current_spectrum_parameters,
+            self.results_table.current_exclusion_regions))
 
         # 2. Graph data from the fitting arrays
         if self.last_fitting_data:
@@ -4352,6 +4510,7 @@ class PhysicsApp(QMainWindow):
         uses_parameters = any(s.values for s in fit.spectra) or bool(names_used(typed))
         save_dir = os.path.dirname(base_path)
         param_path = base_path + '_param.txt'
+        regions = fit.exclusion_regions_of(0)
         picture = os.path.join(self.dir_path, 'result_one_model.png')   # the combo's figure
         figure = Figure(figsize=(10, 6))
         FigureCanvasAgg(figure)
@@ -4368,13 +4527,13 @@ class PhysicsApp(QMainWindow):
             write(param_path, lambda: self._save_parameters_file(
                 param_path, values, errors, model_list, names, name, fit.chi2,
                 'append' if (k > 0 or mode == 'append') else 'new',
-                spectrum if uses_parameters else None))
+                spectrum if uses_parameters else None, regions))
 
             plot_fitting_result(
                 figure, A, B, curve, components, positions, values, colors, fit.chi2,
                 spectrum.path, self.dir_path, gridcolor=self.gridcolor, theme=self._theme,
                 model=list(template['model']), hires_diff=hires,
-                chi2_spread=fit.chi2_spread, save=False)
+                chi2_spread=fit.chi2_spread, save=False, exclusion_regions=regions)
             write(spectrum_base + '.svg', lambda: figure.savefig(
                 spectrum_base + '.svg', bbox_inches='tight', facecolor=figure.get_facecolor()))
             table.fill_table(values, model_list, colors, names, fit.covariance_of(k), errors,
@@ -4398,6 +4557,9 @@ class PhysicsApp(QMainWindow):
                                                         drawn['Cor'], drawn['Recon']):
                     column_names.append(column)
                     columns.append(np.asarray(data, dtype=float))
+                if regions:
+                    column_names.append('Fitted')
+                    columns.append(kept_points(A, regions).astype(float))
                 self._write_graf_columns(spectrum_base + '_graf.txt', column_names, columns)
             write(spectrum_base + '_graf.txt', graf)
 
@@ -4549,6 +4711,17 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             print(f"[graf] could not add distribution columns: {e}")
 
+        # The points the fit used (1) and those in the exclusion regions (0)
+        regions = fitting_data.get('exclusion_regions')
+        if regions:
+            if fitting_data.get('is_simultaneous'):
+                for i, A in enumerate(fitting_data['A']):
+                    column_names.append(f'S{i + 1}_Fitted')
+                    data_columns.append(kept_points(A, regions).astype(float))
+            else:
+                column_names.append('Fitted')
+                data_columns.append(kept_points(fitting_data['A'], regions).astype(float))
+
         self._write_graf_columns(filepath, column_names, data_columns)
 
     def _write_graf_columns(self, filepath, column_names, data_columns):
@@ -4573,11 +4746,13 @@ class PhysicsApp(QMainWindow):
     
     def _save_parameters_file(self, filepath, parameters, errors, model_list,
                              parameter_names, spectrum_file, chi2, mode,
-                             spectrum_parameters=None):
+                             spectrum_parameters=None, exclusion_regions=()):
         """Save parameters and errors to text file with proper names and model info.
 
         When the fit used N, N1, N2, ... (*spectrum_parameters*), their values
-        follow the file name as the columns N, N1, N2, ...
+        follow the file name as the columns N, N1, N2, ... When it left
+        *exclusion_regions* out, they follow chi2 as the column
+        'Exclusion regions' (in the text the regions box takes).
         """
         # Build header row with model names and parameter/error pairs
         names = ['#File']
@@ -4624,7 +4799,10 @@ class PhysicsApp(QMainWindow):
         # Add chi2
         names.append('χ²')
         values.append(chi2)
-        
+        if exclusion_regions:
+            names.append('Exclusion regions')
+            values.append(format_regions(exclusion_regions))
+
         # Write to file
         if mode == 'append':
             # The names line the new row would fall under: the file's LAST one

@@ -34,11 +34,70 @@ def _chi2_title(chi2, chi2_spread=None):
     *chi2_spread* is the 1-sigma spread of a reduced chi-square when the model
     is right (``fitting_io.chi2_spread``); it tells a bad fit from an ordinary
     fluctuation. Without it (a caller that has only the one number) the title
-    is the bare chi-square, as before.
+    is the bare chi-square, as before. No chi-square (a result dropped when the
+    exclusion regions changed): no title.
     """
+    if chi2 is None:
+        return ''
     if chi2_spread is None or not np.isfinite(chi2_spread):
         return f'χ² = {chi2:.3f}'
     return f'χ² = {chi2:.3f} ± {chi2_spread:.3f}'
+
+
+# Exclusion regions (see exclusion_regions): grey bands over every spectrum
+# axes. The tags let the main window change the bands of the figure on screen
+# (update_exclusion_regions, remove_chi2_title) and find the data points a click
+# on the plot snaps to (DATA_GID).
+EXCLUSION_COLOR = 'grey'
+EXCLUSION_ALPHA = 0.5
+DATA_GID = 'spectrum data'
+SPECTRUM_AXES_GID = 'spectrum axes'
+EXCLUSION_GID = 'exclusion region'
+CHI2_GID = 'chi2'
+
+
+def draw_exclusion_regions(ax, regions):
+    """Grey bands over the full height of *ax*, one per region, above every
+    curve (the legend stays above them); the x-limits do not change."""
+    if not regions:
+        return
+    xlim = ax.get_xlim()
+    drawn = list(ax.lines) + list(ax.collections) + list(ax.patches)
+    top = max((artist.get_zorder() for artist in drawn), default=0) + 1
+    for lo, hi in regions:
+        ax.axvspan(lo, hi, color=EXCLUSION_COLOR, alpha=EXCLUSION_ALPHA, linewidth=0,
+                   zorder=top, gid=EXCLUSION_GID)
+    ax.set_xlim(xlim)
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.set_zorder(top + 1)
+
+
+def _spectrum_axes(ax, exclusion_regions):
+    """Mark *ax* as a spectrum plot (velocity axis) and draw the regions on it."""
+    ax.set_gid(SPECTRUM_AXES_GID)
+    draw_exclusion_regions(ax, exclusion_regions)
+
+
+def spectrum_axes_of(figure):
+    """The spectrum plots of *figure* (not a distribution, calibration or
+    instrumental-function plot)."""
+    return [ax for ax in figure.axes if ax.get_gid() == SPECTRUM_AXES_GID]
+
+
+def update_exclusion_regions(figure, regions):
+    """Replace the exclusion-region bands of every spectrum plot of *figure*."""
+    for ax in spectrum_axes_of(figure):
+        for patch in [patch for patch in ax.patches if patch.get_gid() == EXCLUSION_GID]:
+            patch.remove()
+        draw_exclusion_regions(ax, regions)
+
+
+def remove_chi2_title(figure):
+    """Blank the chi-square title of a fit result on *figure* (the curves stay)."""
+    for ax in figure.axes:
+        if ax.title.get_gid() == CHI2_GID:
+            ax.title.set_text('')
 
 
 def _plot_hires_diff(ax, x, diff, reference, label=_HIRES_DIFF_LABEL):
@@ -197,7 +256,7 @@ def plot_subspectra_with_positions(ax, x, y, FS, FS_pos, baseline, model_colors,
     return position_artists
 
 
-def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="Velocity, mm/s", ylabel="Transmission, counts", theme=None):
+def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="Velocity, mm/s", ylabel="Transmission, counts", theme=None, exclusion_regions=None):
     """
     Plot spectra on the given matplotlib figure.
 
@@ -209,6 +268,7 @@ def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="V
     - backgrounds: list of background values for normalization (optional)
     - xlabel: label for x-axis (default: "Velocity, mm/s")
     - ylabel: label for y-axis (default: "Transmission, counts")
+    - exclusion_regions: the applied exclusion regions, drawn as grey bands (optional)
     """
     tc = _tc(theme)
     figure.clear()
@@ -241,10 +301,10 @@ def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="V
         if num_spectra > 1 and backgrounds and len(backgrounds) > i and backgrounds[i] > 0:
             # Multi-spectrum: plot normalized on main axis
             B_normalized = B / backgrounds[i]
-            ax.plot(A, B_normalized, 'x', color=color, linestyle='None', markersize=5, label=os.path.basename(filenames[i]))
+            ax.plot(A, B_normalized, 'x', color=color, linestyle='None', markersize=5, label=os.path.basename(filenames[i]), gid=DATA_GID)
         else:
             # Single spectrum: plot in counts
-            ax.plot(A, B, 'x', color=color, linestyle='None', markersize=5, label=os.path.basename(filenames[i]))
+            ax.plot(A, B, 'x', color=color, linestyle='None', markersize=5, label=os.path.basename(filenames[i]), gid=DATA_GID)
 
     ax.set_xlabel(xlabel, color=tc['axes_text_color'])
     
@@ -267,13 +327,14 @@ def plot_spectrum(figure, A_list, B_list, filenames, backgrounds=None, xlabel="V
     _style_axis(ax, tc)
     ax.grid(True, color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=0.5)
     ax.set_xlim(x_min, x_max)
-    figure.tight_layout()
-    figure.canvas.draw()
 
     # Add legend if multiple spectra
     if num_spectra > 1:
         legend = ax.legend(loc='lower left', fontsize='small', facecolor=tc['legend_facecolor'], edgecolor=tc['legend_edgecolor'], labelcolor=tc['legend_textcolor'])
         legend.set_visible(False)
+    _spectrum_axes(ax, exclusion_regions)
+    figure.tight_layout()
+    figure.canvas.draw()
 
 
 def plot_calibration(figure, A, B, C, gridcolor='white', theme=None):
@@ -306,7 +367,7 @@ def plot_calibration(figure, A, B, C, gridcolor='white', theme=None):
     figure.tight_layout()
     figure.canvas.draw()
 
-def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, model, model_colors, backgrounds=None, gridcolor='white', theme=None, hires_diff=None, labels=None, lengths=None):
+def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, model, model_colors, backgrounds=None, gridcolor='white', theme=None, hires_diff=None, labels=None, lengths=None, exclusion_regions=None):
     """
     Plot model with Nbaseline separators - creates separate subplots for each spectrum.
     
@@ -327,6 +388,7 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     - lengths: the number of points of each spectrum in A (optional); without
       it the spectra are found from the velocity steps, which fails for spectra
       running in opposite directions
+    - exclusion_regions: the applied exclusion regions, drawn as grey bands (optional)
     """
     tc = _tc(theme)
     figure.clear()
@@ -483,7 +545,7 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
 
         # Plot fit and data
         ax.plot(x, spc_plot, color='r', zorder=len(FS)+2 if FS else 2, label='Fit')
-        ax.plot(x, y_plot, linestyle='None', marker='x', color='m', zorder=len(FS)+1 if FS else 1, label='Data')
+        ax.plot(x, y_plot, linestyle='None', marker='x', color='m', zorder=len(FS)+1 if FS else 1, label='Data', gid=DATA_GID)
         
         # Caption under the panel (which spectrum this is)
         if labels is not None and spc_idx < len(labels):
@@ -507,10 +569,11 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
             ax2.tick_params(axis='y', colors=tc['axes_text_color'])
             for spine in ax2.spines.values():
                 spine.set_edgecolor(tc['axes_text_color'])
-    
+        _spectrum_axes(ax, exclusion_regions)
+
     figure.tight_layout()
     figure.canvas.draw()
-    
+
     # Collect all position artists from all sections
     all_position_artists = []
     for artists in position_artists_all:
@@ -518,7 +581,7 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     return all_position_artists
 
 
-def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None, chi2_spread=None, labels=None):
+def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None, chi2_spread=None, labels=None, exclusion_regions=None):
     """
     Plot simultaneous fitting results with multiple spectra in separate subplots.
 
@@ -538,6 +601,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     - model: model list with Nbaseline separators for correct color mapping
     - labels: the caption under each panel instead of the file name, e.g.
       '12 of 12 · Fe_300K.dat' (optional)
+    - exclusion_regions: the exclusion regions of the fit, drawn as grey bands (optional)
     """
     tc = _tc(theme)
     figure.clear()
@@ -662,8 +726,8 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         # Plot fit and data with higher z-order
         max_z = int(max(v)) if len(v) > 0 else len(FS)
         ax.plot(x, spc, color='r', zorder=max_z+2, label='Fit')
-        ax.plot(x, y, linestyle='None', marker='x', color='m', zorder=max_z+1, label='Data')
-        
+        ax.plot(x, y, linestyle='None', marker='x', color='m', zorder=max_z+1, label='Data', gid=DATA_GID)
+
         # Add spectrum filename (or the caption given) at bottom
         if labels is not None and spc_idx < len(labels):
             ax.text(0, -0.1, labels[spc_idx], horizontalalignment='left',
@@ -675,7 +739,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         
         # Add chi2 title to middle subplot
         if spc_idx == int(num_spectra / 2):
-            ax.set_title(_chi2_title(chi2, chi2_spread), y=1, color='r')
+            ax.set_title(_chi2_title(chi2, chi2_spread), y=1, color='r').set_gid(CHI2_GID)
         
         # Formatting
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
@@ -695,7 +759,8 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
             ax2.tick_params(axis='y', colors=tc['axes_text_color'])
             for spine in ax2.spines.values():
                 spine.set_edgecolor(tc['axes_text_color'])
-        
+        _spectrum_axes(ax, exclusion_regions)
+
         # Update z-order offset for next spectrum
         z_offset += len(FS)
     
@@ -714,7 +779,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     return svg_path, png_path, position_artists_list
 
 
-def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=None, gridcolor='white', theme=None, model=None, hires_diff=None):
+def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=None, gridcolor='white', theme=None, model=None, hires_diff=None, exclusion_regions=None):
     """
     Plot model with subspectra on the given matplotlib figure.
     
@@ -731,12 +796,13 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
     - gridcolor: color for grid lines (default: 'white')
     - theme: theme dict for colors (default: None → dark mode)
     - model: model list for correct color mapping (skips Distr/Corr etc.)
+    - exclusion_regions: the applied exclusion regions, drawn as grey bands (optional)
     """
     tc = _tc(theme)
     figure.clear()
     figure.patch.set_facecolor(tc['figure_facecolor'])
     ax = figure.add_subplot(111)
-    
+
     # Build subspectra color list and names (skipping special models)
     sub_colors = _subspectra_colors(model_colors, model)
     sub_names = _subspectra_names(model)
@@ -797,8 +863,8 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
 
     # Plot fit and data
     ax.plot(A, SPC_f_plot, color='r', zorder=len(FS)+2, label='Fit')
-    ax.plot(A, B_plot, linestyle='None', marker='x', color='m', zorder=len(FS)+1, label='Data')
-    
+    ax.plot(A, B_plot, linestyle='None', marker='x', color='m', zorder=len(FS)+1, label='Data', gid=DATA_GID)
+
     # Formatting
     ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
     ax.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
@@ -815,15 +881,17 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
     _style_axis(ax, tc)
     legend = ax.legend(loc='lower left', fontsize='small', facecolor=tc['legend_facecolor'], edgecolor=tc['legend_edgecolor'], labelcolor=tc['legend_textcolor'])
     legend.set_visible(False)
-    
+    _spectrum_axes(ax, exclusion_regions)
+
     figure.tight_layout()
     figure.canvas.draw()
-    
+
     return position_artists if 'position_artists' in locals() else []
 
 
-def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, gridcolor='white', theme=None, model=None, has_nbaseline=False, hires_diff=None):
-    """Plot only model curves (no experimental spectrum), with optional Nbaseline sections."""
+def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, gridcolor='white', theme=None, model=None, has_nbaseline=False, hires_diff=None, exclusion_regions=None):
+    """Plot only model curves (no experimental spectrum), with optional Nbaseline
+    sections; *exclusion_regions* (the applied ones) are drawn as grey bands."""
     tc = _tc(theme)
     figure.clear()
     figure.patch.set_facecolor(tc['figure_facecolor'])
@@ -888,6 +956,7 @@ def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, g
             _style_axis(ax, tc)
             legend = ax.legend(loc='lower left', fontsize='small', facecolor=tc['legend_facecolor'], edgecolor=tc['legend_edgecolor'], labelcolor=tc['legend_textcolor'])
             legend.set_visible(False)
+            _spectrum_axes(ax, exclusion_regions)
 
             all_position_artists.extend(position_artists)
 
@@ -919,6 +988,7 @@ def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, g
     _style_axis(ax, tc)
     legend = ax.legend(loc='lower left', fontsize='small', facecolor=tc['legend_facecolor'], edgecolor=tc['legend_edgecolor'], labelcolor=tc['legend_textcolor'])
     legend.set_visible(False)
+    _spectrum_axes(ax, exclusion_regions)
 
     figure.tight_layout()
     figure.canvas.draw()
@@ -1043,13 +1113,14 @@ def plot_instrumental_function(figure, curves, title, dir_path, gridcolor='gray'
     return result_svg, result_png
 
 
-def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None, chi2_spread=None, save=True):
+def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None, chi2_spread=None, save=True, exclusion_regions=None):
     """
     Plot spectrum fitting results on the given figure and save to files.
 
     ``chi2_spread`` (optional) is shown next to the chi-square as ``± value``.
     The figure goes to result.svg / result.png in *dir_path* (what "Save
     result" picks up) unless *save* is False or it is a replot (*z_order*).
+    *exclusion_regions* (those of the fit) are drawn as grey bands.
     """
     tc = _tc(theme)
     figure.clear()
@@ -1075,8 +1146,8 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
     # Plot fit and data with higher z-order
     max_z = int(max(z_order)) if len(z_order) > 0 else len(FS)
     ax1.plot(A, SPC_f, color='r', zorder=max_z+2, label='Fit')
-    ax1.plot(A, B, linestyle='None', marker='x', color='m', zorder=max_z+1, label='Data')
-    
+    ax1.plot(A, B, linestyle='None', marker='x', color='m', zorder=max_z+1, label='Data', gid=DATA_GID)
+
     # Plot residuals
     residual_offset = min(B) - max(B - SPC_f)
     ax1.plot(A, B - SPC_f + residual_offset, color='lime', label='Residual')
@@ -1098,7 +1169,7 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
             verticalalignment='center', color='m', transform=ax1.transAxes)
     
     # Add chi-squared title
-    ax1.set_title(_chi2_title(hi2, chi2_spread), y=1, color='r')
+    ax1.set_title(_chi2_title(hi2, chi2_spread), y=1, color='r').set_gid(CHI2_GID)
 
     # Add secondary y-axis for normalized scale if baseline is non-zero
     if p[2] == 0 and p[6] == 0:
@@ -1109,7 +1180,8 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
             ax2.tick_params(axis='y', colors=tc['axes_text_color'])
             for spine in ax2.spines.values():
                 spine.set_edgecolor(tc['axes_text_color'])
-    
+    _spectrum_axes(ax1, exclusion_regions)
+
     # Save plots only if not in replot mode (z_order was None initially)
     result_svg = None
     result_png = None

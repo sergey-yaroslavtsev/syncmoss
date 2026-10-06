@@ -127,6 +127,8 @@ an explicit message and reddened fields rather than failing halfway through.
 | Show model | `Enter` |
 | Take result as new model | `F8` |
 | Zoom the plot at the cursor | mouse wheel over the figure |
+| Apply typed exclusion regions | `Enter` in their box (not Show model) |
+| Cancel *Pick on plot* | `Esc` |
 | Clean model (baseline kept) | double-click the *Clean model* button |
 | Replot a stored fit | click its row button in the results table |
 
@@ -286,9 +288,48 @@ an explicit message and reddened fields rather than failing halfway through.
   **Fit**. The beacon server is taken from the `BEACON_HOST` environment
   variable, or is `id14:25000` when that is unset.
 
-## 8. Saving
+## 8. Exclusion regions
 
-**Save result** writes six or seven files next to the save path, not one. `<base>` is the
+Velocity regions whose points are **not fitted**: they are left out of χ², the
+degrees of freedom and the errors. Switch them on with **Apply exclusion** in
+the plot toolbar; a bar appears above the plot.
+
+- Type the regions in mm/s as `lo:hi; lo:hi`, e.g. `-3:-2; 1:2` — only `;`
+  separates regions, and the two ends may come in either order. **Enter** (or
+  leaving the box) applies them: they are sorted, overlapping ones merged, and
+  the box shows the result. A point exactly on an end is excluded.
+- **Pick on plot**, then click the two ends of a region on the plot (either
+  order); **Esc** cancels. It works on whatever is on screen — spectrum, model
+  or fit — but not while the toolbar's Pan or Zoom is on. A clicked end is put
+  between the two data points around the click, with no more decimals than
+  needed to tell them apart.
+- The regions are grey bands on every spectrum plot: the main window, the
+  result window and the saved pictures.
+- **Apply exclusion** off: the regions are not shown, not used and not saved
+  (the text stays for the next time). It is off at every start.
+- The same regions apply to every spectrum (sequence, `Nbaseline`, one-model).
+  For regions that only some spectra need — or that should stay for good — use
+  *Change spectrum(a) → Save spectrum without excluded points*: every selected
+  spectrum is written as `excl_<name>.dat` without those points (one spectrum
+  where you say, several into the save path's folder). A `.dat` keeps the
+  instrumental function of its header; an `.mca` (or other raw file) is
+  calibrated as it is read, so its `.dat` gets the instrumental function in use
+  — CMS or SMS, as the check boxes say — as *RAW → .dat* conversion writes it.
+- Changing the regions (typing, picking, *Load*, or **Apply exclusion**)
+  changes the bands of the plot on screen. If it shows a fit, that fit is no
+  longer a result of these regions: its χ² disappears, the results table is
+  emptied, and it can be neither saved nor taken as model (**F8**) — fit again.
+- A fit is not started when no more points are left after the regions than
+  there are free parameters; a sequence checks all its spectra before it starts.
+- **Clean** removes every region (**Apply exclusion** stays on).
+- **Save** / **Load** write and read the regions as a small text file
+  (`<name>_exclusion.txt`); **Load** replaces the current regions.
+- The background (`Ns`) a sequence starts from is still estimated from the
+  whole spectrum.
+
+## 9. Saving
+
+**Save result** writes several files next to the save path, not one. `<base>` is the
 save path without the spectrum's extension: `Fe_4.2K.dat` gives
 `Fe_4.2K_param.txt`, and a dot inside the name itself (the `4.2K`) is kept.
 
@@ -316,6 +357,12 @@ save path without the spectrum's extension: `Fe_4.2K.dat` gives
   keeps the older file and leaves the five result files as they were just
   written. (A sequence writes one for every spectrum, under the spectrum's own
   name, without asking.)
+- `<base>_exclusion.txt` — the exclusion regions the fit left out (section 8),
+  ready for *Load*; only when they were applied. Then `_param.txt` also has a
+  last column `Exclusion regions` with the same text, and `_graf.txt` a last
+  column `Fitted` (`S1_Fitted`, … for an `Nbaseline` fit): 1 for a fitted point,
+  0 for an excluded one. A sequence writes `<base>_exclusion.txt` once, when it
+  starts.
 
 A **sequence** saves as it goes, without asking: ONE `<base>_param.txt` — one
 line per fitted spectrum — and ONE `<base>_result_table_PNG.html` with the
@@ -336,7 +383,7 @@ of all the spectra, and every spectrum's curves and pictures under its own name.
 `<base>_result_model.mdl` is the model for one spectrum, the independent `=(X)`
 values with the X they started from — ready for another fit.
 
-## 9. Other
+## 10. Other
 
 - **Interrupt** does not just stop the fit: it terminates the worker pool and
   builds a fresh one. Use it if a calculation is stuck — the fit in progress dies
@@ -351,13 +398,14 @@ values with the X they started from — ready for another fit.
   "Integration check (×4)"** trace under every Show model and Fit is the same
   model recomputed with four times as many points, minus the one you see. A flat
   line means converged; a visible wiggle means raise the number.
-- *Change spectrum(a)* holds three destructive-looking but useful operations:
-  sum all listed spectra, subtract the current model from the spectrum, and
-  halve the number of points.
+- *Change spectrum(a)* holds four destructive-looking but useful operations:
+  sum all listed spectra, subtract the current model from the spectrum, halve
+  the number of points, and save the spectra without the points of the
+  exclusion regions (section 8).
 - Distributions are drawn in the plot area: the **Distribution / Spectrum**
   button toggles the view once a model with `Distr`/`Recon` has been shown.
 
-## 10. When something goes wrong
+## 11. When something goes wrong
 
 Any error that reaches the terminal — whether SYNCmoss caught it or not — also
 opens a **report a bug** window with the message in it and a *Copy the error

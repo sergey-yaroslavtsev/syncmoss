@@ -175,6 +175,7 @@ def fit(app, template, spectra, pool):
     paths = [spectrum.path for spectrum in spectra]
     backgrounds = calculate_backgrounds(paths, app.calibration_path)
     inputs = expand(template, spectra, backgrounds)
+    inputs['exclusion_regions'] = app.exclusion_regions_in_use()
     result = fitting_io.fit_model(app, inputs, paths, pool)
     if result.get('success'):
         result['one_model'] = OneModelResult(template, spectra, inputs, result)
@@ -313,6 +314,10 @@ class OneModelResult:
         hires = r.get('hires_diff_list') or [None] * self.count()
         return (r['A_list'][k], r['B_list'][k], r['SPC_f_list'][k], r['FS_list'][k],
                 r['FS_pos_list'][k], hires[k])
+
+    def exclusion_regions_of(self, k):
+        """The exclusion regions the fit left out (the same for every spectrum)."""
+        return tuple(self.result.get('exclusion_regions') or ())
 
     # --- the template, for the tables ------------------------------------------
 
