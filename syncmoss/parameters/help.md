@@ -213,6 +213,13 @@ an explicit message and reddened fields rather than failing halfway through.
   (one `Nbaseline` per extra spectrum), with a sequence mode chosen. Without
   `Nbaseline` rows, **Show model** draws the model on the first and the last
   spectrum, each with its own baseline and `N`, `N1`, … — in every mode.
+- *Multispectra settings → Fit one spectrum…* fits ONE spectrum of the path box
+  on its own, with the model of the table and that spectrum's own `N`, `N1`, …:
+  give its number (its place in the path box) or its name (the file name without
+  `.dat`) — each field follows the other. A name that is not in the path box is
+  looked for next to its spectra (such a file has no `N`, `N1`, … of its own).
+  Nothing is saved: **Save result** does that. Not for a model with `Nbaseline`
+  rows; with fewer than two spectra it only says so.
 - The **simultaneous one-model fit** fits the model of the table — built for ONE
   spectrum — to all the spectra at once. Every free parameter has one value
   shared by all the spectra, except the independent `=(X)` ones (section 2),

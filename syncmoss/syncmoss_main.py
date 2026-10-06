@@ -61,7 +61,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QTextEdit, QCheckBox, QScrollArea, QGridLayout,
     QSplitter, QFrame, QFileDialog, QMessageBox, QMenu, QSizePolicy,
-    QAbstractScrollArea
+    QAbstractScrollArea, QDialog
 )
 from PySide6.QtGui import (
     QImage, QFont, QIcon, QAction, QDoubleValidator, QIntValidator,
@@ -93,7 +93,7 @@ from syncmoss import bliss_channel
 from syncmoss.spectrum_parameters import (
     SpectrumParameters, parse_path_box, format_path_box, read_parameters_file,
     apply_parameters, write_parameters_file, sequence_problems, table_uses_names,
-    looks_like_entries, names_used, PATH_BOX_UNREADABLE,
+    looks_like_entries, names_used, missing_names, path_box_entries, PATH_BOX_UNREADABLE,
 )
 from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
@@ -119,6 +119,7 @@ from syncmoss.supp_menu import (
     build_supp_menu, contact_icon, open_theory_find_dialog, theme_action_text,
 )
 import syncmoss.one_model as one_model
+from syncmoss.one_spectrum import OneSpectrumDialog
 from syncmoss.result_window import ResultWindow, SequenceSeries, NbaselineSeries
 
 
@@ -348,16 +349,18 @@ class FittingThread(QThread):
     finished = Signal(dict)  # result dictionary
     error = Signal(str)
     
-    def __init__(self, main_window, spectrum_file, pool):
+    def __init__(self, main_window, spectrum_file, pool, spectrum_parameters=None):
         super().__init__()
         self.main_window = main_window
         self.spectrum_file = spectrum_file
         self.pool = pool
-    
+        self.spectrum_parameters = spectrum_parameters   # N, N1, ... (None: the first spectrum's)
+
     def run(self):
         try:
             print(f"[DEBUG] FittingThread started for: {self.spectrum_file}")
-            result = fitting_io.fit_single_spectrum(self.main_window, self.spectrum_file, self.pool)
+            result = fitting_io.fit_single_spectrum(self.main_window, self.spectrum_file, self.pool,
+                                                    spectrum_parameters=self.spectrum_parameters)
             print(f"[DEBUG] FittingThread completed successfully")
             self.finished.emit(result)
         except FitInterrupted as e:
@@ -2897,6 +2900,12 @@ class PhysicsApp(QMainWindow):
         one_model_action.triggered.connect(lambda: self.set_sequence_fitting_type(ONE_MODEL))
         menu.addAction(one_model_action)
 
+        # One spectrum of them, fitted on its own (an action, not a mode)
+        menu.addSeparator()
+        one_spectrum_action = QAction("Fit one spectrum…", self)
+        one_spectrum_action.triggered.connect(self.fit_one_spectrum)
+        menu.addAction(one_spectrum_action)
+
         # The parameters of the spectra (N1, N2, ... in the formulas)
         menu.addSeparator()
         load_action = QAction("Load parameters of the spectra (N1, N2, …) from a file", self)
@@ -3329,26 +3338,82 @@ class PhysicsApp(QMainWindow):
                 self.inprogress = False
                 return
 
-            # Snapshot current parameter links (=[X,Y]) and the whole model at
-            # fit start; the latter becomes the model "Save result" writes.
-            self._fit_links_snapshot = self.params_table.get_link_snapshot()
-            self._fit_model_snapshot = model_file_rows(self)
+            self._start_fitting_thread(spectrum_files[0])
 
-            spectrum_file = spectrum_files[0]
-            self.set_status(f"Fitting spectrum: {os.path.basename(spectrum_file)}", "cyan")
-
-            # Start fitting in background thread
-            self.fitting_thread = FittingThread(self, spectrum_file, self.pool)
-            self.fitting_thread.finished.connect(self.on_fitting_finished)
-            self.fitting_thread.error.connect(self.on_fitting_error)
-            self.fitting_thread.start()
-            
         except Exception as e:
             error_msg = f"Fit error: {e}\n{traceback.format_exc()}"
             print(error_msg)
             self.set_status(f"Fit error: {e}", "red")
             self.inprogress = False
-    
+
+    def _start_fitting_thread(self, spectrum_file, spectrum_parameters=None):
+        """Fit *spectrum_file* in the background (an Nbaseline model: every
+        spectrum of the path box); *spectrum_parameters* is what N, N1, ...
+        stand for, by default the first spectrum's."""
+        # Snapshot current parameter links (=[X,Y]) and the whole model at
+        # fit start; the latter becomes the model "Save result" writes.
+        self._fit_links_snapshot = self.params_table.get_link_snapshot()
+        self._fit_model_snapshot = model_file_rows(self)
+        self.set_status(f"Fitting spectrum: {os.path.basename(spectrum_file)}", "cyan")
+        self.fitting_thread = FittingThread(self, spectrum_file, self.pool, spectrum_parameters)
+        self.fitting_thread.finished.connect(self.on_fitting_finished)
+        self.fitting_thread.error.connect(self.on_fitting_error)
+        self.fitting_thread.start()
+
+    def fit_one_spectrum(self):
+        """Multispectra settings -> Fit one spectrum: one spectrum of the path box
+        (or a file next to them), chosen by its number or name, fitted on its
+        own with the table's model and its own N, N1, ...; nothing is saved.
+
+        Refused for a model with Nbaseline rows (they fit every spectrum
+        together); with fewer than two spectra it only says so.
+        """
+        if 'Nbaseline' in self.params_table.get_model_list():
+            self.set_status("Fit one spectrum was not started — the model has Nbaseline rows, "
+                            "which fit every spectrum of the path box together.", "red")
+            return
+        entries = [] if self.parse_model_only_request()[0] else path_box_entries(self)
+        if len(entries) < 2:
+            self.set_status("Fit one spectrum: " + ("there is only one spectrum in the path box "
+                                                    "— Fit fits it." if entries else
+                                                    "there are no spectra in the path box."),
+                            "orange")
+            return
+        if self._reject_if_busy('Fitting'):
+            return
+        dialog = OneSpectrumDialog(self, entries)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        number, values, path = dialog.chosen
+
+        self.inprogress = True
+        self.busy_with = 'Fitting'
+        if not (self.initialize_parameters() and self.check_user_expressions("Fit")
+                and self.check_values_within_bounds("Fit")):
+            self.inprogress = False
+            return
+        # Its own N, N1, ...: a file that is not in the path box has none
+        typed = read_model(self, substitute_names=False)
+        texts = typed[5] + typed[6] + typed[7]
+        name = os.path.basename(path)
+        spectrum = SpectrumParameters(number or 1, values, path)
+        lacking = names_used(texts) if number is None else missing_names(texts, spectrum)
+        if lacking:
+            self.set_status(f"Fit one spectrum was not started — the formulas use "
+                            f"{', '.join(lacking)}, which {name} has no value for"
+                            + (" (it is not in the path box)." if number is None else "."), "red")
+            self.inprogress = False
+            return
+        valid, error_msg = self.validate_spectrum_files([path])
+        if not valid:
+            self.set_status(f"Spectrum validation failed: {error_msg}", "red")
+            self.inprogress = False
+            return
+        if not self.confirm_instrumental_methods([path], 'single'):
+            self.inprogress = False
+            return
+        self._start_fitting_thread(path, spectrum)
+
     def one_model_request(self, spectrum_files):
         """Whether Fit / Show model work as a simultaneous one-model fit.
 
@@ -3913,13 +3978,15 @@ class PhysicsApp(QMainWindow):
                 # Store FS_pos for toggle functionality
                 self.current_FS_pos = FS_pos
                 
-                # Store fitting data for graf.txt saving
+                # Store fitting data for graf.txt saving (and the spectrum's name
+                # for the _param.txt row: Fit one spectrum fits any of them)
                 self.last_fitting_data = {
                     'A': result['A'],
                     'B': result['B'],
                     'SPC_f': result['SPC_f'],
                     'FS': result['FS'],
                     'is_simultaneous': False,
+                    'spectrum_file': result.get('spectrum_file'),
                 }
                 
                 # Store data for replotting with z-order changes
@@ -4149,7 +4216,8 @@ class PhysicsApp(QMainWindow):
                 if sim_files:
                     spectrum_file = '; '.join(os.path.basename(f) for f in sim_files)
                 else:
-                    spectrum_file = os.path.basename(self.path_list[0]) if self.path_list else "unknown"
+                    fitted = fit_data.get('spectrum_file') or (self.path_list[0] if self.path_list else None)
+                    spectrum_file = os.path.basename(fitted) if fitted else "unknown"
                 problems = self._write_result_files(base_path, spectrum_file, mode)
 
                 # The spectrum's N, N1, N2, ... the fit used (a sequence writes the
