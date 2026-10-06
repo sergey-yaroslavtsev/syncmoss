@@ -188,6 +188,18 @@ an explicit message and reddened fields rather than failing halfway through.
   its data. It asks first, and nothing else in the files changes. Other files
   (`.mca`, …) are left alone, and the calibration file (`Calibration.dat` of the
   parameters folder, or another one chosen) is never written.
+- *Find / Refine Instr. func. model* fits the model of the table together with
+  the instrumental function: its free parameters are fitted too, and links
+  `=[X,Y]` and Expressions follow their sources. Afterwards the results table
+  shows the model as after a fit — *Take result* takes it back, *Save result*
+  does not save it (fit to save a result). With several spectra in the path box
+  they are all fitted with **one** instrumental function — there is no
+  sequence of searches: a model with `Nbaseline` rows as built (one spectrum
+  more than rows), any other model as the simultaneous one-model fit expands it
+  (an `=(X)` gets a value per spectrum, every spectrum its own baseline). Each
+  spectrum gets its own panel of the plot. A model with a `Recon` is refused.
+  The single-line and α-Fe searches are single-spectrum procedures: they use
+  the first spectrum. Every search leaves out the exclusion regions (section 8).
 - **Find Instr. func. NEW** fits the *theoretical* SMS instrumental function
   instead of a free sum of Gaussians: the simulated energy distribution of a
   ⁵⁷FeBO₃ synchrotron Mössbauer source, with four physical numbers —

@@ -80,8 +80,9 @@ def _spectrum_axes(ax, exclusion_regions):
 
 
 def spectrum_axes_of(figure):
-    """The spectrum plots of *figure* (not a distribution, calibration or
-    instrumental-function plot)."""
+    """The spectrum plots of *figure* -- a fit, a model, an instrumental-function
+    search -- not a distribution, calibration or instrumental-function shape
+    plot."""
     return [ax for ax in figure.axes if ax.get_gid() == SPECTRUM_AXES_GID]
 
 
@@ -995,59 +996,79 @@ def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, g
     return position_artists
 
 
-def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gridcolor='gray', theme=None):
+def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gridcolor='gray', theme=None,
+                             lengths=None, starts=None, labels=None, exclusion_regions=None):
     """
     Plot instrumental function fitting results on the given figure and save to files.
+
+    A search over several spectra passes them joined, with ``lengths`` (each
+    one's points), ``starts`` (where each one's parameters -- its baseline --
+    begin in p) and ``labels`` (the caption under each): every spectrum gets a
+    panel of its own, side by side as a simultaneous fit shows them, with the
+    search's one chi2 over the middle one. ``exclusion_regions`` are drawn as
+    grey bands: their points were not fitted.
     """
     tc = _tc(theme)
     figure.clear()
     figure.patch.set_facecolor(tc['figure_facecolor'])
-    ax1 = figure.add_subplot(111)
-    ax1.set_xlim(min(A), max(A))
-    ax1.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=1)
-    
-    # Plot fitted spectrum
-    ax1.plot(A, F, color='r')
-    
-    # Fill between fitted spectrum and baseline
-    baseline = np.array(p[0] + p[3] * p[0]/10**2 * A + p[2] * p[0] / 10**4 * (A - p[1])**2 + 
-                       p[6] * p[4] / 10**4 * (A - p[5]) ** 2 + p[4] + p[7] * p[4]/10**2 * A, dtype=float)
-    ax1.fill_between(A, F.astype(float), baseline, color='r', alpha=1, zorder=2)
-    
-    # Plot experimental data
-    ax1.plot(A, B, linestyle='None', marker='x', color='m')
-    
-    # Plot residuals
-    residual_offset = min(B) - max(B - F)
-    ax1.plot(A, B - F + residual_offset, color='lime')
-    ax1.plot(A, B - B + residual_offset, linestyle='--', color=tc['gridcolor'])
-    
-    # Plot high-resolution difference
-    hires_offset = residual_offset + min(B - F) - max(F2 - F)
-    ax1.plot(A, F2 - F + hires_offset, color='cyan')
-    
-    # Add file path annotation
-    ax1.text(0, -0.1, os.path.basename(filepath), horizontalalignment='left', 
-            verticalalignment='center', color='m', transform=ax1.transAxes)
-    
-    # Add chi-squared title
-    ax1.set_title('χ² = %.3f' % hi2, y=1, color='r')
-    
-    # Style axis
-    ax1.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
-    ax1.set_ylabel('Transmission, counts', color=tc['axes_text_color'])
-    ax1.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
-    _style_axis(ax1, tc)
-    
-    # Add secondary y-axis for normalized scale
-    bg = p[0]
-    if bg > 0:
-        ax2 = ax1.secondary_yaxis('right', functions=(lambda x: x / bg, lambda x: x * bg))
-        ax2.set_ylabel('Normalized transmission', color=tc['axes_text_color'])
-        ax2.tick_params(axis='y', colors=tc['axes_text_color'])
-        for spine in ax2.spines.values():
-            spine.set_edgecolor(tc['axes_text_color'])
-    
+    ends = np.cumsum(lengths or [len(A)])[:-1]
+    starts = list(starts or [0])
+    labels = list(labels or [os.path.basename(filepath)])
+    count = len(starts)
+    panels = zip(np.split(np.asarray(A), ends), np.split(np.asarray(B), ends),
+                 np.split(np.asarray(F), ends), np.split(np.asarray(F2), ends))
+    for k, (A_k, B_k, F_k, F2_k) in enumerate(panels):
+        p_k = p[starts[k]:]
+        ax1 = figure.add_subplot(1, count, k + 1)
+        ax1.set_xlim(min(A_k), max(A_k))
+        ax1.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=1)
+
+        # Plot fitted spectrum
+        ax1.plot(A_k, F_k, color='r')
+
+        # Fill between fitted spectrum and this spectrum's baseline
+        ax1.fill_between(A_k, F_k.astype(float), calculate_baseline(p_k, A_k), color='r', alpha=1, zorder=2)
+
+        # Plot experimental data
+        ax1.plot(A_k, B_k, linestyle='None', marker='x', color='m', gid=DATA_GID)
+
+        # Plot residuals
+        residual_offset = min(B_k) - max(B_k - F_k)
+        ax1.plot(A_k, B_k - F_k + residual_offset, color='lime')
+        ax1.plot(A_k, B_k - B_k + residual_offset, linestyle='--', color=tc['gridcolor'])
+
+        # Plot high-resolution difference
+        hires_offset = residual_offset + min(B_k - F_k) - max(F2_k - F_k)
+        ax1.plot(A_k, F2_k - F_k + hires_offset, color='cyan')
+
+        # Add file path annotation
+        ax1.text(0, -0.1, labels[k], horizontalalignment='left',
+                verticalalignment='center', color='m', transform=ax1.transAxes)
+
+        # Add chi-squared title (the spectra were fitted together: one chi2)
+        if k == count // 2:
+            ax1.set_title('χ² = %.3f' % hi2, y=1, color='r').set_gid(CHI2_GID)
+
+        # Style axis
+        ax1.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
+        if k == 0:
+            ax1.set_ylabel('Transmission, counts', color=tc['axes_text_color'])
+        ax1.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
+        _style_axis(ax1, tc)
+
+        # Add secondary y-axis for normalized scale
+        bg = p_k[0]
+        if bg > 0:
+            ax2 = ax1.secondary_yaxis('right', functions=(lambda x, bg=bg: x / bg, lambda x, bg=bg: x * bg))
+            if k == count - 1:
+                ax2.set_ylabel('Normalized transmission', color=tc['axes_text_color'])
+            ax2.tick_params(axis='y', colors=tc['axes_text_color'])
+            for spine in ax2.spines.values():
+                spine.set_edgecolor(tc['axes_text_color'])
+        _spectrum_axes(ax1, exclusion_regions)
+    if count > 1:
+        figure.tight_layout()
+
     # Save plots
     result_svg = os.path.join(dir_path, 'result.svg')
     figure.savefig(result_svg, bbox_inches='tight', facecolor=tc['figure_facecolor'], dpi=300)

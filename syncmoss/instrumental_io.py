@@ -15,8 +15,9 @@ import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
 import syncmoss.sms_theory as smst
 from syncmoss.spectrum_io import (load_spectrum, estimate_edge_background,
-                                  resolve_calibration_path)
+                                  resolve_calibration_path, calculate_backgrounds)
 from syncmoss.model_io import read_model, read_bounds_and_fix
+from syncmoss.exclusion_regions import kept
 
 
 # Built-in defaults used by "Reset to default values" in Instrumental function menu.
@@ -907,6 +908,122 @@ def _load_be_param(params_dir):
 ESRF_STANDARD_LINE_WIDTH = 0.1277       # mm/s
 
 
+class SearchRefused(Exception):
+    """The search was not started; the message says why."""
+
+
+def single_spectrum_request(app, exclusion_regions=()):
+    """What a search fits when it is not told (see search_data): the first
+    spectrum shown, on its own."""
+    return {'kind': 'single', 'files': [os.path.abspath(app.path_list[0])],
+            'exclusion_regions': tuple(exclusion_regions), 'template': None, 'spectra': None}
+
+
+def search_data(app, request):
+    """The spectra of *request* loaded for a search.
+
+    *request* (made by the main window) says which: 'files', and 'kind' --
+    'single' (one spectrum), 'nbaseline' (a model with Nbaseline rows, one
+    section per file) or 'one_model' (several spectra, no Nbaseline rows: the
+    model of the table expanded over them, see search_reference); and the
+    'exclusion_regions' left out.
+
+    Returns 'A_list'/'B_list' (every point of each spectrum), 'A'/'B' (all of
+    them joined) with 'lengths' (each one's points; None for one spectrum), and
+    the points that are fitted -- those outside the exclusion regions -- as
+    'A_fit'/'B_fit'/'lengths_fit'. TI is point by point in velocity
+    (tests/test_model_pointwise.py), so fitting the kept points IS the fit with
+    the regions left out.
+    """
+    files = list(request['files'])
+    A_list, B_list = load_spectrum(app, files, calibration_path=app.calibration_path)
+    regions = tuple(request.get('exclusion_regions') or ())
+    keeps = [kept(a, regions) for a in A_list]
+    emptied = [os.path.basename(f) for f, k in zip(files, keeps) if not k.any()]
+    if emptied:
+        raise SearchRefused(f"every point of {', '.join(emptied)} is in an exclusion region")
+    joint = len(files) > 1
+    return {
+        'files': files, 'regions': regions, 'A_list': A_list, 'B_list': B_list,
+        'A': np.concatenate(A_list), 'B': np.concatenate(B_list),
+        'lengths': [len(a) for a in A_list] if joint else None,
+        'A_fit': np.concatenate([a[k] for a, k in zip(A_list, keeps)]),
+        'B_fit': np.concatenate([b[k] for b, k in zip(B_list, keeps)]),
+        'lengths_fit': [int(k.sum()) for k in keeps] if joint else None,
+    }
+
+
+def _links_of(con1, con2, con3):
+    """A model's links as minimi_hi takes them (confu): a column per link,
+    target / source / factor; without links one column that names no slot."""
+    if len(con1) == 0:
+        return np.array([[-1], [-1], [-1]])
+    return np.array([con1, con2, con3])
+
+
+def apply_links(p, confu, Expr, NExpr):
+    """*p* with the links and Expressions applied as minimi_hi applies them to
+    every trial point: each linked slot from its source, then each Expression
+    and the slots linked to it."""
+    p = np.array(p, dtype=float)
+    for i in range(len(p)):
+        matches = np.flatnonzero(confu[0] == i)
+        if matches.size:
+            p[i] = p[int(confu[1][matches[0]])] * confu[2][matches[0]]
+    for e_i in range(len(Expr)):
+        p[NExpr[e_i]] = mi._eval_expr(str(Expr[e_i]), p)
+        for c_i in np.flatnonzero(confu[1] == NExpr[e_i]):
+            p[int(confu[0][c_i])] = p[int(confu[1][c_i])] * confu[2][c_i]
+    return p
+
+
+def search_reference(app, mode, data, request, CMS_ch=0, free_absorber_width=False):
+    """build_reference_model for the spectra of *data* (search_data).
+
+    A model with Nbaseline rows is the table's, as built. A 'one_model'
+    request expands the table's model over the spectra as the simultaneous
+    one-model fit does (one_model.expand): a shared parameter has one value, an
+    independent =(X) one a value per spectrum, every spectrum its own baseline.
+    ``extra`` carries 'starts' as well -- where each spectrum's baseline sits in
+    p -- and, for a 'one_model' request, the expanded model as 'inputs'.
+    """
+    from syncmoss import fitting_io, one_model   # both import this module
+    if mode == 1 and request['kind'] == 'one_model':
+        spectra = request['spectra']
+        backgrounds = calculate_backgrounds([s.path for s in spectra], app.calibration_path)
+        inputs = one_model.expand(request['template'], spectra, backgrounds)
+        model = inputs['model']
+        confu = _links_of(inputs['con1'], inputs['con2'], inputs['con3'])
+        p = apply_links(inputs['p'], confu, inputs['Expr'], inputs['NExpr'])
+        bounds = np.array(inputs['bounds'], dtype=float)
+        fix = fitting_io.fixed_parameters(inputs)
+        extra = {'Distri': inputs['Distri'], 'Cor': inputs['Cor'], 'Recon': inputs['Recon'],
+                 'confu': confu, 'Expr': inputs['Expr'], 'NExpr': inputs['NExpr'],
+                 'inputs': inputs}
+    else:
+        model, p, bounds, fix, extra = build_reference_model(
+            app, mode, data['B_list'][0], CMS_ch, free_absorber_width)
+    extra['starts'] = fitting_io.section_starts(model)
+    return model, p, bounds, fix, extra
+
+
+def model_errors_and_covariance(er, covariance_matrix, mod_p_len):
+    """The model's part of a search's errors and covariance.
+
+    The instrumental parameters sit after the model's *mod_p_len*, and the
+    covariance has a row per free parameter in index order, so the free model
+    parameters are its leading block. A fit that could not move has a single 0
+    for errors (minimi_hi): it is returned as it is.
+    """
+    er = np.asarray(er, dtype=float).ravel()
+    covariance = np.atleast_2d(np.asarray(covariance_matrix, dtype=float))
+    if len(er) < mod_p_len:
+        return er, covariance
+    errors = er[:mod_p_len]
+    free = int(np.count_nonzero(~np.isnan(errors)))
+    return errors, covariance[:free, :free]
+
+
 def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
     """Reference absorber used to see the instrumental function, for one mode.
 
@@ -917,8 +1034,10 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
     mode 0 : ESRF single-line standard  -- Be-window Doublet + Singlet;
              only the baseline Ns (0) and the Singlet effective thickness T (17)
              are free.
-    mode 1 : the model currently in the parameters table (constraints,
-             distributions, expressions and Recon weights all held fixed).
+    mode 1 : the model currently in the parameters table, its free
+             parameters fitted with the instrumental function; a linked
+             parameter and an Expression follow their sources (``extra``
+             carries the links and Expressions for minimi_hi).
     mode 2 : pure alpha-Fe -- Be-window Doublet + polarized Sextet; Ns (0),
              T (17) and the texture A (25) are free, plus Nnr (4) in CMS.
 
@@ -928,7 +1047,9 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
     legacy search is untouched.
 
     Returns ``(model, p, bounds, fix, extra)`` where ``extra`` carries the
-    mode-1 distribution / correlation / reconstruction lists (empty otherwise).
+    mode-1 distribution / correlation / reconstruction lists (empty otherwise)
+    and the links ('confu') and Expressions ('Expr', 'NExpr') minimi_hi
+    re-applies at every trial point (none in modes 0 and 2).
     ``p`` holds ONLY the model parameters: the caller appends its own
     instrumental parameters and the matching bounds.
     """
@@ -940,26 +1061,26 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
         bounds[1][idx] = 6.0 * NAT_WIDTH
         return p, bounds, np.asarray(fix, dtype=int)[np.asarray(fix, dtype=int) != idx]
 
-    extra = {'Distri': [0], 'Cor': [0], 'Recon': [0], 'confu': None}
+    extra = {'Distri': [0], 'Cor': [0], 'Recon': [0], 'confu': _links_of([], [], []),
+             'Expr': [], 'NExpr': np.array([], dtype=int)}
 
     if mode == 1:
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(app)
 
-        # Apply expressions in the same namespace the fit uses (bare numpy
-        # names + p); a plain eval() here would miss those names.
-        for i in range(0, len(NExpr)):
-            p[NExpr[i]] = mi._eval_expr(Expr[i], p)
-        for i in range(0, len(con1)):
-            p[int(con1[i])] = p[int(con2[i])] * con3[i]
-
-        extra['confu'] = np.array([con1, con2, con3]) if len(con1) > 0 else np.array([[-1], [-1], [-1]])
+        # The links and Expressions are handed to minimi_hi, which re-applies
+        # them at every trial point. They used to be applied here once and then
+        # held: a linked parameter or an Expression whose source was free stayed
+        # at its start value while the source moved.
+        extra['confu'] = _links_of(con1, con2, con3)
+        extra['Expr'], extra['NExpr'] = list(Expr), np.array(NExpr, dtype=int)
+        p = apply_links(p, extra['confu'], extra['Expr'], extra['NExpr'])
 
         # Box bounds and user-fixed parameters straight from the table
         bounds, fix = read_bounds_and_fix(app, len(p))
 
-        # Add constraint, distribution and reconstruction placeholder indices to
-        # fix (during an instrumental-function fit the model params, including the
-        # Recon weights, are held fixed -- only the INS parameters vary).
+        # The slots something else sets are not varied themselves: the linked
+        # ones, the Expressions, the distribution and Recon placeholders (the
+        # Recon weights are held -- a model with a Recon is refused anyway).
         fix = np.concatenate((fix, con1), axis=0)
         fix = np.concatenate((fix, DistriN), axis=0)
         fix = np.concatenate((fix, NExpr), axis=0)
@@ -1030,7 +1151,7 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
     raise ValueError(f"build_reference_model: unknown mode {mode!r}")
 
 
-def instrumental(app, ref, mode=0, pool=None):
+def instrumental(app, ref, mode=0, pool=None, request=None):
     """
     Calculate or refine instrumental function.
 
@@ -1039,22 +1160,28 @@ def instrumental(app, ref, mode=0, pool=None):
         ref: Reference mode (0=find, 1=refine)
         mode: Calculation mode (0=single line, 1=model, 2=pure a-Fe)
         pool: Multiprocessing pool for parallel computation
+        request: the spectra to fit (see search_data); by default the first
+            spectrum shown, every point. With the model (mode 1) several
+            spectra are fitted together, with ONE instrumental function.
 
     Returns:
         dict: Results containing parameters, errors, chi-squared, and file paths
     """
     print(f"[Instrumental function] instrumental() called with ref={ref}, mode={mode}")
-    
+
     # Get parameters from app
     JN0 = app.JN0
     x0 = app.x0
     MulCo = app.MulCo
     MulCoCMS = 0.28
-    
-    file = os.path.abspath(app.path_list[0])
-    A_list, B_list = load_spectrum(app, [file], calibration_path=app.calibration_path)
-    A, B = A_list[0], B_list[0]
-    
+
+    if request is None:
+        request = single_spectrum_request(app)
+    data = search_data(app, request)
+    file = data['files'][0]
+    # The points fitted -- outside the exclusion regions, every spectrum joined
+    A, B, lengths = data['A_fit'], data['B_fit'], data['lengths_fit']
+
     CMS_ch = 0
     
     # Initialize parameters based on mode
@@ -1146,39 +1273,42 @@ def instrumental(app, ref, mode=0, pool=None):
         bounds0[0][0] = 0.001
         bounds0[1][0] = 1
     
-    model, p, bounds, fix, extra = build_reference_model(app, mode, B, CMS_ch)
+    model, p, bounds, fix, extra = search_reference(app, mode, data, request, CMS_ch)
     Distri, Cor, Recon = extra['Distri'], extra['Cor'], extra['Recon']
+    links = {'confu': extra['confu'], 'Expr': extra['Expr'], 'NExpr': extra['NExpr']}
 
     bounds = np.concatenate((bounds, bounds0), axis=1)
     mod_p_len = len(p)
     p = np.concatenate((p, p0))
     print(p)
     print(fix)
+    _refuse_too_few_points(len(B), len(p) - len(np.unique(fix)), data['regions'])
 
+    # ``lengths`` tells TI where each joined spectrum ends (None: one spectrum)
     if mode == 1:
         if CMS_ch == 0:
-            def INSSS(x_exp, p):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon)
+            def INSSS(x_exp, p, lengths=lengths):
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon, lengths=lengths)
         if CMS_ch == 1:
-            def INSSS(x_exp, p):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Distri, Cor, Met=1, Recon=Recon)
+            def INSSS(x_exp, p, lengths=lengths):
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Distri, Cor, Met=1, Recon=Recon, lengths=lengths)
 
     # CMS_ch could not be equal to 1 for mode 0
     # Not meaningful to use ESRF standard single line absorber for CMS
     elif mode == 0:
         print(f"[Instrumental function] Mode 0: Creating INSSS function, CMS_ch={CMS_ch}")
         if CMS_ch == 0:
-            def INSSS(x_exp, p):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:])
+            def INSSS(x_exp, p, lengths=lengths):
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
             print(f"[Instrumental function] INSSS function created for CMS_ch=0")
 
     elif mode == 2:
         if CMS_ch == 0:
-            def INSSS(x_exp, p):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:])
+            def INSSS(x_exp, p, lengths=lengths):
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
         if CMS_ch == 1:
-            def INSSS(x_exp, p):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Met=1)
+            def INSSS(x_exp, p, lengths=lengths):
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Met=1, lengths=lengths)
 
     # Normalization function
     # to insure sum of amplitudes squared = 1 in case of SMS
@@ -1188,9 +1318,11 @@ def instrumental(app, ref, mode=0, pool=None):
             SC += p[mod_p_len + i * 3 + 2]**2
         for i in range(0, int((len(p[mod_p_len:])) / 3)):
             p[mod_p_len + i * 3 + 2] = np.sqrt(p[mod_p_len + i * 3 + 2]**2 / SC)
-        # scale the baseline (Ns)
-        p[0] = p[0] * SC
-        return p
+        # scale the baseline (Ns) of every spectrum, then let what is linked to
+        # them follow
+        for start in extra['starts']:
+            p[start] = p[start] * SC
+        return apply_links(p, **links)
     
     JN = np.copy(JN0)
     JN = max(JN*2, 64)
@@ -1200,7 +1332,7 @@ def instrumental(app, ref, mode=0, pool=None):
     
     # Preliminary minimization
     print(f"[Instrumental function] Calling minimization procedure - preliminary step...")
-    p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1)
+    p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1, **links)
     print(f"[Instrumental function] Preliminary minimization complete, hi2={hi2}")
     if CMS_ch == 0:
         p = INS_norm(p)        
@@ -1238,7 +1370,7 @@ def instrumental(app, ref, mode=0, pool=None):
                 boundsttt = np.array([boundst, boundstt])
                 pt = INS_norm(pt)
                 
-                pt, ert, hi2t, covariance_matrix_t = mi.minimi_hi(INSSS, A, B, pt, fix=fix, bounds=boundsttt, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1)
+                pt, ert, hi2t, covariance_matrix_t = mi.minimi_hi(INSSS, A, B, pt, fix=fix, bounds=boundsttt, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1, **links)
                 
                 x0t, MulCot = np.copy(x0), np.copy(MulCo)
                 hi2tt = np.sum((B - INSSS(A, pt)) ** 2 / (abs(B) + 1) / (len(B)))
@@ -1258,7 +1390,7 @@ def instrumental(app, ref, mode=0, pool=None):
                     x0, MulCo = x0t, MulCot
                     J += 1
         
-        p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1)
+        p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1, **links)
         print(f"[Instrumental Function] chi-squared after reducing number of lines: {hi2}")
         p = INS_norm(p)
         print(f"[Instrumental Function] parameters after reducing number of lines:")
@@ -1277,7 +1409,7 @@ def instrumental(app, ref, mode=0, pool=None):
     
     # Final refinement
     for Nc in range(0, 3):
-        p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1)
+        p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1, **links)
         if CMS_ch == 0:
             p = INS_norm(p)
             x0, MulCo = m5.limits(pool, int(JN), p[mod_p_len:])
@@ -1301,13 +1433,13 @@ def instrumental(app, ref, mode=0, pool=None):
     if CMS_ch == 1:
         print('G:', p[-1])
     
-    # Calculate fitted spectra for plotting
-    F = INSSS(A, p)
+    # Calculate fitted spectra for plotting: every point, the excluded ones too
+    F = INSSS(data['A'], p, data['lengths'])
     JN_save = np.copy(JN)
     JN = JN * 4
-    F2 = INSSS(A, p)
+    F2 = INSSS(data['A'], p, data['lengths'])
     JN = JN_save
-    
+
     # Save instrumental function parameters
     INSp = p[mod_p_len:]
     
@@ -1358,11 +1490,37 @@ def instrumental(app, ref, mode=0, pool=None):
         'insexp_path': insexp_path,
         'mode': mode,
         'CMS_ch': CMS_ch,
-        'A': A,
-        'B': B,
+        'A': data['A'],
+        'B': data['B'],
         'F': F,
         'F2': F2,
-        'file': os.path.basename(file)
+        'file': os.path.basename(file),
+        **_search_result_extras(data, request, model, fix, extra, covariance_matrix),
+    }
+
+
+def _refuse_too_few_points(n_points, n_free, regions):
+    """Not more free values than fitted points: the search is not started."""
+    from syncmoss.fitting_io import too_few_points   # it imports this module
+    refusal = too_few_points(n_points, n_free, regions)
+    if refusal:
+        raise SearchRefused(refusal)
+
+
+def _search_result_extras(data, request, model, fix, extra, covariance_matrix):
+    """What both searches return besides the instrumental function: the
+    spectra (for the plot) and the model fitted with it (for the results
+    table, see syncmoss_main.on_instrumental_finished)."""
+    return {
+        'files': data['files'],
+        'lengths': data['lengths'],
+        'starts': extra['starts'],
+        'exclusion_regions': data['regions'],
+        'covariance_matrix': covariance_matrix,
+        'fix': np.asarray(fix, dtype=int),
+        'model': list(model),
+        'request': request,
+        'inputs': extra.get('inputs'),
     }
 
 
@@ -1678,14 +1836,16 @@ def theory_start_from_app(app, ref):
 
 
 def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
-                        free_fields=None, temperature_C=None):
+                        free_fields=None, temperature_C=None, request=None):
     """
     Find (ref=0) or refine (ref=1) the THEORETICAL SMS instrumental function.
 
     Same reference absorbers as the legacy search -- mode 0 the ESRF single-line
     standard, mode 1 the model in the parameters table, mode 2 pure alpha-Fe --
     but the fitted shape is the simulated one, with the four physical parameters
-    above in place of 3*n free Gaussian numbers.
+    above in place of 3*n free Gaussian numbers. Same spectra too: *request*
+    (see search_data), by default the first spectrum shown; with the model,
+    several spectra fitted together with one instrumental function.
 
     On success INSth.txt holds the theoretical instrumental function, INSint.txt
     the matching integration constants, and INSexp.txt the best conventional
@@ -1724,16 +1884,21 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     start_time = time.time()
 
     JN0 = app.JN0
-    file = os.path.abspath(app.path_list[0])
-    A_list, B_list = load_spectrum(app, [file], calibration_path=app.calibration_path)
-    A, B = A_list[0], B_list[0]
+    if request is None:
+        request = single_spectrum_request(app)
+    data = search_data(app, request)
+    file = data['files'][0]
+    # The points fitted -- outside the exclusion regions, every spectrum joined
+    A, B, lengths = data['A_fit'], data['B_fit'], data['lengths_fit']
 
     # The reference absorber's own line width is released here (and only here):
     # the theoretical instrumental function has no spare freedom to absorb a
     # wrong one, where the empirical Gaussian sum silently does.
-    model, p_model, bounds_model, fix_base, extra = build_reference_model(
-        app, mode, B, 0, free_absorber_width=(mode in (0, 2)))
-    Distri, Cor, Recon = extra['Distri'], extra['Cor'], extra['Recon']
+    # (not called 'extra': the escalation below uses that name for its loop)
+    model, p_model, bounds_model, fix_base, reference = search_reference(
+        app, mode, data, request, 0, free_absorber_width=(mode in (0, 2)))
+    Distri, Cor, Recon = reference['Distri'], reference['Cor'], reference['Recon']
+    links = {'confu': reference['confu'], 'Expr': reference['Expr'], 'NExpr': reference['NExpr']}
     mod_p_len = len(p_model)
     fix_base = np.asarray(fix_base, dtype=int)
 
@@ -1779,7 +1944,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     x0, MulCo = m5.limits(pool, JN, make_ins(p0))
     print(f"[Instrumental function: theory] integration grid: x0={x0:.5f}, MulCo={MulCo:.5f}")
 
-    def INSSS(x_exp, pp):
+    def INSSS(x_exp, pp, lengths=lengths):
         # COOPERATIVE INTERRUPT. "! INTERRUPT !" terminates and recreates the
         # multiprocessing pool, which stops an ordinary fit because an ordinary
         # fit spends its time IN the pool. This search does not: the cost is
@@ -1790,7 +1955,8 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         if search_cancelled(app):
             raise FitInterrupted()
         return m5.TI(x_exp, pp[:mod_p_len], model, JN, pool, x0, MulCo,
-                     make_ins(pp[mod_p_len:]), Distri, Cor, Recon=Recon)
+                     make_ins(pp[mod_p_len:]), Distri, Cor, Recon=Recon,
+                     lengths=lengths)
 
     def chi2_of(pp):
         return float(np.sum((B - INSSS(A, pp)) ** 2 / (abs(B) + 1) / len(B)))
@@ -1846,6 +2012,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
               f"minimum): releasing the angle deviation, starting it at "
               f"{start['mosaic_urad']:.1f} urad")
     final_free = passes[-1] if passes else THEORY_FREE_FIELDS
+    _refuse_too_few_points(len(B), len(p) - len(fix_for(final_free)), data['regions'])
 
     def scan_Bs():
         """Map the starting point over B_s AND shift, once, before either is
@@ -1916,7 +2083,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
             p, er, hi2, covariance_matrix = mi.minimi_hi(
                 INSSS, A, B, p, fix=fix_for(pass_free), bounds=bounds,
                 tau0=0.0001, MI=THEORY_PASS_MI, MI2=THEORY_PASS_MI,
-                eps=10 ** -6, fixCH=1)
+                eps=10 ** -6, fixCH=1, **links)
             if not quiet:
                 print(f"[Instrumental function: theory] pass {n_pass} "
                       f"(free: {', '.join(pass_free)}): chi2 = {hi2:.4f}")
@@ -1987,7 +2154,8 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
                   f"{THEORY_ESCALATION_CHI2}; trying with {extra} released")
             r = mi.minimi_hi(INSSS, A, B, np.array(p),
                              fix=fix_for(trial_free), bounds=bounds,
-                             tau0=0.0001, MI=20, MI2=20, eps=10 ** -6, fixCH=1)
+                             tau0=0.0001, MI=20, MI2=20, eps=10 ** -6, fixCH=1,
+                             **links)
             gain = hi2 - r[2]
             val = r[0][mod_p_len + THEORY_FREE_FIELDS.index(extra)]
             lo_x, hi_x = THEORY_BOUNDS[extra]
@@ -2018,7 +2186,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         try:
             p, er, hi2, covariance_matrix = mi.minimi_hi(
                 INSSS, A, B, p, fix=fix_for(final_free), bounds=bounds,
-                tau0=0.0001, MI=20, MI2=20, eps=10 ** -6, fixCH=1)
+                tau0=0.0001, MI=20, MI2=20, eps=10 ** -6, fixCH=1, **links)
         except FitInterrupted:
             interrupted = True
             print("[Instrumental function: theory] INTERRUPTED during the "
@@ -2098,10 +2266,11 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         print(f"[Instrumental function: theory] could not build the Gaussian stand-in "
               f"({e}); INSexp.txt is left as it was")
 
-    F = INSSS(A, p)
+    # every point, the excluded ones too
+    F = INSSS(data['A'], p, data['lengths'])
     JN_save = int(JN)
     JN = JN * HIRES_INTEGRATION_FACTOR
-    F2 = INSSS(A, p)
+    F2 = INSSS(data['A'], p, data['lengths'])
     JN = JN_save
 
     # Convergence of the transmission integral. The integration grid is uniform
@@ -2113,9 +2282,13 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     # operating points (the same as the Gaussian sum), but the B_s ~ 2 T,
     # theta < 20 urad corner still has ~1 % error at JN = 512. Silently returning
     # an under-integrated fit would look like a bad instrumental function, so
-    # say it out loud.
-    span = float(np.max(F) - np.min(F))
-    integ_err = float(np.max(np.abs(F2 - F)) / span) if span > 0 else np.nan
+    # say it out loud. Spectrum by spectrum: the counts of joined spectra differ.
+    integ_err = np.nan
+    ends = np.cumsum(data['lengths'] or [len(F)])[:-1]
+    for F_k, F2_k in zip(np.split(F, ends), np.split(F2, ends)):
+        span = float(np.max(F_k) - np.min(F_k))
+        if span > 0:
+            integ_err = np.nanmax([integ_err, float(np.max(np.abs(F2_k - F_k)) / span)])
     print(f"[Instrumental function: theory] integration check: the same model at "
           f"JN*{HIRES_INTEGRATION_FACTOR} differs by {100 * integ_err:.3f} % "
           f"of the dip depth (JN = {JN})")
@@ -2163,11 +2336,12 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         'insexp_path': insexp_path,
         'mode': mode,
         'CMS_ch': 0,
-        'A': A,
-        'B': B,
+        'A': data['A'],
+        'B': data['B'],
         'F': F,
         'F2': F2,
         'file': os.path.basename(file),
+        **_search_result_extras(data, request, model, fix_base, reference, covariance_matrix),
         'theory': theory,
         'theory_err': theory_err,
         'theory_fixed': fixed,

@@ -96,6 +96,7 @@ from syncmoss.spectrum_parameters import (
     SpectrumParameters, parse_path_box, format_path_box, read_parameters_file,
     apply_parameters, write_parameters_file, sequence_problems, table_uses_names,
     looks_like_entries, names_used, missing_names, path_box_entries, PATH_BOX_UNREADABLE,
+    first_spectrum_parameters,
 )
 from syncmoss.spectrum_plotter import (
     plot_fitting_result, plot_simultaneous_fitting_result, plot_instrumental_result,
@@ -110,6 +111,9 @@ from syncmoss.instrumental_io import (
     DEFAULT_INSTRUMENTAL_METHOD,
     instrumental,
     instrumental_theory,
+    SearchRefused,
+    single_spectrum_request,
+    model_errors_and_covariance,
     recentre_instrumental_after_calibration,
     reset_instrumental_defaults,
     overwrite_dat_instrumental,
@@ -337,24 +341,29 @@ class InstrumentalThread(QThread):
     finished = Signal(dict)  # result dictionary
     error = Signal(str)
     
-    def __init__(self, main_window, ref, mode, pool):
+    def __init__(self, main_window, ref, mode, pool, request=None):
         super().__init__()
         self.main_window = main_window
         self.ref = ref
         self.mode = mode
         self.pool = pool
-    
+        self.request = request   # the spectra (instrumental_io.search_data)
+
     def run(self):
         try:
             print(f"[DEBUG] InstrumentalThread started: ref={self.ref}, mode={self.mode}")
             if self.ref in (2, 3):
                 # ref 2/3 = Find/Refine the THEORETICAL (simulated 57FeBO3) shape.
                 result = instrumental_theory(self.main_window, ref=self.ref - 2,
-                                             mode=self.mode, pool=self.pool)
+                                             mode=self.mode, pool=self.pool,
+                                             request=self.request)
             else:
-                result = instrumental(self.main_window, self.ref, self.mode, pool=self.pool)
+                result = instrumental(self.main_window, self.ref, self.mode, pool=self.pool,
+                                      request=self.request)
             print(f"[DEBUG] InstrumentalThread completed successfully")
             self.finished.emit(result)
+        except SearchRefused as e:
+            self.error.emit(f"the search was not started: {e}")
         except FitInterrupted as e:
             self.error.emit(str(e))
         except Exception as e:
@@ -2863,6 +2872,8 @@ class PhysicsApp(QMainWindow):
         """
         if self._reject_if_busy('The instrumental-function search'):
             return
+        if not self._commit_exclusion_regions('The instrumental-function search'):
+            return
         # A THEORY "Find" (ref 2) discards the stored shape and restarts from
         # the built-in values, so it asks first -- both to say that Refine is
         # usually the better button and to let the user correct the starting
@@ -2902,14 +2913,11 @@ class PhysicsApp(QMainWindow):
                 self.set_status("Specify model to restore instrumental function", "red")
                 self.inprogress = False
                 return
-        
-            # An independent =(X) has a value per spectrum only in a simultaneous
-            # one-model fit; the search fits one spectrum with the model as it is
-            if self.params_table.get_independent_slots():
-                self.set_status(
-                    "The instrumental-function search with the model was not started — "
-                    "the model has independent =(X) values, which only the simultaneous "
-                    "one-model fit understands: write plain values for the search.", "red")
+
+            # The model's free parameters are fitted with the instrumental
+            # function: refused when a fit of it would be
+            label = "The instrumental-function search"
+            if not (self.check_user_expressions(label) and self.check_values_within_bounds(label)):
                 self.inprogress = False
                 return
 
@@ -2938,32 +2946,97 @@ class PhysicsApp(QMainWindow):
             self.set_status("Spectrum file does not exist", "red")
             self.inprogress = False
             return
-        
 
-        
+        request = self._instrumental_search_request(mode)
+        if request is None:
+            self.inprogress = False
+            return
+
         # Start instrumental calculation in a thread
-        self.set_status(f"Running instrumental function (ref={ref}, mode={mode})...", "cyan")
-        
-        self.instrumental_thread = InstrumentalThread(self, ref, mode, self.pool)
+        together = (f", {len(request['files'])} spectra together"
+                    if len(request['files']) > 1 else "")
+        self.set_status(f"Running instrumental function (ref={ref}, mode={mode}{together})...", "cyan")
+
+        self.instrumental_thread = InstrumentalThread(self, ref, mode, self.pool, request)
         self.instrumental_thread.finished.connect(self.on_instrumental_finished)
         self.instrumental_thread.error.connect(self.on_instrumental_error)
         self.instrumental_thread.start()
 
+    def _instrumental_search_request(self, mode):
+        """The spectra the instrumental-function search fits
+        (instrumental_io.search_data), with the exclusion regions in use.
+
+        The single-line and alpha-Fe standards are single-spectrum procedures:
+        the first spectrum shown. The model (mode 1) is fitted to every spectrum
+        of the path box with ONE instrumental function -- there is no sequence
+        of searches: a model with Nbaseline rows as built, any other expanded as
+        the simultaneous one-model fit expands it (shared parameters one value,
+        =(X) ones a value per spectrum, every spectrum its own baseline). One
+        spectrum: the model as it is, an =(X) is simply its value.
+
+        None, after saying why, when the search cannot be made: a model with a
+        Recon (not supported yet), Nbaseline rows with =(X) values, or Nbaseline
+        rows that do not match the spectra.
+        """
+        request = single_spectrum_request(self, self.exclusion_regions_in_use())
+        if mode != 1:
+            return request
+        model_list = self.params_table.get_model_list()
+        entries = [] if self.parse_model_only_request()[0] else self.parse_process_entries()
+        nbaselines = model_list.count('Nbaseline')
+        refused = None
+        if 'Recon' in model_list:
+            refused = ("the model has a Recon, which the instrumental-function search does "
+                       "not support yet: remove it for the search.")
+        elif nbaselines and self.params_table.get_independent_slots():
+            refused = ("the model has independent =(X) values and Nbaseline rows. Independent "
+                       "values belong to the simultaneous one-model fit, which makes every "
+                       "spectrum's section itself: remove the Nbaseline rows, or write plain values.")
+        elif nbaselines and nbaselines + 1 != len(entries):
+            refused = (f"the model has {nbaselines} Nbaseline row(s), so it is fitted to "
+                       f"{nbaselines + 1} spectra, but the path box has {len(entries)}.")
+        if refused:
+            self.set_status(f"The instrumental-function search was not started — {refused}", "red")
+            return None
+
+        # What the results table shows afterwards: the model the search started
+        # from, as a fit takes it at its start
+        request['links'] = self.params_table.get_link_snapshot()
+        request['rows'] = model_file_rows(self)
+        request['spectrum_parameters'] = first_spectrum_parameters(self)
+        if nbaselines:
+            request.update(kind='nbaseline', files=[path for path, _ in entries],
+                           spectrum_parameters=None)
+        elif len(entries) > 1:
+            template = self._one_model_template("The instrumental-function search", entries)
+            if template is None:
+                return None
+            request.update(kind='one_model', files=[path for path, _ in entries],
+                           template=template, spectra=one_model.spectra_of(entries))
+        return request
+
     def on_instrumental_finished(self, result):
-        """Handle instrumental function completion"""
+        """Handle instrumental function completion: every spectrum it fitted
+        on the plot and, for the model (mode 1), the model in the results table
+        as after a fit."""
         try:
             # Plot results on the figure
             gridcolor = self.gridcolor
             result_svg, result_png = plot_instrumental_result(
                 self.figure, result['A'], result['B'], result['F'], result['F2'],
                 result['p'], result['hi2'], result['file'], self.dir_path, gridcolor,
-                theme=self._theme
+                theme=self._theme, lengths=result['lengths'], starts=result['starts'],
+                labels=[os.path.basename(f) for f in result['files']],
+                exclusion_regions=result['exclusion_regions'],
             )
-            
+
             # Update canvas the same way as showM_pressed does
             self.canvas.draw()
             self.toolbar.push_current()
-            
+
+            if result['mode'] == 1 and result['mod_p_len']:
+                self._show_search_model(result)
+
             if result.get('theory') is not None:
                 th = result['theory']
                 er = result.get('theory_err', {})
@@ -2978,11 +3051,7 @@ class PhysicsApp(QMainWindow):
                     f"Results saved to {self.dir_path}", "green")
             else:
                 self.set_status(f"Instrumental function completed. χ² = {result['hi2']:.3f}\nResults saved to {self.dir_path}", "green")
-            
-            # Update parameters if mode == 1
-            if result['mode'] == 1 and result['mod_p_len']:
-                self.p = result['p'][:result['mod_p_len']]
-            
+
             # Update x0 and MulCo if available
             if self.SMS_fit.isChecked():
                 if result['x0'] is not None:
@@ -2997,6 +3066,47 @@ class PhysicsApp(QMainWindow):
         finally:
             self.inprogress = False
     
+    def _show_search_model(self, result):
+        """The model a search with the model fitted together with the
+        instrumental function, in the results table as after a fit (the
+        instrumental function is not in it: the status line and its own files
+        have it). Take result (F8) takes the model back as after a fit; Save
+        result does not save it (see save_result_pressed). A one-model search
+        shows the whole expanded model, and Take result takes the template with
+        spectrum 1's values, as after the one-model fit."""
+        request = result['request']
+        mod_p_len = result['mod_p_len']
+        p = np.asarray(result['p'][:mod_p_len], dtype=float)
+        errors, covariance = model_errors_and_covariance(
+            result['er'], result['covariance_matrix'], mod_p_len)
+        if request['kind'] == 'one_model':
+            inputs = result['inputs']
+            fit = one_model.OneModelResult(request['template'], request['spectra'], inputs, {
+                'parameters': p, 'errors': errors, 'covariance_matrix': covariance,
+                'chi2': result['hi2'], 'model': result['model'], 'Recon': [],
+                'Distri_substituted': list(inputs['Distri']),
+                'Cor_substituted': list(inputs['Cor'])})
+            self.results_table.fill_table(
+                fit.p, fit.expanded_model_list(), fit.expanded_colors(), fit.expanded_names(),
+                covariance, errors, result['fix'], fit.expanded_texts())
+            self.results_table.one_model = fit
+            self.results_table.current_model_rows = fit.model_rows()
+        else:
+            self.results_table.fill_table(
+                p, self.params_table.get_model_list(), self.params_table.get_current_colors(),
+                self.params_table.get_parameter_names(), covariance, errors, result['fix'],
+                self.params_table.get_expression_texts(),
+                spectrum_parameters=request.get('spectrum_parameters'))
+            self.results_table.current_model_rows = fitted_model_rows(request.get('rows'), p)
+        self.results_table.current_links = dict(request.get('links') or {})
+        self.results_table.current_chi2 = result['hi2']
+        self.results_table.current_exclusion_regions = tuple(result['exclusion_regions'])
+        self.results_table.from_search = True
+        # The plot is the search's: no earlier fit is redrawn (a click on the
+        # table) or saved from here on
+        self.last_plot_data = None
+        self.last_fitting_data = None
+
     def on_instrumental_error(self, error_msg):
         """Handle instrumental function error"""
         self.set_status(f"Instrumental function error: {error_msg}", "red")
@@ -4355,13 +4465,27 @@ class PhysicsApp(QMainWindow):
         spectrum's extension (``Fe_4.2K.dat`` -> ``Fe_4.2K_param.txt``, ...)."""
         return strip_known_extension(self.save_path.text().strip())
 
+    def _refuse_saving_search_result(self):
+        """True -- after saying why -- when the results table shows the model of
+        an instrumental-function search: it is not a fit result (the curves of
+        its components were never made), and the instrumental function was
+        saved by the search itself."""
+        if not self.results_table.from_search:
+            return False
+        self.set_status("The results table shows the model of the instrumental-function "
+                        "search, which is not saved as a fit result (the instrumental "
+                        "function is already saved). Fit the model to save a result.", "orange")
+        return True
+
     def save_result_pressed(self):
         """Save fitting results to file"""
         # Check if we have results to save
         if not hasattr(self.results_table, 'current_parameters') or self.results_table.current_parameters is None:
             self.set_status("No results to save. Please run fitting first.", "red")
             return
-        
+        if self._refuse_saving_search_result():
+            return
+
         # Check if save path is set
         if not self.save_path.text().strip():
             self.set_status("Please specify save path", "orange")
@@ -4400,7 +4524,9 @@ class PhysicsApp(QMainWindow):
         if not hasattr(self.results_table, 'current_parameters') or self.results_table.current_parameters is None:
             self.set_status("No results to save. Please run fitting first.", "red")
             return
-        
+        if self._refuse_saving_search_result():
+            return
+
         # Open file dialog
         save_dir = self.workfolder if self.workfolder else os.path.dirname(__file__)
         file_path, _ = QFileDialog.getSaveFileName(

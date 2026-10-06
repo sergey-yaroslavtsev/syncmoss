@@ -237,13 +237,16 @@ def test_the_menu_shows_the_mode_on_the_button(physics_app):
     assert app.seq_fit_btn.text() == "Multispectra settings\n(simultaneous - one model)"
 
 
-def test_the_instrumental_search_with_an_independent_value_is_refused(physics_app, tmp_path):
+def test_the_instrumental_search_with_independent_values_is_a_one_model_search(physics_app,
+                                                                               tmp_path):
+    """Several spectra: the model is expanded as for the one-model fit (the
+    search itself: tests/test_instrumental_joint.py)."""
     app = physics_app
-    redirect_params_dir_to_tmp(app, tmp_path)
+    _spectra(app, tmp_path, 2)
     _sextet_with_independent_delta(app)
-    app.instrumental_pressed(0, 1)
-    assert "independent =(X)" in app.log.toPlainText()
-    assert app.inprogress is False
+    app.path_list = [app.calibration_path]
+    request = app._instrumental_search_request(1)
+    assert request['kind'] == 'one_model' and len(request['spectra']) == 2
 
 
 # --- a result ----------------------------------------------------------------------

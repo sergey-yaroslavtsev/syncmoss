@@ -122,6 +122,10 @@ class ResultsTable(QWidget):
         # the table shows one -- set after fill_table, dropped by clear_table.
         # "Take result" and "Save result" work on it instead of the table.
         self.one_model = None
+        # True while the table shows the model of an instrumental-function
+        # search rather than a fit: "Save result" refuses it. Set after
+        # fill_table, dropped by clear_table.
+        self.from_search = False
 
         # Initialize layout
         layout = QVBoxLayout(self)
@@ -347,6 +351,7 @@ class ResultsTable(QWidget):
         self.interactive_table.clearSpans()
         self._set_row_count(0)
         self.one_model = None
+        self.from_search = False
 
         # Clear correlation matrix
         self.correlation_table.clear()
