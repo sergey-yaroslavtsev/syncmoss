@@ -598,13 +598,17 @@ def test_gui_open_and_fit(qapp, tmp_path):
     subprocesses (fragile under pytest); the app only uses ``pool.starmap``, which
     ThreadPool provides with identical semantics, so the same fitting code runs.
     """
+    from conftest import redirect_params_dir_to_tmp
     pool = ThreadPool(processes=2)
     window = PhysicsApp(pool=pool)
     # Operate on a temp copy of the whole parameters folder so neither the fit
     # nor the instrumental refinement (step 2) rewrites the tracked data files
     # (Calibration.dat, INSexp.txt, INSint.txt). Same for the Library, which
-    # the round trip (step 10) saves into.
+    # the round trip (step 10) saves into. Its calibration and instrumental
+    # function are the tests' frozen ones: the chi^2 check must not depend on
+    # the user's current calibration.
     _redirect_params_to_tmp(window, tmp_path)
+    redirect_params_dir_to_tmp(window, tmp_path)
     _redirect_library_to_tmp(window, tmp_path)
     try:
         window.show()
@@ -630,9 +634,11 @@ def test_gui_library_round_trip(qapp, tmp_path):
     """Step 10 on its own, without the fit: a model with Nbaseline is refused,
     a plain Sextet + Doublet is saved to the Library, added back through the
     Library browser and shown."""
+    from conftest import redirect_params_dir_to_tmp
     pool = ThreadPool(processes=1)
     window = PhysicsApp(pool=pool)
     _redirect_params_to_tmp(window, tmp_path)
+    redirect_params_dir_to_tmp(window, tmp_path)       # the tests' frozen calibration
     _redirect_library_to_tmp(window, tmp_path)
     runner = _TestRunner(qapp, window)
 

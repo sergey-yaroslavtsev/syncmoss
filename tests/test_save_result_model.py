@@ -300,28 +300,81 @@ def test_save_result_as_keeps_a_dotted_name(physics_app, tmp_path, monkeypatch, 
 
 
 @pytest.mark.gui
-def test_a_sequence_writes_one_param_file_with_a_line_per_spectrum(physics_app, tmp_path):
-    """<save base>_param.txt: the names line, then one line per spectrum --
-    started afresh by the run, whatever an older run left there."""
+def test_a_sequence_extends_its_param_file_with_a_line_per_spectrum(physics_app, tmp_path):
+    """<save base>_param.txt: a line per spectrum, added to what earlier runs
+    left there -- a names line first where the columns change, none where they
+    stay the same -- so a batch can be fitted group by group."""
     app = physics_app
     _fit(app)
     app.save_path.setText(os.path.join(str(tmp_path), 'run.dat'))
     run_file = os.path.join(str(tmp_path), 'run_param.txt')
     with open(run_file, 'w', encoding='utf-8') as f:
-        f.write('#File\told run\nold.dat\t1\n')
-    app._sequence_rows_written = 0                  # what start_sequential_fitting does
+        f.write('#File\told run\nold.dat\t1\n')               # a run of another model
 
-    for name in ('Fe_4.2K.dat', 'Fe_77K.dat'):
-        app._save_sequential_result_files(os.path.join('elsewhere', name))
+    for group in (('Fe_4.2K.dat', 'Fe_77K.dat'), ('Fe_300K.dat',)):    # two runs
+        app._sequence_rows_written = 0              # what start_sequential_fitting does
+        for name in group:
+            app._save_sequential_result_files(os.path.join('elsewhere', name))
 
     with open(run_file, encoding='utf-8') as f:
         lines = f.read().splitlines()
-    assert len(lines) == 3
-    assert lines[0].startswith('#File\tmodel')
-    assert [line.split('\t')[0] for line in lines[1:]] == ['Fe_4.2K.dat', 'Fe_77K.dat']
+    assert lines[:2] == ['#File\told run', 'old.dat\t1']   # the older run stays
+    assert lines[2].startswith('#File\tmodel')               # this model's names, once
+    assert [line.split('\t')[0] for line in lines[3:]] == ['Fe_4.2K.dat', 'Fe_77K.dat',
+                                                           'Fe_300K.dat']
     # no file per spectrum, and the sample name's dot is kept
     assert not os.path.exists(os.path.join(str(tmp_path), 'Fe_4.2K_param.txt'))
     assert not os.path.exists(os.path.join(str(tmp_path), 'Fe_4_param.txt'))
+
+
+@pytest.mark.gui
+def test_a_sequence_continues_its_page_of_pictures(physics_app, tmp_path):
+    """<save base>_result_table_PNG.html grows run by run, each run under its own
+    heading, the page closed once, at its end. A one-model fit saved as new
+    replaces it."""
+    app = physics_app
+    _fit(app)
+    out = tmp_path / 'out'
+    out.mkdir()
+    app.save_path.setText(str(out / 'run'))
+    for name in ('005.dat', '009.dat'):                # two runs of one spectrum
+        app._sequence_rows_written = 0
+        app._sequence_save_problems = []
+        app._start_sequence_html(append=True)
+        app._save_sequential_result_files(os.path.join('elsewhere', name))
+        app._finish_sequence_html()
+
+    page = (out / 'run_result_table_PNG.html').read_text(encoding='utf-8')
+    assert page.count('<h2>sequence fit, ') == 2
+    assert '005.dat' in page and '009.dat' in page
+    assert page.count('</body>') == 1 and page.rstrip().endswith('</html>')
+
+    app._start_sequence_html('simultaneous one-model fit')
+    app._finish_sequence_html()
+    page = (out / 'run_result_table_PNG.html').read_text(encoding='utf-8')
+    assert '005.dat' not in page and page.count('<h2>') == 1
+
+
+@pytest.mark.gui
+def test_a_sequence_saves_every_spectrum_s_fitted_model(physics_app, tmp_path, monkeypatch):
+    """Under the spectrum's own name, as Save result writes it -- without its
+    overwrite question: a sequence never stops to ask."""
+    app = physics_app
+    _fit(app)
+    app.save_path.setText(os.path.join(str(tmp_path), 'run.dat'))
+    model_file = os.path.join(str(tmp_path), 'Fe_4.2K_result_model.mdl')
+    with open(model_file, 'w', encoding='utf-8') as f:
+        f.write('an older model\n')
+    monkeypatch.setattr(syncmoss_main.QMessageBox, 'question',
+                        lambda *a, **k: pytest.fail('a sequence must not ask'))
+    app._sequence_rows_written = 0
+
+    app._save_sequential_result_files(os.path.join('elsewhere', 'Fe_4.2K.dat'))
+
+    saved = os.path.join(str(tmp_path), 'saved_by_save_result.mdl')
+    assert model_io.save_result_model(app, saved, app.results_table.current_model_rows)
+    with open(model_file, encoding='utf-8') as f, open(saved, encoding='utf-8') as g:
+        assert f.read() == g.read()
 
 
 @pytest.mark.gui

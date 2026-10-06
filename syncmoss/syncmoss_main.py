@@ -82,8 +82,8 @@ from syncmoss.parameters_table import ParametersTable, result_value_text
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def,
-    model_file_rows, fitted_model_rows, save_result_model, result_model_path,
-    strip_known_extension, validate_user_expressions,
+    model_file_rows, fitted_model_rows, save_result_model, write_result_model,
+    result_model_path, strip_known_extension, validate_user_expressions,
 )
 from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
@@ -520,15 +520,16 @@ class ShowModelThread(QThread):
         self.pool = pool
         # ± x-axis range (mm/s) for the synthetic grid used in model-only mode.
         self.velocity_range = velocity_range
-        # For a simultaneous one-model fit: the template and the two spectra
-        # shown (path_list holds their files), see PhysicsApp.showM_pressed
+        # For several spectra without Nbaseline rows: the template and the two
+        # spectra shown (path_list holds their files), see PhysicsApp.showM_pressed
         self.one_model_show = one_model_show
 
     def run(self):
         try:
             if self.one_model_show is not None:
                 # The table's model expanded over the two spectra shown, as the
-                # one-model fit expands it over all of them
+                # one-model fit expands it over all of them (in a sequence every
+                # spectrum starts from it, with its own baseline and N values)
                 show = self.one_model_show
                 inputs = one_model.expand(
                     show['template'], show['spectra'],
@@ -882,7 +883,7 @@ class PhysicsApp(QMainWindow):
         self.license_window = None
         self.result_window = None         # the spectra of a fit of several spectra
         self._sequence_series = None      # what a running sequence gives that window
-        self._show_one_model = None       # what Show model draws for a one-model fit
+        self._show_one_model = None       # what Show model draws of several spectra
         self._fit_links_snapshot = {}
         self._fit_model_snapshot = None
 
@@ -2141,16 +2142,17 @@ class PhysicsApp(QMainWindow):
             self.inprogress = False
             return
 
-        # A simultaneous one-model fit's model: the first and the last spectrum,
-        # each with its own baseline and N, N1, ...
+        # Several spectra and no Nbaseline rows: the first and the last spectrum,
+        # each with its own baseline and N, N1, ... -- a one-model fit's model,
+        # and where a sequence starts every spectrum from
         self._show_one_model = None
         if self.path_list:
-            one_model_show, refused = self.one_model_request(self.path_list)
+            _, refused = self.one_model_request(self.path_list)
             if refused:
                 self.set_status(f"Show model was not started — {refused}", "red")
                 self.inprogress = False
                 return
-            if one_model_show:
+            if len(self.path_list) > 1 and 'Nbaseline' not in self.params_table.get_model_list():
                 entries = self.parse_process_entries()
                 template = self._one_model_template("Show model", [entries[0], entries[-1]])
                 if template is None:
@@ -3286,8 +3288,9 @@ class PhysicsApp(QMainWindow):
                     f"Please check the save path:\n{self.save_path.text() or 'NOT SET'}\n\n"
                     f"The parameters of all spectra go into ONE <save path>_param.txt "
                     f"(a line per spectrum) and their pictures into "
-                    f"<save path>_result_table_PNG.html -- both replaced if they exist. "
-                    f"Curves and pictures of each spectrum are saved under its own name.",
+                    f"<save path>_result_table_PNG.html -- both extended if they exist, "
+                    f"so a large batch can be fitted group by group. Curves, pictures and "
+                    f"the fitted model of each spectrum are saved under its own name.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
                 
@@ -3552,10 +3555,11 @@ class PhysicsApp(QMainWindow):
         if any(values for _, values in entries) or table_uses_names(self):
             self._write_spectrum_parameters_file(
                 self._result_base_path() + '_inputs.txt', entries)
-        # One _param.txt (a line per spectrum) and one HTML page per run
+        # One _param.txt (a line per spectrum) and one HTML page, both extended
+        # run by run
         self._sequence_rows_written = 0
         self._sequence_save_problems = []
-        self._start_sequence_html()
+        self._start_sequence_html(append=True)
 
         # Initialize sequence_params for result mode (None for initial mode)
         self.sequence_params = None
@@ -3707,11 +3711,12 @@ class PhysicsApp(QMainWindow):
     def _save_sequential_result_files(self, spectrum_file):
         """Save result files for one spectrum (file I/O only, called from main thread).
 
-        The parameters go into ONE file for the whole run,
-        ``<save base>_param.txt``: its names line, then one line per spectrum
-        (started afresh by the run's first spectrum). The spectrum's own curves
-        and pictures go next to it under the spectrum's name, and its pictures
-        are added to the run's ``<save base>_result_table_PNG.html``.
+        The parameters go into ONE file, ``<save base>_param.txt``: a line per
+        spectrum, added to what earlier runs left there (a names line first
+        where the columns change), so a batch can be fitted group by group. The
+        spectrum's own curves, pictures and fitted model go next to it under the
+        spectrum's name, and its pictures are added to the run's
+        ``<save base>_result_table_PNG.html``.
         """
         try:
             # Get base path from save_path and spectrum filename
@@ -3727,11 +3732,18 @@ class PhysicsApp(QMainWindow):
             param_path = self._sequence_file('_param.txt')
             started = time.time()
             problems = self._write_result_files(base_path, os.path.basename(spectrum_file),
-                                                'append' if rows else 'new', param_file=param_path)
-            # Count the row as soon as it is in the file, whatever failed after
-            # it: the next spectrum must append to it, not start the file afresh
+                                                'append', param_file=param_path)
             if param_path not in [path for path, _ in problems]:
                 self._sequence_rows_written = rows + 1
+            # Its fitted model, as "Save result" writes it -- without the
+            # overwrite question: a sequence never stops to ask
+            model_rows = self.results_table.current_model_rows
+            if model_rows is not None:
+                model_path = result_model_path(base_path)
+                try:
+                    write_result_model(model_path, model_rows)
+                except OSError as e:
+                    problems.append((model_path, _write_problem(model_path, e)))
             if not hasattr(self, '_sequence_save_problems'):
                 self._sequence_save_problems = []
             self._sequence_save_problems.extend(text for _, text in problems)
@@ -3744,14 +3756,26 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             print(f"Error saving sequential result: {e}\n{traceback.format_exc()}")
 
-    def _start_sequence_html(self, what='sequence fit'):
-        """Start the run's HTML page of pictures (replacing an older one)."""
+    def _start_sequence_html(self, what='sequence fit', append=False):
+        """Start the run's part of the HTML page of pictures, headed by *what*
+        and the time. With *append* an existing page is continued -- its
+        closing tags come off, and back at the end of the run -- otherwise it
+        is replaced."""
         path = self._sequence_file('_result_table_PNG.html')
         try:
-            with open(path, 'w', encoding='utf-8') as f:
+            page = ''
+            if append and os.path.exists(path):
+                with open(path, encoding='utf-8') as f:
+                    page = f.read()
+                end = page.rfind('</body>')
+                if end >= 0:
+                    page = page[:end]
+            if not page:
                 title = html_escape(os.path.basename(self._result_base_path()))
-                f.write(f'<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8">'
+                page = (f'<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8">'
                         f'<title>{title}: {html_escape(what)}</title></head>\n<body>\n')
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(page + f'<h2>{html_escape(what)}, {time.strftime("%Y-%m-%d %H:%M")}</h2>\n')
             self._sequence_html = path
         except OSError as e:
             print(f"[Sequential] {os.path.basename(path)} not started: {e}")
@@ -4050,7 +4074,8 @@ class PhysicsApp(QMainWindow):
             reply = QMessageBox.question(
                 self, 'File exists',
                 f"File {os.path.basename(param_file)} already exists.\n\n"
-                "Save: _params.txt will be appended, others overwritten\n"
+                "Save: _param.txt (and the _result_table_PNG.html of a one-model fit) "
+                "will be appended, others overwritten\n"
                 "Discard: Overwrite all files\n"
                 "Cancel: Do nothing",
                 QMessageBox.StandardButton.Save | 
@@ -4264,7 +4289,7 @@ class PhysicsApp(QMainWindow):
         FigureCanvasAgg(figure)
         table = ResultsTable(self)       # off screen: each spectrum's part of the result
 
-        self._start_sequence_html('simultaneous one-model fit')
+        self._start_sequence_html('simultaneous one-model fit', append=(mode == 'append'))
         for k, spectrum in enumerate(fit.spectra):
             started = time.time()
             name = os.path.basename(spectrum.path)
@@ -4534,13 +4559,16 @@ class PhysicsApp(QMainWindow):
         
         # Write to file
         if mode == 'append':
-            # Read existing header
+            # The names line the new row would fall under: the file's LAST one
+            # (a file extended run by run may hold several)
+            existing_names = []
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
-                    first_line = f.readline().rstrip()
-                existing_names = re.split(r'\t+', first_line)
-            except:
-                existing_names = []
+                    for line in f:
+                        if line.startswith('#File'):
+                            existing_names = re.split(r'\t+', line.rstrip())
+            except OSError:
+                pass
             
             # Append mode
             with open(filepath, 'a', encoding='utf-8') as f:

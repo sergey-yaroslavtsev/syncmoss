@@ -6,8 +6,6 @@ the spectrum being worked on. These tests pin that (and the precedence of the
 theoretical instrumental function over the conventional one, which is what the
 viewer reports).
 """
-import os
-
 import numpy as np
 import pytest
 
@@ -18,17 +16,14 @@ from syncmoss import sms_theory as st
 # directory against the installed package, so the repo root is not on sys.path
 # and "tests" is not an importable package. pytest does put the test file's own
 # directory there, so the bare module name works in both modes.
-from conftest import redirect_calibration_to_tmp  # noqa: F401  (fixtures)
+from conftest import redirect_calibration_to_tmp, redirect_params_dir_to_tmp  # noqa: F401
 
 pytestmark = pytest.mark.gui
 
 
 def _redirect_params(window, tmp_path):
     """Point params_dir at a throw-away copy so the tracked files stay clean."""
-    import shutil
-    dst = os.path.join(str(tmp_path), "parameters")
-    shutil.copytree(window.params_dir, dst, dirs_exist_ok=True)
-    window.params_dir = dst
+    dst = redirect_params_dir_to_tmp(window, tmp_path)
     window.dir_path = str(tmp_path)
     return dst
 

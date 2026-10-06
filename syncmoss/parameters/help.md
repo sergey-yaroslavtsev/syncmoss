@@ -210,7 +210,9 @@ an explicit message and reddened fields rather than failing halfway through.
   guess or from the previous spectrum's result — or a **simultaneous one-model
   fit**. A model with independent `=(X)` values is always fitted the second way.
   A model with `Nbaseline` rows is fitted **simultaneously** as you built it
-  (one `Nbaseline` per extra spectrum), with a sequence mode chosen.
+  (one `Nbaseline` per extra spectrum), with a sequence mode chosen. Without
+  `Nbaseline` rows, **Show model** draws the model on the first and the last
+  spectrum, each with its own baseline and `N`, `N1`, … — in every mode.
 - The **simultaneous one-model fit** fits the model of the table — built for ONE
   spectrum — to all the spectra at once. Every free parameter has one value
   shared by all the spectra, except the independent `=(X)` ones (section 2),
@@ -305,22 +307,27 @@ save path without the spectrum's extension: `Fe_4.2K.dat` gives
   on with **Save model**. It is saved last and asks its **own** overwrite
   question, separate from the one for the result files: answering "no" there
   keeps the older file and leaves the five result files as they were just
-  written. (Sequence fitting skips this — it would ask once per spectrum.)
+  written. (A sequence writes one for every spectrum, under the spectrum's own
+  name, without asking.)
 
-A **sequence** saves as it goes, without asking: ONE `<base>_param.txt` for the
-whole run — a line of names, then one line per fitted spectrum — and ONE
-`<base>_result_table_PNG.html` with the pictures of every spectrum (figure +
-table, and the distributions when there are any). Both are started afresh by
-each run. The curves, figure and pictures of each spectrum are also saved next
-to them under the spectrum's own name (`Fe_4K_graf.txt`, `Fe_4K_combo.png`, …).
+A **sequence** saves as it goes, without asking: ONE `<base>_param.txt` — one
+line per fitted spectrum — and ONE `<base>_result_table_PNG.html` with the
+pictures of every spectrum (figure + table, and the distributions when there are
+any). Both are **extended** by every run: each run adds a heading with its date
+and time to the page, and a new line of names to the parameter file where the
+columns change. So a large batch can be fitted group by group, each group from its own
+initial guess, into the same two files. The curves, figure, pictures and fitted
+model of each spectrum are also saved next to them under the spectrum's own name
+(`Fe_4K_graf.txt`, `Fe_4K_combo.png`, `Fe_4K_result_model.mdl`, …).
 
 A **simultaneous one-model fit** saves the same way, but only when you press
 **Save result**: ONE `<base>_param.txt` with a line per spectrum (the model's
 parameters for that spectrum — the shared ones repeat on every line — and the
-fit's one χ² on every line), ONE `<base>_result_table_PNG.html`, the
-`<base>_inputs.txt` of all the spectra, and every spectrum's curves and pictures
-under its own name. `<base>_result_model.mdl` is the model for one spectrum, the
-independent `=(X)` values with the X they started from — ready for another fit.
+fit's one χ² on every line), ONE `<base>_result_table_PNG.html` (both extended
+when you answer *Save* to the "file exists" question), the `<base>_inputs.txt`
+of all the spectra, and every spectrum's curves and pictures under its own name.
+`<base>_result_model.mdl` is the model for one spectrum, the independent `=(X)`
+values with the X they started from — ready for another fit.
 
 ## 9. Other
 

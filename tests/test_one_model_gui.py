@@ -458,6 +458,28 @@ def test_show_model_draws_the_first_and_the_last_spectrum(physics_app, tmp_path,
     assert "red" not in app.log.styleSheet().lower(), app.log.toPlainText()
 
 
+def test_show_model_of_a_sequence_draws_the_first_and_the_last_spectrum(physics_app, tmp_path,
+                                                                       monkeypatch):
+    """No =(X), a sequence mode: the table's model on the first and the last
+    spectrum, each with its own baseline and N values -- where the sequence
+    starts every spectrum from."""
+    app = physics_app
+    redirect_params_dir_to_tmp(app, tmp_path)
+    _spectra(app, tmp_path, 3)
+    app.params_table.select_model(1, 'Sextet')
+    app.set_sequence_fitting_type(0)
+    app.jn0_input.setText("16")
+    app.pool = _SerialPool()
+    monkeypatch.setattr(sm.ShowModelThread, 'start', lambda thread: thread.run())
+
+    app.showM_pressed()
+    data = app.last_plot_data
+    assert data['has_nbaseline'] and data['model'] == ['Sextet', 'Nbaseline', 'Sextet']
+    assert data['labels'][0].startswith('1 of 3') and data['labels'][1].startswith('3 of 3')
+    assert len(app.figure.axes) == 2
+    assert "red" not in app.log.styleSheet().lower(), app.log.toPlainText()
+
+
 @pytest.mark.slow
 def test_two_identical_spectra_fit_like_one_of_them(physics_app, tmp_path):
     """The same spectrum twice: the one-model fit gives each copy the delta a

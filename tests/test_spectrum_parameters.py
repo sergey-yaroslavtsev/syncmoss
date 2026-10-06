@@ -358,7 +358,7 @@ def test_a_sequence_records_the_values_it_used(physics_app, tmp_path):
     delta_name = app.params_table.get_parameter_names()[1][1]
     os.makedirs(os.path.dirname(save_base))
     with open(save_base + '_param.txt', 'w', encoding='utf-8') as f:
-        f.write('#File\tan older run\nold.dat\t1\n')    # replaced by the run
+        f.write('#File\tan older run\nold.dat\t1\n')    # kept: the run extends the file
 
     app.start_sequential_fitting(files, entries)
     assert app.sequential_fitting_thread.wait(120000)
@@ -369,13 +369,13 @@ def test_a_sequence_records_the_values_it_used(physics_app, tmp_path):
     table = read_parameters_file(save_base + '_inputs.txt')
     assert table == {'basenames': ['fe_a.dat', 'fe_b.dat'], 'numbers': [1.0, 2.0], 'rows': [[0.1, 0.3]]}
 
-    # ONE _param.txt for the run: the names, then a line per spectrum
+    # ONE _param.txt: the older run, then this run's names and a line per spectrum
     with open(save_base + '_param.txt', encoding='utf-8') as f:
         lines = f.read().splitlines()
-    assert len(lines) == 3
-    header = lines[0].split('\t')
+    assert len(lines) == 5 and lines[:2] == ['#File\tan older run', 'old.dat\t1']
+    header = lines[2].split('\t')
     assert header[:3] == ['#File', 'N', 'N1']
-    for row_text, (name, number, value) in zip(lines[1:], (('fe_a', 1, 0.1), ('fe_b', 2, 0.3))):
+    for row_text, (name, number, value) in zip(lines[3:], (('fe_a', 1, 0.1), ('fe_b', 2, 0.3))):
         row_values = row_text.split('\t')
         assert row_values[0] == name + '.dat'
         assert int(row_values[1]) == number and float(row_values[2]) == value

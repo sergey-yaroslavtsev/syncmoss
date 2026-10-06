@@ -13,27 +13,35 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import sys
 
+import numpy as np
 import pytest
+
+# The calibration spectrum and the instrumental function the tests compute with:
+# frozen copies of syncmoss/parameters/ (as committed), kept with the tests. The
+# shipped files are the user's working state -- every calibration rewrites
+# Calibration.dat, every instrumental-function search the INS files, and GCMS is
+# typed in -- so a test must never depend on what is in them.
+FROZEN_PARAMETERS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "parameters")
+FROZEN_FILES = ("Calibration.dat", "INSexp.txt", "INSint.txt", "INSth.txt", "GCMS.txt")
 
 
 def redirect_calibration_to_tmp(window, tmp_dir):
-    """Point a PhysicsApp at a throw-away copy of Calibration.dat.
+    """Point a PhysicsApp at a throw-away copy of the tests' frozen Calibration.dat.
 
-    Showing/fitting a spectrum re-calibrates and rewrites the spectrum file in
-    place. The GUI tests use the bundled Calibration.dat as the spectrum, so
-    without this the tracked data file in the package would be mutated. Copying it
-    into a temp dir and repointing ``calibration_path`` keeps the repo clean.
+    The GUI tests use it as their spectrum (FROZEN_PARAMETERS: not the shipped
+    one, which changes with every calibration). Showing/fitting a spectrum
+    re-calibrates and rewrites the spectrum file in place, hence the copy.
     """
-    original = window.calibration_path
     tmp_copy = os.path.join(str(tmp_dir), "Calibration.dat")
-    if os.path.exists(original):
-        shutil.copy2(original, tmp_copy)
-        window.calibration_path = tmp_copy
+    shutil.copy2(os.path.join(FROZEN_PARAMETERS, "Calibration.dat"), tmp_copy)
+    window.calibration_path = tmp_copy
     return window.calibration_path
 
 
 def redirect_params_dir_to_tmp(window, tmp_dir):
-    """Point a PhysicsApp at a throw-away copy of ``parameters/``.
+    """Point a PhysicsApp at a throw-away copy of ``parameters/`` holding the
+    tests' frozen calibration and instrumental function (FROZEN_FILES; the
+    GCMS field is set from the frozen GCMS.txt, as the window does at start).
 
     Every instrumental-function search WRITES its answer: INSexp.txt, INSint.txt
     and (for the theoretical one) INSacc.txt, all under ``app.params_dir``. So a
@@ -41,13 +49,16 @@ def redirect_params_dir_to_tmp(window, tmp_dir):
     of the package with one fitted to whatever spectrum the test happened to use
     -- no error, no failure, and nothing to restore from if the tree is not under
     version control. This is the same hazard ``redirect_calibration_to_tmp``
-    exists for, one directory up, so any test that fits anything should call it.
+    exists for, one directory up. The other files (Be.txt, KB.txt, ...) are the
+    shipped ones: tests read them as they are. Calling it again is harmless.
     """
-    original = window.params_dir
     tmp_copy = os.path.join(str(tmp_dir), "parameters")
-    if os.path.isdir(original):
-        shutil.copytree(original, tmp_copy, dirs_exist_ok=True)
-        window.params_dir = tmp_copy
+    if os.path.abspath(window.params_dir) != os.path.abspath(tmp_copy):
+        shutil.copytree(window.params_dir, tmp_copy, dirs_exist_ok=True)
+    for name in FROZEN_FILES:
+        shutil.copy2(os.path.join(FROZEN_PARAMETERS, name), os.path.join(tmp_copy, name))
+    window.params_dir = tmp_copy
+    window.GCMS_input.setText(str(np.genfromtxt(os.path.join(tmp_copy, "GCMS.txt"), delimiter="\t")))
     return window.params_dir
 
 
@@ -182,8 +193,9 @@ def qapp():
 def physics_app(qapp, tmp_path):
     """A freshly built :class:`PhysicsApp` main window (destroyed on teardown).
 
-    ``calibration_path`` is redirected to a temp copy so tests that show/fit the
-    bundled Calibration.dat never mutate the tracked data file.
+    ``calibration_path`` and ``params_dir`` are redirected to temp copies holding
+    the tests' frozen calibration and instrumental function, so no test depends
+    on the user's current ones -- or writes into them.
 
     Teardown must DESTROY the window, not just close() it. close() merely hides a
     widget: WA_DeleteOnClose is not set, the window is top-level (no Qt parent to
@@ -208,6 +220,7 @@ def physics_app(qapp, tmp_path):
 
     window = PhysicsApp(pool=None)
     redirect_calibration_to_tmp(window, tmp_path)
+    redirect_params_dir_to_tmp(window, tmp_path)
     try:
         yield window
     finally:

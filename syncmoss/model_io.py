@@ -524,7 +524,6 @@ def _write_model_file(main_window, file_path, model_rows, comment=None, metadata
 
     Returns True when the file was written, False when that failed.
     """
-    model_names, colors, rows = model_rows
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             if isinstance(metadata, dict):
@@ -539,12 +538,7 @@ def _write_model_file(main_window, file_path, model_rows, comment=None, metadata
                 for line in str(comment).splitlines():
                     f.write(f"#@Comment {line}\n")
 
-            # Model names (first row), colors (second row), then one line of
-            # parameter data per kept row
-            f.write('\t'.join(model_names) + '\n')
-            f.write('\t'.join(colors) + '\n')
-            for row_data in rows:
-                f.write('\t'.join(text for field in row_data for text in field) + '\n')
+            _write_model_lines(f, model_rows)
 
         main_window.set_status("Model saved successfully", "green")
         return True
@@ -552,6 +546,24 @@ def _write_model_file(main_window, file_path, model_rows, comment=None, metadata
     except Exception as e:
         main_window.set_status(f"Could not save model: {str(e)}", "red")
         return False
+
+
+def _write_model_lines(f, model_rows):
+    """Model names (first row), colors (second row), then one line of
+    parameter data per kept row."""
+    model_names, colors, rows = model_rows
+    f.write('\t'.join(model_names) + '\n')
+    f.write('\t'.join(colors) + '\n')
+    for row_data in rows:
+        f.write('\t'.join(text for field in row_data for text in field) + '\n')
+
+
+def write_result_model(file_path, model_rows):
+    """Write a fit result's model (:func:`fitted_model_rows`) to *file_path*
+    without asking or reporting -- a sequence writes one for every spectrum.
+    Raises OSError when it cannot."""
+    with open(file_path, 'w', encoding='utf-8') as f:
+        _write_model_lines(f, model_rows)
 
 
 def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
