@@ -23,6 +23,17 @@ def estimate_edge_background(B):
     return (B[0] + B[1] + B[2] + B[3] + B[4] + B[-1] + B[-2] + B[-3] + B[-4] + B[-5]) / 10
 
 
+# Model_<range> in the path box: Show model draws the model, with no spectrum,
+# on this many evenly spaced velocities from -range to +range; Create spectrum
+# from model writes the same grid.
+MODEL_ONLY_POINTS = 4096
+
+
+def model_only_axis(velocity_range):
+    """The velocities of Model_<velocity_range> (see MODEL_ONLY_POINTS)."""
+    return np.linspace(-velocity_range, velocity_range, MODEL_ONLY_POINTS)
+
+
 def save_spectrum_with_metadata(save_path, A, B, metadata_lines):
     """Write a two-column (velocity, intensity) spectrum to ``save_path``,
     preceded by any instrumental ``#@`` header lines so the metadata survives
@@ -498,6 +509,118 @@ def subtract_model_from_spectrum(main_window):
 
     except Exception as e:
         main_window.set_status(f"Error subtracting model: {str(e)}", "red")
+
+
+def prepare_model_spectrum(main_window):
+    """Change spectrum(a) -> Create spectrum from model: everything read from
+    the window, on the main thread. Returns what compute_model_spectrum
+    calculates, or None after saying in the log why nothing is calculated.
+
+    The velocities are those Show model uses: the first spectrum's (its own
+    column for a .dat, the calibration for raw counts such as an .mca), or the
+    Model_<range> grid. So is the instrumental function: the spectrum's own
+    .dat header or the one in memory, as the settings say -- and it is the one
+    the saved file carries.
+    """
+    action = "Create spectrum from model"
+    is_model_only, velocity_range, error_message = main_window.parse_model_only_request()
+    if is_model_only:
+        if error_message:
+            main_window.set_status(error_message, "red")
+            return None
+        path, source = None, f"Model_{velocity_range:g}"
+    else:
+        paths = main_window.parse_process_path()
+        if not paths:
+            main_window.set_status("No spectrum selected", "orange")
+            return None
+        path = paths[0]
+        path_error = main_window.check_spectrum_paths_exist([path])
+        if path_error:
+            main_window.set_status(path_error, "red")
+            return None
+        source = os.path.basename(path.rstrip('\\/')) or path
+    if 'Nbaseline' in main_window.params_table.get_model_list():
+        main_window.set_status(f"{action} was not started — the model has Nbaseline rows: it "
+                               f"describes several spectra at once, and the spectrum is "
+                               f"made from the model of one.", "red")
+        return None
+    if not (main_window.initialize_parameters() and main_window.check_user_expressions(action)):
+        return None
+
+    if path is None:
+        A = model_only_axis(velocity_range)
+    else:
+        A_list, _B_list = load_spectrum(main_window, [bliss_channel.abspath(path)],
+                                        calibration_path=main_window.calibration_path)
+        if not A_list or len(A_list[0]) == 0:
+            main_window.set_status(f"{action} was not started — could not read the "
+                                   f"velocities of {source}", "red")
+            return None
+        A = np.asarray(A_list[0], dtype=float)
+
+    from syncmoss.instrumental_io import (resolve_instrumental_for_file,
+                                          read_dat_metadata_lines, build_dat_metadata_lines)
+    try:
+        model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
+        # Expressions and =[..] links, as Show model applies them
+        for i in range(len(NExpr)):
+            p[NExpr[i]] = mi._eval_expr(Expr[i], p)
+        for i in range(len(con1)):
+            p[int(con1[i])] = p[int(con2[i])] * con3[i]
+        use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
+        method_params = resolve_instrumental_for_file(
+            main_window, os.path.abspath(path) if path else None, use_dat_metadata=use_dat_metadata)
+        if method_params['source'] == 'file':
+            header = read_dat_metadata_lines(path)
+        else:
+            header, _method = build_dat_metadata_lines(main_window)
+    except Exception as e:
+        main_window.set_status(f"{action} was not started — {e}", "red")
+        return None
+
+    return {
+        'A': A, 'model': model, 'p': p, 'Distri': Distri, 'Cor': Cor, 'Recon': Recon,
+        'JN': int(main_window.JN0),
+        'pol': float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT)),
+        'method_params': method_params,
+        'header': header + [f"# Model spectrum without noise, calculated by SYNCmoss for {source}"],
+        'source': source,
+        'default_name': (f"spectrum_{source}.dat" if path is None
+                         else f"{os.path.splitext(source)[0]}_model.dat"),
+    }
+
+
+def compute_model_spectrum(job, pool):
+    """The model counts of *job* (prepare_model_spectrum): the calculation
+    itself, run in a worker thread -- the call Show model makes for its model
+    curve."""
+    from syncmoss.instrumental_io import compute_norm
+    mp = job['method_params']
+    norm = compute_norm(pool, job['JN'], mp)
+    # TI sums its pool results as an object array; the counts are plain floats
+    return np.asarray(TI(job['A'], job['p'], job['model'], job['JN'], pool, mp['x0'], mp['MulCo'],
+                         mp['INS'], job['Distri'], job['Cor'], Met=mp['Met'], Norm=norm,
+                         pol=job['pol'], Recon=job['Recon']), dtype=float)
+
+
+def save_model_spectrum(main_window, job, counts):
+    """Ask where the spectrum calculated from the model goes and write it: the
+    velocities, the model counts without noise and, in the header, the
+    instrumental function it was calculated with. It is not loaded or shown."""
+    save_path, _ = QFileDialog.getSaveFileName(
+        main_window,
+        "Save spectrum calculated from the model",
+        os.path.join(main_window.workfolder or "", job['default_name']),
+        "DAT files (*.dat)"
+    )
+    if not save_path:
+        main_window.set_status("Save canceled", "orange")
+        return
+    save_spectrum_with_metadata(save_path, job['A'], counts, job['header'])
+    main_window.set_status(f"Spectrum calculated from the model ({len(counts)} points, no noise) "
+                           f"saved to {os.path.basename(save_path)}\n"
+                           f"{job['method_params']['note']}", "green")
 
 
 def half_points(main_window):

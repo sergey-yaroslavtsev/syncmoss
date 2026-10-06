@@ -88,6 +88,8 @@ from syncmoss.model_io import (
 from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
     half_points, calculate_backgrounds, save_without_excluded_points,
+    MODEL_ONLY_POINTS, model_only_axis, prepare_model_spectrum,
+    compute_model_spectrum, save_model_spectrum,
 )
 from syncmoss import bliss_channel
 from syncmoss.spectrum_parameters import (
@@ -110,6 +112,7 @@ from syncmoss.instrumental_io import (
     instrumental_theory,
     recentre_instrumental_after_calibration,
     reset_instrumental_defaults,
+    overwrite_dat_instrumental,
     resolve_instrumental_for_file,
     analyze_instrumental_methods,
     build_dat_metadata_lines,
@@ -594,13 +597,13 @@ class ShowModelThread(QThread):
             if no_spectrum_mode:
                 if num_nbaseline > 0:
                     # Synthetic mode with Nbaseline sections
-                    synthetic_grid = np.linspace(-self.velocity_range, self.velocity_range, 4096)
+                    synthetic_grid = model_only_axis(self.velocity_range)
                     A_list = [synthetic_grid.copy() for _ in range(len(model_sections))]
                     A = A_list
                     B = None
                 else:
                     # Single-spectrum synthetic mode
-                    A = np.linspace(-self.velocity_range, self.velocity_range, 4096)
+                    A = model_only_axis(self.velocity_range)
                     B = None
             elif num_nbaseline > 0:
                 # Multiple spectra case - handle each spectrum section separately
@@ -875,10 +878,37 @@ class RawToDatThread(QThread):
                     self.finished.emit(f"Converted {converted_count} file(s), {error_count} failed{metadata_suffix}{warning_suffix}")
             else:
                 self.error.emit("No RAW files were successfully converted")
-                
+
         except Exception as e:
             traceback.print_exc()
             self.error.emit(f"Conversion failed: {str(e)}")
+
+
+class ModelSpectrumThread(QThread):
+    """Change spectrum(a) -> Create spectrum from model: the model counts of a
+    job read from the window on the main thread (spectrum_io.prepare_model_spectrum).
+
+    Its signal is 'done', not 'finished': a custom signal of that name shadows
+    QThread.finished. Stored on the main window (model_spectrum_thread), so
+    Interrupt waits for it like for every other calculation thread.
+    """
+    done = Signal(object, object)  # the job, the model counts
+    error = Signal(str)
+
+    def __init__(self, job, pool):
+        super().__init__()
+        self.job = job
+        self.pool = pool
+
+    def run(self):
+        try:
+            self.done.emit(self.job, compute_model_spectrum(self.job, self.pool))
+        except FitInterrupted as e:
+            self.error.emit(str(e))
+        except Exception as e:
+            error_msg = f"{e}\n{traceback.format_exc()}"
+            print(f"[ERROR] ModelSpectrumThread failed: {error_msg}")
+            self.error.emit(error_msg)
 
 
 class PhysicsApp(QMainWindow):
@@ -1211,6 +1241,8 @@ class PhysicsApp(QMainWindow):
         self.toggle_dat_ins_action = QAction(self)
         self._update_use_dat_instrumental_action_text()
         self.toggle_dat_ins_action.triggered.connect(self.toggle_use_dat_instrumental)
+        overwrite_dat_ins = QAction("Overwrite instrumental function in selected .dat files", self)
+        overwrite_dat_ins.triggered.connect(self.overwrite_dat_instrumental_pressed)
         reset_defaults = QAction("Reset to\ndefault values", self)
         reset_defaults.triggered.connect(lambda: reset_instrumental_defaults(self))
         self.instrumental_menu.addAction(find_single)
@@ -1218,6 +1250,7 @@ class PhysicsApp(QMainWindow):
         self.instrumental_menu.addAction(find_model)
         self.instrumental_menu.addSeparator()
         self.instrumental_menu.addAction(self.toggle_dat_ins_action)
+        self.instrumental_menu.addAction(overwrite_dat_ins)
         self.instrumental_menu.addSeparator()
         self.instrumental_menu.addAction(reset_defaults)
         self.instrumental_btn.setMenu(self.instrumental_menu)
@@ -1628,6 +1661,15 @@ class PhysicsApp(QMainWindow):
         else:
             self.set_status("Using instrumental function from .dat file is now disabled (SMS).", "blue")
 
+    def overwrite_dat_instrumental_pressed(self):
+        """Instrumental function -> Overwrite instrumental function in selected
+        .dat files (instrumental_io.overwrite_dat_instrumental). Refused while a
+        calculation runs: a fit or a sequence reading these files would use
+        two instrumental functions."""
+        if self._reject_if_busy('Overwrite instrumental function'):
+            return
+        overwrite_dat_instrumental(self, self.parse_process_path())
+
     def loadmod_pressed(self):
         load_model(self)
 
@@ -1858,6 +1900,7 @@ class PhysicsApp(QMainWindow):
         options = [
             ("Sum all\nspectra", "sum_all"),
             ("Subtract\nmodel from\nspectrum", "subtract_model"),
+            ("Create spectrum\nfrom model", "from_model"),
             ("Half points", "half_points"),
             ("Save spectrum\nwithout excluded points", "without_excluded"),
         ]
@@ -1876,12 +1919,49 @@ class PhysicsApp(QMainWindow):
             sum_all_spectra(self)
         elif option == "subtract_model":
             subtract_model_from_spectrum(self)
+        elif option == "from_model":
+            self.create_spectrum_from_model()
         elif option == "half_points":
             half_points(self)
         elif option == "without_excluded":
             save_without_excluded_points(self)
         else:
             self.set_status(f"Unknown spectrum option: {option}", "red")
+
+    def create_spectrum_from_model(self):
+        """Change spectrum(a) -> Create spectrum from model: the model of the
+        table, without noise, on the velocities of the first spectrum of the
+        path box (or the Model_<range> grid), saved as a .dat that carries the
+        instrumental function it is calculated with (see
+        spectrum_io.prepare_model_spectrum). Calculated in a thread; the file
+        name is asked when it is done."""
+        if self._reject_if_busy('Create spectrum from model'):
+            return
+        job = prepare_model_spectrum(self)
+        if job is None:
+            return
+        self.inprogress = True
+        self.busy_with = 'Create spectrum from model'
+        self.set_status(f"Calculating the model on the velocities of {job['source']}...", "cyan")
+        self.model_spectrum_thread = ModelSpectrumThread(job, self.pool)
+        self.model_spectrum_thread.done.connect(self.on_model_spectrum_done)
+        self.model_spectrum_thread.error.connect(self.on_model_spectrum_error)
+        self.model_spectrum_thread.start()
+
+    def on_model_spectrum_done(self, job, counts):
+        """The model is calculated: ask where it goes, and save it."""
+        try:
+            save_model_spectrum(self, job, counts)
+        except Exception as e:
+            traceback.print_exc()
+            self.set_status(f"Error saving the spectrum calculated from the model: {e}", "red")
+        finally:
+            self.inprogress = False
+
+    def on_model_spectrum_error(self, error_msg):
+        """Handle a failed model calculation of Create spectrum from model"""
+        self.set_status(f"Create spectrum from model failed: {error_msg}", "red")
+        self.inprogress = False
 
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
@@ -2262,7 +2342,8 @@ class PhysicsApp(QMainWindow):
         # Start model calculation in a separate thread
         if not self.path_list:
             self.set_status(
-                f"Calculating model on synthetic grid (-{velocity_range:g}..{velocity_range:g} mm/s, 4096 points)...",
+                f"Calculating model on synthetic grid (-{velocity_range:g}..{velocity_range:g} mm/s, "
+                f"{MODEL_ONLY_POINTS} points)...",
                 "blue",
             )
         else:

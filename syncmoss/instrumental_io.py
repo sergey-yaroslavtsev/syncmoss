@@ -4,6 +4,9 @@ Handles the calculation, fitting, and refinement of instrumental functions.
 """
 import os
 import time
+import errno
+import shutil
+import tempfile
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
 from syncmoss.constants import (number_of_baseline_parameters, ALPHA_FE_FIELD,
@@ -11,7 +14,8 @@ from syncmoss.constants import (number_of_baseline_parameters, ALPHA_FE_FIELD,
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
 import syncmoss.sms_theory as smst
-from syncmoss.spectrum_io import load_spectrum, estimate_edge_background
+from syncmoss.spectrum_io import (load_spectrum, estimate_edge_background,
+                                  resolve_calibration_path)
 from syncmoss.model_io import read_model, read_bounds_and_fix
 
 
@@ -70,8 +74,21 @@ def _parse_float_sequence(text):
     return np.array(values, dtype=float)
 
 
+def is_data_line(stripped):
+    """True when *stripped* -- a non-empty line of a .dat spectrum, stripped --
+    is a data line: one that starts with a number. The header (comments, the
+    #@ instrumental-function lines) is everything above the first one; only
+    data follows it."""
+    try:
+        float(stripped.split()[0])
+    except ValueError:
+        return False
+    return True
+
+
 def parse_dat_instrumental_metadata(file_path):
-    """Read #@INSexp / #@INSint / #@GCMS metadata from a .dat file header.
+    """Read #@INSexp / #@INSint / #@GCMS metadata from a .dat file header (every
+    line above the first data line, see is_data_line).
 
     #@INSexp + #@INSint mark a spectrum converted in SMS mode, #@GCMS marks a
     spectrum converted in CMS mode (single G value of the single-line absorber).
@@ -93,13 +110,12 @@ def parse_dat_instrumental_metadata(file_path):
 
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            for _ in range(40):
-                line = f.readline()
-                if not line:
-                    break
+            for line in f:
                 stripped = line.strip()
                 if not stripped:
                     continue
+                if is_data_line(stripped):
+                    break
 
                 # #@INSth must be tested BEFORE #@INSexp: neither is a prefix of
                 # the other, but keeping them adjacent makes that obvious.
@@ -139,9 +155,6 @@ def parse_dat_instrumental_metadata(file_path):
                         result['GCMS'] = float(parsed[0])
                         result['has_gcms'] = True
                     continue
-
-                if not stripped.startswith('#') and not stripped.startswith('<'):
-                    break
     except Exception as e:
         print(f"[Instrumental function] Could not read DAT metadata from {file_path}: {e}")
 
@@ -572,7 +585,8 @@ def build_dat_metadata_lines(app):
 
 def read_dat_metadata_lines(file_path):
     """Verbatim instrumental header lines (#@INSexp/#@INSint/#@GCMS) of a .dat
-    file, without trailing newlines. Empty list when the file has none.
+    file, without trailing newlines. Empty list when the file has none. The
+    header is every line above the first data line (see is_data_line).
 
     Used to carry instrumental metadata across spectrum-processing operations
     (subtract model, half points, sum) so a converted .dat does not silently
@@ -583,13 +597,12 @@ def read_dat_metadata_lines(file_path):
         return lines
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            for _ in range(40):
-                line = f.readline()
-                if not line:
-                    break
+            for line in f:
                 stripped = line.strip()
                 if not stripped:
                     continue
+                if is_data_line(stripped):
+                    break
                 # the LEGACY spelling has to be here too: a .dat written before
                 # the rename carries #@INSacc, and dropping it here would
                 # silently lose that file's theoretical shape the first time any
@@ -599,8 +612,6 @@ def read_dat_metadata_lines(file_path):
                                         DAT_GCMS_PREFIX, DAT_INS_TH_PREFIX,
                                         DAT_INS_ACC_PREFIX_LEGACY)):
                     lines.append(stripped)
-                elif not stripped.startswith('#') and not stripped.startswith('<'):
-                    break
     except Exception as e:
         print(f"[Instrumental function] Could not read DAT metadata lines from {file_path}: {e}")
     return lines
@@ -638,6 +649,177 @@ def shared_dat_metadata_lines(file_paths):
     if all(k == first_key for k, _ in keyed):
         return read_dat_metadata_lines(keyed[0][1])
     return []
+
+
+# The instrumental-function lines build_dat_metadata_lines writes: what
+# "Overwrite instrumental function in selected .dat files" replaces.
+DAT_INS_PREFIXES = (DAT_GCMS_PREFIX, DAT_INS_EXP_PREFIX, DAT_INS_INT_PREFIX,
+                    DAT_INS_TH_PREFIX)
+
+
+def write_dat_instrumental_lines(file_path, lines):
+    """Make *lines* the instrumental-function header of the .dat spectrum
+    *file_path*. They take the place of the #@ lines it has (where the first of
+    them was), or go just above its data when it has none -- so a first line
+    such as the calibration's '# sin n1 n2' stays first. Every other line keeps
+    its bytes and its line ending.
+
+    Returns False, leaving the file untouched, when it already carries exactly
+    these lines; True when it was rewritten. Raises ValueError for a file with
+    no data line, OSError when it cannot be read or written.
+    """
+    # latin-1 turns every byte into one character and back, so the lines left
+    # alone are written back as they were, whatever their encoding; newline=''
+    # keeps their line endings
+    with open(file_path, 'r', encoding='latin-1', newline='') as f:
+        rows = f.readlines()
+    old, data_start = [], None
+    for index, row in enumerate(rows):
+        stripped = row.strip()
+        if not stripped:
+            continue
+        if is_data_line(stripped):
+            data_start = index
+            break
+        if stripped.startswith(DAT_INS_PREFIXES):
+            old.append(index)
+    if data_start is None:
+        raise ValueError("it has no data line (a line starting with a number)")
+    if [rows[i].strip() for i in old] == list(lines):
+        return False
+    ending = next((row[len(row.rstrip('\r\n')):] for row in rows
+                   if row.endswith(('\n', '\r'))), '\n')
+    at = old[0] if old else data_start
+    for i in reversed(old):
+        del rows[i]
+    rows[at:at] = [line + ending for line in lines]
+    _replace_file(file_path, rows)
+    return True
+
+
+def _replace_file(file_path, rows):
+    """Write *rows* (latin-1 text, line endings included) in place of
+    *file_path*, through a temporary file in its folder: a failure half-way
+    leaves the file as it was. A read-only file is refused, as writing it
+    directly would be."""
+    file_path = os.path.realpath(file_path)
+    if not os.access(file_path, os.W_OK):
+        raise PermissionError(errno.EACCES, "the file is read-only", file_path)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(file_path),
+                               prefix=os.path.basename(file_path) + '.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='latin-1', newline='') as f:
+            f.writelines(rows)
+        shutil.copymode(file_path, tmp)
+        os.replace(tmp, file_path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _confirm_overwrite(app, text, informative, detailed):
+    """The question overwrite_dat_instrumental asks: True when the user chose
+    to write."""
+    box = QMessageBox(app)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle("Overwrite instrumental function")
+    box.setText(text)
+    box.setInformativeText(informative)
+    box.setDetailedText(detailed)
+    write_btn = box.addButton("Overwrite", QMessageBox.ButtonRole.AcceptRole)
+    box.setDefaultButton(box.addButton(QMessageBox.StandardButton.Cancel))
+    box.exec()
+    return box.clickedButton() is write_btn
+
+
+def overwrite_dat_instrumental(app, paths):
+    """Instrumental function -> Overwrite instrumental function in selected .dat
+    files: the instrumental function in memory, for the CMS/SMS mode selected
+    (the lines RAW -> .dat conversion writes), replaces the one in the header
+    of every .dat file of *paths*, or is added to it -- after a confirmation.
+
+    Only .dat files carry it, so the others are left alone. The calibration
+    file -- Calibration.dat of the parameters folder, and the one in use if
+    another was chosen -- is never written: it is not a spectrum, and the SMS
+    refinement would start from its header instead of from memory.
+    """
+    if not paths:
+        app.set_status("No spectrum selected", "orange")
+        return
+
+    def real(path):
+        # one spelling per file, whatever the case, slashes, relative path or link
+        return os.path.normcase(os.path.realpath(path))
+
+    calibrations = {real(os.path.join(app.params_dir, 'Calibration.dat')),
+                    real(resolve_calibration_path(app, None, []))}
+    targets, refused, seen, others = [], [], set(), 0
+    for path in paths:
+        if not str(path).lower().endswith('.dat'):
+            others += 1
+            continue
+        key = real(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        name = os.path.basename(path)
+        if key in calibrations:
+            refused.append(f"{name} (the calibration file)")
+        elif not os.path.isfile(path):
+            refused.append(f"{name} (no such file)")
+        else:
+            targets.append(path)
+    if not seen:
+        app.set_status("Instrumental function information can be written only in .dat files",
+                       "orange")
+        return
+    if not targets:
+        app.set_status("The instrumental function was not written: " + "; ".join(refused),
+                       "orange")
+        return
+
+    try:
+        lines, method = build_dat_metadata_lines(app)
+    except Exception as e:
+        app.set_status(f"The instrumental function was not written: could not read the one "
+                       f"in memory ({e})", "red")
+        return
+    what = (f"CMS: {lines[0]}" if method == 'CMS'
+            else "SMS: " + ", ".join(line.split()[0] for line in lines))
+
+    notes = ["The instrumental-function lines the files have are replaced, or added where "
+             "there are none. Nothing else in the files changes."]
+    if others:
+        notes.append(f"{others} selected file(s) that are not .dat are left alone.")
+    if refused:
+        notes.append("Not written: " + "; ".join(refused))
+    if not _confirm_overwrite(app, f"Write the instrumental function in memory ({what}) "
+                                   f"into {len(targets)} .dat file(s)?",
+                              "\n\n".join(notes), "\n".join(targets)):
+        app.set_status("Overwrite instrumental function canceled", "orange")
+        return
+
+    written, unchanged, failed = 0, 0, []
+    for path in targets:
+        try:
+            if write_dat_instrumental_lines(path, lines):
+                written += 1
+            else:
+                unchanged += 1
+        except Exception as e:
+            failed.append(f"{os.path.basename(path)} ({getattr(e, 'strerror', None) or e})")
+    message = [f"Instrumental function in memory ({what}) written into {written} .dat file(s)"
+               + (f"; {unchanged} already had it" if unchanged else "")]
+    if refused or failed:
+        message.append("Not written: " + "; ".join(refused + failed))
+    if others:
+        message.append(f"{others} file(s) that are not .dat left alone")
+    if not getattr(app, 'use_dat_instrumental_metadata', True):
+        message.append("'use instrumental function from .dat file' is off: fits do not read it now")
+    app.set_status("\n".join(message), "orange" if refused or failed else "green")
 
 
 def default_theory_instrumental():

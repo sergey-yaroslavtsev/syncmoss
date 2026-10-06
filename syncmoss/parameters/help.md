@@ -174,12 +174,20 @@ an explicit message and reddened fields rather than failing halfway through.
 
 ## 7. Spectrum files and instrumental function
 
-- A `.dat` file may carry the instrumental function in its header:
+- A `.dat` file may carry the instrumental function in its header — every line
+  above the first data line (one that starts with a number):
   `#@GCMS` marks a CMS spectrum (and its Gaussian width), `#@INSexp` +
   `#@INSint` an SMS one. SYNCmoss writes those lines when it converts a
   spectrum, and reads them back per spectrum — so a batch may mix CMS and SMS
   files. Switch the behaviour with *Instrumental function -> do not use
   instrumental function from .dat file*.
+- *Instrumental function -> Overwrite instrumental function in selected .dat
+  files* writes the instrumental function in memory — for the CMS/SMS mode
+  selected, the lines RAW → .dat conversion writes — into every `.dat` file of
+  the path box: it replaces the `#@` lines a file has, or adds them just above
+  its data. It asks first, and nothing else in the files changes. Other files
+  (`.mca`, …) are left alone, and the calibration file (`Calibration.dat` of the
+  parameters folder, or another one chosen) is never written.
 - **Find Instr. func. NEW** fits the *theoretical* SMS instrumental function
   instead of a free sum of Gaussians: the simulated energy distribution of a
   ⁵⁷FeBO₃ synchrotron Mössbauer source, with four physical numbers —
@@ -398,10 +406,19 @@ values with the X they started from — ready for another fit.
   "Integration check (×4)"** trace under every Show model and Fit is the same
   model recomputed with four times as many points, minus the one you see. A flat
   line means converged; a visible wiggle means raise the number.
-- *Change spectrum(a)* holds four destructive-looking but useful operations:
-  sum all listed spectra, subtract the current model from the spectrum, halve
-  the number of points, and save the spectra without the points of the
-  exclusion regions (section 8).
+- *Change spectrum(a)* holds five destructive-looking but useful operations:
+  sum all listed spectra, subtract the current model from the spectrum, create
+  a spectrum from the model, halve the number of points, and save the spectra
+  without the points of the exclusion regions (section 8).
+- *Create spectrum from model* calculates the model of the table, without
+  noise, on the velocities **Show model** uses: those of the first spectrum in
+  the path box (its own column for a `.dat`, `Calibration.dat` for an `.mca` or
+  other raw counts), or the `Model_<range>` grid. It runs in the background
+  (**! INTERRUPT !** stops it), then asks where to save the `.dat`. Its header
+  carries the instrumental function the model is calculated with — the
+  spectrum's own `.dat` header or the one in memory, as the settings say. The
+  file is not loaded. Not for a model with `Nbaseline` rows; exclusion regions
+  are ignored.
 - Distributions are drawn in the plot area: the **Distribution / Spectrum**
   button toggles the view once a model with `Distr`/`Recon` has been shown.
 

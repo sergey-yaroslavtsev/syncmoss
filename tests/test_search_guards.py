@@ -107,11 +107,13 @@ def test_busy_guard_refuses_and_explains(physics_app):
 
 
 def test_every_calculation_entry_point_is_guarded(physics_app):
-    """Fit, Show model, Show spectrum, Calibration and the search itself."""
+    """Fit, Show model, Show spectrum, Calibration, the search itself, Create
+    spectrum from model and Overwrite instrumental function."""
     import inspect
     src = inspect.getsource(type(physics_app))
     for name in ('fit_pressed', 'showM_pressed', 'show_pressed',
-                 'calibration', 'instrumental_pressed'):
+                 'calibration', 'instrumental_pressed',
+                 'create_spectrum_from_model', 'overwrite_dat_instrumental_pressed'):
         body = src.split(f"def {name}(")[1].split("\n    def ")[0]
         assert '_reject_if_busy(' in body, f"{name} is not guarded"
 
