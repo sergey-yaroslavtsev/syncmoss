@@ -76,8 +76,9 @@ has many steps. The steps, in order (mirrored by the STEP banners in
 Parameter-vector layouts used throughout (``nbp`` = number_of_baseline_parameters = 8):
 
 * Spectrum model ``p`` / ``p00`` / ``pCAL`` -- ``[0..nbp-1]`` baseline
-  (``[0]`` count rate of half-sweep 1, ``[4]`` count rate of half-sweep 2 for
-  CMS), then one polarized Sextet block of 14:
+  (``[0]`` count rate seen through the absorber; for CMS also ``[4]``, a
+  background count rate the absorber does not attenuate -- both apply to the
+  whole spectrum, not to one half-sweep), then one polarized Sextet block of 14:
   ``T(+0) d(+1) e(+2) H(+3) L(+4) G(+5) theta_k(+6) phi_h(+7) A(+8) Am(+9)
   a+(+10) a-(+11) GH(+12) I13(+13)``.
   ``theta_k=90, phi_h=0, A=0`` make the polarized Sextet identical to the old
@@ -89,8 +90,8 @@ Parameter-vector layouts used throughout (``nbp`` = number_of_baseline_parameter
   intensity scale, ``[4..6]`` parabola of half-sweep 1 (centre, curvature,
   offset), ``[7..8]`` parabola of half-sweep 2 (centre, curvature),
   ``[9]`` main sextet intensity, ``[10]`` texture parameter A, then
-  ``[11]`` impurity sextet intensity (SMS) or ``[11..12]`` the two baseline
-  count rates (CMS).
+  ``[11]`` impurity sextet intensity (SMS) or ``[11..12]`` the count rate and
+  the unattenuated background, ``pCAL[0]`` and ``pCAL[4]`` (CMS).
 """
 
 import os
@@ -594,10 +595,10 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
             p[10] = 0.0    # tiny velocity range: texture undefined -> isotropic
         pCAL2[nbp + 8] = p[10]                         # texture order parameter A
         if VVV == 1:
-            pCAL2[0] = p[11]                           # baseline of half-sweep 1
+            pCAL2[0] = p[11]                           # count rate through the absorber
             if p[12] > p[11] * 10:
-                p[12] = p[11] * 10                     # keep baseline 2 sane
-            pCAL2[4] = p[12]                           # baseline of half-sweep 2
+                p[12] = p[11] * 10                     # keep the background sane
+            pCAL2[4] = p[12]                           # unattenuated background
         half = int(len(x) / 2)
         # Velocity of the same channel in the OTHER half-sweep: sign(|Hx-Hx1|)
         # masks the parabola of half 1 to half 2 and vice versa.
@@ -620,10 +621,10 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         if min(Hx) > -2.95 and max(Hx) < 2.95:
             p[10] = 0.0    # tiny velocity range: texture undefined -> isotropic
         pCAL2[nbp + 8] = p[10]                         # texture order parameter A
-        pCAL2[0] = p[11]                               # baseline of half-sweep 1
+        pCAL2[0] = p[11]                               # count rate through the absorber
         if p[12] > p[11] * 10:
-            p[12] = p[11] * 10                         # keep baseline 2 sane
-        pCAL2[4] = p[12]                               # baseline of half-sweep 2
+            p[12] = p[11] * 10                         # keep the background sane
+        pCAL2[4] = p[12]                               # unattenuated background
         return (fit_func(Hx, pCAL2)
                 + (p[5] * (p[4] - channels) ** 2 + p[6]) * Hx1
                 + (p[8] * (p[7] - channels) ** 2) * Hx2)
@@ -638,7 +639,8 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     # STEP 4: alpha-Fe reference model, start values and bounds.            #
     # --------------------------------------------------------------------- #
     # Baseline guess: max counts minus 2 sigma; CMS splits it 60/40 between
-    # the two half-sweep count rates (indices 0 and 4).
+    # the count rate through the absorber (index 0) and the unattenuated
+    # background (index 4).
     baseline_guess = max(counts) - 2 * np.sqrt(max(counts))
     p00 = np.array([baseline_guess * (1 - 0.4 * (VVV == 1)), 0, 0, 0,
                     baseline_guess * (0.4 * (VVV == 1)), 0, 0, 0,
@@ -847,7 +849,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     # --------------------------------------------------------------------- #
     # STEP 9: final model. SMS reference foils show a second (impurity)     #
     # sextet and the Be-window doublet (parameters from Be.txt); CMS keeps  #
-    # the single sextet but frees both half-sweep count rates.              #
+    # the single sextet but frees the count rate and the background.       #
     # --------------------------------------------------------------------- #
     if method == 0:
         if VVV == 3:
@@ -867,7 +869,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
             pCAL = np.concatenate((pCAL, Be_param))
         if VVV == 1:
             model = ['Sextet']
-            pCAL = np.array([p[0], 0, 0, 0, p[3], 0, 0, 0,
+            pCAL = np.array([p[0], 0, 0, 0, p[4], 0, 0, 0,
                              8.08, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3])
             print('background ', pCAL[0], pCAL[4], ps1[3])
     if method == 1:
@@ -882,14 +884,14 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     if VVV == 3:
         ps1 = np.append(ps1, 0.5)                      # ps1[11]: impurity intensity
     if VVV == 1:
-        # Free both half-sweep count rates, starting from a 60/40 split of the
-        # fitted total; rescale the intensity guess accordingly.
+        # Free the count rate and the background, starting from a 60/40 split
+        # of the fitted total; rescale the intensity guess accordingly.
         tot = (pCAL[0] + pCAL[4])
         ps1[9] = pCAL[nbp] * pCAL[0] / tot / 3 * 5
         pCAL[0] = tot * 0.6
         pCAL[4] = tot * 0.4
-        ps1 = np.append(ps1, pCAL[0])                  # ps1[11]: count rate, half 1
-        ps1 = np.append(ps1, pCAL[4])                  # ps1[12]: count rate, half 2
+        ps1 = np.append(ps1, pCAL[0])                  # ps1[11]: count rate through the absorber
+        ps1 = np.append(ps1, pCAL[4])                  # ps1[12]: unattenuated background
         print('baseline ', ps1[11], ps1[12])
 
     print('parameter set after preliminary fit ', ps1)
@@ -910,10 +912,15 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     v_axis = cal(channels, pS)                         # final channel -> velocity map
 
     # Fold the fitted global scale into the count rates so pS[3] == 1 from
-    # here on (the folded outputs must be in true count units).
-    pCAL[0] = pCAL[0] * pS[3]
+    # here on (the folded outputs must be in true count units). For CMS the
+    # count rates are pS[11]/pS[12]: cal_fin2 copies them into pCAL[0]/pCAL[4]
+    # on every call, and only sin_cal_fin2 applies pS[3] at all.
     if VVV == 1:
-        pCAL[4] = pCAL[4] * pS[3]
+        if method == 0:
+            pS[11] = pS[11] * pS[3]
+            pS[12] = pS[12] * pS[3]
+    else:
+        pCAL[0] = pCAL[0] * pS[3]
     pS[3] = 1
 
     flat_counts = _subtract_distortion(counts, channels, pS)

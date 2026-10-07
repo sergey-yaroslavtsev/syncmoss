@@ -1,16 +1,24 @@
-"""Generate a synthetic alpha-Fe calibration spectrum (.mca) for the calibration test.
+"""Generate synthetic alpha-Fe calibration spectra (.mca) for the calibration test.
 
 A real velocity-calibration measurement is an alpha-Fe foil: a symmetric sextet
-whose six lines sit at the well-known velocities ``sex0`` (mm/s). We reproduce a
-CONVENTIONAL-source (CMS / MS-mode) run, whose drive ramps the velocity *linearly*
-with a constant step and folds it (triangular sweep): channel -> velocity is two
-mirror linear ramps, so each velocity is visited twice. Six Lorentzian dips at
-``sex0`` (3:2:1:1:2:3 depths) plus Poisson noise give a realistic folded sextet.
+whose six lines sit at the well-known velocities ``sex0`` (mm/s). We reproduce
+CONVENTIONAL-source (CMS / MS-mode) runs with both drive waveforms the
+calibration has to recognise on its own:
 
-(The SMS / synchrotron path uses a *sinusoidal* drive and is covered by the real
-``alpha_fe_sms_000.mca`` fixture; MS mode uses the linear step generated here.)
+* ``synthetic_alpha_fe_cms_linear.mca`` -- the drive ramps the velocity
+  *linearly* with a constant step and folds it (triangular sweep): channel ->
+  velocity is two mirror linear ramps, so each velocity is visited twice.
+* ``synthetic_alpha_fe_cms_sinus.mca`` -- a *sinusoidal* drive with a source
+  shift, the velocity maximum half a channel after the start of the recording
+  (as in real drive-triggered recordings, which the calibration reports as
+  ``PHASE 2``). This is the CMS-mode path through the sinusoidal branch of the
+  calibration (the real ``alpha_fe_sms_000.mca`` fixture covers the same drive
+  in SMS mode).
 
-Run this module to (re)write the committed ``.mca`` fixture. It is deterministic
+Six Lorentzian dips at ``sex0`` (3:2:1:1:2:3 depths) plus Poisson noise give a
+realistic folded sextet.
+
+Run this module to (re)write the committed ``.mca`` fixtures. It is deterministic
 (seeded), so regenerating gives byte-identical files.
 """
 import os
@@ -41,6 +49,25 @@ def _linear_drive(ch, n, vmax, step):
     return v
 
 
+def _sinusoidal_drive(t, n, vmax, phase, shift):
+    """Velocity at (fractional) channel position ``t`` for a sinusoidal drive.
+
+    The velocity is maximal at channel ``phase`` and minimal half a period
+    later; ``shift`` is the source shift added to the whole axis. Starting near
+    the maximum is the down-up sweep (``Vel_start == 1``).
+    """
+    return vmax * np.cos(2 * np.pi * (t - phase) / n) + shift
+
+
+def _absorption(v, hwhm, outer_depth_frac):
+    """Fractional absorption of the six Lorentzian alpha-Fe lines at velocities ``v``."""
+    absorption = np.zeros(np.shape(v))
+    scale = outer_depth_frac / DEPTHS.max()
+    for v0, d in zip(SEX0, DEPTHS):
+        absorption += d * scale * hwhm ** 2 / ((v - v0) ** 2 + hwhm ** 2)
+    return absorption
+
+
 def synth_spectrum(n=256, vmax=6.0, step=None, baseline=20000.0,
                    hwhm=0.16, outer_depth_frac=0.33, seed=2024):
     if step is None:
@@ -48,11 +75,24 @@ def synth_spectrum(n=256, vmax=6.0, step=None, baseline=20000.0,
         step = 2 * vmax / (n // 2)
     ch = np.arange(n)
     v = _linear_drive(ch, n, vmax, step)
-    absorption = np.zeros(n)
-    scale = outer_depth_frac / DEPTHS.max()
-    for v0, d in zip(SEX0, DEPTHS):
-        absorption += d * scale * hwhm ** 2 / ((v - v0) ** 2 + hwhm ** 2)
-    counts = baseline * (1.0 - absorption)
+    counts = baseline * (1.0 - _absorption(v, hwhm, outer_depth_frac))
+    rng = np.random.default_rng(seed)
+    return rng.poisson(np.clip(counts, 1.0, None)).astype(int)
+
+
+def synth_sinus_spectrum(n=512, vmax=6.5, phase=0.5, shift=-0.12, baseline=20000.0,
+                         hwhm=0.16, outer_depth_frac=0.33, oversample=16, seed=2025):
+    """Sinusoidal-drive alpha-Fe spectrum.
+
+    A channel collects counts while the velocity sweeps across it, so the
+    transmission is averaged over ``oversample`` positions inside each channel
+    (near the zero crossing one channel spans ~2*pi*vmax/n mm/s, comparable to
+    the line width).
+    """
+    t = np.arange(n)[:, None] + (np.arange(oversample) + 0.5) / oversample
+    v = _sinusoidal_drive(t, n, vmax, phase, shift)
+    transmission = (1.0 - _absorption(v, hwhm, outer_depth_frac)).mean(axis=1)
+    counts = baseline * transmission
     rng = np.random.default_rng(seed)
     return rng.poisson(np.clip(counts, 1.0, None)).astype(int)
 
@@ -74,6 +114,10 @@ def main():
     write_mca(os.path.join(here, "synthetic_alpha_fe_cms_linear.mca"), counts,
               "synthetic alpha-Fe CMS calibration (linear/triangular drive)")
     print("wrote synthetic_alpha_fe_cms_linear.mca")
+    counts = synth_sinus_spectrum()
+    write_mca(os.path.join(here, "synthetic_alpha_fe_cms_sinus.mca"), counts,
+              "synthetic alpha-Fe CMS calibration (sinusoidal drive)")
+    print("wrote synthetic_alpha_fe_cms_sinus.mca")
 
 
 if __name__ == "__main__":

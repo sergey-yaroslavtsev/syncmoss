@@ -14,6 +14,11 @@ spectra end-to-end and check the recovered velocity scale, guarding those offset
   against a synthetic linear-step alpha-Fe spectrum (``synthetic_alpha_fe_cms_linear.mca``,
   drive amplitude +/-6 mm/s). CMS uses a single Gaussian instrumental width
   (``GCMS``) rather than the multi-line SMS ``INS`` array.
+* CMS with a sinusoidal drive: a synthetic spectrum
+  (``synthetic_alpha_fe_cms_sinus.mca``, amplitude 6.5 mm/s, source shift
+  -0.12 mm/s, recording half a channel out of phase). Only this path builds the
+  final CMS model from the refined count rates and applies the global intensity
+  scale, so it guards the fit curve returned to the GUI.
 
 Heavy: each case spawns a (single-process) multiprocessing pool and runs the full
 fit, so the module is marked ``slow``.
@@ -31,14 +36,18 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC_PARAMS = os.path.abspath(os.path.join(_HERE, "..", "syncmoss", "parameters"))
 _SMS_MCA = os.path.join(_HERE, "data", "alpha_fe_sms_000.mca")
 _CMS_MCA = os.path.join(_HERE, "data", "synthetic_alpha_fe_cms_linear.mca")
+_CMS_SINUS_MCA = os.path.join(_HERE, "data", "synthetic_alpha_fe_cms_sinus.mca")
 _GOLDEN = os.path.join(_HERE, "data", "calibration_000_golden.json")
 
 
-def _run_calibration(mca, vel_start, vvv, jn=32):
+def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False):
     """Run a full calibration on ``mca`` in a throw-away params dir.
 
     ``dir_path`` is a copy of the parameters folder so the fit writes its
     ``Calibration.dat`` there and never mutates the tracked data files.
+    With ``return_drive`` the drive waveform the calibration chose (``'sin'``
+    or ``'lin'``, from the ``Calibration.dat`` header) is returned as a fourth
+    value.
     """
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ.setdefault("MPLBACKEND", "Agg")
@@ -65,12 +74,15 @@ def _run_calibration(mca, vel_start, vvv, jn=32):
     pool = mp.Pool(processes=1)
     try:
         A, B, C = Calibration(work, mca, pool, vvv, INS, jn, x0, MulCo, Vel_start=vel_start, GCMS=GCMS)
+        with open(os.path.join(work, "Calibration.dat")) as f:
+            drive = f.readline().split()[1]
     finally:
         pool.close()
         pool.join()
         shutil.rmtree(work, ignore_errors=True)
-    return (np.asarray(A, dtype=float), np.asarray(B, dtype=float),
-            np.asarray(C, dtype=float))
+    result = (np.asarray(A, dtype=float), np.asarray(B, dtype=float),
+              np.asarray(C, dtype=float))
+    return result + (drive,) if return_drive else result
 
 
 @pytest.fixture(scope="module")
@@ -170,3 +182,46 @@ def test_cms_recovers_linear_drive_amplitude(cms_result):
         f"recovered CMS velocity span {span:.3f} mm/s far from expected {2 * _CMS_TRUE_VMAX}"
     )
     assert v.min() < -4.5 and v.max() > 4.5
+
+
+@pytest.fixture(scope="module")
+def cms_sinus_result():
+    """Run the CMS (VVV=1) calibration on the synthetic sinusoidal-drive spectrum."""
+    if not os.path.exists(_CMS_SINUS_MCA):
+        pytest.skip("CMS sinusoidal calibration fixture missing")
+    return _run_calibration(_CMS_SINUS_MCA, vel_start=1, vvv=1, jn=24, return_drive=True)
+
+
+# Drive of the synthetic sinusoidal spectrum (generate_cal_fixtures.synth_sinus_spectrum).
+_CMS_SINUS_VMAX = 6.5
+_CMS_SINUS_SHIFT = -0.12
+_CMS_SINUS_CHANNELS = 512
+
+
+def test_cms_sinus_detected_as_sinusoidal(cms_sinus_result):
+    """CMS tries both waveforms; this spectrum must be recognised as sinusoidal,
+    otherwise the remaining tests would not exercise the sinusoidal path."""
+    assert cms_sinus_result[3] == "sin"
+
+
+def test_cms_sinus_recovers_drive(cms_sinus_result):
+    """The folded axis must run from shift - vmax to shift + vmax, to within
+    the velocity a channel spans where the drive is fastest."""
+    v = cms_sinus_result[0]
+    channel_step = 2 * np.pi * _CMS_SINUS_VMAX / _CMS_SINUS_CHANNELS
+    assert float(v.min()) == pytest.approx(_CMS_SINUS_SHIFT - _CMS_SINUS_VMAX, abs=channel_step)
+    assert float(v.max()) == pytest.approx(_CMS_SINUS_SHIFT + _CMS_SINUS_VMAX, abs=channel_step)
+
+
+def test_cms_sinus_fit_sits_on_data(cms_sinus_result):
+    """The fit curve returned to the GUI must sit on the data, not merely follow
+    its shape. Its count rates are free, so off the noise the folded fit and
+    data agree on average: the mean residual must stay within a few standard
+    errors of the Poisson noise (a wrongly applied global intensity scale
+    shifts the whole curve by per cent of the count rate)."""
+    v, data, fit, _ = cms_sinus_result
+    assert data.size == v.size and fit.size == v.size
+    assert np.all(np.isfinite(data)) and np.all(np.isfinite(fit))
+    assert float(np.max(np.abs(data - fit))) < 0.10 * float(np.max(data))
+    standard_error = np.sqrt(np.mean(data) / data.size)
+    assert abs(float(np.mean(data - fit))) < 5 * standard_error
