@@ -91,11 +91,20 @@ def style_value_field(value_input):
     value_input.setStyleSheet(style)
 
 
-def format_parameter_value(value, decimals=4):
+# A value field SHOWS a number with at most this many decimals, as the results
+# table shows a fitted one, but keeps every digit of it (ValueLineEdit).
+SHOWN_DECIMALS = 3
+
+# A plain number a value field shows as it is: no exponent and at most
+# SHOWN_DECIMALS decimals.
+_SHORT_NUMBER = re.compile(rf'-?\d+(\.\d{{0,{SHOWN_DECIMALS}}})?')
+
+
+def format_parameter_value(value, decimals=SHOWN_DECIMALS):
     """*value* as a value field shows it: plain digits, never an exponent.
 
     At most *decimals* digits follow the point and trailing zeros are dropped
-    (1234567.12345 -> '1234567.1235', 33.0 -> '33', 1.5e-05 -> '0'). With
+    (1234567.12345 -> '1234567.123', 33.0 -> '33', 1.5e-05 -> '0'). With
     ``decimals=None`` every digit of the float is kept instead -- the shortest
     text that reads back as the very same number, still without an exponent.
     The field's own validator accepts no exponent either.
@@ -110,35 +119,66 @@ def format_parameter_value(value, decimals=4):
     return '0' if text == '-0' else text
 
 
+def shown_value_text(text):
+    """*text* as a value field shows it.
+
+    A number with more than SHOWN_DECIMALS decimals, or written with an
+    exponent, is shown rounded (format_parameter_value), and so is the X of an
+    independent value ``=(X)``. Anything else -- a short number, a link, an
+    empty or half-written field -- is shown as it is.
+    """
+    if split_independent_field(text) is not None:
+        return f"=({shown_value_text(text.strip()[2:-1])})"
+    if _SHORT_NUMBER.fullmatch(text.strip()):
+        return text
+    try:
+        return format_parameter_value(float(text))
+    except ValueError:
+        return text
+
+
+class ValueLineEdit(QLineEdit):
+    """The value field of a parameter: it keeps every digit of the number it is
+    given but shows it rounded (shown_value_text).
+
+    setText() keeps the whole text and shows the rounded one; text() gives the
+    whole text back for as long as the field shows exactly that rounded text.
+    So everything that reads a value -- Fit, Show model, Save model, Take
+    result, Copy / Paste -- works with every digit. An edit makes what is typed
+    the value, and Ctrl+Z back to the rounded text brings the whole one back.
+    While digits are hidden, the tooltip shows them.
+
+    The free-text columns (an Expression / PDF / dependency string or a Recon
+    weight vector, flagged 'free_text' by select_model) are shown as they are.
+    """
+
+    def __init__(self, text=""):
+        super().__init__()
+        self._whole_text = ""
+        self._shown_text = ""
+        self.textChanged.connect(self._update_tool_tip)
+        self.setText(text)
+
+    def setText(self, text):
+        shown = text if self.property('free_text') else shown_value_text(text)
+        self._whole_text, self._shown_text = text, shown
+        super().setText(shown)
+
+    def text(self):
+        shown = super().text()
+        return self._whole_text if shown == self._shown_text else shown
+
+    def _update_tool_tip(self):
+        whole = self.text()
+        self.setToolTip(whole if whole != super().text() else "")
+
+
 def _bound_value(text):
     """A bound field as a number; None when it is empty (no bound) or unreadable."""
     try:
         return float(text)
     except (TypeError, ValueError):
         return None
-
-
-def result_value_text(value, fixed, lower='', upper=''):
-    """The text "Take result as model" writes into a value field for *value*.
-
-    A fitted number gets format_parameter_value's four decimals. Every digit is
-    kept instead (still without an exponent) when
-
-    * the value is *fixed* -- the fit did not move it: fixed by the user (a
-      preset such as Be/KB among them) or stopped on a bound, which it then
-      equals -- so rounding would only alter the model;
-    * rounding would carry it across its own *lower* / *upper* bound (a bound
-      with more decimals, the value on or next to it): the next fit would then
-      be refused for starting out of bounds.
-    """
-    if fixed:
-        return format_parameter_value(value, decimals=None)
-    text = format_parameter_value(value)
-    rounded = float(text)
-    low, high = _bound_value(lower), _bound_value(upper)
-    if (low is not None and rounded < low) or (high is not None and rounded > high):
-        return format_parameter_value(value, decimals=None)
-    return text
 
 
 MODEL_OPTIONS = [
@@ -294,7 +334,7 @@ class ParametersTable(QWidget):
             top_layout.addWidget(name_label)
             top_layout.addWidget(fix_cb)
             # Value input
-            value_input = QLineEdit("")
+            value_input = ValueLineEdit("")
             value_input.setFont(QFont('Arial', 10))
             value_input.setFixedWidth(80)
             validator_value = _make_value_validator()
@@ -445,7 +485,7 @@ class ParametersTable(QWidget):
             top_layout.addWidget(name_label)
             top_layout.addWidget(fix_cb)
             # Value input
-            value_input = QLineEdit("")
+            value_input = ValueLineEdit("")
             value_input.setFont(QFont('Arial', 10))
             value_input.setFixedWidth(80)
             validator_value = _make_value_validator()
@@ -977,6 +1017,89 @@ class ParametersTable(QWidget):
                         'param': self._parameter_name(base_row, par),
                     })
         return conflicts
+
+    # The last column of a Distr / Corr / Recon row holds a text; its flat
+    # parameter is only a placeholder, with no number in it.
+    _PLACEHOLDER_COLUMNS = {'Distr': 'probability density function',
+                            'Corr': 'dependency function', 'Recon': 'weights'}
+
+    def _flat_starts(self):
+        """``{row: flat index of its first parameter}`` for the baseline and
+        every row that is not 'None', in read_model's order."""
+        starts = {}
+        index = 0
+        for row in range(len(self.row_widgets)):
+            model_name = self.model_name_at(row)
+            if row > 0 and model_name == 'None':
+                continue
+            starts[row] = index
+            index += (number_of_baseline_parameters if row == 0
+                      else mod_len_def(model_name, include_special=True))
+        return starts
+
+    def get_links_to_distributions(self):
+        """Links ``=[X,Y]`` whose source X a distribution leaves without a value.
+
+        A link copies one plain number before the model is calculated, so it
+        cannot point at
+
+        * a parameter a Distr / Corr / Recon row sets -- the grey target of its
+          'par'. The distribution never reads the number left in that field:
+          the linked parameter would get that number, not the distribution,
+          and a fit would move it for the link alone. A Corr gives the
+          distribution to another parameter of the same component, a Distr of
+          its own to one of another component (a Recon cannot be shared);
+        * the last column of a Distr / Corr / Recon -- the probability density
+          function, the dependency function, the Recon weights -- whose flat
+          slot is only a placeholder.
+
+        Show model / Fit refuse to start while there is one.
+
+        Returns:
+            list of dicts, in table order: ``{'row', 'col', 'param', 'model',
+            'text', 'factor', 'factor_text', 'reason', 'marker_row',
+            'marker_model'}`` plus, for 'reason' 'placeholder', 'column' (the
+            name of that text column) and, for 'distributed', 'base_row',
+            'base_model', 'source_col', 'source_param', 'distribution_model'
+            (the Distr or Recon whose axis X the source follows; None for a
+            Corr with none above it) and 'dependency' (the source as a function
+            of X: 'X', or the Corr's dependency function).
+        """
+        starts = self._flat_starts()
+        sources = {}
+        for base_row, marker_rows in self.get_distribution_chains():
+            distribution_model = None
+            for row in marker_rows:
+                model_name = self.model_name_at(row)
+                marker = {'marker_row': row, 'marker_model': model_name}
+                sources[starts[row] + mod_len_def(model_name) - 1] = dict(
+                    marker, reason='placeholder', column=self._PLACEHOLDER_COLUMNS[model_name])
+                if model_name != 'Corr':
+                    distribution_model = model_name
+                par = self._par_value(row)
+                if base_row is None or par is None or not 1 <= par < self.row_params[base_row]:
+                    continue
+                sources[starts[base_row] + par] = dict(
+                    marker, reason='distributed', base_row=base_row,
+                    base_model=self.model_name_at(base_row), source_col=par,
+                    source_param=self._parameter_name(base_row, par),
+                    distribution_model=distribution_model,
+                    dependency=(self._value_input(row, 1).text().strip()
+                                if model_name == 'Corr' else 'X'))
+
+        links = []
+        for row in starts:
+            for col in range(self.row_params[row]):
+                field = self._value_input(row, col)
+                text = field.text().strip()
+                link = None if field.property('free_text') else split_link_field(text)
+                source = sources.get(int(link[0])) if link is not None else None
+                if source is not None:
+                    links.append(dict(
+                        source, row=row, col=col, param=self._parameter_name(row, col),
+                        model=self.model_name_at(row), text=text, factor=link[1],
+                        factor_text=text[2:-1].split(',')[1].strip()))
+        return links
 
     def update_distr_corr_highlights(self):
         """Grey out every parameter driven by a Distr/Corr/Recon row.

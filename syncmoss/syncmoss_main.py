@@ -78,7 +78,7 @@ from syncmoss.models import TI, FIT_CANCEL, FitInterrupted
 from syncmoss.Calibration import Calibration
 from syncmoss.constants import (model_colors, number_of_baseline_parameters,
                                SMS_POL_DEFAULT, NBASELINE_COLOR)
-from syncmoss.parameters_table import ParametersTable, result_value_text
+from syncmoss.parameters_table import ParametersTable, format_parameter_value
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def,
@@ -522,8 +522,9 @@ def _recon_weight_texts(model_list, recon_weights):
     """Serialize fitted 'Recon' weight vectors into ``{component_index: text}``,
     keyed by position in ``model_list`` (0 = baseline). Merged into the results
     table's ``expression_texts`` so the reconstructed distribution is shown in the
-    weight column and "Take result as model" round-trips it back to the table.
-    Recon models are matched to ``recon_weights`` in table order.
+    weight column and "Take result as model" round-trips it back to the table,
+    every digit of every weight. Recon models are matched to ``recon_weights``
+    in table order.
     """
     texts = {}
     if not recon_weights:
@@ -533,9 +534,42 @@ def _recon_weight_texts(model_list, recon_weights):
         if name == 'Recon':
             if re < len(recon_weights):
                 w = np.asarray(recon_weights[re], dtype=float).ravel()
-                texts[idx] = ','.join(f'{v:.6g}' for v in w)
+                texts[idx] = ','.join(repr(float(v)) for v in w)
             re += 1
     return texts
+
+
+def _distribution_link_line(link):
+    """The log line for a link ParametersTable.get_links_to_distributions
+    refuses, with what to use instead: a Corr for a parameter of the same
+    component, a Distr of its own for one of another component."""
+    param = link['param'] or f"column {link['col']}"
+    marker = f"{link['marker_model']} (table row {link['marker_row']})"
+    line = (f"{link['model']} (table row {link['row']}): parameter '{param}' "
+            f"is linked ({link['text']})")
+    if link['reason'] == 'placeholder':
+        return f"{line} to the {link['column']} column of {marker}, which holds no number"
+    source = link['source_param'] or f"column {link['source_col']}"
+    sets = "ties to the distribution" if link['marker_model'] == 'Corr' else "distributes"
+    line += (f" to '{source}' of {link['base_model']} (table row {link['base_row']}), "
+             f"which {marker} {sets}")
+    factor, scale, dependency = link['factor'], link['factor_text'], link['dependency']
+    if link['row'] == link['base_row']:
+        if factor != 1:
+            dependency = f"{scale}*X" if dependency == 'X' else f"{scale}*({dependency})"
+        return (f"{line} — use a Corr right after table row {link['marker_row']} "
+                f"instead: par = {link['col']}, dependency function {dependency}")
+    if link['distribution_model'] == 'Recon':
+        return f"{line} — a Recon cannot be shared with another component: remove the link"
+    advice = f"give it a Distr of its own instead, with par = {link['col']}"
+    if dependency == 'X' and factor == 1:
+        advice += (f" and the L, R, Num and probability density function of "
+                   f"table row {link['marker_row']}")
+    elif dependency == 'X':
+        advice += (f", L and R of table row {link['marker_row']} times {scale}, its "
+                   f"Num, and its probability density function with X/{scale} in "
+                   f"place of X")
+    return f"{line} — {advice}"
 
 
 class ShowModelThread(QThread):
@@ -1743,7 +1777,6 @@ class PhysicsApp(QMainWindow):
                 parameter_names, parameters, errors = view['names'], view['parameters'], view['errors']
                 expression_texts, result_links = view['texts'], view['links']
                 result_rows = view['rows']
-                fixed_at_start = {int(i) for i in view['fix']}
             else:
                 # Get data from results table
                 model_list = self.results_table.current_model_list
@@ -1754,8 +1787,6 @@ class PhysicsApp(QMainWindow):
                 expression_texts = getattr(self.results_table, 'expression_texts', {})
                 result_links = getattr(self.results_table, 'current_links', {})
                 result_rows = self.results_table.current_model_rows
-                # Fixed when the fit started: these values keep every digit
-                fixed_at_start = {int(i) for i in np.ravel(getattr(self.results_table, 'fix', []))}
             # The rows of the model the result was fitted with
             # (model_io.fitted_model_rows): their bounds go back into the table.
             # select_model below refills every row with the model's DEFAULT
@@ -1848,13 +1879,11 @@ class PhysicsApp(QMainWindow):
                         param_index += 1
                         continue
                     
-                    # Set parameter value: four decimals for a fitted one, every
-                    # digit for one the fit did not move (result_value_text)
-                    value = parameters[param_index]
+                    # Every digit of the value goes in; the field shows it
+                    # rounded (parameters_table.ValueLineEdit)
+                    text = format_parameter_value(parameters[param_index], decimals=None)
                     error = (errors[param_index]
                              if errors is not None and param_index < len(errors) else None)
-                    fixed = param_index in fixed_at_start or (error is not None and np.isnan(error))
-                    text = result_value_text(value, fixed, lower_input.text(), upper_input.text())
                     if special.startswith('=('):
                         # An independent value: a one-model fit gave every
                         # spectrum its own, so X stays the start value it was; a
@@ -1975,14 +2004,17 @@ class PhysicsApp(QMainWindow):
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
 
-        Three checks run up front:
+        Four checks run up front:
 
         * no active numeric parameter slot may be empty or hold a half-written
           link (a =[X,y] reference to a deleted parameter leaves its field empty,
           and '=[,1]' is a link the user has not finished typing; read_model
           would silently read either as 0.0),
         * no two Distr/Corr/Recon rows of one chain may share a 'par' (they would
-          overwrite each other in the same parameter slot), and
+          overwrite each other in the same parameter slot),
+        * no link =[X,y] may point at a parameter a Distr/Corr/Recon sets, or at
+          the text column of one (ParametersTable.get_links_to_distributions:
+          the link would copy a number the model never uses), and
         * every user-typed Expression/Distr/Corr text must evaluate.
 
         On failure the offending table fields turn red (they recover as soon as
@@ -2035,6 +2067,19 @@ class PhysicsApp(QMainWindow):
                 f"the same component must each take a DIFFERENT 'par' (they write "
                 f"into the same parameter slot, so only the last one would "
                 f"survive):\n" + "\n".join(lines),
+                "red",
+            )
+            return False
+
+        links = self.params_table.get_links_to_distributions()
+        if links:
+            for link in links:
+                self.params_table.mark_parameter_error(link['row'], link['col'])
+            self.set_status(
+                f"{action_label} was not started — link(s) to a distributed parameter "
+                f"or to a text column (a link copies one plain number, it cannot "
+                f"follow a distribution):\n"
+                + "\n".join(_distribution_link_line(link) for link in links),
                 "red",
             )
             return False

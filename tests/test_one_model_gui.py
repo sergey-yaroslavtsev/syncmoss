@@ -299,7 +299,8 @@ def test_take_result_of_a_single_fit_keeps_the_brackets_around_the_fitted_value(
                   np.eye(int(np.sum(~np.isnan(errors)))) * 1e-4, errors, fix, pt.get_expression_texts())
     rt.current_links = pt.get_link_snapshot()
     app.take_result()
-    assert _value_input(pt, 1, 1).text() == '=(0.1235)'
+    assert _value_input(pt, 1, 1).text() == '=(0.123456)'           # every digit ...
+    assert _value_input(pt, 1, 1).displayText() == '=(0.123)'       # ... shown rounded
 
 
 def test_a_click_on_a_spectrum_not_shown_offers_the_result_window(physics_app, tmp_path, monkeypatch):

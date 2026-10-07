@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QLabel, QMessageBox
 
 from syncmoss import model_io
 from syncmoss.constants import numco, numro, number_of_baseline_parameters as NB
-from syncmoss.parameters_table import result_value_text
+from syncmoss.parameters_table import format_parameter_value
 
 pytestmark = [pytest.mark.gui]
 
@@ -294,7 +294,7 @@ def test_take_result_fills_the_largest_model_the_table_holds(physics_app):
         start = NB + 4 * (row - 1)
         for col in (0, 1, 3):
             assert _value_input(pt, row, col).text() == \
-                result_value_text(fitted[start + col], False), (row, col)
+                format_parameter_value(fitted[start + col], decimals=None), (row, col)
     assert "red" not in physics_app.log.styleSheet().lower(), physics_app.log.toPlainText()
 
 
