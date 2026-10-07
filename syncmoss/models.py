@@ -2996,6 +2996,11 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     list of component names, ``p`` the flat parameter array, ``JN`` the number of
     integration samples and ``INS`` the instrumental-function parameters.
 
+    ``Norm`` is the same integration sum for an empty model
+    (instrumental_io.compute_norm, with the same JN, grid and source): the part
+    of the unit-area source line that the grid samples. CMS and SMS use it
+    differently -- see "SOURCE NORMALISATION" in the body.
+
     For a model with Nbaseline sections ``x_exp`` holds the velocities of every
     spectrum, one spectrum after the other. ``lengths`` gives the number of
     points of each of them. Without it the spectra are found from the velocity
@@ -3041,7 +3046,68 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         # H = Ht.sum(axis=0)
 
         N0 =                     (p[0] + p[3] * p[0]/10**2 * x_exp + p[2] * p[0] / 10 ** 4 * ((-1) * p[1] + x_exp) ** 2)
-        Hc = H * N0 / Norm * D + (p[4] + p[7] * p[4]/10**2 * x_exp + p[6] * p[4] / 10 ** 4 * ((-1) * p[5] + x_exp) ** 2)
+        N1 =                     (p[4] + p[7] * p[4]/10**2 * x_exp + p[6] * p[4] / 10 ** 4 * ((-1) * p[5] + x_exp) ** 2)
+
+        # SOURCE NORMALISATION. This belongs to HOW the integral above is done:
+        # if that changes, revisit it (see "WHEN THE CMS INTEGRATION CHANGES").
+        #
+        # H*D is the node sum  Q[S*T] = sum_k w_k T(v + u_k)  over the source
+        # offsets u_k of the grid E (w_k = source density * Jacobian * D, formed
+        # in TImod), and Norm is the same sum for an empty model (T = 1), i.e.
+        # Q[S]: the part of the unit-area source line S that the grid samples.
+        # The exact count rate is  N0 * int S(u) T(v + u) du + N1  over ALL u,
+        # and what to do with 1 - Norm depends on WHY Norm is not 1.
+        #
+        # CMS (Met == 1). The source is a Voigt with the natural Lorentzian,
+        # whose wings fall only as 1/u^2, and the Met == 1 grid (the three-log
+        # map of TImod, e = +-0.989, MulCoCMS = 0.28) ends at +-4.716 mm/s. About
+        # 0.6 % of the source lies beyond: 0.65 % analytically for G ~ 0.1 mm/s,
+        # 1 - Norm = 0.60 % at JN = 64 because the end nodes take in part of it.
+        # Those photons are real and, being far from almost every absorber line,
+        # almost all TRANSMITTED, so they are added as unabsorbed:
+        #     N0 * (Q[S*T] + (1 - Norm)) + N1.
+        # Dividing by Norm (the former CMS form, still the SMS one) gave them to
+        # the sampled core, where they were absorbed like core photons: every
+        # CMS line came out 1/Norm ~ 0.6 % too deep. Still neglected: the far
+        # wing photons that ARE absorbed, by a line more than 4.7 mm/s from the
+        # source energy -- up to a few 1e-4 N0, more for thicker absorbers.
+        # The new form is exactly  Norm * (former) + (1 - Norm):  with Nnr free a
+        # fit gives the same chi2 and line parameters and only Ns and Nnr move
+        # (Ns + Nnr stays, the resonant fraction Ns/(Ns + Nnr) grows by 1/Norm);
+        # with the CMS default Nnr = =[0,0.67] the former results are the new
+        # ones with Nnr = 0.66 Ns.
+        #
+        # SMS (Met == 0). The window (INSint.txt, set by `limits`) holds the
+        # whole source: Gaussians have no wings, the theoretical shape falls as
+        # E^-4 (~4e-5 of it outside). Norm - 1 is then the sum's OWN quadrature
+        # error, of either sign (theoretical shape, JN = 32: Norm = 1.0008), and
+        # dividing removes it. 1 - Norm would be a negative number of missing
+        # photons: an absorber black across the window would give N1 - 8e-4 N0,
+        # below the non-resonant level. Met 2/3 (not reachable from the GUI) keep
+        # the division too: Met 2's amplitudes are not normalised, and dividing
+        # is what normalises them.
+        #
+        # Both cases are  N0 * (W * Q[S*T]/Norm + (1 - W)) + N1,  W = the true
+        # area of S inside the window: W = 1 for SMS, and for CMS W is taken as
+        # Norm itself, the grid's own measure of what it samples.
+        #
+        # WHEN THE CMS INTEGRATION CHANGES:
+        # * another map, edge or JN: nothing to do, PROVIDED Norm comes from
+        #   compute_norm on the same grid, JN and G -- the term follows by itself;
+        # * a grid reaching far into the wings: 1 - Norm -> 0, the forms meet;
+        # * integrating over the ABSORBER energy instead (T once on one uniform
+        #   grid, the source evaluated analytically at every offset): the source
+        #   then has no window and there is no Norm at all,
+        #     C = N0 * (1 - sum_m S(E_m - v) * h * (1 - T(E_m))) + N1;
+        # * a CMS source that is not unit-area, or a window that holds all of
+        #   it: back to the division (or the W form above).
+        # Every caller passes the Norm of the G it integrates with. The CMS
+        # instrumental-function search fits G, so it recomputes Norm whenever G
+        # changes (instrumental_io.cms_norm_following_g).
+        if Met_repr == 1:
+            Hc = N0 * (H * D + (1 - Norm)) + N1
+        else:
+            Hc = H * N0 / Norm * D + N1
     else:
         Di, Co, V, MV = 0, 0, 0, 0
         Re = 0
@@ -3096,7 +3162,12 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             # Co = H[0][2]
             # V = H[0][3]
             H = np.array(H, dtype=object).sum(axis=0)
-            H = H * N0 / Norm_i * D + N1
+            # per section, the SOURCE NORMALISATION of the single-spectrum branch:
+            # CMS adds the unsampled source photons as unabsorbed, SMS divides
+            if Met_i == 1:
+                H = N0 * (H * D + (1 - Norm_i)) + N1
+            else:
+                H = H * N0 / Norm_i * D + N1
             Hc = np.concatenate((Hc, H))
 
             for j in range(MV, len(model)):

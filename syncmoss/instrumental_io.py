@@ -514,7 +514,10 @@ def analyze_instrumental_methods(app, spectrum_files, use_dat_metadata):
 
 
 def compute_norm(pool, JN, method_params):
-    """Normalization integral for a resolved method (CMS or SMS)."""
+    """Normalization integral for a resolved method (CMS or SMS): the part of the
+    unit-area source line that TI's grid samples. It must be computed with the
+    same JN and source as the TI call it is passed to; how CMS and SMS use it
+    is explained at "SOURCE NORMALISATION" in models.TI."""
     pNorm = np.array([float(0)] * number_of_baseline_parameters)
     pNorm[0] = 1
     return m5.TI(
@@ -522,6 +525,27 @@ def compute_norm(pool, JN, method_params):
         method_params['x0'], method_params['MulCo'], method_params['INS'],
         [0], [0], Met=method_params['Met'],
     )[0]
+
+
+def cms_norm_following_g(pool, MulCoCMS):
+    """``norm(JN, G)``: compute_norm of the CMS source of width G on JN points.
+
+    models.TI needs, for CMS, the Norm of the very G and JN it integrates with
+    (see "SOURCE NORMALISATION" there). The instrumental-function search FITS G,
+    so one Norm computed at the start would go stale. The last value is kept and
+    recomputed only when G or JN differs from the previous call: the numerical
+    derivatives of every other parameter reuse it.
+    """
+    last = {}
+
+    def norm(JN, G):
+        key = (int(JN), float(G))
+        if last.get('key') != key:
+            last['key'] = key
+            last['Norm'] = compute_norm(pool, int(JN), {'x0': 0, 'MulCo': MulCoCMS,
+                                                        'INS': G, 'Met': 1})
+        return last['Norm']
+    return norm
 
 
 # How many times more integration points the high-resolution convergence check
@@ -1284,14 +1308,16 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
     print(fix)
     _refuse_too_few_points(len(B), len(p) - len(np.unique(fix)), data['regions'])
 
-    # ``lengths`` tells TI where each joined spectrum ends (None: one spectrum)
+    # ``lengths`` tells TI where each joined spectrum ends (None: one spectrum).
+    # CMS: TI needs the Norm of the G being fitted (p[-1]) and of the current JN.
+    cms_norm = cms_norm_following_g(pool, MulCoCMS)
     if mode == 1:
         if CMS_ch == 0:
             def INSSS(x_exp, p, lengths=lengths):
                 return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon, lengths=lengths)
         if CMS_ch == 1:
             def INSSS(x_exp, p, lengths=lengths):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Distri, Cor, Met=1, Recon=Recon, lengths=lengths)
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Distri, Cor, Met=1, Norm=cms_norm(JN, p[-1]), Recon=Recon, lengths=lengths)
 
     # CMS_ch could not be equal to 1 for mode 0
     # Not meaningful to use ESRF standard single line absorber for CMS
@@ -1308,7 +1334,7 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
                 return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
         if CMS_ch == 1:
             def INSSS(x_exp, p, lengths=lengths):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Met=1, lengths=lengths)
+                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Met=1, Norm=cms_norm(JN, p[-1]), lengths=lengths)
 
     # Normalization function
     # to insure sum of amplitudes squared = 1 in case of SMS
