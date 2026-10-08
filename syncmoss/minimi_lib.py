@@ -208,8 +208,39 @@ def norm(values):
 # =============================================================================
 # Jacobian by forward finite differences
 # =============================================================================
+def _bump_parameter(params, k, perturbation, confu, Expr, NExpr):
+    """``params`` with parameter *k* stepped by *perturbation*, coupling honoured.
+
+    Split out of ``compute_jacobian``'s loop (as on the SYNCtime branch) so all
+    the bumped vectors can be built before any of them is evaluated; the linked
+    expressions and the linear constraints are propagated exactly as the
+    original in-line code did.
+    """
+    bumped = np.copy(params)
+    bumped[k] = bumped[k] + perturbation
+
+    # Re-evaluate linked expressions after the bump and propagate their change
+    # through any linear constraints attached to the expression target.
+    for e_i in range(0, len(Expr)):
+        bumped[NExpr[e_i]] = _eval_expr(str(Expr[e_i]), bumped)
+        expr_delta = bumped[NExpr[e_i]] - params[NExpr[e_i]]
+        if np.any(confu[1] == NExpr[e_i]):
+            matches = np.where(confu[1] == NExpr[e_i])[0]
+            for c_i in range(0, len(matches)):
+                bumped[int(confu[0][matches[c_i]])] = bumped[int(confu[0][matches[c_i]])] + expr_delta * confu[2][matches[c_i]]
+
+    # If the bumped parameter is itself the source of a linear constraint (and
+    # is not driven by an expression), propagate its bump to the constrained
+    # parameters too.
+    if np.any(confu[1] == k) and not np.any(NExpr == k):
+        matches = np.where(confu[1] == k)[0]
+        for c_i in range(0, len(matches)):
+            bumped[int(confu[0][matches[c_i]])] = bumped[int(confu[0][matches[c_i]])] + perturbation * confu[2][matches[c_i]]
+    return bumped
+
+
 def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
-                     Expr, NExpr, verbose=False):
+                     Expr, NExpr, verbose=False, batch_eval=None):
     """Forward-difference Jacobian of the model ``model_func(x_exp, params)``.
 
     For every free parameter ``k`` (not in ``fix``) we bump ``params[k]`` by a
@@ -223,6 +254,13 @@ def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
     Parameter coupling (``Expr``/``NExpr`` linked expressions and ``confu`` linear
     constraints) is honoured while bumping, exactly as in the original.
 
+    ``batch_eval``, when given, is called ONCE with the list of bumped parameter
+    vectors and must return the model output for each, in order -- it is how a
+    caller whose model is expensive gets the columns computed together (the same
+    hook as on the SYNCtime branch). The vectors are pure bookkeeping (no model
+    evaluation happens while they are built), so the evaluation COUNT and ORDER
+    are identical to the serial path.
+
     Returns ``(jac, inactive)``:
       * ``jac``  : array (n_effective_free, n_data), one row per parameter that
                    actually moves the model.
@@ -233,11 +271,12 @@ def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
     jac_rows = []        # Jacobian rows for parameters that move the model
     inactive = []            # indices of "inactive" parameters (all-zero column)
 
+    plan = []            # (k, perturbation, bumped) -- built without evaluating
+
     for k in range(0, len(params)):
         if np.any(fix == k):
             continue
 
-        bumped = np.copy(params)
         # ``perturbation`` is the tiny increment h added to parameter k to estimate
         # its derivative numerically:  dModel/dp_k ~= (model(p+h) - model(p)) / h.
         # h is chosen RELATIVE to the parameter (1e-6 * |p_k|) so it scales with the
@@ -252,29 +291,18 @@ def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
         #   column may read as all-zero -> the parameter is reported inactive). A
         #   per-parameter "typical scale" would be the principled fix but needs
         #   problem-specific input the API does not currently take.
-        perturbation = np.maximum(10 ** -12, np.abs(bumped[k]) / 10 ** 6)
-        bumped[k] = bumped[k] + perturbation
+        perturbation = np.maximum(10 ** -12, np.abs(params[k]) / 10 ** 6)
+        plan.append((k, perturbation,
+                     _bump_parameter(params, k, perturbation, confu, Expr, NExpr)))
 
-        # Re-evaluate linked expressions after the bump and propagate their change
-        # through any linear constraints attached to the expression target.
-        for e_i in range(0, len(Expr)):
-            bumped[NExpr[e_i]] = _eval_expr(str(Expr[e_i]), bumped)
-            expr_delta = bumped[NExpr[e_i]] - params[NExpr[e_i]]
-            if np.any(confu[1] == NExpr[e_i]):
-                matches = np.where(confu[1] == NExpr[e_i])[0]
-                for c_i in range(0, len(matches)):
-                    bumped[int(confu[0][matches[c_i]])] = bumped[int(confu[0][matches[c_i]])] + expr_delta * confu[2][matches[c_i]]
+    # One model evaluation -> one Jacobian column (forward difference). This is
+    # the loop that dominates the whole fit, so it is the one worth batching.
+    if batch_eval is not None and len(plan) > 1:
+        model_ups = list(batch_eval([bumped for _k, _h, bumped in plan]))
+    else:
+        model_ups = [model_func(x_exp, bumped) for _k, _h, bumped in plan]
 
-        # If the bumped parameter is itself the source of a linear constraint (and
-        # is not driven by an expression), propagate its bump to the constrained
-        # parameters too.
-        if np.any(confu[1] == k) and not np.any(NExpr == k):
-            matches = np.where(confu[1] == k)[0]
-            for c_i in range(0, len(matches)):
-                bumped[int(confu[0][matches[c_i]])] = bumped[int(confu[0][matches[c_i]])] + perturbation * confu[2][matches[c_i]]
-
-        # One model evaluation -> one Jacobian column (forward difference).
-        model_up = model_func(x_exp, bumped)
+    for (k, perturbation, _bumped), model_up in zip(plan, model_ups):
         jac_col = (model_up - model_base) / perturbation
 
         if np.all(jac_col == 0):
@@ -307,7 +335,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
               confu=np.array([[-1], [-1], [0]], dtype=float),
               bounds=np.array([[], []], dtype=float), Expr=[],
               NExpr=np.array([], dtype=int), MI=10, MI2=20, nu0=2.618,
-              tau0=0.001, eps=10 ** -10, fixCH=0, n_reg=0):
+              tau0=0.001, eps=10 ** -10, fixCH=0, n_reg=0, batch_eval=None):
     """Levenberg-Marquardt least-squares fit of ``model_func(x_exp, params)`` to ``y_exp``.
 
     Optimised twin of the previous ``minimi_lib_old.minimi_hi`` — identical signature
@@ -317,6 +345,11 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     parameters (``fix``), linear parameter coupling (``confu``), box ``bounds``
     and linked expressions (``Expr`` evaluated into the ``NExpr`` indices).
     ``MI`` / ``MI2`` cap the outer/inner iterations; ``eps`` is the tolerance.
+
+    ``batch_eval`` (default None) offers the JACOBIAN's model evaluations up in
+    one list instead of one at a time, so an expensive model can compute the
+    columns together; see :func:`compute_jacobian`. It does not change the
+    number of evaluations.
 
     ``n_reg`` (default 0, fully backward compatible) is the number of TRAILING
     rows of ``y_exp`` / the model output that are Tikhonov-style regularization
@@ -354,6 +387,11 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     def model_func(_x, _p):
         return np.asarray(_raw_model(_x, _p), dtype=float)
 
+    _raw_batch = batch_eval
+    if _raw_batch is not None:                 # the same float64 coercion for a batch
+        def batch_eval(_plist):
+            return [np.asarray(m, dtype=float) for m in _raw_batch(_plist)]
+
     # --- Levenberg-Marquardt symbol map (textbook Greek -> name used here) --- #
     #   mu   ->  damping         per-parameter damping added to the Hessian diagonal
     #   tau  ->  damping_scale   scalar setting mu relative to diag(Hessian)
@@ -390,7 +428,8 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     # ----------------------------------------------------------------------- #
     model_cur = model_func(x_exp, params)     # model at the starting point
     # (compute_jacobian copies params internally, so we can pass it directly)
-    jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr)
+    jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
+                                     batch_eval=batch_eval)
     jac_T = jac.T
     hessian = np.matmul(jac, jac_T)           # Gauss-Newton Hessian J.J^T
 
@@ -428,7 +467,8 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
         if True:
             if strategy_count % 2 == 0:
                 # --- Strategy A: refresh Jacobian, damping = scale*diag(Hessian) --
-                jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr)
+                jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
+                                                 batch_eval=batch_eval)
                 if len(jac) == 0:
                     print('no move is found, J=0')
                     break
@@ -697,7 +737,8 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
         if nudge_failed == 0:
             params, errors, chi2_red, covariance = minimi_hi(
                 model_func, x_exp, y_exp, params, fix_orig, confu, bounds,
-                Expr, NExpr, np.maximum(int(MI / 2), 1), MI2, nu0, tau0, eps, 1, n_reg)
+                Expr, NExpr, np.maximum(int(MI / 2), 1), MI2, nu0, tau0, eps, 1, n_reg,
+                batch_eval)
             if np.all(params == params_bak):
                 errors = errors_bak
 

@@ -588,6 +588,10 @@ def fit_model(app, inputs, spectrum_files, pool):
                 return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
                              Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol, Recon=recon,
                              lengths=lengths)
+
+            def func_variants(x, p, recons, lengths=lengths):
+                return m5.TI_recon_variants(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
+                                            Distri, Cor, mp0['Met'], mp0['Norm'], pol, recons, lengths)
         else:
             # Dedicated per-section instrumental parameters (e.g. mixing CMS and
             # SMS): TI receives one value per section as lists. The full model and
@@ -605,13 +609,21 @@ def fit_model(app, inputs, spectrum_files, pool):
                              Distri, Cor, Met=met_list, Norm=norm_list, pol=pol, Recon=recon,
                              lengths=lengths)
 
+            def func_variants(x, p, recons, lengths=lengths):
+                return m5.TI_recon_variants(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
+                                            Distri, Cor, met_list, norm_list, pol, recons, lengths)
+
         # The model at the fitted points (each spectrum keeps its own number of
         # them when exclusion regions are applied)
         if regions:
             def func_data(x, p, recon=Recon):
                 return func(x, p, recon, lengths_data)
+
+            def func_variants_data(x, p, recons):
+                return func_variants(x, p, recons, lengths_data)
         else:
             func_data = func
+            func_variants_data = func_variants
 
         # Box bounds (from the table: read_fit_inputs), and the user's fixes
         # with the automatic ones: constraints, distribution expressions,
@@ -682,8 +694,30 @@ def fit_model(app, inputs, spectrum_files, pool):
                 spec = np.asarray(func_data(A_data, pw[:base_len], _rebuild_recon(pw)), dtype=float)
                 pen = _recon_penalty_rows(pw[base_len:], recon_infos, reg_scale)
                 return np.concatenate([spec, pen])
+
+            def batch_eval(pw_list):
+                # The Jacobian's vectors that differ only in the Recon weights
+                # (the tail) share every copy of the distributed component:
+                # computed together (models.TI_recon_variants). The others, one
+                # by one as before.
+                out = [None] * len(pw_list)
+                groups = {}
+                for j, pw in enumerate(pw_list):
+                    groups.setdefault(np.asarray(pw[:base_len], dtype=float).tobytes(), []).append(j)
+                for idx in groups.values():
+                    if len(idx) == 1:
+                        out[idx[0]] = func_fit(A_fit, pw_list[idx[0]])
+                        continue
+                    specs = func_variants_data(A_data, np.asarray(pw_list[idx[0]][:base_len], dtype=float),
+                                               [_rebuild_recon(pw_list[j]) for j in idx])
+                    for j, spec in zip(idx, specs):
+                        out[j] = np.concatenate([np.asarray(spec, dtype=float),
+                                                 _recon_penalty_rows(pw_list[j][base_len:], recon_infos,
+                                                                     reg_scale)])
+                return out
         else:
             func_fit, A_fit, B_fit, p0_fit, bounds_fit, n_reg = func_data, A_data, B_data, p0, bounds, 0
+            batch_eval = None
 
         # Not more free values than points: the fit is not started
         n_free = len(p0_fit) - len(fix)
@@ -713,7 +747,8 @@ def fit_model(app, inputs, spectrum_files, pool):
             nu0=2.618,
             tau0=tau0,
             eps=eps,
-            n_reg=n_reg
+            n_reg=n_reg,
+            batch_eval=batch_eval
         )
         if hi2 > 1.25:
             print('hi2 is too high let me try to continue')
@@ -730,7 +765,8 @@ def fit_model(app, inputs, spectrum_files, pool):
                 nu0=2.618,
                 tau0=tau0,
                 eps=eps,
-                n_reg=n_reg
+                n_reg=n_reg,
+                batch_eval=batch_eval
             )
             if np.array_equal(pfit, pO) == True:
                 if len(er) == 1:

@@ -40,6 +40,9 @@ import os
 import platform
 import time
 import threading
+import hashlib as _hashlib
+import re as _re
+from collections import OrderedDict as _OrderedDict
 from numba import njit, prange
 import scipy
 import scipy.linalg
@@ -2055,7 +2058,19 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
     return (g1, g2, g3, g4, g5, g6), (w1, w2, w3, w4, w5, w6)
 
 
-def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0, JN=64):
+# A component directly followed by a Distr/Recon row is replaced by that row's
+# distributed copies (see the skip at the top of TImod's component loop), so
+# computing it is wasted work -- one whole component per evaluation, which the
+# batched Recon weight columns would pay once per weight list. Its slot count is
+# all that is needed to step over it. SKIP_REPLACED_COMPONENT = False computes it
+# anyway (the former behaviour; the result is the same, bit for bit).
+SKIP_REPLACED_COMPONENT = True
+_COMPONENT_SLOTS = {'Singlet': 4, 'Doublet': 9, 'Sextet': 14, 'Sextet(rough)': 14, 'MDGD': 17, 'Relax_2S': 14,
+                    'Average_H': 11, 'Relax_MS': 11, 'ASM': 15, 'SCDW': 27, 'Hamiltonian': 15,
+                    'Hamilton_mc': 12, 'Hamilton_pc': 9}
+
+
+def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0, JN=64, recon_cache=None):
         # SCR = np.array(x_exp)
         SCR = x_exp
         N = np.array([float(0)]*len(SCR))
@@ -2064,6 +2079,11 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
         # V = number_of_baseline_parameters
         CH = 1
         CHold = CH
+        # Where this call's entries start in the GLOBAL Distri / Cor / Recon lists
+        # (0 for a single spectrum; TI passes a later section's own offsets). The
+        # nested call of a multidimensional distribution counts its entries from
+        # the start of THIS model (mDk, mCk, mRk) and must add these.
+        Di0, Co0, Re0 = Di, Co, Re
 
 
         if Met == -1:
@@ -2177,6 +2197,17 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
 
         for i in range (0, len(model)):
             Smat_t = Smat
+            if (SKIP_REPLACED_COMPONENT and i + 1 < len(model) and model[i + 1] in ('Distr', 'Recon')
+                    and model[i] in _COMPONENT_SLOTS):
+                # Replaced by its distributed copies: the Distr/Recon row right
+                # after it rewinds CH and Smat to BEFORE it (CHold / Smat_old) and
+                # adds the copies instead, so its own contribution is never used.
+                # Only step over its slots (the copies read their parameters from
+                # p) and keep the rewind point, as the end of the loop would.
+                V += _COMPONENT_SLOTS[model[i]]
+                CHold = CH
+                Smat_old = Smat
+                continue
             if model[i] == 'Singlet':
                 I = abs(p[V])
                 S = (-1) * p[V + 1]*MulCo + E
@@ -2808,7 +2839,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                             mCk += 1
                         if model[mk] == 'Recon':
                             mRk += 1
-                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[mRk:mRk+Rk])*Num)
+                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[Di0+mDk:Di0+mDk+Dk]]*Num).flatten(), np.array([Cor[Co0+mCk:Co0+mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk])*Num)
                     CHt = CH * CH_in                                  # scalar (thin) part multiplies in, as before
                     if Smat_in is not None:                          # thick part joins the CURRENT layer's Smat
                         Smat_t = Smat_in if Smat is None else Smat + Smat_in
@@ -2857,18 +2888,29 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
 
                 pN = np.reshape(np.ravel(np.array([p[V-Prev:V]]*Num), order='F'), (Prev, Num))
 
-                pN[0] = ge * p[V-Prev]
+                amp = p[V-Prev]
+                pN[0] = ge * amp
+                # The weights act only through row 0 (the copies' amplitudes) --
+                # unless that row is the distributed parameter or a Corr target.
+                amp_scaled = int(p[V]) != 0
 
                 pN[int(p[V])] = X
                 V += 7
 
                 for j in range(1, len(model)-i):
                     if model[i+j] == 'Corr':
+                        amp_scaled = amp_scaled and int(p[V]) != 0
                         pN[int(p[V])] = eval(str(Cor[Co])) + 0*X
                         V += 2
                         Co += 1
                     else:
                         break
+                # Several weight lists over the same copies (recon_cache given, see
+                # TImod_recon_group): the copies at UNIT weight, computed once.
+                pN_unit = None
+                if recon_cache is not None and amp_scaled:
+                    pN_unit = pN.copy()
+                    pN_unit[0] = amp
                 pN = np.reshape(np.ravel(pN, order='F'), (Num, Prev)).flatten()
 
                 MultiDistr = 0
@@ -2890,7 +2932,25 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                             mCk += 1
                         if model[mk] == 'Recon':
                             mRk += 1
-                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[mDk:mDk+Dk]]*Num).flatten(), np.array([Cor[mCk:mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[mRk:mRk+Rk])*Num)
+                    if pN_unit is None:
+                        CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[Di0+mDk:Di0+mDk+Dk]]*Num).flatten(), np.array([Cor[Co0+mCk:Co0+mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk])*Num)
+                    else:
+                        # Each copy once at unit weight, then recombined with this
+                        # list's weights: a copy's cross-section is linear in its
+                        # amplitude, so its thin part enters as CH_c**ge_c and its
+                        # thick part as ge_c*Smat_c. Equal to the call above up to
+                        # rounding.
+                        units = recon_cache.get(Re)
+                        if units is None:
+                            units = [TImod(x_exp, pN_unit[:, c].copy(), np.array(model[k:i]), E, x0, MulCo, INS, np.array(Distri[Di0+mDk:Di0+mDk+Dk]).flatten(), np.array(Cor[Co0+mCk:Co0+mCk+Ck]).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk]))
+                                     for c in range(Num)]
+                            recon_cache[Re] = units
+                        CH_in, Smat_in = 1, None
+                        for c in range(Num):
+                            CH_c, Smat_c = units[c]
+                            CH_in = CH_in * np.power(CH_c, ge[c])
+                            if Smat_c is not None:
+                                Smat_in = ge[c] * Smat_c if Smat_in is None else Smat_in + ge[c] * Smat_c
                     CHt = CH * CH_in
                     if Smat_in is not None:
                         Smat_t = Smat_in if Smat is None else Smat + Smat_in
@@ -3008,6 +3068,142 @@ def _pool_starmap(pool, func, args):
             raise FitInterrupted()
         result.wait(0.05)
     return result.get()
+
+
+# --- Reuse of a spectrum's node sum (models with Nbaseline sections) ---------
+# In a simultaneous fit one Jacobian column moves ONE parameter. Unless it is
+# shared, it belongs to one spectrum, and every other spectrum's node sum -- the
+# costly part of TI, before that spectrum's baseline is applied -- comes out
+# exactly as before. TI therefore keeps the last few sums, keyed by everything a
+# sum depends on (_node_sum_key), and reuses them. This is bit-identical: the
+# stored sum IS the one that would be recomputed. A spectrum's own baseline is
+# not in the key (it is applied after the sum), so its Ns/Nnr/... columns need no
+# integration at all. The spectra that do need computing go to the pool in ONE
+# submission. NODE_SUM_REUSE = False computes every spectrum at every call.
+NODE_SUM_REUSE = True
+_NODE_SUMS = _OrderedDict()
+_NODE_SUMS_LOCK = threading.Lock()
+_P_INDEX = _re.compile(r'p\[\s*(\d+)\s*\]')
+
+
+def _node_sum_key(x, p, v_from, v_to, model_i, strings, recons, JN, x0, MulCo, INS, Met, pol, offsets):
+    """Digest of everything one spectrum's node sum depends on: its velocities,
+    its component parameters p[v_from:v_to] (its baseline excluded), the values
+    of the p[k] named in the distribution/correlation expressions, those
+    expressions themselves, the Recon weights, the instrumental function, JN,
+    the polarization and the section's offsets. None -- never reused -- when an
+    expression addresses p in a way that cannot be read off (p[2+3], ...)."""
+    refs = []
+    for s in strings:
+        s = str(s)
+        found = _P_INDEX.findall(s)
+        if len(found) != s.count('p['):
+            return None
+        refs += [int(k) for k in found]
+    h = _hashlib.blake2b(digest_size=16)
+    h.update(np.ascontiguousarray(x, dtype=float).tobytes())
+    h.update(np.ascontiguousarray(np.asarray(p, dtype=float)[v_from:v_to]).tobytes())
+    if refs:
+        h.update(np.asarray([float(p[k]) for k in refs]).tobytes())
+    for r in recons:
+        h.update(np.ascontiguousarray(np.asarray(r, dtype=float).ravel()).tobytes())
+    h.update(np.ascontiguousarray(np.atleast_1d(np.asarray(INS, dtype=float))).tobytes())
+    h.update(repr((tuple(str(m) for m in model_i), int(JN), float(x0), float(MulCo), int(Met), float(pol),
+                   tuple(str(s) for s in strings), offsets)).encode())
+    return h.digest()
+
+
+def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, Recon, lengths):
+    """TI's bookkeeping for every spectrum (Nbaseline section) of a model: its
+    velocities, model rows, source-line grid E/D, baseline N0/N1, offsets into
+    p / Distri / Cor / Recon, and the key of its node sum (_node_sum_key). A
+    model without Nbaseline is one section. Shared by TI and TI_recon_variants."""
+    per_section = isinstance(Met, (list, tuple, np.ndarray))
+    n_sec = list(model).count('Nbaseline') + 1
+    if n_sec == 1:
+        x_separate = [x_exp]
+    elif lengths is not None:
+        # Every spectrum's own number of points: nothing to guess
+        if len(lengths) != n_sec or sum(lengths) != len(x_exp):
+            raise ValueError(f"spectra of {list(lengths)} points do not match the "
+                             f"{n_sec} sections of the model and "
+                             f"the {len(x_exp)} velocities given")
+        x_separate = []
+        start = 0
+        for length in lengths:
+            x_separate.append(x_exp[start:start + length])
+            start += length
+    else:
+        step_sign = np.sign(x_exp[1]-x_exp[0])
+        x_separate = []
+        start = 0
+        for i in range(1, len(x_exp)):
+            if step_sign != np.sign(x_exp[i]-x_exp[i-1]):
+                x_separate.append(x_exp[start:i])
+                start = i
+        x_separate.append(x_exp[start:])
+    model_separate = []
+    startM = 0
+    for i in range(0, len(model)):
+        if model[i] == 'Nbaseline':
+            model_separate.append(model[startM:i])
+            startM = i+1
+    model_separate.append(model[startM:])
+
+    Di, Co, V, MV, Re = 0, 0, 0, 0, 0
+    sections = []
+    for i in range(0, n_sec):
+        # Instrumental parameters (and the matching source-line grid) for this
+        # section: per-section values when lists were passed, else the shared
+        # scalars.
+        if per_section:
+            x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0[i], MulCo[i], INS[i], Met[i], Norm[i]
+        else:
+            x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0, MulCo, INS, Met, Norm
+        E = np.linspace(-1 + (10 ** -2)*(Met_i == 1 or Met_i ==2) + 10**-3, 1 - (10 ** -2)*(Met_i == 1 or Met_i ==2) - 10**-3, JN)
+        D = (E[1] - E[0])
+        N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
+        N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
+        V = V + number_of_baseline_parameters
+        V_i, Di_i, Co_i, Re_i = V, Di, Co, Re
+
+        for j in range(MV, len(model)):
+            MV += 1
+            V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
+                + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='SCDW')\
+                + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
+                + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
+                + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
+            if model[j] == 'Distr':
+                Di += 1
+            if model[j] == 'Corr':
+                Co += 1
+            if model[j] == 'Recon':
+                Re += 1
+            if model[j] == 'Nbaseline':
+                break
+
+        # What the section's node sum reads: its own components p[V_i:V] and
+        # its own Distri/Cor/Recon entries (a multidimensional distribution's
+        # nested call too, through TImod's Di0/Co0/Re0).
+        ms = list(model_separate[i])
+        strings = list(Distri[Di_i:Di_i + ms.count('Distr')]) + list(Cor[Co_i:Co_i + ms.count('Corr')])
+        recons = list(Recon[Re_i:Re_i + ms.count('Recon')])
+        key = _node_sum_key(x_separate[i], p, V_i, V, ms, strings, recons, JN, x0_i, MulCo_i, INS_i,
+                            Met_i, pol, (V_i, Di_i, Co_i, Re_i)) if NODE_SUM_REUSE else None
+        sections.append(dict(x=x_separate[i], model=model_separate[i], E=E, D=D, x0=x0_i, MulCo=MulCo_i,
+                             INS=INS_i, Met=Met_i, Norm=Norm_i, N0=N0, N1=N1, V=V_i, Di=Di_i, Co=Co_i,
+                             Re=Re_i, key=key))
+    return sections
+
+
+def _section_spectrum(s, H):
+    """A section's spectrum from its node sum H: the baseline and the SOURCE
+    NORMALISATION of TI's single-spectrum branch -- CMS adds the unsampled
+    source photons as unabsorbed, SMS divides."""
+    if s['Met'] == 1:
+        return s['N0'] * (H * s['D'] + (1 - s['Norm'])) + s['N1']
+    return H * s['N0'] / s['Norm'] * s['D'] + s['N1']
 
 
 def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0], lengths=None):  # num - number of Gausians # PS - spc, p - InsFun
@@ -3135,86 +3331,149 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         else:
             Hc = H * N0 / Norm * D + N1
     else:
-        Di, Co, V, MV = 0, 0, 0, 0
-        Re = 0
         Hc = []
-        if lengths is not None:
-            # Every spectrum's own number of points: nothing to guess
-            if len(lengths) != model.count('Nbaseline') + 1 or sum(lengths) != len(x_exp):
-                raise ValueError(f"spectra of {list(lengths)} points do not match the "
-                                 f"{model.count('Nbaseline') + 1} sections of the model and "
-                                 f"the {len(x_exp)} velocities given")
-            x_separate = []
-            start = 0
-            for length in lengths:
-                x_separate.append(x_exp[start:start + length])
-                start += length
-        else:
-            step_sign = np.sign(x_exp[1]-x_exp[0])
-            x_separate = []
-            start = 0
-            Num_x = 0
-            for i in range(1, len(x_exp)):
-                if step_sign != np.sign(x_exp[i]-x_exp[i-1]):
-                    x_separate.append(x_exp[start:i])
-                    start = i
-                    Num_x += 1
-            x_separate.append(x_exp[start:])
-        model_separate = []
-        startM = 0
-        Num_m = 0
-        for i in range(0, len(model)):
-            if model[i] == 'Nbaseline':
-                model_separate.append(model[startM:i])
-                startM = i+1
-                Num_m += 1
-        model_separate.append(model[startM:])
+        # Pass 1, section by section: grid, baseline, offsets (TI's own
+        # bookkeeping) and the key of the section's node sum.
+        sections = _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol,
+                                      Recon, lengths)
 
-        for i in range(0, model.count('Nbaseline')+1):
-            # Instrumental parameters (and the matching source-line grid) for this
-            # section: per-section values when lists were passed, else the shared
-            # scalars — in which case E/D keep the values computed above.
-            if per_section:
-                x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0[i], MulCo[i], INS[i], Met[i], Norm[i]
-                E = np.linspace(-1 + (10 ** -2)*(Met_i == 1 or Met_i ==2) + 10**-3, 1 - (10 ** -2)*(Met_i == 1 or Met_i ==2) - 10**-3, JN)
-                D = (E[1] - E[0])
-            else:
-                x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0, MulCo, INS, Met, Norm
-            N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
-            N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
-            V = V + number_of_baseline_parameters
-            H = _pool_starmap(pool, TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V, False, Recon, Re, JN) for Ex in E])
-            # Di = H[0][1]
-            # Co = H[0][2]
-            # V = H[0][3]
-            H = np.array(H, dtype=object).sum(axis=0)
-            # per section, the SOURCE NORMALISATION of the single-spectrum branch:
-            # CMS adds the unsampled source photons as unabsorbed, SMS divides
-            if Met_i == 1:
-                H = N0 * (H * D + (1 - Norm_i)) + N1
-            else:
-                H = H * N0 / Norm_i * D + N1
-            Hc = np.concatenate((Hc, H))
+        # Pass 2: the stored sums, then ONE pool submission for the sections
+        # that still need computing -- each summed exactly as before.
+        with _NODE_SUMS_LOCK:
+            for s in sections:
+                s['H'] = _NODE_SUMS.get(s['key']) if s['key'] is not None else None
+                if s['H'] is not None:
+                    _NODE_SUMS.move_to_end(s['key'])
+        todo = [s for s in sections if s['H'] is None]
+        if todo:
+            tasks, spans = [], []
+            for s in todo:
+                first = len(tasks)
+                tasks += [(s['x'], p, s['model'], Ex, s['x0'], s['MulCo'], s['INS'], Distri, Cor, s['Met'], pol,
+                           -2, [], s['Di'], s['Co'], s['V'], False, Recon, s['Re'], JN) for Ex in s['E']]
+                spans.append((first, len(tasks)))
+            H = _pool_starmap(pool, TImod, tasks)
+            with _NODE_SUMS_LOCK:
+                for s, (a, b) in zip(todo, spans):
+                    s['H'] = np.array(H[a:b], dtype=object).sum(axis=0)
+                    if s['key'] is not None:
+                        _NODE_SUMS[s['key']] = s['H']
+                while len(_NODE_SUMS) > 4 * len(sections) + 8:   # the base and the latest bump of each, with room
+                    _NODE_SUMS.popitem(last=False)
 
-            for j in range(MV, len(model)):
-                MV += 1
-                V += int(4 * (model[j] == 'Singlet') + 9 * (model[j] == 'Doublet') + 14 * (model[j] == 'Sextet') + 14 * (model[j] == 'Sextet(rough)') + 17 * (model[j] == 'MDGD')\
-                    + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='SCDW')\
-                    + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
-                    + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
-                    + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
-                # print('V is equal to ', V)
-                if model[j] == 'Distr':
-                    Di += 1
-                if model[j] == 'Corr':
-                    Co += 1
-                if model[j] == 'Recon':
-                    Re += 1
-                if model[j] == 'Nbaseline':
-                    break
-            # print('finally V is equal to ', V)
+        # Pass 3: baseline and source normalisation, section by section.
+        for s in sections:
+            Hc = np.concatenate((Hc, _section_spectrum(s, s['H'])))
 
     return Hc
+
+
+# --- Several Recon weight lists at once (a fit's Recon weight columns) --------
+# One Jacobian column per Recon weight, and a weight changes nothing but how the
+# Recon's copies are SUMMED: the copies themselves (the costly part, Num times
+# the distributed component) are the same in every column. TI_recon_variants
+# evaluates all the weight lists of a Jacobian together: a pool task takes a
+# block of nodes for all lists (TImod_recon_group), computes each copy once per
+# node at unit weight (TImod's recon_cache) and recombines it for every list.
+
+def TImod_recon_group(x_exp, p, model, EEs, x0, MulCo, INS, Distri, Cor, Met, pol, recon_variants, JN, Di, Co, V, Re):
+    """Per weight list, the sum over the nodes EEs of TImod's result; at each node
+    the Recon copies are computed once (recon_cache) for all the lists."""
+    sums = [None] * len(recon_variants)
+    for EE in EEs:
+        cache = {}
+        for j, R in enumerate(recon_variants):
+            r = np.asarray(TImod(x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], Di, Co, V,
+                                 False, R, Re, JN, cache), dtype=float)
+            sums[j] = r if sums[j] is None else sums[j] + r
+    return sums
+
+
+def _ti_task(kind, args):
+    """One pool task of TI_recon_variants: a node ('node', as TI's) or a block
+    of nodes over several weight lists ('group')."""
+    if kind == 'node':
+        return TImod(*args)
+    return TImod_recon_group(*args)
+
+
+def TI_recon_variants(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, recon_variants,
+                      lengths=None):
+    """TI's spectra for several Recon weight lists (``recon_variants``) that share
+    EVERY other input, in one pool submission; a list of spectra, one per weight
+    list, equal to TI's up to rounding.
+
+    A spectrum (Nbaseline section) whose inputs are the same for every list is
+    computed once, exactly as TI computes it, and is shared with TI through the
+    node-sum store. The spectrum whose Recon weights differ gets one task per
+    block of nodes for all the lists (TImod_recon_group); its sums are not
+    stored, as they are summed copy by copy rather than as TI sums them."""
+    variants = [_spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, R, lengths)
+                for R in recon_variants]
+    n_var, n_sec = len(variants), len(variants[0])
+    workers = max(1, int(getattr(pool, '_processes', 1) or 1))
+    tasks, jobs = [], []
+    sums = [[None] * n_sec for _ in range(n_var)]
+    for i in range(n_sec):
+        keys = [v[i]['key'] for v in variants]
+        s = variants[0][i]
+
+        def node_tasks(R):
+            return [('node', (s['x'], p, s['model'], Ex, s['x0'], s['MulCo'], s['INS'], Distri, Cor, s['Met'],
+                              pol, -2, [], s['Di'], s['Co'], s['V'], False, R, s['Re'], JN)) for Ex in s['E']]
+
+        if keys[0] is not None and bu.all(k == keys[0] for k in keys):   # bu: numpy's all is imported here
+            with _NODE_SUMS_LOCK:
+                H = _NODE_SUMS.get(keys[0])
+            if H is not None:
+                for v in range(n_var):
+                    sums[v][i] = H
+                continue
+            first = len(tasks)
+            tasks += node_tasks(recon_variants[0])
+            jobs.append(('shared', i, first, len(tasks), keys[0], None))
+        elif 'Recon' in list(s['model']):
+            first = len(tasks)
+            for blk in np.array_split(s['E'], min(len(s['E']), workers)):
+                tasks.append(('group', (s['x'], p, s['model'], blk, s['x0'], s['MulCo'], s['INS'], Distri, Cor,
+                                        s['Met'], pol, list(recon_variants), JN, s['Di'], s['Co'], s['V'], s['Re'])))
+            jobs.append(('group', i, first, len(tasks), None, None))
+        else:
+            for v in range(n_var):
+                first = len(tasks)
+                tasks += node_tasks(recon_variants[v])
+                jobs.append(('one', i, first, len(tasks), keys[v], v))
+    R = _pool_starmap(pool, _ti_task, tasks) if tasks else []
+    for kind, i, a, b, key, v in jobs:
+        if kind == 'group':
+            for vv in range(n_var):
+                H = None
+                for block in R[a:b]:
+                    H = block[vv] if H is None else H + block[vv]
+                sums[vv][i] = H
+            continue
+        H = np.array(R[a:b], dtype=object).sum(axis=0)
+        if key is not None:
+            with _NODE_SUMS_LOCK:
+                _NODE_SUMS[key] = H
+        if kind == 'shared':
+            for vv in range(n_var):
+                sums[vv][i] = H
+        else:
+            sums[v][i] = H
+    with _NODE_SUMS_LOCK:
+        while len(_NODE_SUMS) > 4 * n_sec + 8:
+            _NODE_SUMS.popitem(last=False)
+    out = []
+    for v in range(n_var):
+        if n_sec == 1:
+            out.append(_section_spectrum(variants[v][0], sums[v][0]))
+            continue
+        Hc = []
+        for i in range(n_sec):
+            Hc = np.concatenate((Hc, _section_spectrum(variants[v][i], sums[v][i])))
+        out.append(Hc)
+    return out
 
 
 
