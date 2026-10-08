@@ -2055,7 +2055,7 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
     return (g1, g2, g3, g4, g5, g6), (w1, w2, w3, w4, w5, w6)
 
 
-def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0):
+def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0, JN=64):
         # SCR = np.array(x_exp)
         SCR = x_exp
         N = np.array([float(0)]*len(SCR))
@@ -2103,7 +2103,29 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             #                 + cof[3] * np.sign(EE) * (np.tan(np.abs(np.pi / 2 * EE))) ** 2 \
             #                 + cof[4] * np.sign(EE) * (np.tan(np.abs(np.pi / 2 * EE))) ** 3
 
-            cof = np.array([2.09026977e-02,  2.22979289e+01, -3.35214526e+01])
+            # Map of the node EE to the source offset (MulCo units). Coefficients
+            # optimised 2026-10-07 against the exact transmission integral on 120
+            # random CMS spectra (singlets, doublets, sextets, mixtures; thickness
+            # 0.3-60, broadening 0-0.8 mm/s, G 0.04-0.3), judged on the 60 not
+            # used for the fit. The optimum does not depend on the spectrum (each
+            # group's own optimum gained nothing) but does on JN: fewer nodes need
+            # a narrower window. Error vs the former set at the same JN:
+            #   set 1, optimised at 32, window +-5.0 mm/s: 0.62-0.69 on average
+            #          at JN 32-56 (worst single spectrum 1.6x worse);
+            #   set 2, optimised at 64, window +-6.25 mm/s: 0.53 at 64, 0.43 at
+            #          128, never worse on any test spectrum.
+            # The switch at JN = 56: below it set 2's largest error over the test
+            # spectra exceeds set 1's (1.7e-3 vs 1.0e-3 at 52, 1.2e-3 vs 1.0e-3 at
+            # 54); at 56 they are level (9.0e-4 vs 8.4e-4) and set 2 is 11 %
+            # better on average (on average it already wins from 52).
+            # Former set, window +-4.716 mm/s (its map folded back near EE = 0:
+            # negative node weights): [2.09026977e-02, 2.22979289e+01, -3.35214526e+01].
+            # The CMS Norm ("SOURCE NORMALISATION" in TI) follows by itself, as
+            # compute_norm runs this same map with the same JN.
+            if JN < 56:
+                cof = np.array([-0.00317686, 20.7572, -30.7854])
+            else:
+                cof = np.array([0.027181, 22.7718, -33.6937])
             E = MulCo * SCR + cof[0] * np.log((1 + EE) / (1 - EE)) \
                             + cof[1] * np.log((2 + EE) / (2 - EE)) \
                             + cof[2] * np.log((3 + EE) / (3 - EE))
@@ -3035,8 +3057,9 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     if model.count('Nbaseline') == 0:
         # Recon travels after the default-valued middle args (Mett,O,Di,Co,V,
         # return_layer_matrix) so the parallel weight list reaches every TImod
-        # worker positionally (starmap cannot pass keywords).
-        H = _pool_starmap(pool, TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon) for Ex in E])
+        # worker positionally (starmap cannot pass keywords); JN follows Re, for
+        # the CMS map's choice of coefficients.
+        H = _pool_starmap(pool, TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon, 0, JN) for Ex in E])
         H = np.array(H, dtype=object).sum(axis=0)
 
         # Ht = np.array([[float(0)] * len(x_exp)] * JN)
@@ -3060,17 +3083,20 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         #
         # CMS (Met == 1). The source is a Voigt with the natural Lorentzian,
         # whose wings fall only as 1/u^2, and the Met == 1 grid (the three-log
-        # map of TImod, e = +-0.989, MulCoCMS = 0.28) ends at +-4.716 mm/s. About
-        # 0.6 % of the source lies beyond: 0.65 % analytically for G ~ 0.1 mm/s,
-        # 1 - Norm = 0.60 % at JN = 64 because the end nodes take in part of it.
+        # map of TImod, e = +-0.989, MulCoCMS = 0.28) ends at +-5.0 mm/s for
+        # JN < 56 and +-6.25 mm/s for JN >= 56 (+-4.716 with the map used before
+        # 2026-10-07). About 0.5 % of the source lies beyond: for G ~ 0.1 mm/s
+        # 0.61 % / 0.49 % analytically, 1 - Norm = 0.56 % at JN = 32 and 0.45 %
+        # at JN = 64, as the end nodes take in part of it.
         # Those photons are real and, being far from almost every absorber line,
         # almost all TRANSMITTED, so they are added as unabsorbed:
         #     N0 * (Q[S*T] + (1 - Norm)) + N1.
         # Dividing by Norm (the former CMS form, still the SMS one) gave them to
         # the sampled core, where they were absorbed like core photons: every
         # CMS line came out 1/Norm ~ 0.6 % too deep. Still neglected: the far
-        # wing photons that ARE absorbed, by a line more than 4.7 mm/s from the
-        # source energy -- up to a few 1e-4 N0, more for thicker absorbers.
+        # wing photons that ARE absorbed, by a line farther from the source
+        # energy than the window -- up to a few 1e-4 N0, more for thicker
+        # absorbers.
         # The new form is exactly  Norm * (former) + (1 - Norm):  with Nnr free a
         # fit gives the same chi2 and line parameters and only Ns and Nnr move
         # (Ns + Nnr stays, the resonant fraction Ns/(Ns + Nnr) grows by 1/Norm);
@@ -3157,7 +3183,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
             N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
             V = V + number_of_baseline_parameters
-            H = _pool_starmap(pool, TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V, False, Recon, Re) for Ex in E])
+            H = _pool_starmap(pool, TImod, [(x_separate[i], p, model_separate[i], Ex, x0_i, MulCo_i, INS_i, Distri, Cor, Met_i, pol, -2, [], Di, Co, V, False, Recon, Re, JN) for Ex in E])
             # Di = H[0][1]
             # Co = H[0][2]
             # V = H[0][3]
