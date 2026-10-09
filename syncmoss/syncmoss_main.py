@@ -912,7 +912,8 @@ class RawToDatThread(QThread):
                 if metadata_method == 'CMS':
                     metadata_suffix = "\nEmbedded #@GCMS metadata (CMS mode)."
                 elif metadata_method == 'SMS':
-                    metadata_suffix = "\nEmbedded #@INSexp/#@INSint metadata (SMS mode)."
+                    tags = '/'.join(line.split()[0] for line in metadata_lines)
+                    metadata_suffix = f"\nEmbedded {tags} metadata (SMS mode)."
                 else:
                     metadata_suffix = ''
                 warning_suffix = f"\n{metadata_warning}" if metadata_warning else ''
@@ -2214,7 +2215,7 @@ class PhysicsApp(QMainWindow):
         Returns True to proceed, False to abort."""
         lines = []
         for spectrum_file, resolved in overridden:
-            tag = '#@GCMS' if resolved['method'] == 'CMS' else '#@INSexp/#@INSint'
+            tag = '#@GCMS' if resolved['method'] == 'CMS' else '#@INSexp or #@INSth, with #@INSint'
             lines.append(f"• {os.path.basename(spectrum_file)} → {resolved['method']} mode (file contains {tag})")
         message = (
             f"{ui_method} mode is selected, but the .dat metadata of the following "

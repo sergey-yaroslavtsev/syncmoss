@@ -3162,8 +3162,8 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
             x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0, MulCo, INS, Met, Norm
         E = np.linspace(-1 + (10 ** -2)*(Met_i == 1 or Met_i ==2) + 10**-3, 1 - (10 ** -2)*(Met_i == 1 or Met_i ==2) - 10**-3, JN)
         D = (E[1] - E[0])
-        N0 = (p[V]   + p[V+3] * p[V]  /10**2 * x_separate[i] + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
-        N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * x_separate[i] + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
+        N0 = (p[V]   + p[V+3] * p[V]  /10**2 * ((-1) * p[V+1] + x_separate[i]) + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
+        N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * ((-1) * p[V+5] + x_separate[i]) + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
         V = V + number_of_baseline_parameters
         V_i, Di_i, Co_i, Re_i = V, Di, Co, Re
 
@@ -3264,8 +3264,8 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         #     Ht[i] = np.array((TImod(x_exp, p, model, E[i], x0, MulCo, INS, Distri, Cor, Met)))
         # H = Ht.sum(axis=0)
 
-        N0 =                     (p[0] + p[3] * p[0]/10**2 * x_exp + p[2] * p[0] / 10 ** 4 * ((-1) * p[1] + x_exp) ** 2)
-        N1 =                     (p[4] + p[7] * p[4]/10**2 * x_exp + p[6] * p[4] / 10 ** 4 * ((-1) * p[5] + x_exp) ** 2)
+        N0 =                     (p[0] + p[3] * p[0]/10**2 * ((-1) * p[1] + x_exp) + p[2] * p[0] / 10 ** 4 * ((-1) * p[1] + x_exp) ** 2)
+        N1 =                     (p[4] + p[7] * p[4]/10**2 * ((-1) * p[5] + x_exp) + p[6] * p[4] / 10 ** 4 * ((-1) * p[5] + x_exp) ** 2)
 
         # SOURCE NORMALISATION. This belongs to HOW the integral above is done:
         # if that changes, revisit it (see "WHEN THE CMS INTEGRATION CHANGES").

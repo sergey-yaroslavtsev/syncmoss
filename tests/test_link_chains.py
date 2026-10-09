@@ -87,9 +87,10 @@ def test_read_model_hands_a_chain_on_and_the_fit_may_start(physics_app):
     assert pt.get_link_loops() == []
     assert physics_app.check_user_expressions("Fit") is True
     _model, _p, con1, con2, con3, *_rest = read_model(physics_app)
-    assert con1.tolist() == [13.0, 14.0]
-    assert con2.tolist() == [9.0, 9.0]
-    assert con3.tolist() == [1.0, 0.5]
+    # the baseline's default Onr/c²nr/linnr -> Os/c²s/lins links come first
+    assert con1.tolist() == [5.0, 6.0, 7.0, 13.0, 14.0]
+    assert con2.tolist() == [1.0, 2.0, 3.0, 9.0, 9.0]
+    assert con3.tolist() == [1.0, 1.0, 1.0, 1.0, 0.5]
 
 
 @pytest.mark.gui

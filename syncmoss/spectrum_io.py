@@ -471,11 +471,11 @@ def subtract_model_from_spectrum(main_window):
             return
 
         # Calculate baseline properly as in the TI function
-        # N0 = p[0] + p[3]*p[0]/100 * A + p[2]*p[0]/10000 * (A - p[1])**2
-        # N1 = p[4] + p[7]*p[4]/100 * A + p[6]*p[4]/10000 * (A - p[5])**2
+        # N0 = p[0] + p[3]*p[0]/100 * (A - p[1]) + p[2]*p[0]/10000 * (A - p[1])**2
+        # N1 = p[4] + p[7]*p[4]/100 * (A - p[5]) + p[6]*p[4]/10000 * (A - p[5])**2
         # baseline = N0 + N1
-        baseline = (p[0] + p[3] * p[0] / 100 * A + p[2] * p[0] / 10000 * (A - p[1])**2) + \
-                  (p[4] + p[7] * p[4] / 100 * A + p[6] * p[4] / 10000 * (A - p[5])**2)
+        baseline = (p[0] + p[3] * p[0] / 100 * (A - p[1]) + p[2] * p[0] / 10000 * (A - p[1])**2) + \
+                  (p[4] + p[7] * p[4] / 100 * (A - p[5]) + p[6] * p[4] / 10000 * (A - p[5])**2)
 
         # Subtract model from spectrum: B = B - SPC_f + baseline
         B_subtracted = B - SPC_f + baseline

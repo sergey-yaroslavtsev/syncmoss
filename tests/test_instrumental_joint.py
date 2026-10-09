@@ -134,7 +134,9 @@ def test_a_link_follows_its_free_source(app, short_minimizer, quick_theory, theo
     assert p[T] != pytest.approx(2.0), "T did not move: the test shows nothing"
     assert p[DELTA] == pytest.approx(0.001 * p[T], rel=1e-12)
     assert short_minimizer
-    assert all(np.array_equal(call['confu'][:, 0], [DELTA, T, 0.001]) for call in short_minimizer)
+    # the baseline's default Onr/c²nr/linnr -> Os/c²s/lins links, then this one
+    links = [[5, 1, 1], [6, 2, 1], [7, 3, 1], [DELTA, T, 0.001]]
+    assert all(np.array_equal(call['confu'].T, links) for call in short_minimizer)
 
 
 def test_the_theoretical_search_returns_its_spectra_after_an_escalation(app, short_minimizer,

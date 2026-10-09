@@ -150,6 +150,17 @@ an explicit message and reddened fields rather than failing halfway through.
 - Switching **CMS** on turns a baseline `Nnr` of `0` into `=[0,0.67]` (the
   non-resonant counts as 0.67 of `Ns`); switching back to **SMS** turns exactly
   that link into `0` again. Any other `Nnr` is left as you set it.
+- In CMS and SMS alike, `Onr`, `c²nr`, `linnr` of the baseline start linked to
+  its `Os`, `c²s`, `lins` (`=[1,1]`, `=[2,1]`, `=[3,1]`), and those of every
+  `Nbaseline` row to its own. These links are the correct physical approach for
+  quanta from the source. However, if the detector has electronic (static)
+  noise, `c²nr` should be variable and smaller than `c²s` — which can be
+  achieved with `Expression` and `Variables` rows: e.g. a `Variables` value
+  between 0 and 1 for the source's part of `Nnr`, an `Expression` `p[2]*p[k]`
+  (`k` the number of that value) and `=[X,1]` in `c²nr` (`X` the number of
+  the `Expression`).
+- Both baseline polynomials are centred: `lins` and `c²s` multiply `(v − Os)`
+  and `(v − Os)²`, `linnr` and `c²nr` multiply `(v − Onr)` and `(v − Onr)²`.
 - Empty rows between models are harmless — they are dropped when the model is
   saved.
 - Selecting `Nbaseline` turns its row light grey (silver): it opens the next
@@ -176,11 +187,13 @@ an explicit message and reddened fields rather than failing halfway through.
 
 - A `.dat` file may carry the instrumental function in its header — every line
   above the first data line (one that starts with a number):
-  `#@GCMS` marks a CMS spectrum (and its Gaussian width), `#@INSexp` +
-  `#@INSint` an SMS one. SYNCmoss writes those lines when it converts a
-  spectrum, and reads them back per spectrum — so a batch may mix CMS and SMS
-  files. Switch the behaviour with *Instrumental function -> do not use
-  instrumental function from .dat file*.
+  `#@GCMS` marks a CMS spectrum (and its Gaussian width), `#@INSexp` (sum of
+  Gaussians) or `#@INSth` (theoretical shape), with `#@INSint`, an SMS one.
+  SYNCmoss writes those lines when it converts a spectrum — for SMS only the
+  instrumental function **in use** — and reads them back per spectrum, so a
+  batch may mix CMS and SMS files, and Gaussian and theoretical ones. Switch the
+  behaviour with *Instrumental function -> do not use instrumental function
+  from .dat file*.
 - *Instrumental function -> Overwrite instrumental function in selected .dat
   files* writes the instrumental function in memory — for the CMS/SMS mode
   selected, the lines RAW → .dat conversion writes — into every `.dat` file of
@@ -210,14 +223,17 @@ an explicit message and reddened fields rather than failing halfway through.
   will usually give a slightly *higher* χ² — what it gives back is parameters
   that mean something and the correct v⁻⁴ line wings, which a Gaussian sum
   cannot have at all.
-- The theoretical result is stored in `parameters/INSacc.txt` and, in converted
-  `.dat` files, in an extra `#@INSacc` header line. `#@INSexp`/`#@INSint` are
-  still written next to it, now holding the best Gaussian-sum stand-in for the
-  same source, so nothing that only understands the old lines is left without an
-  instrumental function. While `INSacc.txt` exists it is the one every fit uses;
-  running the ordinary search again, or *Reset to default values*, removes it.
+- The theoretical result is stored in `parameters/INSth.txt`, next to the sum of
+  Gaussians in `INSexp.txt`; *Supp -> Choose how to approximate instrumental
+  function* selects the one in use, and switching costs nothing. A spectrum
+  converted from RAW carries only the one in use then — `#@INSth` or
+  `#@INSexp` — and its fits use that one whatever the setting is later, so
+  spectra converted with either can be fitted together (sequence or
+  simultaneous), each with its own. A `.dat` written before this carries both;
+  for it the setting chooses. The ordinary (Gaussian) *Refine* of a spectrum
+  that carries only `#@INSth` starts from `INSexp.txt`.
 - *Supp -> Plot instrumental function from memory / from spectrum* draws what is
-  actually in use — from `INSacc.txt`/`INSexp.txt`, or from the loaded
+  actually in use — from `INSth.txt`/`INSexp.txt`, or from the loaded
   spectrum's own header — with its FWHM, centre and first moment, on a linear
   and a logarithmic scale. The log panel is where a theoretical and an empirical
   instrumental function stop looking alike. It opens in its **own window**, with

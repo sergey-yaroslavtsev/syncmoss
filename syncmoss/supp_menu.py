@@ -788,9 +788,9 @@ def plot_instrumental_from_memory(main_window):
 def plot_instrumental_from_spectrum(main_window):
     """Plot the instrumental function written into the loaded spectrum file.
 
-    Resolved exactly the way a fit of that spectrum would resolve it (#@INSacc
-    first, then #@INSexp/#@INSint, then the internal values), so what is drawn is
-    what the fit would actually use.
+    Resolved exactly the way a fit of that spectrum would resolve it (its
+    #@INSth or #@INSexp with #@INSint, else the internal values), so what is
+    drawn is what the fit would actually use.
     """
     if not main_window.initialize_parameters():
         return

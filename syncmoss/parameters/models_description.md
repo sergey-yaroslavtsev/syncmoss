@@ -22,17 +22,30 @@ Notes:
 ## 1. Baseline rows
 
 ### baseline
-Background polynomial for the first spectrum (global baseline row).
+Background polynomial for the first spectrum (global baseline row). Both parts
+are polynomials in the velocity $v$ around their own centre:
+
+$$
+N_0 = N_s\left[1 + \frac{lin_s}{10^2}(v - O_s) + \frac{c^2_s}{10^4}(v - O_s)^2\right]
+$$
+
+$$
+N_1 = N_{nr}\left[1 + \frac{lin_{nr}}{10^2}(v - O_{nr}) + \frac{c^2_{nr}}{10^4}(v - O_{nr})^2\right]
+$$
+
+$N_0$ multiplies the transmission, $N_1$ is added to it.
 
 Parameters:
 - Ns: source-side baseline level.
-- Os: source-side offset.
+- Os: source-side centre of the linear and quadratic terms.
 - c²s: source-side quadratic term.
 - lins: source-side linear term.
 - Nnr: non-resonant baseline level.
-- Onr: non-resonant offset.
+- Onr: non-resonant centre of the linear and quadratic terms.
 - c²nr: non-resonant quadratic term.
 - linnr: non-resonant linear term.
+
+Onr, c²nr and linnr start linked to Os, c²s and lins (see *Help*, section 6).
 
 ### Nbaseline
 Extra baseline row for SIMULTANEOUS fitting: one per additional spectrum, so

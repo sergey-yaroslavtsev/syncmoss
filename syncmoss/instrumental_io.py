@@ -31,12 +31,10 @@ DEFAULT_INSINT_TEXT = "2.448293819453453 0.03380920627191801 "
 DAT_INS_EXP_PREFIX = '#@INSexp'
 DAT_INS_INT_PREFIX = '#@INSint'
 DAT_GCMS_PREFIX = '#@GCMS'
-# The THEORETICAL (simulated 57FeBO3) SMS instrumental function. It is written
-# IN ADDITION to #@INSexp/#@INSint, not instead of them: a converted .dat
-# therefore still carries the conventional Gaussian-sum description (the best
-# empirical stand-in for the same source, so any reader that does not know this
-# marker degrades gracefully), and #@INSint still carries the integration
-# constants.
+# The THEORETICAL (simulated 57FeBO3) SMS instrumental function. A converted
+# .dat carries it INSTEAD of #@INSexp when it is the one in use, with #@INSint
+# for the integration constants (build_dat_metadata_lines). Files written before
+# carry both; the setting then chooses (resolve_instrumental_for_file).
 DAT_INS_TH_PREFIX = '#@INSth'
 # Read-only legacy spelling. Files written before the rename carry #@INSacc and
 # must keep loading; nothing writes it any more.
@@ -88,11 +86,12 @@ def is_data_line(stripped):
 
 
 def parse_dat_instrumental_metadata(file_path):
-    """Read #@INSexp / #@INSint / #@GCMS metadata from a .dat file header (every
-    line above the first data line, see is_data_line).
+    """Read #@INSexp / #@INSth / #@INSint / #@GCMS metadata from a .dat file
+    header (every line above the first data line, see is_data_line).
 
-    #@INSexp + #@INSint mark a spectrum converted in SMS mode, #@GCMS marks a
-    spectrum converted in CMS mode (single G value of the single-line absorber).
+    #@INSexp or #@INSth, with #@INSint, mark a spectrum converted in SMS mode,
+    #@GCMS marks a spectrum converted in CMS mode (single G value of the
+    single-line absorber).
     """
     result = {
         'INS': None,
@@ -378,8 +377,8 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
 
     The single source of truth for "what instrumental function does this spectrum
     use". When ``use_dat_metadata`` is enabled the spectrum's own .dat header
-    decides the method: a #@GCMS line marks a CMS spectrum, #@INSexp + #@INSint
-    mark an SMS spectrum (#@GCMS wins if a file carries both). Otherwise — or when
+    decides the method: a #@GCMS line marks a CMS spectrum, #@INSexp or #@INSth
+    with #@INSint an SMS spectrum (#@GCMS wins if a file carries both). Otherwise — or when
     the file has no usable metadata — the UI-selected method (CMS/SMS checkboxes)
     with the internal values is used: the G input field for CMS, the global
     INSexp/INSint files for SMS. This is what lets different spectra of one
@@ -410,7 +409,8 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
 
     if use_dat_metadata and spectrum_file and str(spectrum_file).lower().endswith('.dat'):
         meta = parse_dat_instrumental_metadata(spectrum_file)
-        has_sms = meta['INS'] is not None and meta['MulCo'] is not None and meta['x0'] is not None
+        has_sms = ((meta['INS'] is not None or meta['INSacc'] is not None)
+                   and meta['MulCo'] is not None and meta['x0'] is not None)
         # File metadata may set the method, unless we are locked to the other one.
         if meta['has_gcms'] and force_method != 'SMS':
             g = float(meta['GCMS'])
@@ -420,20 +420,17 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
                 'note': f"{name}: CMS — G = {g:g} from .dat metadata (#@GCMS)",
             }
         if has_sms and force_method != 'CMS':
-            # A .dat written by this program carries BOTH descriptions of the
-            # same source -- #@INSth (simulated) and #@INSexp (Gaussian sum) --
-            # and #@INSint supplies the integration constants for either. WHICH
-            # one is used is the user's setting, exactly as for the global
-            # files; that is what makes switching free, and switching back free.
+            # A .dat written by this program carries ONE description of its
+            # source -- #@INSth (simulated) or #@INSexp (Gaussian sum), the one
+            # in use when it was written (build_dat_metadata_lines) -- and
+            # #@INSint the integration constants. That one is used, whatever the
+            # setting is now, so spectra of either kind are fitted together each
+            # with its own.
             #
-            # #@INSth used to win unconditionally here, so selecting "Set of
-            # Gaussians" changed nothing for any spectrum whose file carried a
-            # theoretical shape -- the fit went on using it.
-            #
-            # The spectrum's OWN instrumental function is still what is used:
-            # the setting chooses between the two the file carries, it never
-            # replaces them with the global ones.
-            if meta['has_insacc'] and instrumental_method(app) == 'theory':
+            # Files written before carry BOTH; for them, and only for them, the
+            # setting chooses, as it did then.
+            if meta['has_insacc'] and (meta['INS'] is None
+                                       or instrumental_method(app) == 'theory'):
                 return {
                     'method': 'SMS', 'Met': 0, 'INS': meta['INSacc'],
                     'x0': float(meta['x0']), 'MulCo': float(meta['MulCo']),
@@ -449,8 +446,8 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
         # No usable metadata for the (possibly forced) method -> internal fallback.
         missing = []
         if force_method != 'CMS':
-            if meta['INS'] is None:
-                missing.append('#@INSexp')
+            if meta['INS'] is None and meta['INSacc'] is None:
+                missing.append('#@INSexp or #@INSth')
             if meta['MulCo'] is None or meta['x0'] is None:
                 missing.append('#@INSint')
         if force_method != 'SMS':
@@ -580,11 +577,12 @@ def build_dat_metadata_lines(app):
     """Instrumental header lines to embed into .dat files converted from RAW.
 
     CMS mode (the CMS checkbox is checked): a single #@GCMS line with the
-    current G value. SMS mode: #@INSexp / #@INSint lines from the global
-    parameter files, exactly as before -- plus an #@INSth line carrying the
-    theoretical instrumental function whenever one is current. The conventional
-    lines are never dropped, so a .dat converted with the accurate shape in use
-    still describes that same source to any reader that only knows #@INSexp.
+    current G value. SMS mode: the ONE instrumental function in use
+    (get_sms_instrumental_from_global_files) -- #@INSth for the theoretical
+    shape, #@INSexp for the Gaussian sum -- and the #@INSint line of its
+    integration grid. One description only, so the file alone says which shape
+    its fits use, whatever the setting is then; spectra converted with
+    different descriptions can be fitted together, each with its own.
 
     Returns:
         (lines, method): list of header strings (without newlines) and the
@@ -594,17 +592,12 @@ def build_dat_metadata_lines(app):
         g = get_internal_gcms(app)
         return [f'{DAT_GCMS_PREFIX} {float(g)}'], 'CMS'
 
-    instrumental_int_path = os.path.join(app.params_dir, 'INSint.txt')
-    MulCo, x0 = np.genfromtxt(instrumental_int_path, delimiter=' ', skip_footer=0)
-    INS = np.atleast_1d(get_legacy_sms_instrumental(app))
+    INS, MulCo, x0 = get_sms_instrumental_from_global_files(app)
+    prefix = DAT_INS_EXP_PREFIX if smst.ins_kind(INS) == smst.KIND_GAUSS else DAT_INS_TH_PREFIX
     lines = [
-        DAT_INS_EXP_PREFIX + ' ' + ' '.join(str(float(v)) for v in INS),
+        prefix + ' ' + ' '.join(str(float(v)) for v in np.atleast_1d(INS)),
         f'{DAT_INS_INT_PREFIX} {float(MulCo)} {float(x0)}',
     ]
-    acc = read_accurate_instrumental(app)
-    if acc is not None:
-        lines.append(DAT_INS_ACC_PREFIX + ' '
-                     + ' '.join(str(float(v)) for v in np.atleast_1d(acc)))
     return lines, 'SMS'
 
 
@@ -649,8 +642,9 @@ def dat_metadata_key(file_path):
     meta = parse_dat_instrumental_metadata(file_path)
     if meta['has_gcms']:
         return ('CMS', round(float(meta['GCMS']), 9))
-    if meta['has_insexp'] and meta['has_insint']:
-        ins = tuple(round(float(v), 9) for v in np.atleast_1d(meta['INS']))
+    if (meta['has_insexp'] or meta['has_insacc']) and meta['has_insint']:
+        ins = (tuple(round(float(v), 9) for v in np.atleast_1d(meta['INS']))
+               if meta['has_insexp'] else None)
         acc = (tuple(round(float(v), 9) for v in np.atleast_1d(meta['INSacc']))
                if meta['has_insacc'] else None)
         return ('SMS', ins, round(float(meta['MulCo']), 9),
@@ -677,9 +671,10 @@ def shared_dat_metadata_lines(file_paths):
 
 
 # The instrumental-function lines build_dat_metadata_lines writes: what
-# "Overwrite instrumental function in selected .dat files" replaces.
+# "Overwrite instrumental function in selected .dat files" replaces. The legacy
+# #@INSacc too: left behind, it would be a second description next to the new one.
 DAT_INS_PREFIXES = (DAT_GCMS_PREFIX, DAT_INS_EXP_PREFIX, DAT_INS_INT_PREFIX,
-                    DAT_INS_TH_PREFIX)
+                    DAT_INS_TH_PREFIX, DAT_INS_ACC_PREFIX_LEGACY)
 
 
 def write_dat_instrumental_lines(file_path, lines):
@@ -1268,6 +1263,11 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
             # must not flip it to CMS (force_method='SMS').
             mp = resolve_instrumental_for_file(app, file, use_dat_metadata=use_dat_metadata, force_method='SMS')
             INS, MulCo, x0, note = mp['INS'], mp['MulCo'], mp['x0'], mp['note']
+            if smst.ins_kind(INS) != smst.KIND_GAUSS:
+                # a file carrying only #@INSth: nothing for a Gaussian sum to
+                # continue from
+                INS = get_legacy_sms_instrumental(app)
+                note += f"; not a sum of Gaussians, refining the one in {INS_EXP_FILE}"
             print(f"[Instrumental function] {note}")
             p0 = np.copy(INS)
             n = int(len(INS)/3)
@@ -1873,11 +1873,10 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     (see search_data), by default the first spectrum shown; with the model,
     several spectra fitted together with one instrumental function.
 
-    On success INSth.txt holds the theoretical instrumental function, INSint.txt
-    the matching integration constants, and INSexp.txt the best conventional
-    Gaussian-sum stand-in for the same source -- so every later fit and every
-    RAW->DAT conversion uses the theoretical shape, while a .dat still carries a
-    usable #@INSexp for anything that does not know the #@INSth marker.
+    On success INSth.txt holds the theoretical instrumental function and
+    INSint.txt the matching integration constants; INSexp.txt is left alone.
+    While "theory" is selected every later fit uses the theoretical shape, and
+    every RAW->DAT conversion writes it as #@INSth (and no #@INSexp).
 
     ``temperature_C`` is the iron borate crystal temperature, when it was
     recorded. Temperature enters the physics only through B_s, so it is turned
@@ -2338,9 +2337,9 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     # switching between them costs nothing and neither can be lost by running
     # the other search.
     #
-    # The cost is that #@INSexp in a .dat converted afterwards may describe an
-    # older state of the source than #@INSth does. That is the lesser evil: a
-    # slightly stale second opinion, rather than silently destroying a fit.
+    # A .dat converted afterwards carries only the description in use
+    # (build_dat_metadata_lines), so neither store's state leaks into it as a
+    # second opinion.
     if gauss is not None:
         print(f"[Instrumental function: theory] {len(gauss) // 3}-Gaussian "
               f"stand-in computed but NOT written: {insexp_path} holds the "

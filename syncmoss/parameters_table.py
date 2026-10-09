@@ -66,6 +66,17 @@ _INDEPENDENT_STYLE = "background-color: lightgreen; color: black;"
 _CMS_NNR_LINK = '=[0,0.67]'
 _NNR_COL = 4    # Nnr in the baseline row ('Ns', 'Os', 'c²s', 'lins', 'Nnr', ...)
 
+# Onr, c²nr, linnr of a baseline / Nbaseline row start as links to Os, c²s, lins
+# of the same row: the non-resonant quanta come from the same source, through
+# the same detector, as the resonant ones (help.md, section 6).
+_NONRESONANT_SHAPE_COLS = (5, 6, 7)
+
+
+def nonresonant_shape_links(start):
+    """The default texts of Onr, c²nr, linnr of the baseline whose Ns is flat
+    parameter *start*: links to its Os, c²s, lins (``=[start+1,1]``, ...)."""
+    return [f'=[{start + col - _NNR_COL},1]' for col in _NONRESONANT_SHAPE_COLS]
+
 
 def _make_value_validator():
     """Validator of a numeric parameter value field (number or =[X,Y] link)."""
@@ -362,7 +373,7 @@ class ParametersTable(QWidget):
             row_layout.addWidget(param_widget)
 
         # Set initial values for baseline
-        initial_values = [10000, 0, 0, 0, 0, 0, 0, 0]
+        initial_values = [10000, 0, 0, 0, 0] + nonresonant_shape_links(0)
         name_labels = ['Ns', 'Os', 'c²s', 'lins', 'Nnr', 'Onr', 'c²nr', 'linnr']
         for i in range(8):
             param_widget = row_layout.itemAt(i+1).widget()
@@ -836,6 +847,12 @@ class ParametersTable(QWidget):
             if delta != 0:
                 start = sum(self.row_params[:row])
                 self.update_references(start, delta)
+            if model == 'Nbaseline':
+                # Only now: update_references would shift links to the row's own
+                # parameters as if they lay after it
+                links = nonresonant_shape_links(sum(self.row_params[:row]))
+                for col, link in zip(_NONRESONANT_SHAPE_COLS, links):
+                    self._value_input(row, col).setText(link)
             # Set validators for parameters
             for col in range(numco):
                 param_widget = row_widget.layout().itemAt(col + 1).widget()

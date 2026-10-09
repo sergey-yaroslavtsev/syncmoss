@@ -170,8 +170,8 @@ def calculate_baseline(p, x):
     - baseline array
     """
     return np.array(
-        p[0] + p[3] * p[0]/100 * x + p[2] * p[0] / 10000 * (x - p[1])**2 + 
-        p[6] * p[4] / 10000 * (x - p[5])**2 + p[4] + p[7] * p[4]/100 * x,
+        p[0] + p[3] * p[0]/100 * (x - p[1]) + p[2] * p[0] / 10000 * (x - p[1])**2 +
+        p[6] * p[4] / 10000 * (x - p[5])**2 + p[4] + p[7] * p[4]/100 * (x - p[5]),
         dtype=float
     )
 

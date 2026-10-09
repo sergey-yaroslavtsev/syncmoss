@@ -657,6 +657,123 @@ def test_batch_fits_each_spectrum_with_own_metadata(physics_app, tmp_path):
     assert "SMS" in r_sms["instrumental_note"] and "#@INSexp" in r_sms["instrumental_note"]
 
 
+# ---------------------------------------------------------------------------
+# One description per converted file: the file says which shape its fits use
+# ---------------------------------------------------------------------------
+
+def _ins_text(INS):
+    return " ".join(str(float(v)) for v in np.atleast_1d(INS))
+
+
+ALT_GAUSS = np.array([float(v) for v in ALT_INSEXP.split()])
+
+
+@pytest.mark.parametrize("method, prefix", [("gauss", "#@INSexp"), ("theory", "#@INSth")])
+def test_conversion_writes_only_the_description_in_use(physics_app, method, prefix):
+    """Both descriptions are stored (INSexp.txt, INSth.txt); a converted .dat
+    gets the selected one only, with its #@INSint."""
+    import syncmoss.sms_theory as smst
+    physics_app.SMS_fit.setChecked(True)
+    physics_app.instrumental_method = method
+    lines, in_use = instrumental_io.build_dat_metadata_lines(physics_app)
+    INS, MulCo, x0 = get_sms_instrumental_from_global_files(physics_app)
+    assert (smst.ins_kind(INS) == smst.KIND_GAUSS) == (method == "gauss")
+    assert in_use == "SMS"
+    assert lines == [f"{prefix} {_ins_text(INS)}", f"#@INSint {float(MulCo)} {float(x0)}"]
+
+
+def test_conversion_without_a_stored_theory_writes_the_gaussians(physics_app):
+    """'theory' selected but none found yet: the fits use the Gaussian sum, and
+    that is what the file gets."""
+    instrumental_io.write_accurate_instrumental(physics_app, None)
+    physics_app.SMS_fit.setChecked(True)
+    physics_app.instrumental_method = "theory"
+    lines, _ = instrumental_io.build_dat_metadata_lines(physics_app)
+    assert [line.split()[0] for line in lines] == ["#@INSexp", "#@INSint"]
+
+
+def _theory_and_gauss_files(physics_app, tmp_path):
+    cal = physics_app.calibration_path
+    theory = instrumental_io.default_theory_instrumental()
+    th = write_dat_variant(tmp_path, "th.dat", cal, [f"#@INSth {_ins_text(theory)}", f"#@INSint {ALT_INSINT}"])
+    ex = write_dat_variant(tmp_path, "ex.dat", cal, [f"#@INSexp {ALT_INSEXP}", f"#@INSint {ALT_INSINT}"])
+    return theory, th, ex
+
+
+@pytest.mark.parametrize("method", ["gauss", "theory"])
+def test_the_file_decides_whatever_the_setting(physics_app, tmp_path, method):
+    theory, th, ex = _theory_and_gauss_files(physics_app, tmp_path)
+    physics_app.SMS_fit.setChecked(True)
+    physics_app.instrumental_method = method
+    r_th = resolve_instrumental_for_file(physics_app, th)
+    r_ex = resolve_instrumental_for_file(physics_app, ex)
+    assert r_th["source"] == r_ex["source"] == "file"
+    assert np.array_equal(r_th["INS"], theory) and "#@INSth" in r_th["note"]
+    assert np.array_equal(r_ex["INS"], ALT_GAUSS) and "#@INSexp" in r_ex["note"]
+    assert (r_th["MulCo"], r_th["x0"]) == pytest.approx((2.0, 0.15))
+    # two different instrumental functions: the fit warns, then gives each its own
+    _, nonuniform, _ = analyze_instrumental_methods(physics_app, [th, ex], use_dat_metadata=True)
+    assert nonuniform is True
+    assert dat_metadata_key(th) not in (None, dat_metadata_key(ex))
+
+
+@pytest.mark.parametrize("method", ["gauss", "theory"])
+def test_a_file_written_before_with_both_follows_the_setting(physics_app, tmp_path, method):
+    theory = instrumental_io.default_theory_instrumental()
+    both = write_dat_variant(
+        tmp_path, "both.dat", physics_app.calibration_path,
+        [f"#@INSexp {ALT_INSEXP}", f"#@INSint {ALT_INSINT}", f"#@INSth {_ins_text(theory)}"])
+    physics_app.SMS_fit.setChecked(True)
+    physics_app.instrumental_method = method
+    r = resolve_instrumental_for_file(physics_app, both)
+    assert np.array_equal(r["INS"], theory if method == "theory" else ALT_GAUSS)
+
+
+def test_overwrite_replaces_the_legacy_theory_line(tmp_path):
+    """A #@INSacc left next to the new lines would be a second description."""
+    dat = tmp_path / "legacy.dat"
+    dat.write_text(f"#@INSexp {ALT_INSEXP}\n#@INSint {ALT_INSINT}\n#@INSacc 1 2 3\n0.0\t100.0\n")
+    new = ["#@GCMS 0.1"]
+    assert instrumental_io.write_dat_instrumental_lines(str(dat), new) is True
+    assert read_dat_metadata_lines(str(dat)) == new
+
+
+class _SerialPool:
+    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
+
+    def starmap(self, func, iterable):
+        return [func(*args) for args in iterable]
+
+
+def test_theory_and_gaussian_spectra_are_computed_together(physics_app, tmp_path):
+    """A simultaneous fit of a #@INSth spectrum and a #@INSexp one: every
+    Nbaseline section is computed with its own file's shape, exactly as that
+    spectrum alone."""
+    import syncmoss.models as m5
+    _theory, th, ex = _theory_and_gauss_files(physics_app, tmp_path)
+    pool, JN = _SerialPool(), 16
+    mps = [resolve_instrumental_for_file(physics_app, f) for f in (th, ex)]
+    for mp in mps:
+        mp["Norm"] = instrumental_io.compute_norm(pool, JN, mp)
+    singlet = [1000.0, 0, 0, 0, 0, 0, 0, 0, 0.8, 0.1, NAT_WIDTH, 0.0]
+    p = np.array(singlet + singlet[:8] + [1.5, -0.2, NAT_WIDTH, 0.05])
+    v = np.linspace(-3.0, 3.0, 33)
+
+    def alone(mp, p_section):
+        return np.asarray(m5.TI(v, p_section, ["Singlet"], JN, pool, mp["x0"], mp["MulCo"],
+                                mp["INS"], [0], [0], Met=mp["Met"], Norm=mp["Norm"]), dtype=float)
+
+    together = np.asarray(m5.TI(
+        np.concatenate([v, v]), p, ["Singlet", "Nbaseline", "Singlet"], JN, pool,
+        [mp["x0"] for mp in mps], [mp["MulCo"] for mp in mps], [mp["INS"] for mp in mps],
+        [0], [0], Met=[mp["Met"] for mp in mps], Norm=[mp["Norm"] for mp in mps],
+        lengths=[len(v), len(v)]), dtype=float)
+    first, second = alone(mps[0], p[:12]), alone(mps[1], p[12:])
+    assert np.allclose(together, np.concatenate([first, second]), rtol=1e-12, atol=0)
+    # and the shape matters: the first spectrum with the other file's shape differs
+    assert not np.allclose(first, alone(mps[1], p[:12]), rtol=1e-6, atol=0)
+
+
 # ======================================================================
 #  the reference absorber: the theoretical search frees its line width,
 #  the legacy search must not notice
