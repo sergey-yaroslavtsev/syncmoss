@@ -15,7 +15,7 @@ from syncmoss.constants import (numro, numco, model_colors, number_of_baseline_p
 _NAT = str(NAT_WIDTH)
 from syncmoss.spectrum_io import calculate_backgrounds
 from syncmoss.model_io import (mod_len_def, append_model_via_dialog, split_link_field,
-                               split_independent_field)
+                               split_independent_field, resolve_link_chains)
 from syncmoss.spectrum_parameters import path_box_entries
 from syncmoss.Library_window import open_library_model_dialog
 
@@ -1100,6 +1100,37 @@ class ParametersTable(QWidget):
                         model=self.model_name_at(row), text=text, factor=link[1],
                         factor_text=text[2:-1].split(',')[1].strip()))
         return links
+
+    def get_link_loops(self):
+        """Links ``=[X,Y]`` whose chain never ends.
+
+        A link may point at another link -- read_model hands it on as a link
+        to the end of the chain (model_io.resolve_link_chains) -- but going
+        from link to link must end at a parameter that is no link. Here it
+        comes back to one it has passed: A -> A, A -> B -> A, or
+        A -> B -> C -> B (A itself leads into the loop of B and C). Show model
+        / Fit refuse to start while there is one.
+
+        Returns:
+            list of dicts, in table order: ``{'row', 'col', 'param', 'model',
+            'text', 'path'}``, path being the flat indices the chain passes
+            through until one comes back (A, B, C, B).
+        """
+        starts = self._flat_starts()
+        fields = {}
+        for row in starts:
+            for col in range(self.row_params[row]):
+                field = self._value_input(row, col)
+                text = field.text().strip()
+                link = None if field.property('free_text') else split_link_field(text)
+                if link is not None:
+                    fields[starts[row] + col] = (row, col, text, link)
+        targets = list(fields)
+        _, _, looped = resolve_link_chains(targets, [fields[t][3][0] for t in targets],
+                                           [fields[t][3][1] for t in targets])
+        return [{'row': row, 'col': col, 'param': self._parameter_name(row, col),
+                 'model': self.model_name_at(row), 'text': text, 'path': looped[target]}
+                for target, (row, col, text, _link) in fields.items() if target in looped]
 
     def update_distr_corr_highlights(self):
         """Grey out every parameter driven by a Distr/Corr/Recon row.

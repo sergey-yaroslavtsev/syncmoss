@@ -84,6 +84,7 @@ from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def,
     model_file_rows, fitted_model_rows, save_result_model, write_result_model,
     result_model_path, strip_known_extension, validate_user_expressions,
+    validate_expression_order,
 )
 from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
@@ -2004,7 +2005,7 @@ class PhysicsApp(QMainWindow):
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
 
-        Four checks run up front:
+        Six checks run up front:
 
         * no active numeric parameter slot may be empty or hold a half-written
           link (a =[X,y] reference to a deleted parameter leaves its field empty,
@@ -2014,8 +2015,12 @@ class PhysicsApp(QMainWindow):
           overwrite each other in the same parameter slot),
         * no link =[X,y] may point at a parameter a Distr/Corr/Recon sets, or at
           the text column of one (ParametersTable.get_links_to_distributions:
-          the link would copy a number the model never uses), and
-        * every user-typed Expression/Distr/Corr text must evaluate.
+          the link would copy a number the model never uses),
+        * no chain of links may go round in a loop (ParametersTable.
+          get_link_loops; a chain that ends is fine, read_model follows it),
+        * every user-typed Expression/Distr/Corr text must evaluate, and
+        * no Expression may use one calculated after it, nor itself
+          (model_io.validate_expression_order).
 
         On failure the offending table fields turn red (they recover as soon as
         the user clicks into them), the log box explains each problem, and False
@@ -2084,28 +2089,63 @@ class PhysicsApp(QMainWindow):
             )
             return False
 
+        loops = self.params_table.get_link_loops()
+        if loops:
+            lines = []
+            for loop in loops:
+                self.params_table.mark_parameter_error(loop['row'], loop['col'])
+                param = loop['param'] or f"column {loop['col']}"
+                lines.append(f"{loop['model']} (table row {loop['row']}): parameter '{param}' "
+                             f"is linked ({loop['text']}) round a loop: "
+                             + " → ".join(str(index) for index in loop['path']))
+            self.set_status(
+                f"{action_label} was not started — link(s) that go round in a loop (a "
+                f"link may point at another link, but going from link to link must end "
+                f"at a parameter that holds a number):\n" + "\n".join(lines),
+                "red",
+            )
+            return False
+
         try:
             problems = validate_user_expressions(self)
+            late = validate_expression_order(self)
         except Exception as e:
             self.set_status(f"{action_label} was not started — could not read the model: {e}", "red")
             return False
 
-        if not problems:
-            return True
+        if problems:
+            lines = []
+            for prob in problems:
+                if prob.get('row') is not None:
+                    self.params_table.mark_expression_error(prob['row'])
+                    label = f"{prob['kind']} (table row {prob['row']})"
+                else:
+                    label = prob['kind']
+                lines.append(f"{label}: '{prob['text']}' could not be evaluated: {prob['error']}")
+            self.set_status(
+                f"{action_label} was not started — invalid expression(s):\n" + "\n".join(lines),
+                "red",
+            )
+            return False
 
-        lines = []
-        for prob in problems:
-            if prob.get('row') is not None:
-                self.params_table.mark_expression_error(prob['row'])
-                label = f"{prob['kind']} (table row {prob['row']})"
-            else:
-                label = prob['kind']
-            lines.append(f"{label}: '{prob['text']}' could not be evaluated: {prob['error']}")
-        self.set_status(
-            f"{action_label} was not started — invalid expression(s):\n" + "\n".join(lines),
-            "red",
-        )
-        return False
+        if late:
+            lines = []
+            for use in late:
+                self.params_table.mark_expression_error(use['row'])
+                used = ("its own value (an Expression cannot use itself)"
+                        if use['used_row'] == use['row'] else
+                        f"the Expression of table row {use['used_row']}, which is calculated after it")
+                lines.append(f"Expression (table row {use['row']}) uses {used}")
+            self.set_status(
+                f"{action_label} was not started — Expression(s) used before they are "
+                f"calculated. The Expressions are calculated one by one from the top of "
+                f"the table: put them in calculation order, each below the Expressions it "
+                f"uses:\n" + "\n".join(lines),
+                "red",
+            )
+            return False
+
+        return True
 
     def check_values_within_bounds(self, action_label):
         """Refuse a fit whose start value lies outside its own bounds.

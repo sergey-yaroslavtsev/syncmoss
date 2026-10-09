@@ -775,6 +775,46 @@ def split_independent_field(text):
         return None
 
 
+def resolve_link_chains(con1, con2, con3):
+    """The links of read_model with every chain followed to its end.
+
+    A link may point at a parameter that is a link itself: C = [B, f2] with
+    B = [A, f1] is C = f1*f2*A. Everything that applies the links does it in
+    ONE pass, each link from the value its source holds at that moment
+    (minimi_hi on every trial point and in its Jacobian, the fit's start,
+    Show model), so a chain came out right only when B happened to come
+    before C, and the Jacobian never carried a step of A on to C. Handed on as
+    a link to the end of its chain -- the first parameter that is no link --
+    every link is right in that one pass. A link without a chain is returned
+    untouched.
+
+    A chain that comes back to a link it has passed (A -> A, A -> B -> A,
+    A -> B -> C -> B) never ends; its links are left as they are, and Show
+    model / Fit refuse to start (ParametersTable.get_link_loops).
+
+    Returns:
+        (con2, con3, looped): the sources and factors, and ``{target: path}``
+        for every link whose chain never ends, path being the parameters it
+        passes through until one comes back (A, B, C, B).
+    """
+    links = {int(t): (int(s), f) for t, s, f in zip(con1, con2, con3)}
+    con2 = np.array(con2, dtype=float)
+    con3 = np.array(con3, dtype=float)
+    looped = {}
+    for m, target in enumerate(int(t) for t in con1):
+        path = [target]
+        source, factor = links[target]
+        while source in links and source not in path:
+            path.append(source)
+            source, next_factor = links[source]
+            factor = factor * next_factor
+        if source in links:
+            looped[target] = path + [source]
+        elif len(path) > 1:
+            con2[m], con3[m] = source, factor
+    return con2, con3, looped
+
+
 def parse_recon_weights(text, num):
     """Parse a 'Recon' weight-vector text field into a length-``num`` float array.
 
@@ -824,7 +864,9 @@ def read_model(main_window, spectrum_parameters=None, substitute_names=True):
                 Recon, ReconN)
             - model: list of model names
             - p: numpy array of parameters
-            - con1, con2, con3: constraint arrays
+            - con1, con2, con3: the links =[X,Y] -- target, source, factor --
+                     a link to a link handed on as one to the end of the
+                     chain (resolve_link_chains)
             - Distri: distribution expressions
             - Cor: correlation expressions
             - Expr: expressions
@@ -951,6 +993,9 @@ def read_model(main_window, spectrum_parameters=None, substitute_names=True):
             weights_text = _field_text(row_widget, 7) if 7 < row_widget.layout().count() else ''
             Recon.append(parse_recon_weights(weights_text, num))
             ReconN = np.append(ReconN, len(p) - 1)
+
+    # A link to a link is handed on as a link to the end of the chain
+    con2, con3, _looped = resolve_link_chains(con1, con2, con3)
 
     if substitute_names and 'Nbaseline' not in model:
         if spectrum_parameters is None:
@@ -1079,3 +1124,31 @@ def validate_user_expressions(main_window):
         _check('Corr', k, text, lambda s: eval(s, vars(m5), {'X': X, 'p': p}) + 0 * X)
 
     return problems
+
+
+def validate_expression_order(main_window):
+    """Expressions that use an Expression not calculated before them.
+
+    The Expressions are calculated one by one from the top of the table, each
+    into its own slot (minimi_hi on every trial point, the fit's start, Show
+    model). One that uses an Expression below it -- p[i] of that Expression's
+    slot, or of a parameter linked to it -- gets the value of the calculation
+    before, and one that uses itself its own last value. They are not put in
+    order automatically (their slots, and every p[i] and link to them, would
+    move): the user does it. Only a p[i] written with a number is seen.
+
+    Returns:
+        list of dicts ``{'row', 'used_row'}`` in table order: the table rows of
+        the Expression and of the one it uses (the same row when it uses
+        itself).
+    """
+    model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
+    rows = main_window.params_table.get_expression_rows()['Expression']
+    expression_of = {int(slot): j for j, slot in enumerate(NExpr)}
+    source_of = {int(t): int(s) for t, s in zip(con1, con2)}    # chains resolved by read_model
+    late = []
+    for k, text in enumerate(Expr):
+        used = {expression_of.get(source_of.get(i, i)) for i in map(int, re.findall(r'p\[(\d+)\]', str(text)))}
+        late += [{'row': rows[k], 'used_row': rows[j]}
+                 for j in sorted(j for j in used if j is not None and j >= k)]
+    return late

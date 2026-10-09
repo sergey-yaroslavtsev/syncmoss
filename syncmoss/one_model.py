@@ -19,8 +19,9 @@ slot i is slot ``k*L + i``:
 * a reference to template slot i -- the source of a link ``=[i,Y]``, a ``p[i]``
   in an Expression/Distr/Corr text -- points at section 1 when i is shared, and
   otherwise at the section's own copy (a baseline, independent, fixed, linked or
-  Expression parameter). So a link never follows another link the template did
-  not have: minimi_hi applies the links in one pass;
+  Expression parameter). So a link never follows another link (read_model has
+  already followed the template's chains to their end), as minimi_hi applies
+  the links in one pass;
 * the baseline of spectra 2..K starts from the spectrum's own counts (Ns from
   spectrum_io.calculate_backgrounds, as in a sequence) unless Ns is a link; its
   other values are the template's, its links stay inside the spectrum;
