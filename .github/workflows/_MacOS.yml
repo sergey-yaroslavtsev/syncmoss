@@ -135,7 +135,7 @@ jobs:
     name: Merge, sign and notarize the universal2 app
     needs: build
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
 
