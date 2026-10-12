@@ -54,6 +54,7 @@ def copy_resources():
         (os.path.join(syncmoss_DIR, "icons"),      os.path.join(OUTPUT_DIR, "icons")),
         (os.path.join(syncmoss_DIR, "parameters"), os.path.join(OUTPUT_DIR, "parameters")),
         (os.path.join(syncmoss_DIR, "Library"), os.path.join(OUTPUT_DIR, "Library")),
+        (os.path.join(syncmoss_DIR, "Expressions"), os.path.join(OUTPUT_DIR, "Expressions")),
     ]
     for src, dst in folder_pairs:
         if os.path.isdir(dst):

@@ -1,0 +1,8 @@
+#@Comment Hyperfine field of fast-relaxing superparamagnetic particles in an applied field: it follows their Langevin magnetisation, T.
+#@Comment $H_{hf}=H_0\left(\coth x-\frac{1}{x}\right)$ with $x=\frac{\mu\,\mu_B H_{ext}}{k_BT}$
+#@Comment N1 - temperature of the measurement, K: the first number given with each spectrum in the path box.
+#@Comment {H_0} - saturation hyperfine field, T; {mu} - particle moment, in Bohr magnetons; {H_ext} - applied field, T (e.g. N2 for a field sequence).
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+{H_0}*(lambda x: (x != 0)*(1/tanh(x + (x == 0)) - 1/(x + (x == 0))))(0.6717138156258398*{mu}*{H_ext}/N1)				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

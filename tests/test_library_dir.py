@@ -35,10 +35,12 @@ def _read(path):
 
 
 def _app_folder(tmp_path):
-    """What ships next to the frozen executable: parameters/ and Library/."""
+    """What ships next to the frozen executable: parameters/, Library/ and
+    Expressions/."""
     base = tmp_path / "SYNCmoss.app" / "Contents" / "MacOS"
     for folder, names in (("parameters", ("Be.txt", "Calibration.dat")),
-                          ("Library", ("Goethite.mdl", "Hematite.mdl"))):
+                          ("Library", ("Goethite.mdl", "Hematite.mdl")),
+                          ("Expressions", ("Central shift vs temperature.mdl",))):
         os.makedirs(base / folder)
         for name in names:
             _write(base / folder / name, f"bundled {name}\n")
@@ -75,6 +77,7 @@ def test_source_and_windows_runs_use_the_folders_in_place(tmp_path, monkeypatch)
 
     assert sm._resolve_params_dir(base) == os.path.join(base, "parameters")
     assert sm._resolve_library_dir(base) == os.path.join(base, "Library")
+    assert sm._resolve_expressions_dir(base) == os.path.join(base, "Expressions")
     assert not app_data.exists()
 
 
@@ -92,9 +95,17 @@ def test_frozen_macos_moves_both_folders_to_app_data(tmp_path, frozen_macos):
     assert sorted(os.listdir(params_dir)) == ["Be.txt", "Calibration.dat", "Library"]
 
 
+def test_frozen_macos_moves_the_expressions_to_app_data(tmp_path, frozen_macos):
+    expressions_dir = sm._resolve_expressions_dir(_app_folder(tmp_path))
+    assert expressions_dir == os.path.join(frozen_macos, "Expressions")
+    assert os.listdir(expressions_dir) == ["Central shift vs temperature.mdl"]
+
+
 @pytest.mark.parametrize("folder, resolver, bundled_file, own_file, new_file", [
     ("parameters", "_resolve_params_dir", "Calibration.dat", "notes.txt", "INSnew.txt"),
     ("Library", "_resolve_library_dir", "Hematite.mdl", "My sample.mdl", "Wuestite.mdl"),
+    ("Expressions", "_resolve_expressions_dir", "Central shift vs temperature.mdl",
+     "Mine.mdl", "Linear in N1.mdl"),
 ])
 def test_changes_are_kept_until_the_bundle_gains_a_file(
         tmp_path, frozen_macos, folder, resolver, bundled_file, own_file, new_file):

@@ -1,0 +1,7 @@
+#@Comment Quadrupole splitting of the paramagnetic state from the quadrupole shift of a sextet, mm/s - first order: the quadrupole interaction small against the magnetic one.
+#@Comment $\Delta E_Q=\frac{4\varepsilon\sqrt{1+\eta^2/3}}{3\cos^2\theta-1+\eta\sin^2\theta\cos2\varphi}$
+#@Comment {eps} - quadrupole shift ε of a Sextet, mm/s; {eta} - EFG asymmetry η; {theta}, {phi} - polar and azimuthal angles of the hyperfine field in the EFG principal axes, ° (θH, φH of the Hamiltonian). Undefined where the denominator is 0 (θ = 54.7° at η = 0).
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+4*{eps}*sqrt(1+{eta}**2/3)/(3*cos({theta}*pi/180)**2 - 1 + {eta}*sin({theta}*pi/180)**2*cos(2*{phi}*pi/180))				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

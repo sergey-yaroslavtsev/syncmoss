@@ -1,4 +1,6 @@
 # Constants
+import math
+
 numro = 50   # max number of model rows in the parameters/results tables
 numco = 27   # max number of parameter columns per row (27 = the SCDW slot count)
 
@@ -27,9 +29,16 @@ numco = 27   # max number of parameter columns per row (27 = the SCDW slot count
 #       used everywhere (start values, bounds, grid floors and the thickness
 #       prefactor), so it is the primary form and G_nat follows from it.
 # ===========================================================================
+# Universal constants: the SI defining constants (exact since 2019) and the
+# Bohr magneton (CODATA 2018).
+E_CHARGE = 1.602176634e-19      # elementary charge, C (J per eV)
+H_PLANCK = 6.62607015e-34       # Planck constant, J s
+K_B = 1.380649e-23              # Boltzmann constant, J/K
+MU_B = 9.2740100783e-24         # Bohr magneton, J/T
+
 NAT_WIDTH = 0.098               # natural line width (FWHM), mm/s
 E0 = 14412                      # resonance energy, eV
-E0_J = E0 * 1.602176634 * 10**-19
+E0_J = E0 * E_CHARGE            # resonance energy, J
 c = 2.99792458 * 10 ** 11       # speed of light, mm/s
 G_nat = NAT_WIDTH / c * E0      # the same natural width in eV: 4.711e-9
 d = 0.005                       # area density
@@ -60,21 +69,34 @@ LINE_RATIO_34 = LINE_SHIFT_34 / LINE_SHIFT_16           # 0.1579504
 # Everything below is DERIVED from the primitives above plus two new inputs,
 # ALPHA_IC and the universal hc; no 57Fe literal is repeated.
 #   ALPHA_IC -- internal conversion coefficient of the 14.4 keV level.
-#   HC_EV_A  -- h*c = 1239.8419843320026 eV nm (exact in SI since 2019).
+#   HC_EV_A  -- h*c, from H_PLANCK, c and E_CHARGE (exact in SI since 2019).
 ALPHA_IC = 8.56
-HC_EV_A = 12398.419843320026                            # eV * Angstrom
+HC_EV_A = H_PLANCK * c / E_CHARGE * 1e7                 # 12398.42 eV * Angstrom
 
 MMPS_TO_NEV = E0 / c * 10**9            # 48.0733 neV per (mm/s): E = E0 v/c
 GAMMA0_NEV = NAT_WIDTH * MMPS_TO_NEV    # 4.7112 neV, the natural width in neV
 MU_N_NEV_PER_T = mun / (E0_J / E0) * 10**9              # 31.4331 neV/T
 LAMBDA_A = HC_EV_A / E0                                 # 0.8603 A
-K_VEC_A = 2 * 3.141592653589793 / LAMBDA_A              # 7.3035 1/A
+K_VEC_A = 2 * math.pi / LAMBDA_A                        # 7.3035 1/A
 R_E_A = 2.8179403262 * 10**-5                           # classical electron radius, A
 # Maximum resonant cross-section from the level scheme:
 #   sigma_0 = 2 pi lambdabar^2 (2 I_e + 1)/(2 I_g + 1) / (1 + alpha_ic)
 # equals `sigma` above (2.464e-22 m^2) to 0.02 %; sms_theory.selftest() checks it.
-SIGMA0_A2 = (2 * 3.141592653589793 * (LAMBDA_A / (2 * 3.141592653589793))**2
+SIGMA0_A2 = (2 * math.pi * (LAMBDA_A / (2 * math.pi))**2
              * (2 * 1.5 + 1) / (2 * 0.5 + 1) / (1 + ALPHA_IC))   # 0.024644 A^2
+
+# --- lattice-dynamics and lifetime quantities (the Expressions/ formulas) ----
+# The predefined expressions hold these as plain numbers (their text is
+# evaluated, it cannot import), written from the values here.
+#   M_FE57_U  -- atomic mass of 57Fe, u (AME2020: 56.935 392 84(29) u).
+#   U_C2_EV   -- energy equivalent of the atomic mass unit, eV
+#                (CODATA 2018: 931.494 102 42(28) MeV).
+K_B_EV = K_B / E_CHARGE                                 # 8.617333e-5 eV/K
+HBAR_EV_S = H_PLANCK / (2 * math.pi) / E_CHARGE         # 6.582120e-16 eV s
+M_FE57_U = 56.93539284
+U_C2_EV = 931.49410242e6
+MC2_EV = M_FE57_U * U_C2_EV                             # 5.303498e10 eV, rest energy of the atom
+E_RECOIL_EV = E0**2 / (2 * MC2_EV)                      # 1.958e-3 eV, free-atom recoil energy
 
 # Linear polarization degree of the SMS (synchrotron) beam, 0..1. Only a default:
 # it is GUI-editable via Supp -> "Set polarization" and travels to the models as

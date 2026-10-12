@@ -18,6 +18,7 @@ from syncmoss.model_io import (mod_len_def, append_model_via_dialog, split_link_
                                split_independent_field, resolve_link_chains)
 from syncmoss.spectrum_parameters import path_box_entries
 from syncmoss.Library_window import open_library_model_dialog
+from syncmoss.expressions_window import open_expressions_dialog
 
 # Absolute path to the icons directory.
 # Used to build absolute url() paths in Qt stylesheets so they work both
@@ -206,7 +207,10 @@ MODEL_OPTIONS = [
     # 'Library' picks a model out of the internal Library folder, 'Load model'
     # picks any .mdl through a file browser; both ADD the chosen model's
     # components to the current one (see model_io.load_model_from_path).
-    'Variables', 'Expression', 'Library', 'Load model', 'Delete', 'Insert', 'Nbaseline',
+    # 'Load expression' inserts a predefined expression out of the Expressions
+    # folder (expressions_window).
+    'Variables', 'Expression', 'Load expression', 'Library', 'Load model', 'Delete', 'Insert',
+    'Nbaseline',
     'Copy', 'Paste'
 ]
 
@@ -446,7 +450,7 @@ class ParametersTable(QWidget):
             'Insert': '#cc4444', 'Delete': '#cc4444',
             'Nbaseline': '#224477',
             'Library': "#319B00", 'Load model': "#1F6600",
-            'Expression': '#5599cc', 'Variables': '#5599cc',
+            'Expression': '#5599cc', 'Variables': '#5599cc', 'Load expression': '#336f99',
             'Distr': '#774488', 'Corr': '#774488', 'Recon': '#774488',
             'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
             'Layer': '#2a8a8a',
@@ -550,6 +554,9 @@ class ParametersTable(QWidget):
                 if opt == 'Load model':
                     append_model_via_dialog(self.main_window, r)
                     return
+                if opt == 'Load expression':
+                    open_expressions_dialog(self.main_window, r)
+                    return
                 if opt == 'Copy':
                     self.copy_model_to_memory(r)
                     return
@@ -583,6 +590,23 @@ class ParametersTable(QWidget):
 
     def _open_library_model_dialog(self, insert_row):
         open_library_model_dialog(self.main_window, self, insert_row, model_options=MODEL_OPTIONS)
+
+    def insert_expression(self, row, text):
+        """Insert an Expression row holding *text* at *row*, the way the
+        Library inserts a model: the rows from *row* on move down. Returns the
+        row it went into (never the baseline).
+
+        The p[i] of *text* name parameters of the table as it was BEFORE the
+        insert -- the numbers the user read off it -- so those at or after the
+        new slot are shifted with the parameters they name.
+        """
+        row = max(1, min(row, len(self.row_widgets) - 1))
+        start = sum(self.row_params[:row])
+        self.select_model(row, 'Insert')
+        self.select_model(row, 'Expression')
+        text, _ = self._shift_p_references(text, start, 1)
+        self.expression_value_input(row).setText(text)
+        return row
 
     def _get_row_fix_states(self, row):
         states = []

@@ -1,0 +1,9 @@
+#@Comment Lamb-Mössbauer factor (recoil-free fraction) of the Debye model. The integral is substituted with a high-accuracy approximation.
+#@Comment $f(T)=\exp\left[-\frac{6E_R}{k_B\Theta_D}\left(\frac{1}{4}+\left(\frac{T}{\Theta_D}\right)^2\int_0^{\Theta_D/T}\frac{x}{e^x-1}\,dx\right)\right]$ with the recoil energy $E_R=\frac{E_\gamma^2}{2Mc^2}$
+#@Comment The integral: $\int_0^{y}\frac{x}{e^x-1}\,dx\approx\frac{\pi^2}{6}\left(1-e^{-y(1+0.08314405y)/(\pi^2/6+0.048y)}\right)$ with $y=\Theta_D/T$: exact for $T\to0$ and $T\gg\Theta_D$, f within 0.04 % for $\Theta_D\geq50$ K.
+#@Comment N1 - temperature of the measurement, K: the first number given with each spectrum in the path box.
+#@Comment {T_D} - Debye temperature, K: a parameter, free or fixed (e.g. a value of a Variables row) - substitute its p[i].
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+exp(-136.343501013145/{T_D}*(1/4 + (N1/{T_D})**2*(pi**2/6)*(1-exp(-({T_D}/N1)*(1+0.08314405*{T_D}/N1)/(pi**2/6+0.048*{T_D}/N1)))))				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

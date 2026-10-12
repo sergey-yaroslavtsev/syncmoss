@@ -1,0 +1,8 @@
+#@Comment Hyperfine field well below the magnetic transition: Bloch's spin-wave law, T; zero above T_C.
+#@Comment $H_{hf}(T)=H_{hf}(0)\left[1-b\left(\frac{T}{T_C}\right)^{3/2}\right]$
+#@Comment N1 - temperature of the measurement, K: the first number given with each spectrum in the path box.
+#@Comment {H_0} - H_hf(0), T; {b} - spin-wave constant; {T_C} - Curie or Néel temperature, K. Only b/T_C^(3/2) is determined: keep T_C (or b) fixed in a fit.
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+{H_0}*(1-{b}*(N1/{T_C})**1.5)*(N1<{T_C})				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

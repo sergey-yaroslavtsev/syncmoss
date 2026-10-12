@@ -88,6 +88,20 @@ These rows take **text**, not numbers:
   (Tikhonov) knobs on the first and second derivative of the reconstructed
   distribution — raise them if the result oscillates.
 
+**Predefined expressions.** *Load expression* in a row's model menu opens the
+expressions of the `Expressions` folder — each one a `.mdl` model file with a
+single `Expression` row, its name the file name and its comment the `#@Comment`
+lines, as in the Library. The chosen one's comment says what it does and what
+each `{X}` of its text stands for; every `{X}`, and every `N1`, `N2`, …, gets a
+box. What you type there (`p[12]`, a number) is put in; a box left empty keeps
+the name, to be replaced in the table afterwards (an `N1` left as it is takes
+each spectrum's own number in a sequence). **Load** inserts the result as an
+`Expression` row at that row, the way the Library inserts a model; the `p[i]`
+you type are the numbers the table shows before the insert, and are renumbered
+with it. To keep an expression of your own, fill in name, comment and expression
+and press **Save**. A formula in the comment written between dollar signs is
+shown rendered.
+
 Every one of these texts may also use the **parameters of the spectrum** (see
 section 7): `N` is the spectrum's number in the sequence — its position in the
 path box, counted from 1 — and `N1`, `N2`, … are the numbers given with it

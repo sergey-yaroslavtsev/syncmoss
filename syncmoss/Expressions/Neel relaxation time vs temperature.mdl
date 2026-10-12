@@ -1,0 +1,8 @@
+#@Comment Néel-Arrhenius relaxation time of a single-domain particle, in the unit of {tau_0}. The spectrum is a static sextet while τ is well above ~10 ns.
+#@Comment $\tau=\tau_0\exp\left(\frac{KV}{k_BT}\right)$
+#@Comment N1 - temperature of the measurement, K: the first number given with each spectrum in the path box.
+#@Comment {tau_0} - attempt time (1e-9 to 1e-12 s); {K} - anisotropy constant, J/m^3; {V} - particle volume, nm^3.
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+{tau_0}*exp(7.24297051603992e-05*{K}*{V}/N1)				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

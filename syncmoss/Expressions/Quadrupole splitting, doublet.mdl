@@ -1,0 +1,7 @@
+#@Comment Quadrupole splitting of a doublet - the distance between its two lines, mm/s - as articles quote it (ΔE_Q, E_Q, QS).
+#@Comment $\Delta E_Q=2\varepsilon$
+#@Comment {eps} - quadrupole shift ε of a Doublet (half its splitting), mm/s - substitute its p[i].
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+2*{eps}				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

@@ -1,0 +1,8 @@
+#@Comment Hyperfine field over the whole range below the magnetic transition (empirical), T; zero above T_C.
+#@Comment $H_{hf}(T)=H_{hf}(0)\left[1-\left(\frac{T}{T_C}\right)^\alpha\right]^\beta$
+#@Comment N1 - temperature of the measurement, K: the first number given with each spectrum in the path box.
+#@Comment {H_0} - H_hf(0), T; {T_C} - Curie or Néel temperature, K; {alpha} - low-temperature exponent (3/2 gives Bloch's law); {beta} - critical exponent.
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+{H_0}*abs(1-(N1/{T_C})**{alpha})**{beta}*(N1<{T_C})				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

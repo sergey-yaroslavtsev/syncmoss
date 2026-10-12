@@ -1,0 +1,7 @@
+#@Comment Mean lifetime of the excited state from a Lorentzian line width, ns.
+#@Comment $\tau=\frac{\hbar}{\Gamma}=\frac{\hbar c}{E_\gamma L}$
+#@Comment {L} - Lorentzian width L (FWHM) of a component, mm/s - substitute its p[i]. The natural width 0.098 mm/s gives 139.7 ns.
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+13.691852654683771/{L}				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

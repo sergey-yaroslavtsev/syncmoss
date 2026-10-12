@@ -1,0 +1,7 @@
+#@Comment Quadrupole shift ε of the paramagnetic doublet from the quadrupole parameters of a Hamiltonian row, mm/s. Put it after the Hamiltonian and link a Doublet's ε to it (=[X,1]) to predict the spectrum above the ordering temperature.
+#@Comment $\varepsilon=\frac{eQV_{zz}}{4}\sqrt{1+\frac{\eta^2}{3}}$
+#@Comment {Q} - Q of the Hamiltonian (it is eQV_zz), mm/s; {eta} - its η. Substitute their p[i].
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+{Q}/4*sqrt(1+{eta}**2/3)				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

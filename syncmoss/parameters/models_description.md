@@ -408,6 +408,10 @@ parameter in its own right — point real parameters at it with `=[X,Y]` (see
 Parameters:
 - Expression: formula text, for example `p[0]` or `p[5]*0.5`.
 
+Ready-made expressions (e.g. the central shift vs temperature) are inserted with
+*Load expression*, which fills in their `{X}` placeholders (see *Supp -> Help
+(hidden features)*).
+
 Expressions are calculated in list order - thus, expression should not refer to another expression which stays below (but it can refer to any parameter)
 
 Avoid chain links in expression - if some parameter number `Z` is linked like `=[X,Y]` then expressions should not use `p[Z]` but `p[X]`.

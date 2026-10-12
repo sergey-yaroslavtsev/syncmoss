@@ -299,6 +299,21 @@ def _resolve_library_dir(base_dir):
     return _seed_from_bundle(bundled, os.path.join(_macos_app_data_dir(), 'Library'))
 
 
+def _resolve_expressions_dir(base_dir):
+    """Return the folder of the predefined expressions ("Load expression" lists
+    it, its Save writes into it).
+
+    Redirected like the Library (``_resolve_library_dir``): on a frozen macOS
+    ``.app`` the bundled ``Expressions/`` becomes
+    ``~/Library/Application Support/SYNCmoss/Expressions``, seeded by the same
+    rule. Windows and source checkouts keep using the in-place folder.
+    """
+    bundled = os.path.join(base_dir, 'Expressions')
+    if not _is_frozen_macos():
+        return bundled
+    return _seed_from_bundle(bundled, os.path.join(_macos_app_data_dir(), 'Expressions'))
+
+
 class CalibrationThread(QThread):
     """Thread for running calibration without blocking the UI"""
     finished = Signal(object, object, object)  # A, B, C
@@ -1019,6 +1034,8 @@ class PhysicsApp(QMainWindow):
         # The model Library is written to as well ("Save to library", "Import
         # Library"), so it gets the same redirect (<AppData>/Library there).
         self.library_dir = _resolve_library_dir(self.dir_path)
+        # The predefined expressions ("Load expression"), written to by its Save.
+        self.expressions_dir = _resolve_expressions_dir(self.dir_path)
         self.workfolder = None  # Start with no workfolder selected
         self.workfolder_check = 1
         self.check_points_match = False

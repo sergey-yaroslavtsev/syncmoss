@@ -69,7 +69,7 @@ def redirect_params_dir_to_tmp(window, tmp_dir):
 # On Linux/macOS _exit() is a bare system call, so nothing runs and nothing can
 # go wrong. On Windows _exit() is ExitProcess, which still runs every DLL's C++
 # static destructors in reverse load order: Qt6Widgets/Qt6Gui tear down their
-# globals first and shiboken6 (loaded first, as QtCore's dependency) comes last.
+# globals first; shiboken6 (PySide6 imports it before any Qt DLL) comes last.
 # Python was never finalised, so shiboken's BindingManager destructor sees
 # Py_IsInitialized() and destroys every wrapper still alive -- the session's
 # leftover widgets -- after Qt's globals are gone: access violations in

@@ -59,6 +59,7 @@ def copy_resources(app_dir: str):
         (os.path.join(SYNCMOSS_DIR, "icons"), os.path.join(app_macos_dir, "icons")),
         (os.path.join(SYNCMOSS_DIR, "parameters"), os.path.join(app_macos_dir, "parameters")),
         (os.path.join(SYNCMOSS_DIR, "Library"), os.path.join(app_macos_dir, "Library")),
+        (os.path.join(SYNCMOSS_DIR, "Expressions"), os.path.join(app_macos_dir, "Expressions")),
     ]
     for src, dst in folder_pairs:
         if os.path.isdir(dst):

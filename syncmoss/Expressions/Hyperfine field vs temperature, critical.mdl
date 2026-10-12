@@ -1,0 +1,8 @@
+#@Comment Hyperfine field close below the magnetic transition (critical behaviour), T; zero above T_C.
+#@Comment $H_{hf}(T)=H_0\left(\frac{T_C-T}{T_C}\right)^\beta$
+#@Comment N1 - temperature of the measurement, K: the first number given with each spectrum in the path box.
+#@Comment {H_0} - critical amplitude, T (not H_hf(0)); {T_C} - Curie or Néel temperature, K; {beta} - critical exponent (3D magnets 0.33-0.37, mean field 0.5).
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+{H_0}*abs(1-N1/{T_C})**{beta}*(N1<{T_C})				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

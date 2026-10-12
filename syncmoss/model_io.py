@@ -16,7 +16,8 @@ import os
 import numpy as np
 import re
 from PySide6.QtWidgets import QFileDialog, QMessageBox
-from syncmoss.constants import numco, number_of_baseline_parameters, mdl_color_names, contrast_text_color
+from syncmoss.constants import (numco, number_of_baseline_parameters, mdl_color_names,
+                                contrast_text_color, model_colors)
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
 from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
 from syncmoss.spectrum_parameters import (
@@ -733,6 +734,23 @@ def save_model_to_library(main_window, title, comment=None, metadata=None, notif
             return False
 
     return _save_model_to_file(main_window, file_path, comment=comment, metadata=metadata)
+
+
+def expression_model_rows(main_window, expression):
+    """The model file of a predefined expression (see expressions_io), as
+    :func:`model_file_rows` gives one: the table's baseline and a single
+    Expression row holding *expression*."""
+    names, colors, rows = model_file_rows(main_window)
+    expression_row = [[expression, '', '', '', 'True']] + [['', '', '', '', 'False']] * (numco - 1)
+    # The Expression row is never drawn; any colour keeps the colour line non-empty.
+    return [names[0], 'Expression'], [colors[0], model_colors[0]], [rows[0], expression_row]
+
+
+def save_expression_model(main_window, file_path, expression, comment=None):
+    """Write a predefined expression as the .mdl *file_path*, its *comment* as
+    ``#@Comment`` lines like a Library model's. True when it was written."""
+    return _write_model_file(main_window, file_path,
+                             expression_model_rows(main_window, expression), comment=comment)
 
 
 def split_link_field(text):

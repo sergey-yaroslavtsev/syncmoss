@@ -1,0 +1,11 @@
+#@Comment Describes the dependence of the central shift on temperature: the isomer shift plus the second-order Doppler shift of the Debye model. The integral is substituted with a high-accuracy approximation.
+#@Comment $\delta(T)=-\frac{c}{E_\gamma}\,\frac{3E_\gamma}{2Mc^2}\left[\frac{3}{8}k_B\Theta_D+3k_BT\left(\frac{T}{\Theta_D}\right)^3\int_0^{\Theta_D/T}\frac{x^3}{e^x-1}\,dx\right]+\delta_{IS}$
+#@Comment δ(T) - the central shift, mm/s.
+#@Comment The integral: $\int_0^{y}\frac{x^3}{e^x-1}\,dx\approx\frac{\pi^4}{15}\left(1-e^{-g}\right)$, $g=\frac{y^3(1+0.2903896y)}{\pi^4/5+12.963y+3.895y^2+0.2869y^3}$ with $y=\Theta_D/T$: exact for $T\to0$ and $T\gg\Theta_D$, δ within $10^{-4}$ of its zero-point part ($1.1\cdot10^{-5}$ mm/s at $\Theta_D=400$ K) up to $T=100\,\Theta_D$.
+#@Comment N1 - temperature of the measurement, K: the first number given with each spectrum in the path box.
+#@Comment {T_D} - Debye temperature, K: a parameter, free or fixed (e.g. a value of a Variables row) - substitute its p[i].
+#@Comment {IS} - isomer shift (temperature-independent), mm/s: a parameter or a number.
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+-0.0007306719237962155*(3/8*{T_D} + 3*N1*(N1/{T_D})**3*(pi**4/15)*(1-exp(-({T_D}/N1)**3*(1+0.2903896*{T_D}/N1)/(pi**4/5+12.963*{T_D}/N1+3.895*({T_D}/N1)**2+0.2869*({T_D}/N1)**3)))) + {IS}				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
