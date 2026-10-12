@@ -62,60 +62,22 @@ def redirect_params_dir_to_tmp(window, tmp_dir):
     return window.params_dir
 
 
-# Guarantee the test process actually terminates. Head-less ("offscreen") Qt plus
-# the widgets/canvases and worker threads the GUI tests spin up can leave a
-# native/non-daemon resource alive that blocks interpreter shutdown, so `pytest`
-# finishes running and REPORTING every test yet the process never exits (the
-# "infinite waiting" noted for this suite — it makes a plain `pytest tests/` look
-# hung and forced the foreground / read-the-progress-bar workaround). We record
-# the status in sessionfinish and force-exit in `pytest_unconfigure`, which runs
-# AFTER the terminal summary + any failure tracebacks are printed but BEFORE the
-# interpreter-shutdown hang — so nothing is ever hidden and the real status is
-# preserved. Skipped under xdist workers and active pytest-cov so their own
-# finalization (IPC / .coverage writing) is never cut short (CI unaffected).
-_FORCE_EXIT_STATUS = {}
-
-
-def pytest_sessionfinish(session, exitstatus):
-    _FORCE_EXIT_STATUS["code"] = int(exitstatus)
-
-
-def pytest_unconfigure(config):
-    code = _FORCE_EXIT_STATUS.get("code")
-    if code is None:
-        return
-    if hasattr(config, "workerinput"):
-        return  # xdist worker: leave IPC/teardown to xdist
-    if config.pluginmanager.hasplugin("pytest_cov") and getattr(config.option, "cov_source", None):
-        return  # coverage active: let atexit combine/write .coverage
-
-    import os
-    import faulthandler
-    import multiprocessing as mp
-
-    try:
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        if app is not None:
-            app.quit()
-    except Exception:
-        pass
-
-    # Terminate any lingering multiprocessing pool/workers first, so the force
-    # exit below cannot orphan them (orphaned pool processes are a known hazard
-    # in this project). Then disable faulthandler so os._exit — which we use to
-    # step over the headless-Qt interpreter-shutdown hang — does not print a
-    # (harmless) stack dump of the still-live threads.
-    for child in mp.active_children():
-        try:
-            child.terminate()
-        except Exception:
-            pass
-    faulthandler.disable()
-
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(code)
+# The session ends with a NORMAL interpreter exit, like the application itself
+# (main.py: sys.exit(app.exec())). Do not shortcut it with os._exit(): PySide6
+# registers an atexit handler that deletes every remaining QObject and then the
+# QApplication while Qt is still fully alive, and os._exit skips it.
+# On Linux/macOS _exit() is a bare system call, so nothing runs and nothing can
+# go wrong. On Windows _exit() is ExitProcess, which still runs every DLL's C++
+# static destructors in reverse load order: Qt6Widgets/Qt6Gui tear down their
+# globals first and shiboken6 (loaded first, as QtCore's dependency) comes last.
+# Python was never finalised, so shiboken's BindingManager destructor sees
+# Py_IsInitialized() and destroys every wrapper still alive -- the session's
+# leftover widgets -- after Qt's globals are gone: access violations in
+# QAccessible::queryAccessibleInterface, QThreadStorageData::get,
+# pyside6.abi3.dll, ... depending on which object goes first. Until 2026-10 a
+# force-exit hook here did exactly that; it was the "Segmentation fault" after
+# a fully passing Windows run on the release lane (it had been hidden locally
+# by a faulthandler.disable() and by xdist, whose workers exit normally).
 
 
 def _parameters_dir():

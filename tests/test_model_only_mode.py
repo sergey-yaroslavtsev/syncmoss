@@ -122,9 +122,8 @@ def test_document_viewers_open_independently(physics_app, opener, attribute):
     """Each document gets its own window, so both can be open at once, and a
     second call reuses it instead of stacking windows.
 
-    The window is destroyed again before the test ends: a stray top-level widget
-    left alive head-less is what makes this suite hang at interpreter shutdown
-    (see the force-exit note in conftest.py).
+    The window is destroyed again before the test ends, so it is not left over
+    for interpreter shutdown to destroy (see the exit note in conftest.py).
     """
     import syncmoss.supp_menu as supp_menu
     from PySide6.QtWidgets import QApplication
