@@ -114,7 +114,7 @@ def test_the_field_takes_an_independent_value(physics_app):
     pt.select_model(1, 'Doublet')
     field = _value_input(pt, 1, 1)
     validator = field.validator()
-    for text in ('=()', '=(0.5)', '=(-3)', '=(', '=(1.'):
+    for text in ('=()', '=(0.5)', '=(-3)', '=(', '=(1.', '=(1.)', '=(.5)', '=(-.)'):
         assert validator.validate(text, len(text))[0] != QValidator.State.Invalid, text
     for text in ('=(a)', '=(1)2', '=((1))'):
         assert validator.validate(text, len(text))[0] == QValidator.State.Invalid, text
@@ -184,11 +184,12 @@ def test_read_model_reads_x_and_the_table_knows_the_independent_slots(physics_ap
     assert app.params_table.get_link_snapshot()[DELTA] == '=(0.05)'
 
 
-def test_an_unfinished_independent_value_blocks_the_start(physics_app):
+@pytest.mark.parametrize('text', ['=()', '=(.)', '=(-.)'])
+def test_an_unfinished_independent_value_blocks_the_start(physics_app, text):
     app = physics_app
     pt = app.params_table
     pt.select_model(1, 'Doublet')
-    _value_input(pt, 1, 1).setText('=()')
+    _value_input(pt, 1, 1).setText(text)
     assert [s['reason'] for s in pt.get_empty_parameter_slots()] == ['unfinished independent']
     assert app.check_user_expressions("Fit") is False
     assert "without its start value" in app.log.toPlainText()

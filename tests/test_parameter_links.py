@@ -11,7 +11,9 @@ The right-click menu of such a field offers the one step that is awkward to type
 by hand — starting a link.
 """
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QValidator
+from PySide6.QtTest import QTest
 
 from syncmoss.model_io import split_link_field
 
@@ -39,6 +41,10 @@ def _state(value_input, text):
     ("=[9,]", None),     # half-written: factor deleted
     ("=[,]", None),
     ("=[9,-]", None),
+    ("=[9,0.]", (9.0, 0.0)),   # last decimal deleted before the new one is typed
+    ("=[9,.5]", (9.0, 0.5)),   # integer part deleted before the new one is typed
+    ("=[9,.]", None),          # no number left
+    ("=[9,-.]", None),
     ("1.0", None),       # a plain number is not a link
     ("", None),
 ])
@@ -53,8 +59,38 @@ def test_half_written_links_can_be_typed(physics_app):
     pt.select_model(1, "Doublet")
     field = _value_input(pt, 1, 1)          # delta
 
-    for text in ("=[9,1]", "=[,1]", "=[9,]", "=[,]", "=[9,-]", "=[", "-0.5"):
+    for text in ("=[9,1]", "=[,1]", "=[9,]", "=[,]", "=[9,-]", "=[", "-0.5",
+                 "=[9,0.]", "=[9,-0.]", "=[9,.5]", "=[9,-.5]", "=[9,.]"):
         assert _state(field, text) != QValidator.State.Invalid, text
+
+
+def test_a_factor_decimal_can_be_retyped(physics_app):
+    """0.1234 -> 0.2 by Backspace: the way passes through '=[9,0.]'."""
+    pt = physics_app.params_table
+    pt.select_model(1, "Doublet")
+    field = _value_input(pt, 1, 1)
+    field.setText("=[9,0.1234]")
+    field.setCursorPosition(len("=[9,0.1234"))   # just before ']'
+
+    for _ in range(4):
+        QTest.keyClick(field, Qt.Key.Key_Backspace)
+    QTest.keyClicks(field, "2")
+
+    assert field.text() == "=[9,0.2]"
+
+
+def test_a_factor_integer_part_can_be_retyped(physics_app):
+    """0.5 -> 1.5 by Delete: the way passes through '=[9,.5]'."""
+    pt = physics_app.params_table
+    pt.select_model(1, "Doublet")
+    field = _value_input(pt, 1, 1)
+    field.setText("=[9,0.5]")
+    field.setCursorPosition(len("=[9,"))          # just before '0'
+
+    QTest.keyClick(field, Qt.Key.Key_Delete)
+    QTest.keyClicks(field, "1")
+
+    assert field.text() == "=[9,1.5]"
 
 
 def test_letters_are_still_rejected(physics_app):
@@ -84,14 +120,17 @@ def test_unfinished_link_blocks_run_and_marks_field_red(physics_app):
     assert "red" in field.styleSheet()
 
 
-def test_missing_factor_blocks_run(physics_app):
+@pytest.mark.parametrize("text", ["=[9,]", "=[9,.]", "=[9,-.]"])
+def test_missing_factor_blocks_run(physics_app, text):
     pt = physics_app.params_table
     pt.select_model(1, "Singlet")
     pt.select_model(2, "Doublet")
-    _value_input(pt, 2, 1).setText("=[9,]")
+    field = _value_input(pt, 2, 1)
+    field.setText(text)
 
     assert [s["reason"] for s in pt.get_empty_parameter_slots()] == ["unfinished link"]
     assert physics_app.check_user_expressions("Fit") is False
+    assert "red" in field.styleSheet()
 
 
 def test_finished_link_passes(physics_app):

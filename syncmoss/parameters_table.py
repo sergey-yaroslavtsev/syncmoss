@@ -43,7 +43,11 @@ _CBL2 = f"{_ICONS_DIR}/CheckBox_L2.png"
 # Or an independent value '=(X)' (model_io.split_independent_field): its own
 # value in every spectrum of a simultaneous one-model fit, all starting from X;
 # '=()' is accepted while X is being typed, and refused the same way.
-_VALUE_INPUT_PATTERN = r'^(-?\d+(\.\d+)?|=\[\d*,-?(\d+(\.\d+)?)?\]|=\((-?\d+(\.\d+)?)?\))$'
+# The number inside the brackets may lose the digits on either side of its
+# decimal point ('=[3,0.]', '=[3,.5]', '=(1.)', '=(.5)'), so any of them can be
+# deleted before the new one is typed (0.1234 -> 0.1 -> 0. -> 0.2). What is
+# left without a number at all ('=[3,.]', '=(-.)') is refused like '=[3,]'.
+_VALUE_INPUT_PATTERN = r'^(-?\d+(\.\d+)?|=\[\d*,-?\d*(\.\d*)?\]|=\(-?\d*(\.\d*)?\))$'
 
 # Prefilled by the "link to another parameter" context-menu entry, with the
 # cursor parked on the empty source-index half (before the comma).
