@@ -378,6 +378,29 @@ def test_every_selected_spectrum_is_saved_without_its_excluded_points(physics_ap
         assert np.array_equal(A_saved[0], A[0][keep]) and np.array_equal(B_saved[0], B[0][keep])
 
 
+@pytest.mark.parametrize("cms, end, warned", [(True, True, True), (True, False, False), (False, True, False)],
+                         ids=["CMS, an end cut", "CMS, inside only", "SMS, an end cut"])
+def test_cutting_an_end_of_a_cms_spectrum_warns(physics_app, tmp_path, monkeypatch, cms, end, warned):
+    """Saved without an end of its velocity range, a CMS spectrum has another
+    middle -- where its cosine smearing would start: a warning, the save done."""
+    app = physics_app
+    A = np.loadtxt(os.path.join(FROZEN_PARAMETERS, "Calibration.dat"), comments='#', unpack=True)[0]
+    paths = _spectra(app, tmp_path, 2, metadata=["#@GCMS 0.1 0.2 5 20"] if cms else [])
+    _apply(app, f"{A.min() - 1:.3f}:{A.min() + 0.5:.3f}" if end else REGIONS)
+    app.save_path.setText(str(tmp_path / "cut"))
+    monkeypatch.setattr(spectrum_io.QMessageBox, "question",
+                        lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
+    shown = []
+    monkeypatch.setattr(spectrum_io.QMessageBox, "warning", lambda *args, **kwargs: shown.append(args[-1]))
+
+    spectrum_io.save_without_excluded_points(app)
+
+    assert all(os.path.exists(tmp_path / "cut" / f"excl_{os.path.basename(p)}") for p in paths)
+    assert bool(shown) is warned
+    if warned:
+        assert "Δθ" in shown[0] and "2 spectra" in shown[0]
+
+
 @pytest.mark.parametrize("method", ["SMS", "CMS"])
 def test_raw_counts_are_saved_with_the_instrumental_function_in_use(physics_app, tmp_path, method):
     """An .mca is calibrated when it is read: the .dat written from it gets the

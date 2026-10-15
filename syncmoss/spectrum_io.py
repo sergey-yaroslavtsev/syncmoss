@@ -455,17 +455,20 @@ def subtract_model_from_spectrum(main_window):
         # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
         pol = float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
-        from syncmoss.instrumental_io import resolve_instrumental_for_file, compute_norm
+        from syncmoss.instrumental_io import resolve_instrumental_for_file, compute_norm, drive_rest_velocity
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)
         method_params['Norm'] = compute_norm(main_window.pool, JN, method_params)
+        method_params['v_center'] = drive_rest_velocity(A)
 
         # Calculate model spectrum
         try:
             SPC_f = TI(A, p, model, JN, main_window.pool,
                          method_params['x0'], method_params['MulCo'],
                          method_params['INS'], Distri, Cor,
-                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon)
+                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon,
+                         dtheta=method_params.get('dtheta', 0.0), v_center=method_params['v_center'],
+                         r_ratio=method_params.get('r_ratio', 0.0))
         except Exception as e:
             main_window.set_status(f"Error calculating model spectrum: {e}", "red")
             return
@@ -559,7 +562,7 @@ def prepare_model_spectrum(main_window):
             return None
         A = np.asarray(A_list[0], dtype=float)
 
-    from syncmoss.instrumental_io import (resolve_instrumental_for_file,
+    from syncmoss.instrumental_io import (resolve_instrumental_for_file, drive_rest_velocity,
                                           read_dat_metadata_lines, build_dat_metadata_lines)
     try:
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
@@ -571,6 +574,7 @@ def prepare_model_spectrum(main_window):
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(
             main_window, os.path.abspath(path) if path else None, use_dat_metadata=use_dat_metadata)
+        method_params['v_center'] = drive_rest_velocity(A)
         if method_params['source'] == 'file':
             header = read_dat_metadata_lines(path)
         else:
@@ -601,7 +605,8 @@ def compute_model_spectrum(job, pool):
     # TI sums its pool results as an object array; the counts are plain floats
     return np.asarray(TI(job['A'], job['p'], job['model'], job['JN'], pool, mp['x0'], mp['MulCo'],
                          mp['INS'], job['Distri'], job['Cor'], Met=mp['Met'], Norm=norm,
-                         pol=job['pol'], Recon=job['Recon']), dtype=float)
+                         pol=job['pol'], Recon=job['Recon'], dtheta=mp.get('dtheta', 0.0),
+                         v_center=mp.get('v_center', 0.0), r_ratio=mp.get('r_ratio', 0.0)), dtype=float)
 
 
 def save_model_spectrum(main_window, job, counts):
@@ -839,6 +844,7 @@ def save_without_excluded_points(main_window):
             main_window.show_pressed()
             main_window.set_status(f"Spectrum without excluded points ({kept_count} points) "
                                    f"saved to {os.path.basename(save_path)}", "green")
+            _warn_cms_cut_ends(main_window, [spectrum_path], regions)
             return
 
         reply = QMessageBox.question(
@@ -855,21 +861,51 @@ def save_without_excluded_points(main_window):
         save_dir = _directory_for_several_spectra(main_window)
         if save_dir is None:
             return
-        saved, skipped = 0, []
+        saved, skipped = [], []
         for spectrum_path in main_window.path_list:
             basename = os.path.splitext(os.path.basename(spectrum_path))[0]
             if process_without_excluded(main_window, spectrum_path,
                                         os.path.join(save_dir, f"excl_{basename}.dat"), regions):
-                saved += 1
+                saved.append(spectrum_path)
             else:
                 skipped.append(os.path.basename(spectrum_path))
-        message = f"{saved} spectra without excluded points saved to {save_dir}"
+        message = f"{len(saved)} spectra without excluded points saved to {save_dir}"
         if skipped:
             message += f"; not saved (no point left, or not readable): {', '.join(skipped)}"
         main_window.set_status(message, "orange" if skipped else "green")
+        _warn_cms_cut_ends(main_window, saved, regions)
 
     except Exception as e:
         main_window.set_status(f"Error saving spectra without excluded points: {e}", "red")
+
+
+def cuts_a_velocity_end(main_window, spectrum_path, regions):
+    """True when *regions* take away the lowest or the highest velocity of the
+    spectrum: saved without them, the middle of its velocity range -- where the
+    CMS cosine smearing takes the drive to be at rest
+    (instrumental_io.drive_rest_velocity) -- moves."""
+    A_list, _ = load_spectrum(main_window, [spectrum_path], calibration_path=main_window.calibration_path)
+    if not A_list:
+        return False
+    A = np.asarray(A_list[0], dtype=float)
+    keep = kept(A, regions)
+    return not (keep[np.argmin(A)] and keep[np.argmax(A)])
+
+
+def _warn_cms_cut_ends(main_window, spectrum_paths, regions):
+    """After a save without excluded points: a CMS spectrum (by its .dat header
+    or the CMS box, as a fit decides) whose ends were cut is smeared from the
+    wrong velocity if Δθ is used on it -- say so. Returns those spectra."""
+    from syncmoss.instrumental_io import resolve_instrumental_for_file
+    use_dat = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
+    cut = [path for path in spectrum_paths
+           if resolve_instrumental_for_file(main_window, path, use_dat_metadata=use_dat)['method'] == 'CMS'
+           and cuts_a_velocity_end(main_window, path, regions)]
+    if cut:
+        QMessageBox.warning(main_window, "Save spectrum without excluded points",
+                            "CMS: edge points were cut. Keep the edge points, or do not use Δθ for "
+                            + ("this spectrum." if len(spectrum_paths) == 1 else f"these {len(cut)} spectra."))
+    return cut
 
 
 def process_without_excluded(main_window, spectrum_path, save_path, regions):

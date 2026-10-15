@@ -40,8 +40,9 @@ def redirect_calibration_to_tmp(window, tmp_dir):
 
 def redirect_params_dir_to_tmp(window, tmp_dir):
     """Point a PhysicsApp at a throw-away copy of ``parameters/`` holding the
-    tests' frozen calibration and instrumental function (FROZEN_FILES; the
-    GCMS field is set from the frozen GCMS.txt, as the window does at start).
+    tests' frozen calibration and instrumental function (FROZEN_FILES; the G and
+    Δθ fields and the source and aperture diameters are set from the frozen
+    GCMS.txt, as the window does at start).
 
     Every instrumental-function search WRITES its answer: INSexp.txt, INSint.txt
     and (for the theoretical one) INSacc.txt, all under ``app.params_dir``. So a
@@ -58,7 +59,12 @@ def redirect_params_dir_to_tmp(window, tmp_dir):
     for name in FROZEN_FILES:
         shutil.copy2(os.path.join(FROZEN_PARAMETERS, name), os.path.join(tmp_copy, name))
     window.params_dir = tmp_copy
-    window.GCMS_input.setText(str(np.genfromtxt(os.path.join(tmp_copy, "GCMS.txt"), delimiter="\t")))
+    from syncmoss.instrumental_io import read_gcms_file
+    g, dtheta, source_diameter, aperture_diameter = read_gcms_file(tmp_copy)
+    window.GCMS_input.setText(str(g))
+    window.dtheta_input.setText(str(dtheta) if dtheta else "0")
+    window.source_diameter_input.setText(str(source_diameter))
+    window.aperture_diameter_input.setText(str(aperture_diameter))
     return window.params_dir
 
 
@@ -111,7 +117,8 @@ def parameters_folder_is_read_only():
           INSth.txt;
         * calibration writes Calibration.dat and calibr.png, and now also
           re-centres the stored instrumental function;
-        * "Reset to default values" rewrites whichever description is selected.
+        * "Reset instrumental function to default values" rewrites GCMS.txt in
+          CMS, else whichever SMS description is selected.
 
     Individual tests are expected to call ``redirect_params_dir_to_tmp`` (and
     ``redirect_calibration_to_tmp``) first. This is the backstop that catches

@@ -26,6 +26,7 @@ from syncmoss.instrumental_io import (
     compute_norm,
     same_method_params,
     hires_model_diff,
+    drive_rest_velocity,
 )
 
 
@@ -286,7 +287,9 @@ def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_param
                         method_params['x0'], method_params['MulCo'],
                         method_params['INS'], distri_slice, cor_slice,
                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol,
-                        Recon=recon_slice))
+                        Recon=recon_slice, dtheta=method_params.get('dtheta', 0.0),
+                        v_center=method_params.get('v_center', 0.0),
+                        r_ratio=method_params.get('r_ratio', 0.0)))
         FS_pos.append(mod_pos(Ps[i], Psm[i], method_params['INS'], Met=method_params['Met']))
     return FS, FS_pos
 
@@ -544,12 +547,16 @@ def fit_model(app, inputs, spectrum_files, pool):
         files_for_ins = list(spectrum_files) if is_simultaneous else [spectrum_file]
 
         method_params_list = []
-        for ins_file in files_for_ins:
+        for ins_file, a in zip(files_for_ins, A_list):
             mp_i = resolve_instrumental_for_file(app, ins_file, use_dat_metadata=use_dat_metadata)
             mp_i['Norm'] = compute_norm(pool, JN, mp_i)
+            mp_i['v_center'] = drive_rest_velocity(a)    # where the cosine smearing starts
             print('Normalization integral equal to', mp_i['Norm'])
             method_params_list.append(mp_i)
         mp0 = method_params_list[0]
+        # one centre per spectrum (each its own axis), also when the rest is shared
+        v_centers = [mp_i['v_center'] for mp_i in method_params_list]
+        v_center_arg = v_centers if is_simultaneous else v_centers[0]
 
         note_lines = [mp_i['note'] for mp_i in method_params_list]
         if len({mp_i['method'] for mp_i in method_params_list}) > 1:
@@ -584,14 +591,17 @@ def fit_model(app, inputs, spectrum_files, pool):
             # Uniform instrumental settings: a single TI call over the whole model
             # (TI splits Nbaseline sections internally, at the spectra's lengths)
             # — the original code path.
+            dtheta0, r_ratio0 = mp0.get('dtheta', 0.0), mp0.get('r_ratio', 0.0)
+
             def func(x, p, recon=Recon, lengths=lengths):
                 return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
                              Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol, Recon=recon,
-                             lengths=lengths)
+                             lengths=lengths, dtheta=dtheta0, v_center=v_center_arg, r_ratio=r_ratio0)
 
             def func_variants(x, p, recons, lengths=lengths):
                 return m5.TI_recon_variants(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
-                                            Distri, Cor, mp0['Met'], mp0['Norm'], pol, recons, lengths)
+                                            Distri, Cor, mp0['Met'], mp0['Norm'], pol, recons, lengths,
+                                            dtheta=dtheta0, v_center=v_center_arg, r_ratio=r_ratio0)
         else:
             # Dedicated per-section instrumental parameters (e.g. mixing CMS and
             # SMS): TI receives one value per section as lists. The full model and
@@ -603,15 +613,18 @@ def fit_model(app, inputs, spectrum_files, pool):
             ins_list = [mp_i['INS'] for mp_i in method_params_list]
             met_list = [mp_i['Met'] for mp_i in method_params_list]
             norm_list = [mp_i['Norm'] for mp_i in method_params_list]
+            dtheta_list = [mp_i.get('dtheta', 0.0) for mp_i in method_params_list]
+            r_ratio_list = [mp_i.get('r_ratio', 0.0) for mp_i in method_params_list]
 
             def func(x, p, recon=Recon, lengths=lengths):
                 return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
                              Distri, Cor, Met=met_list, Norm=norm_list, pol=pol, Recon=recon,
-                             lengths=lengths)
+                             lengths=lengths, dtheta=dtheta_list, v_center=v_centers, r_ratio=r_ratio_list)
 
             def func_variants(x, p, recons, lengths=lengths):
                 return m5.TI_recon_variants(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
-                                            Distri, Cor, met_list, norm_list, pol, recons, lengths)
+                                            Distri, Cor, met_list, norm_list, pol, recons, lengths,
+                                            dtheta=dtheta_list, v_center=v_centers, r_ratio=r_ratio_list)
 
         # The model at the fitted points (each spectrum keeps its own number of
         # them when exclusion regions are applied)
@@ -832,7 +845,9 @@ def fit_model(app, inputs, spectrum_files, pool):
                 SPC_f_separate = m5.TI(A_list[NumSpc], p_separate, model_separate[NumSpc], JN, pool,
                                        mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
                                        d_arg, c_arg,
-                                       Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol, Recon=r_arg)
+                                       Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol, Recon=r_arg,
+                                       dtheta=mp_i.get('dtheta', 0.0), v_center=mp_i['v_center'],
+                                       r_ratio=mp_i.get('r_ratio', 0.0))
                 SPC_f_list.append(SPC_f_separate)
 
                 # High-resolution convergence check for this section (cyan line)

@@ -181,18 +181,75 @@ def test_only_the_dat_files_get_the_one_in_memory(physics_app, tmp_path, monkeyp
     asked = _answer(monkeypatch, True)
     physics_app.MS_fit.setChecked(True)
     physics_app.GCMS_input.setText("0.097")
+    physics_app.dtheta_input.setText("0.195")            # the cosine smearing goes along
+    physics_app.source_diameter_input.setText("2.5")     # and the source's diameter (a 20 mm aperture)
     try:
         _select(physics_app, [sms, raw, plain])
         physics_app.overwrite_dat_instrumental_pressed()
         for dat in (sms, plain):
-            assert read_dat_metadata_lines(str(dat)) == ["#@GCMS 0.097"]
-            assert resolve_instrumental_for_file(physics_app, str(dat))['method'] == 'CMS'
+            assert read_dat_metadata_lines(str(dat)) == ["#@GCMS 0.097 0.195 2.5 20.0"]
+            resolved = resolve_instrumental_for_file(physics_app, str(dat))
+            assert resolved['method'] == 'CMS' and (resolved['dtheta'], resolved['r_ratio']) == (0.195, 0.125)
         assert raw.read_bytes() == b"@A 1 2 3\n"
         assert len(asked) == 1 and "into 2 .dat file(s)" in asked[0][0]
         log = physics_app.log.toPlainText()
         assert "written into 2 .dat file(s)" in log
         assert "1 file(s) that are not .dat" in log
     finally:
+        physics_app.dtheta_input.setText("0")
+        physics_app.source_diameter_input.setText("5.0")
+        physics_app.SMS_fit.setChecked(True)
+
+
+def test_an_old_cms_line_is_replaced_by_the_four_numbers(physics_app, tmp_path, monkeypatch):
+    """A file written before (#@GCMS G alone): its line becomes #@GCMS G Δθ d D,
+    where it was; every other line stays."""
+    dat = tmp_path / "old_cms.dat"
+    dat.write_bytes(b"# note\n" + _lines(GCMS_LINES) + b"# Excluded regions, mm/s: -1..1\n" + DATA)
+    _answer(monkeypatch, True)
+    physics_app.MS_fit.setChecked(True)
+    physics_app.GCMS_input.setText("0.0765")
+    physics_app.dtheta_input.setText("0.195")
+    try:
+        _select(physics_app, [dat])
+        physics_app.overwrite_dat_instrumental_pressed()
+        assert dat.read_bytes() == (b"# note\n#@GCMS 0.0765 0.195 5.0 20.0\n"
+                                    b"# Excluded regions, mm/s: -1..1\n" + DATA)
+        meta = parse_dat_instrumental_metadata(str(dat))
+        assert (meta['GCMS'], meta['dtheta'], meta['source_diameter'], meta['aperture_diameter']) \
+            == (0.0765, 0.195, 5.0, 20.0)
+    finally:
+        physics_app.dtheta_input.setText("0")
+        physics_app.SMS_fit.setChecked(True)
+
+
+@pytest.mark.parametrize("target", ["theory", "gauss", "cms"])
+def test_a_theory_file_takes_any_instrumental_function(physics_app, tmp_path, monkeypatch, target):
+    """A file with the theoretical shape (#@INSth + #@INSint) takes what is in
+    memory -- another theoretical shape, the Gaussian sum, or CMS -- in place
+    of its old lines, alone; every other line stays."""
+    import syncmoss.sms_theory as smst
+    kw = dict(iio.THEORY_FIXED)
+    kw.update(iio.THEORY_START)
+    kw['theta_urad'] = 123.0
+    old = ["#@INSth " + " ".join(str(float(v)) for v in smst.encode_physical(**kw)), "#@INSint 2.0 0.15"]
+    dat = tmp_path / "theory.dat"
+    dat.write_bytes(b"# note\n" + _lines(old) + b"# tail\n" + DATA)
+    _answer(monkeypatch, True)
+    physics_app.instrumental_method = 'gauss' if target == 'gauss' else 'theory'
+    (physics_app.MS_fit if target == 'cms' else physics_app.SMS_fit).setChecked(True)
+    try:
+        _select(physics_app, [dat])
+        physics_app.overwrite_dat_instrumental_pressed()
+        lines, method = build_dat_metadata_lines(physics_app)
+        assert lines != old
+        assert dat.read_bytes() == b"# note\n" + _lines(lines) + b"# tail\n" + DATA
+        resolved = resolve_instrumental_for_file(physics_app, str(dat))
+        assert (resolved['source'], resolved['method']) == ('file', 'CMS' if target == 'cms' else 'SMS')
+        if target != 'cms':
+            assert (smst.ins_kind(resolved['INS']) == smst.KIND_GAUSS) == (target == 'gauss')
+    finally:
+        physics_app.instrumental_method = 'gauss'
         physics_app.SMS_fit.setChecked(True)
 
 

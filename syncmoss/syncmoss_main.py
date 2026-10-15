@@ -78,7 +78,8 @@ from syncmoss.models import TI, FIT_CANCEL, FitInterrupted
 from syncmoss.Calibration import Calibration
 from syncmoss.constants import (model_colors, number_of_baseline_parameters,
                                SMS_POL_DEFAULT, NBASELINE_COLOR)
-from syncmoss.parameters_table import ParametersTable, format_parameter_value
+from syncmoss.parameters_table import (ParametersTable, format_parameter_value, ValueLineEdit,
+                                       CMS_SOURCE_DECIMALS)
 from syncmoss.results_table import ResultsTable
 from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def,
@@ -124,10 +125,18 @@ from syncmoss.instrumental_io import (
     compute_norm,
     hires_model_diff,
     get_sms_instrumental_from_global_files,
+    get_internal_gcms,
+    get_internal_dtheta,
+    get_internal_r_ratio,
+    get_cms_diameters,
+    read_gcms_file,
+    write_gcms_file,
+    drive_rest_velocity,
 )
 from syncmoss.Library_window import save_to_library_via_dialog
 from syncmoss.supp_menu import (
-    build_supp_menu, contact_icon, open_theory_find_dialog, theme_action_text,
+    build_supp_menu, contact_icon, open_dtheta_alpha_fe_dialog, open_theory_find_dialog,
+    theme_action_text,
 )
 import syncmoss.one_model as one_model
 from syncmoss.one_spectrum import OneSpectrumDialog
@@ -145,6 +154,13 @@ _MULTISPECTRA_MODES = {0: "sequence - initial", 1: "sequence - result",
 def _multispectra_label(fitting_type):
     """Text of the Multispectra settings button for *fitting_type*."""
     return f"Multispectra settings\n({_MULTISPECTRA_MODES[fitting_type]})"
+
+
+def _instrumental_label(use_dat_metadata):
+    """Text of the Instrumental function button: where a spectrum's instrumental
+    function comes from (Instrumental function -> (do not) use instrumental
+    function from .dat file)."""
+    return f"Instrumental function\n({'use IF from file' if use_dat_metadata else 'use global IF'})"
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -319,7 +335,8 @@ class CalibrationThread(QThread):
     finished = Signal(object, object, object)  # A, B, C
     error = Signal(str)
     
-    def __init__(self, dir_path, file, experimental_method, INS, JN, x0, MulCo, vel_start, pool, GCMS=0.1):
+    def __init__(self, dir_path, file, experimental_method, INS, JN, x0, MulCo, vel_start, pool, GCMS=0.1,
+                 dtheta=0.0, r_ratio=0.0):
         super().__init__()
         self.dir_path = dir_path
         self.file = file
@@ -331,6 +348,8 @@ class CalibrationThread(QThread):
         self.vel_start = vel_start
         self.pool = pool  # Store reference to global pool
         self.GCMS = GCMS  # single Gaussian width used as the CMS instrumental function
+        self.dtheta = dtheta  # CMS cosine smearing (rad), the Δθ field
+        self.r_ratio = r_ratio  # d/D of the CMS source and aperture diameters (Supp)
 
     def run(self):
         try:
@@ -341,7 +360,8 @@ class CalibrationThread(QThread):
             A, B, C = Calibration(
                 self.dir_path, self.file, pool,
                 self.experimental_method, self.INS, self.JN,
-                self.x0, self.MulCo, self.vel_start, GCMS=self.GCMS
+                self.x0, self.MulCo, self.vel_start, GCMS=self.GCMS, dtheta=self.dtheta,
+                r_ratio=self.r_ratio
             )
             
             # Don't close the global pool - it's reused throughout the app
@@ -357,13 +377,14 @@ class InstrumentalThread(QThread):
     finished = Signal(dict)  # result dictionary
     error = Signal(str)
     
-    def __init__(self, main_window, ref, mode, pool, request=None):
+    def __init__(self, main_window, ref, mode, pool, request=None, dtheta_search=None):
         super().__init__()
         self.main_window = main_window
         self.ref = ref
         self.mode = mode
         self.pool = pool
         self.request = request   # the spectra (instrumental_io.search_data)
+        self.dtheta_search = dtheta_search   # CMS: fit Δθ with these held
 
     def run(self):
         try:
@@ -375,7 +396,7 @@ class InstrumentalThread(QThread):
                                              request=self.request)
             else:
                 result = instrumental(self.main_window, self.ref, self.mode, pool=self.pool,
-                                      request=self.request)
+                                      request=self.request, dtheta_search=self.dtheta_search)
             print(f"[DEBUG] InstrumentalThread completed successfully")
             self.finished.emit(result)
         except SearchRefused as e:
@@ -714,10 +735,13 @@ class ShowModelThread(QThread):
                         section_files.append(None)
 
             use_dat_metadata = bool(getattr(self.main_window, 'use_dat_instrumental_metadata', True))
+            # each section's whole velocity axis: where its cosine smearing starts
+            section_axes = A_list if num_nbaseline > 0 else [A]
             method_params_list = []
-            for section_file in section_files:
+            for section_file, axis in zip(section_files, section_axes):
                 mp_section = resolve_instrumental_for_file(self.main_window, section_file, use_dat_metadata=use_dat_metadata)
                 mp_section['Norm'] = compute_norm(pool, JN, mp_section)
+                mp_section['v_center'] = drive_rest_velocity(axis)
                 method_params_list.append(mp_section)
 
             note_lines = [mp_section['note'] for mp_section in method_params_list]
@@ -781,7 +805,9 @@ class ShowModelThread(QThread):
                     SPC_f_section = TI(A_section, p_section, model_sections[spc_idx], JN, pool,
                                        mp_section['x0'], mp_section['MulCo'],
                                        mp_section['INS'], d_arg, c_arg,
-                                       Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol, Recon=r_arg)
+                                       Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol, Recon=r_arg,
+                                       dtheta=mp_section.get('dtheta', 0.0), v_center=mp_section['v_center'],
+                                       r_ratio=mp_section.get('r_ratio', 0.0))
                     SPC_f_sections.append(SPC_f_section)
 
                     # High-resolution convergence check for this section (cyan line)
@@ -809,7 +835,9 @@ class ShowModelThread(QThread):
             else:
                 # Single spectrum case: full spectrum + convergence check
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
-                           method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon)
+                           method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon,
+                           dtheta=method_params.get('dtheta', 0.0), v_center=method_params['v_center'],
+                           r_ratio=method_params.get('r_ratio', 0.0))
 
                 hires_diff = hires_model_diff(pool, JN, A, p, model, method_params,
                                               SPC_f, Distri, Cor, pol=pol, Recon=Recon)
@@ -1181,32 +1209,62 @@ class PhysicsApp(QMainWindow):
         self.MS_fit = QCheckBox("CMS")
         self.SMS_fit = QCheckBox("SMS")
         self.SMS_fit.setChecked(True)
-        self.APS_fit = QCheckBox("APS")
-        self.APS_fit.setEnabled(False)
-        self.APS_fit.setToolTip("It will become available soon once APS stabilizes this technique and makes it available to users.")
-        
+
         # Connect MS and SMS to be mutually exclusive
         self.MS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.MS_fit))
         self.SMS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.SMS_fit))
 
+        # The CMS source: the Gaussian width G of its line and the cosine
+        # smearing dtheta (models.Voight_box / Voight_disc); the source and
+        # aperture diameters d and D, whose ratio sets the smearing's shape, are
+        # a Supp setting (the stores below). An SMS spectrum uses none of them.
+        # All start from parameters/GCMS.txt (Δθ 0 and the default diameters
+        # for a number it does not hold). Like a parameter's value field, G and
+        # Δθ keep every digit (what is read) and show CMS_SOURCE_DECIMALS of them.
+        gcms_start, dtheta_start, source_diameter, aperture_diameter = read_gcms_file(self.params_dir)
         fit_par_layout = QHBoxLayout()
         g_label = QLabel("G")
-        self.GCMS_input = QLineEdit(str(np.genfromtxt(os.path.join(self.params_dir, 'GCMS.txt'), delimiter='\t')))
+        g_tip = "CMS only: Gaussian FWHM of the source line, mm/s."
+        self.GCMS_input = ValueLineEdit(str(gcms_start), CMS_SOURCE_DECIMALS, g_tip)
+        g_label.setToolTip(g_tip)
         fit_par_layout.addWidget(g_label)
         fit_par_layout.addWidget(self.GCMS_input)
 
+        dtheta_layout = QHBoxLayout()
+        dtheta_label = QLabel("Δθ")
+        dtheta_validator = QDoubleValidator(self)
+        dtheta_validator.setBottom(0.0)
+        dtheta_validator.setTop(np.pi / 2)
+        dtheta_validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        dtheta_validator.setLocale(QLocale(QLocale.Language.C))
+        dtheta_tip = "CMS only: cosine smearing, rad (0 = off)."
+        self.dtheta_input = ValueLineEdit(str(dtheta_start) if dtheta_start else "0", CMS_SOURCE_DECIMALS,
+                                          dtheta_tip)
+        self.dtheta_input.setValidator(dtheta_validator)
+        dtheta_label.setToolTip(dtheta_tip)
+        dtheta_layout.addWidget(dtheta_label)
+        dtheta_layout.addWidget(self.dtheta_input)
+
         # Two-row layout with aligned right column:
         # row 1 -> CMS | SMS
-        # row 2 -> G   | APS
+        # row 2 -> G   | Δθ
         fit_group.addWidget(self.MS_fit, 0, 0, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         fit_group.addWidget(self.SMS_fit, 0, 1, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         fit_group.addLayout(fit_par_layout, 1, 0)
-        fit_group.addWidget(self.APS_fit, 1, 1, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        fit_group.addLayout(dtheta_layout, 1, 1)
         fit_group.setColumnStretch(0, 1)
         fit_group.setColumnStretch(1, 0)
 
         # These settings are still used by the existing fitting logic; they are
         # edited via small dialogs opened from the Supp menu.
+        # The diameters (mm) of the CMS source, d, and of the aperture that
+        # limits the rays (usually the sample), D, whose ratio d/D shapes the
+        # cosine smearing (instrumental_io.get_internal_r_ratio): Supp -> "Set
+        # CMS source and aperture diameters", saved with the defaults.
+        self.source_diameter_input = QLineEdit(str(source_diameter), self)
+        self.source_diameter_input.hide()
+        self.aperture_diameter_input = QLineEdit(str(aperture_diameter), self)
+        self.aperture_diameter_input.hide()
         # Points for the full transmission integral. SMS and CMS need different
         # numbers, so each has its own store; ``jn0_input`` holds whichever the
         # current mode selects and is what the rest of the code reads.
@@ -1281,64 +1339,70 @@ class PhysicsApp(QMainWindow):
         show_buttons.addWidget(self.showM_btn)
 
         instrumental_layout = QHBoxLayout()
-        self.instrumental_btn = QPushButton("Instrumental\nfunction")
+        # One button for every instrumental-function action, its caption saying
+        # where a spectrum's instrumental function comes from (the .dat header
+        # or the global one); _update_use_dat_instrumental_action_text sets it.
+        self.instrumental_btn = QPushButton(_instrumental_label(self.use_dat_instrumental_metadata))
         self.instrumental_btn.setFont(QFont('Arial', 16))
         self.instrumental_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        
-        # Create dropdown menu for INS button
+
+        # Create dropdown menu for INS button: Refine first, then Find
         self.instrumental_menu = QMenu()
         # WHICH search these run -- the theoretical simulated 57FeBO3 shape or
         # the empirical sum of Gaussians -- is a setting, not a separate set of
         # menu entries: Supp -> "Choose how to approximate instrumental
         # function". self.instrumental_ref() turns it into the ref code.
-        find_single = QAction("Find\nInstr. func.\n single line", self)
+        refine_single = QAction("Refine: single line", self)
+        refine_single.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(True), 0))
+        refine_aFe = QAction("Refine: pure α-Fe", self)
+        refine_aFe.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(True), 2))
+        refine_model = QAction("Refine: model", self)
+        refine_model.triggered.connect(
+            lambda: self.instrumental_pressed(self.instrumental_ref(True), 1))
+        find_single = QAction("Find: single line", self)
         find_single.triggered.connect(
             lambda: self.instrumental_pressed(self.instrumental_ref(False), 0))
-        find_aFe = QAction("Find\nInstr. func.\n pure a-Fe", self)
+        find_aFe = QAction("Find: pure α-Fe", self)
         find_aFe.triggered.connect(
             lambda: self.instrumental_pressed(self.instrumental_ref(False), 2))
-        find_model = QAction("Find\nInstr. func.\nmodel", self)
+        find_model = QAction("Find: model", self)
         find_model.triggered.connect(
             lambda: self.instrumental_pressed(self.instrumental_ref(False), 1))
+        # The CMS cosine smearing: Δθ fitted with G held (dtheta_pressed)
+        refine_dtheta_aFe = QAction("Refine Δθ: pure α-Fe", self)
+        refine_dtheta_aFe.triggered.connect(lambda: self.dtheta_pressed(2))
+        refine_dtheta_model = QAction("Refine Δθ: model", self)
+        refine_dtheta_model.triggered.connect(lambda: self.dtheta_pressed(1))
         self.toggle_dat_ins_action = QAction(self)
         self._update_use_dat_instrumental_action_text()
         self.toggle_dat_ins_action.triggered.connect(self.toggle_use_dat_instrumental)
         overwrite_dat_ins = QAction("Overwrite instrumental function in selected .dat files", self)
         overwrite_dat_ins.triggered.connect(self.overwrite_dat_instrumental_pressed)
-        reset_defaults = QAction("Reset to\ndefault values", self)
+        save_gcms = QAction("Save G, Δθ, d and D as defaults", self)
+        save_gcms.triggered.connect(self.save_gcms_pressed)
+        reset_defaults = QAction("Reset instrumental function to default values", self)
         reset_defaults.triggered.connect(lambda: reset_instrumental_defaults(self))
+        self.instrumental_menu.addAction(refine_single)
+        self.instrumental_menu.addAction(refine_aFe)
+        self.instrumental_menu.addAction(refine_model)
+        self.instrumental_menu.addSeparator()
         self.instrumental_menu.addAction(find_single)
         self.instrumental_menu.addAction(find_aFe)
         self.instrumental_menu.addAction(find_model)
         self.instrumental_menu.addSeparator()
+        self.instrumental_menu.addAction(refine_dtheta_aFe)
+        self.instrumental_menu.addAction(refine_dtheta_model)
+        self.instrumental_menu.addSeparator()
         self.instrumental_menu.addAction(self.toggle_dat_ins_action)
         self.instrumental_menu.addAction(overwrite_dat_ins)
+        self.instrumental_menu.addAction(save_gcms)
         self.instrumental_menu.addSeparator()
         self.instrumental_menu.addAction(reset_defaults)
         self.instrumental_btn.setMenu(self.instrumental_menu)
 
-        self.instrumental_btn2 = QPushButton("Refine\nInstr. func.")
-        self.instrumental_btn2.setFont(QFont('Arial', 15))
-        self.instrumental_btn2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        
-        # Create dropdown menu for INS refine button
-        self.instrumental_menu2 = QMenu()
-        refine_single = QAction("Refine\nInstr. func.\n single line", self)
-        refine_single.triggered.connect(
-            lambda: self.instrumental_pressed(self.instrumental_ref(True), 0))
-        refine_aFe = QAction("Refine\nInstr. func.\n pure a-Fe", self)
-        refine_aFe.triggered.connect(
-            lambda: self.instrumental_pressed(self.instrumental_ref(True), 2))
-        refine_model = QAction("Refine\nInstr. func.\nmodel", self)
-        refine_model.triggered.connect(
-            lambda: self.instrumental_pressed(self.instrumental_ref(True), 1))
-        self.instrumental_menu2.addAction(refine_single)
-        self.instrumental_menu2.addAction(refine_aFe)
-        self.instrumental_menu2.addAction(refine_model)
-        self.instrumental_btn2.setMenu(self.instrumental_menu2)
-
         instrumental_layout.addWidget(self.instrumental_btn)
-        instrumental_layout.addWidget(self.instrumental_btn2)
 
         show_layout.addLayout(show_buttons)
         show_layout.addLayout(instrumental_layout)
@@ -1710,18 +1774,39 @@ class PhysicsApp(QMainWindow):
     def _update_use_dat_instrumental_action_text(self):
         if self.toggle_dat_ins_action is None:
             return
+        # the entry names what it switches TO; the button shows what is used now
         if self.use_dat_instrumental_metadata:
-            self.toggle_dat_ins_action.setText("do not use instrumental function from .dat file (now it is used)")
+            self.toggle_dat_ins_action.setText("Switch to the global instrumental function")
         else:
-            self.toggle_dat_ins_action.setText("use instrumental function from .dat file (now it is not used)")
+            self.toggle_dat_ins_action.setText("Switch to the instrumental function from .dat files")
+        self.instrumental_btn.setText(_instrumental_label(self.use_dat_instrumental_metadata))
 
     def toggle_use_dat_instrumental(self):
         self.use_dat_instrumental_metadata = not self.use_dat_instrumental_metadata
         self._update_use_dat_instrumental_action_text()
         if self.use_dat_instrumental_metadata:
-            self.set_status("Using instrumental function from .dat file is now enabled (SMS).", "blue")
+            self.set_status("A spectrum's own .dat header now gives its instrumental function "
+                            "(the global one when it has none).", "blue")
         else:
-            self.set_status("Using instrumental function from .dat file is now disabled (SMS).", "blue")
+            self.set_status("Every spectrum now gets the global instrumental function "
+                            "(the .dat headers are not used).", "blue")
+
+    def save_gcms_pressed(self):
+        """Instrumental function -> Save G, Δθ, d and D as defaults: the fields'
+        values and the Supp setting's diameters (every digit) become the start
+        values of the next session (parameters/GCMS.txt)."""
+        try:
+            g, dtheta = float(self.GCMS_input.text()), float(self.dtheta_input.text())
+        except ValueError:
+            self.set_status("G and Δθ must be numbers.", "red")
+            return
+        d, D = get_cms_diameters(self)
+        try:
+            write_gcms_file(self.params_dir, g, dtheta, d, D)
+        except OSError as e:
+            self.set_status(f"Could not save the defaults: {e}", "red")
+            return
+        self.set_status(f"Saved as defaults: G {g:g}, Δθ {dtheta:g}, d {d:g}, D {D:g}.", "green")
 
     def overwrite_dat_instrumental_pressed(self):
         """Instrumental function -> Overwrite instrumental function in selected
@@ -2344,7 +2429,7 @@ class PhysicsApp(QMainWindow):
         # Start calibration in a separate thread
         self.calibration_thread = CalibrationThread(
             self.params_dir, file, experimental_method, self.INS, JN, self.x0, self.MulCo, vel_start, self.pool,
-            GCMS=self.GCMS
+            GCMS=self.GCMS, dtheta=get_internal_dtheta(self), r_ratio=get_internal_r_ratio(self)
         )
         self.calibration_thread.finished.connect(self.on_calibration_finished)
         self.calibration_thread.error.connect(self.on_calibration_error)
@@ -2858,7 +2943,6 @@ class PhysicsApp(QMainWindow):
         else:
             instrumental_style = "background-color: rgb(200, 200, 200); color: black;"
         self.instrumental_btn.setStyleSheet(instrumental_style)
-        self.instrumental_btn2.setStyleSheet(instrumental_style)
 
         # Style the matplotlib navigation toolbar to match the mode
         if self._is_dark_mode:
@@ -2964,17 +3048,30 @@ class PhysicsApp(QMainWindow):
             2 if getattr(self, 'instrumental_method',
                          DEFAULT_INSTRUMENTAL_METHOD) == 'theory' else 0)
 
-    def instrumental_pressed(self, ref, mode):
+    def instrumental_pressed(self, ref, mode, dtheta_search=None):
         """
         Handle instrumental function calculation/refinement button press.
-        
+
         Args:
             ref: 0 for Find, 1 for Refine (empirical sum of Gaussians);
                  2 for Find, 3 for Refine the THEORETICAL simulated 57FeBO3 shape
             mode: 0 for single line, 1 for model, 2 for pure a-Fe
+            dtheta_search: CMS, from dtheta_pressed -- Δθ fitted instead of G
+                 (instrumental_io.instrumental)
         """
         if self._reject_if_busy('The instrumental-function search'):
             return
+        # CMS has ONE search, a Refine: G fitted from the G field with Δθ held
+        # -- or Δθ with G held (dtheta_search) -- both written as the defaults
+        # (instrumental_io.instrumental, CMS_ch = 1), whatever SMS
+        # approximation is selected. There is nothing for a Find to start
+        # afresh: Find used to run the SMS search of a sum of Gaussians on the
+        # CMS spectrum and write INSexp.txt / INSint.txt.
+        if self.MS_fit.isChecked():
+            if ref in (0, 2):
+                self.set_status("In CMS use Refine.", "red")
+                return
+            ref = 1
         if not self._commit_exclusion_regions('The instrumental-function search'):
             return
         # A THEORY "Find" (ref 2) discards the stored shape and restarts from
@@ -3024,21 +3121,6 @@ class PhysicsApp(QMainWindow):
                 self.inprogress = False
                 return
 
-        if (self.MS_fit.isChecked() and mode == 0):
-            self.set_status("This will not work...", "red")
-            self.inprogress = False
-            return
-
-        if ref in (2, 3) and self.MS_fit.isChecked():
-            # The theoretical shape is the pure-nuclear reflection of an iron
-            # borate crystal: there is no such thing for a radioactive source.
-            self.set_status(
-                "The theoretical instrumental function describes a synchrotron "
-                "Mössbauer source (⁵⁷FeBO₃). Switch to SMS, or use the standard "
-                "search for CMS.", "red")
-            self.inprogress = False
-            return
-        
         if not self.path_list or len(self.path_list) == 0:
             self.set_status("No spectrum loaded", "red")
             self.inprogress = False
@@ -3060,10 +3142,32 @@ class PhysicsApp(QMainWindow):
                     if len(request['files']) > 1 else "")
         self.set_status(f"Running instrumental function (ref={ref}, mode={mode}{together})...", "cyan")
 
-        self.instrumental_thread = InstrumentalThread(self, ref, mode, self.pool, request)
+        self.instrumental_thread = InstrumentalThread(self, ref, mode, self.pool, request,
+                                                      dtheta_search=dtheta_search)
         self.instrumental_thread.finished.connect(self.on_instrumental_finished)
         self.instrumental_thread.error.connect(self.on_instrumental_error)
         self.instrumental_thread.start()
+
+    def dtheta_pressed(self, mode):
+        """Instrumental function -> Refine Δθ: pure α-Fe (mode 2) / model (mode
+        1): the CMS cosine smearing Δθ fitted with G and d/D held, starting
+        from the Δθ field. Pure α-Fe asks for the source's numbers first
+        (open_dtheta_alpha_fe_dialog); the model takes G from its field, the
+        rest from the table as the user set and linked it. There is no Find:
+        the search starts from 0.15 rad when the field is 0."""
+        if not self.MS_fit.isChecked():
+            self.set_status("Δθ: not applicable for SMS.", "red")
+            return
+        if self._reject_if_busy('The instrumental-function search'):
+            return
+        if mode == 2:
+            source = open_dtheta_alpha_fe_dialog(self)
+            if source is None:
+                self.set_status("Δθ search cancelled", "orange")
+                return
+        else:
+            source = {'G': get_internal_gcms(self)}
+        self.instrumental_pressed(1, mode, dtheta_search=source)
 
     def _instrumental_search_request(self, mode):
         """The spectra the instrumental-function search fits
@@ -3131,6 +3235,7 @@ class PhysicsApp(QMainWindow):
                 theme=self._theme, lengths=result['lengths'], starts=result['starts'],
                 labels=[os.path.basename(f) for f in result['files']],
                 exclusion_regions=result['exclusion_regions'],
+                baseline_offset=result.get('baseline_offset', 0.0),
             )
 
             # Update canvas the same way as showM_pressed does
@@ -3152,18 +3257,25 @@ class PhysicsApp(QMainWindow):
                     f"{detail}\nFWHM = {result['fwhm']:.4f} mm/s, "
                     f"centre = {result['centre']:+.4f} mm/s\n"
                     f"Results saved to {self.dir_path}", "green")
+            elif result.get('CMS_ch') == 1:
+                fitted = 'Δθ' if result['fitted'] == 'dtheta' else 'G'
+                self.set_status(
+                    f"{fitted} found: G {result['G']:.4f} mm/s, Δθ {result['dtheta']:.4f} rad (saved as "
+                    f"defaults). χ² = {result['hi2']:.3f}", "green")
             else:
                 self.set_status(f"Instrumental function completed. χ² = {result['hi2']:.3f}\nResults saved to {self.dir_path}", "green")
 
-            # Update x0 and MulCo if available
-            if self.SMS_fit.isChecked():
+            # Update x0 and MulCo if available; a CMS search's G and Δθ (both:
+            # a Δθ search held G at the dialog's value), whatever is checked now
+            if result.get('CMS_ch') == 1:
+                self.GCMS = result['G']
+                self.GCMS_input.setText(str(float(self.GCMS)))
+                self.dtheta_input.setText(str(float(result['dtheta'])))
+            elif self.SMS_fit.isChecked():
                 if result['x0'] is not None:
                     self.x0 = result['x0']
                 if result['MulCo'] is not None:
                     self.MulCo = result['MulCo']
-            elif self.MS_fit.isChecked():
-                self.GCMS = result['G']
-                self.GCMS_input.setText(str(self.GCMS))
         except Exception as e:
             self.set_status(f"Error plotting instrumental results: {e}\n{traceback.format_exc()}", "red")
         finally:

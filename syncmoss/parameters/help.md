@@ -201,13 +201,62 @@ an explicit message and reddened fields rather than failing halfway through.
 
 - A `.dat` file may carry the instrumental function in its header — every line
   above the first data line (one that starts with a number):
-  `#@GCMS` marks a CMS spectrum (and its Gaussian width), `#@INSexp` (sum of
-  Gaussians) or `#@INSth` (theoretical shape), with `#@INSint`, an SMS one.
+  `#@GCMS G Δθ d D` marks a CMS spectrum (its source: Gaussian width, cosine
+  smearing, the source and aperture diameters d and D in mm; a file written
+  before carries G alone: no smearing), `#@INSexp` (sum of Gaussians) or
+  `#@INSth` (theoretical shape), with `#@INSint`, an SMS one.
   SYNCmoss writes those lines when it converts a spectrum — for SMS only the
   instrumental function **in use** — and reads them back per spectrum, so a
   batch may mix CMS and SMS files, and Gaussian and theoretical ones. Switch the
   behaviour with *Instrumental function -> do not use instrumental function
   from .dat file*.
+- **G** and **Δθ** (under the CMS/SMS boxes) describe the CMS source; SMS
+  spectra ignore them. **G** is the Gaussian width (FWHM, mm/s) of the source
+  line. **Δθ** (rad, 0 = off) is the *cosine smearing*: a photon leaving the
+  source at the angle θ to the drive axis sees the drive velocity times cos θ,
+  so a line broadens in proportion to its distance from the velocity at which
+  the drive is at rest — the middle of the spectrum's velocity range. Lines keep
+  their positions and areas (the calibration, made in the same geometry, holds
+  the mean factor); at Δθ = 0.2 an outer α-Fe line gets 0.03 mm/s rms wider. Δθ
+  is the angle of the point source with the same spread of cos θ — atan(R/L) at
+  the distance L from an aperture of radius R, ≈ atan((R⁴ + 6R²r² + r⁴)^¼ / L)
+  for a source of radius r. Both come from the defaults at start, are written
+  into `#@GCMS` of converted `.dat` files, and a file's own values are used for
+  it. The fields show 4 decimals and keep every digit (the tooltip shows them
+  all).
+- *Supp* → **Set CMS source and aperture diameters**: d, the source's active
+  spot, and D, the aperture — whatever limits the rays reaching the detector,
+  usually the sample or a lead mask on it. Only their ratio d/D matters: it
+  sets the shape of the smearing, Δθ its width, and it has a small effect —
+  with Δθ fitted, a thick α-Fe spectrum changes by 0.2 % of its dip from a
+  point source to d = D, by < 0.1 % with d/D off by a factor of 2. d/D and D/d
+  act alike: a large source behind a small aperture (d/D = 10) is nearly a
+  point source, as a small one behind a large aperture is. d = 0 is a point
+  source. The default, 5 and 20 mm (d/D = 0.25), is the least bad guess when
+  the geometry is not known (≤ 0.11 % of the dip whatever it is). Saved with
+  the defaults at once, and written into `#@GCMS` with G and Δθ.
+- The **Instrumental function** button holds every instrumental-function
+  action: *Refine* (single line, pure α-Fe, model) first, then *Find*, then the
+  Δθ searches, the `.dat` file options, *Save G, Δθ, d and D as defaults* (the
+  start values of the next session) and *Reset instrumental function to
+  default values* — of the one in use: in CMS G = 0.09 mm/s, Δθ = 0.1 rad,
+  d = 5 mm, D = 20 mm (saved and shown); in SMS the selected description. Its
+  caption says where a spectrum's instrumental function comes from: *(use IF
+  from file)* — the spectrum's own `.dat` header when it has one — or *(use
+  global IF)*. Every *Find* and *Refine* writes its result at the end: CMS to
+  the defaults (G, Δθ, d, D), SMS to its description's files.
+- In CMS there is only *Refine*: it fits G from its field, Δθ held. With a
+  single line the absorber is a Singlet at the natural width, its T and shift
+  free; Ns and Nnr are free. *Refine Δθ* (CMS only) fits Δθ from its field
+  (0.15 rad when it is 0) with G and d/D held. *pure α-Fe* first asks for the
+  source — G, its f_LM, C_high (the 122/136 keV quanta counted per point) and
+  the static noise of the detector — and sets the non-resonant baseline to
+  Nnr = Ns (1 − f_LM)/f_LM + C_high, curving with Ns (linked), with the static
+  noise added flat; T, the texture A, Ns and its curvature are free. Find G and
+  f_LM first from a single-line spectrum, where Δθ hardly matters, and C_high as
+  the count rate with a 100 µm Cu foil in the beam times the counting time of
+  one point, less the static noise. *model* fits the table's model with its
+  links as set. Every CMS search stores G and Δθ as the defaults.
 - *Instrumental function -> Overwrite instrumental function in selected .dat
   files* writes the instrumental function in memory — for the CMS/SMS mode
   selected, the lines RAW → .dat conversion writes — into every `.dat` file of
@@ -365,6 +414,10 @@ the plot toolbar; a bar appears above the plot.
   instrumental function of its header; an `.mca` (or other raw file) is
   calibrated as it is read, so its `.dat` gets the instrumental function in use
   — CMS or SMS, as the check boxes say — as *RAW → .dat* conversion writes it.
+  A CMS spectrum saved without an end of its velocity range gets a warning:
+  the cosine smearing starts from the middle of the range a file has, which
+  then moves — keep the edge points, or do not use Δθ for it. (Exclusion
+  regions themselves never move it: the smearing follows the whole range.)
 - Changing the regions (typing, picking, *Load*, or **Apply exclusion**)
   changes the bands of the plot on screen. If it shows a fit, that fit is no
   longer a result of these regions: its χ² disappears, the results table is

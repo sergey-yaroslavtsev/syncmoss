@@ -90,14 +90,20 @@ def parse_dat_instrumental_metadata(file_path):
     header (every line above the first data line, see is_data_line).
 
     #@INSexp or #@INSth, with #@INSint, mark a spectrum converted in SMS mode,
-    #@GCMS marks a spectrum converted in CMS mode (single G value of the
-    single-line absorber).
+    #@GCMS marks a spectrum converted in CMS mode: the Gaussian width G of the
+    source line, its cosine smearing Δθ ('dtheta') and the source and aperture
+    diameters d and D, whose ratio d/D is the 'r_ratio'; a file written before
+    carries G alone (cms_source_numbers).
     """
     result = {
         'INS': None,
         'MulCo': None,
         'x0': None,
         'GCMS': None,
+        'dtheta': None,
+        'source_diameter': None,
+        'aperture_diameter': None,
+        'r_ratio': None,
         'INSacc': None,
         'has_insexp': False,
         'has_insint': False,
@@ -152,8 +158,10 @@ def parse_dat_instrumental_metadata(file_path):
                     payload = stripped[len(DAT_GCMS_PREFIX):].strip()
                     parsed = _parse_float_sequence(payload)
                     if parsed.size > 0:
-                        result['GCMS'] = float(parsed[0])
-                        result['has_gcms'] = True
+                        g, dtheta, source, aperture = cms_source_numbers(parsed)
+                        result.update(GCMS=g, dtheta=dtheta, source_diameter=source,
+                                      aperture_diameter=aperture, r_ratio=r_ratio_of(source, aperture),
+                                      has_gcms=True)
                     continue
     except Exception as e:
         print(f"[Instrumental function] Could not read DAT metadata from {file_path}: {e}")
@@ -357,6 +365,53 @@ def get_sms_instrumental_from_global_files(app):
     return np.array(INS, dtype=float), float(MulCo), float(x0)
 
 
+GCMS_FILE = 'GCMS.txt'
+
+# The diameters, mm, of the CMS source's active spot (d) and of the aperture
+# that limits the rays reaching the detector (D) -- usually the sample, or a
+# lead mask on it -- as Supp -> "Set CMS source and aperture diameters" takes
+# them. Only their ratio enters: d/D, the r/R of the radii (models.Voight_disc).
+# The defaults: the most common source, and d/D = 0.25, the least bad ratio
+# when the geometry is not known (docs/cosine_smearing.md, study part R2).
+DEFAULT_SOURCE_DIAMETER = 5.0
+DEFAULT_APERTURE_DIAMETER = 20.0
+# G (mm/s) and Δθ (rad) "Reset instrumental function to default values" sets.
+DEFAULT_GCMS = 0.09
+DEFAULT_DTHETA = 0.1
+
+
+def cms_source_numbers(values):
+    """(G, Δθ, d, D) -- d and D the source and aperture diameters -- from the
+    numbers of a #@GCMS line or of GCMS.txt. G alone is the form written
+    before: no smearing (Δθ 0), and then the diameters do not matter (the
+    defaults); a number a line lacks is that default too."""
+    values = [float(v) for v in np.atleast_1d(values)]
+    if not values:
+        raise ValueError("no G: the CMS source needs at least its Gaussian width")
+    defaults = [0.0, DEFAULT_SOURCE_DIAMETER, DEFAULT_APERTURE_DIAMETER]
+    return tuple(values[:4] + defaults[len(values) - 1:])
+
+
+def r_ratio_of(source_diameter, aperture_diameter):
+    """d/D of the diameters, the r/R of the radii (models.TI's ``r_ratio``);
+    0, a point source, for a source of no size."""
+    return source_diameter / aperture_diameter if aperture_diameter > 0 else 0.0
+
+
+def read_gcms_file(params_dir):
+    """(G, Δθ, d, D) stored in parameters/GCMS.txt: the CMS source's Gaussian
+    width G, its cosine smearing Δθ (rad) and the source and aperture
+    diameters d and D (mm) (cms_source_numbers)."""
+    return cms_source_numbers(np.genfromtxt(os.path.join(params_dir, GCMS_FILE)))
+
+
+def write_gcms_file(params_dir, G, dtheta, source_diameter, aperture_diameter):
+    """Store G, Δθ and the diameters d and D, every digit (the fields show 4
+    decimals)."""
+    with open(os.path.join(params_dir, GCMS_FILE), "w") as f:
+        f.write('\t'.join(str(float(v)) for v in (G, dtheta, source_diameter, aperture_diameter)))
+
+
 def get_internal_gcms(app):
     """Current internal G value for CMS: the G input field, falling back to
     parameters/GCMS.txt, then to 0.1."""
@@ -365,10 +420,56 @@ def get_internal_gcms(app):
     except Exception:
         pass
     try:
-        gcms_path = os.path.join(app.params_dir, 'GCMS.txt')
-        return float(np.genfromtxt(gcms_path, delimiter='\t'))
+        return read_gcms_file(app.params_dir)[0]
     except Exception:
         return 0.1
+
+
+def get_internal_dtheta(app):
+    """The CMS cosine smearing Δθ (rad) of the field next to G (models.TI's
+    ``dtheta``), falling back to parameters/GCMS.txt, then to 0 (none)."""
+    try:
+        return float(app.dtheta_input.text())
+    except Exception:
+        pass
+    try:
+        return read_gcms_file(app.params_dir)[1]
+    except Exception:
+        return 0.0
+
+
+def get_cms_diameters(app):
+    """(d, D), the source and aperture diameters in mm of the Supp setting,
+    falling back to parameters/GCMS.txt, then to the defaults."""
+    try:
+        return float(app.source_diameter_input.text()), float(app.aperture_diameter_input.text())
+    except Exception:
+        pass
+    try:
+        return read_gcms_file(app.params_dir)[2:]
+    except Exception:
+        return DEFAULT_SOURCE_DIAMETER, DEFAULT_APERTURE_DIAMETER
+
+
+def get_internal_r_ratio(app):
+    """d/D of the Supp setting's diameters (get_cms_diameters): models.TI's
+    ``r_ratio``."""
+    return r_ratio_of(*get_cms_diameters(app))
+
+
+def drive_rest_velocity(A):
+    """Where the drive is at rest on the velocity axis A of a spectrum (mm/s):
+    the middle of its range, as the drive sweeps symmetrically (sine or
+    triangle). The cosine smearing scales velocities from there (models.TI's
+    ``v_center``). A must be the WHOLE axis, not the points a fit keeps."""
+    return 0.5 * (float(np.min(A)) + float(np.max(A)))
+
+
+def _smearing_note(dtheta, r_ratio=0.0):
+    """The log-box words for a CMS spectrum's cosine smearing ('' when off)."""
+    if not dtheta:
+        return ""
+    return f", Δθ = {dtheta:g} rad, d/D = {r_ratio:g}"
 
 
 def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, force_method=None):
@@ -397,8 +498,17 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
             'INS'    : float G (CMS) or instrumental-function array (SMS)
             'x0'     : float
             'MulCo'  : float
+            'dtheta' : models.TI dtheta argument, CMS: the #@GCMS line's second
+                       number (0 when it has none), else the Δθ field; SMS: 0
+            'r_ratio': models.TI r_ratio argument, d/D of the source and
+                       aperture diameters, the same way from the line or the
+                       Supp setting; SMS: 0
             'source' : 'file' or 'internal'
             'note'   : human-readable description for the log box
+
+    The velocity the cosine smearing starts from, models.TI's v_center, is not
+    here: it needs the spectrum's velocities (drive_rest_velocity) and the
+    callers add it as 'v_center'.
     """
     ui_method = force_method or (
         'CMS' if (getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked()) else 'SMS'
@@ -413,11 +523,11 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
                    and meta['MulCo'] is not None and meta['x0'] is not None)
         # File metadata may set the method, unless we are locked to the other one.
         if meta['has_gcms'] and force_method != 'SMS':
-            g = float(meta['GCMS'])
+            g, dtheta, r_ratio = float(meta['GCMS']), float(meta['dtheta']), float(meta['r_ratio'])
             return {
                 'method': 'CMS', 'Met': 1, 'INS': g, 'x0': 0.0,
-                'MulCo': mulco_cms, 'source': 'file',
-                'note': f"{name}: CMS — G = {g:g} from .dat metadata (#@GCMS)",
+                'MulCo': mulco_cms, 'dtheta': dtheta, 'r_ratio': r_ratio, 'source': 'file',
+                'note': f"{name}: CMS — G = {g:g}{_smearing_note(dtheta, r_ratio)} from .dat metadata (#@GCMS)",
             }
         if has_sms and force_method != 'CMS':
             # A .dat written by this program carries ONE description of its
@@ -434,13 +544,13 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
                 return {
                     'method': 'SMS', 'Met': 0, 'INS': meta['INSacc'],
                     'x0': float(meta['x0']), 'MulCo': float(meta['MulCo']),
-                    'source': 'file',
+                    'dtheta': 0.0, 'r_ratio': 0.0, 'source': 'file',
                     'note': f"{name}: SMS — {smst.describe_ins(meta['INSacc'])} "
                             f"from .dat metadata (#@INSth)",
                 }
             return {
                 'method': 'SMS', 'Met': 0, 'INS': meta['INS'], 'x0': float(meta['x0']),
-                'MulCo': float(meta['MulCo']), 'source': 'file',
+                'MulCo': float(meta['MulCo']), 'dtheta': 0.0, 'r_ratio': 0.0, 'source': 'file',
                 'note': f"{name}: SMS — instrumental function from .dat metadata (#@INSexp/#@INSint)",
             }
         # No usable metadata for the (possibly forced) method -> internal fallback.
@@ -461,10 +571,11 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
     suffix = f" ({fallback_reason})" if fallback_reason else ""
     if ui_method == 'CMS':
         g = get_internal_gcms(app)
+        dtheta, r_ratio = get_internal_dtheta(app), get_internal_r_ratio(app)
         return {
             'method': 'CMS', 'Met': 1, 'INS': float(g), 'x0': 0.0,
-            'MulCo': mulco_cms, 'source': 'internal',
-            'note': f"{name or 'model'}: CMS — internal G = {g:g}{suffix}",
+            'MulCo': mulco_cms, 'dtheta': dtheta, 'r_ratio': r_ratio, 'source': 'internal',
+            'note': f"{name or 'model'}: CMS — internal G = {g:g}{_smearing_note(dtheta, r_ratio)}{suffix}",
         }
     INS_global, MulCo_global, x0_global = get_sms_instrumental_from_global_files(app)
     which = (f"global {INS_TH_FILE} ({smst.describe_ins(INS_global)})"
@@ -472,7 +583,7 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
              else "global INSexp/INSint files")
     return {
         'method': 'SMS', 'Met': 0, 'INS': INS_global, 'x0': float(x0_global),
-        'MulCo': float(MulCo_global), 'source': 'internal',
+        'MulCo': float(MulCo_global), 'dtheta': 0.0, 'r_ratio': 0.0, 'source': 'internal',
         'note': f"{name or 'model'}: SMS — {which}{suffix}",
     }
 
@@ -485,6 +596,8 @@ def same_method_params(a, b):
         and float(a['x0']) == float(b['x0'])
         and float(a['MulCo']) == float(b['MulCo'])
         and np.array_equal(np.atleast_1d(a['INS']), np.atleast_1d(b['INS']))
+        and float(a.get('dtheta', 0.0)) == float(b.get('dtheta', 0.0))
+        and float(a.get('r_ratio', 0.0)) == float(b.get('r_ratio', 0.0))
     )
 
 
@@ -514,7 +627,8 @@ def compute_norm(pool, JN, method_params):
     """Normalization integral for a resolved method (CMS or SMS): the part of the
     unit-area source line that TI's grid samples. It must be computed with the
     same JN and source as the TI call it is passed to; how CMS and SMS use it
-    is explained at "SOURCE NORMALISATION" in models.TI."""
+    is explained at "SOURCE NORMALISATION" in models.TI. Always without the CMS
+    cosine smearing (``dtheta``): that is explained there too."""
     pNorm = np.array([float(0)] * number_of_baseline_parameters)
     pNorm[0] = 1
     return m5.TI(
@@ -569,6 +683,8 @@ def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
         A, p, model, JN_hi, pool,
         method_params['x0'], method_params['MulCo'], method_params['INS'],
         Distri, Cor, Met=method_params['Met'], Norm=norm_hi, pol=pol, Recon=Recon,
+        dtheta=method_params.get('dtheta', 0.0), v_center=method_params.get('v_center', 0.0),
+        r_ratio=method_params.get('r_ratio', 0.0),
     )
     return SPC_hi - SPC_f
 
@@ -577,7 +693,8 @@ def build_dat_metadata_lines(app):
     """Instrumental header lines to embed into .dat files converted from RAW.
 
     CMS mode (the CMS checkbox is checked): a single #@GCMS line with the
-    current G value. SMS mode: the ONE instrumental function in use
+    current G, cosine smearing Δθ and source and aperture diameters d and D.
+    SMS mode: the ONE instrumental function in use
     (get_sms_instrumental_from_global_files) -- #@INSth for the theoretical
     shape, #@INSexp for the Gaussian sum -- and the #@INSint line of its
     integration grid. One description only, so the file alone says which shape
@@ -589,8 +706,8 @@ def build_dat_metadata_lines(app):
         method name ('CMS' or 'SMS').
     """
     if getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked():
-        g = get_internal_gcms(app)
-        return [f'{DAT_GCMS_PREFIX} {float(g)}'], 'CMS'
+        numbers = (get_internal_gcms(app), get_internal_dtheta(app)) + tuple(get_cms_diameters(app))
+        return [DAT_GCMS_PREFIX + ''.join(f' {float(v)}' for v in numbers)], 'CMS'
 
     INS, MulCo, x0 = get_sms_instrumental_from_global_files(app)
     prefix = DAT_INS_EXP_PREFIX if smst.ins_kind(INS) == smst.KIND_GAUSS else DAT_INS_TH_PREFIX
@@ -641,7 +758,8 @@ def dat_metadata_key(file_path):
     their keys are equal."""
     meta = parse_dat_instrumental_metadata(file_path)
     if meta['has_gcms']:
-        return ('CMS', round(float(meta['GCMS']), 9))
+        return ('CMS',) + tuple(round(float(meta[k]), 9)
+                                for k in ('GCMS', 'dtheta', 'source_diameter', 'aperture_diameter'))
     if (meta['has_insexp'] or meta['has_insacc']) and meta['has_insint']:
         ins = (tuple(round(float(v), 9) for v in np.atleast_1d(meta['INS']))
                if meta['has_insexp'] else None)
@@ -854,11 +972,15 @@ def default_theory_instrumental():
 
 
 def reset_instrumental_defaults(app):
-    """Restore the default instrumental function OF THE SELECTED DESCRIPTION.
+    """Restore the default instrumental function OF THE ONE IN USE.
 
-    The two descriptions are independent stores and the user switches between
-    them, so a reset resets the one that is selected and leaves the other alone
-    -- resetting both would throw away a search the user is not even looking at.
+    CMS (the CMS box checked): G, Δθ and the diameters d and D, written to
+    GCMS.txt and set in the window.
+
+    SMS: the selected description. The two are independent stores and the
+    user switches between them, so a reset resets the one that is selected and
+    leaves the other alone -- resetting both would throw away a search the user
+    is not even looking at.
 
         gauss   INSexp.txt (with INSint.txt, its integration grid)
         theory  INSth.txt, back to the built-in starting values
@@ -867,11 +989,18 @@ def reset_instrumental_defaults(app):
     which from "theory" mode silently discarded the thing being reset.
     """
     try:
-        method = instrumental_method(app)
         os.makedirs(app.params_dir, exist_ok=True)
-        if method == 'theory':
+        if getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked():
+            values = (DEFAULT_GCMS, DEFAULT_DTHETA, DEFAULT_SOURCE_DIAMETER, DEFAULT_APERTURE_DIAMETER)
+            write_gcms_file(app.params_dir, *values)
+            for field, value in zip((app.GCMS_input, app.dtheta_input, app.source_diameter_input,
+                                     app.aperture_diameter_input), values):
+                field.setText(str(value))
+            app.GCMS = DEFAULT_GCMS
+            what = "G {:g}, Δθ {:g}, d {:g}, D {:g}".format(*values)
+        elif instrumental_method(app) == 'theory':
             write_accurate_instrumental(app, default_theory_instrumental())
-            what = f"{INS_TH_FILE} ({smst.describe_ins(default_theory_instrumental())})"
+            what = INS_TH_FILE
         else:
             insexp_path = os.path.join(app.params_dir, INS_EXP_FILE)
             instrumental_int_path = os.path.join(app.params_dir, 'INSint.txt')
@@ -881,12 +1010,8 @@ def reset_instrumental_defaults(app):
                 f.write(DEFAULT_INSINT_TEXT)
             what = f"{INS_EXP_FILE}, INSint.txt"
 
-        app.set_status(f"Instrumental defaults restored: {what}", "green")
-        QMessageBox.information(
-            app, "Instrumental function",
-            f"Default values were restored for the selected description "
-            f"({'Theory' if method == 'theory' else 'Set of Gaussians'}).\n\n"
-            f"{what}\n\nThe other description was left untouched.")
+        app.set_status(f"Defaults restored: {what}", "green")
+        QMessageBox.information(app, "Instrumental function", f"Defaults restored: {what}")
         return True
     except Exception as e:
         app.set_status(f"Failed to restore instrumental defaults: {e}", "red")
@@ -1052,7 +1177,9 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
 
     mode 0 : ESRF single-line standard  -- Be-window Doublet + Singlet;
              only the baseline Ns (0) and the Singlet effective thickness T (17)
-             are free.
+             are free. In CMS a single-line absorber with no Be window: a
+             Singlet at the natural width, no Gaussian, its T (8) and shift (9)
+             free; Ns (0) and Nnr (4) free as for alpha-Fe.
     mode 1 : the model currently in the parameters table, its free
              parameters fitted with the instrumental function; a linked
              parameter and an Expression follow their sources (``extra``
@@ -1106,6 +1233,20 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
         fix = np.concatenate((fix, ReconN), axis=0)
         fix = np.unique(fix)
         extra['Distri'], extra['Cor'], extra['Recon'] = Distri, Cor, Recon
+        return model, p, bounds, fix, extra
+
+    if mode == 0 and CMS_ch == 1:
+        model = ['Singlet']
+        bg_tmp = estimate_edge_background(B)
+        p = np.array([bg_tmp * 0.6, 0, 0, 0, bg_tmp * 0.4, 0, 0, 0])
+        p = np.concatenate((p, np.array([5, -0.1, NAT_WIDTH, 0])))
+        # Layout: baseline(8) + Singlet(4): T 8, shift 9, L 10, G 11.
+        bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
+        bounds[0][0] = 0
+        bounds[0][4] = 0
+        bounds[0][8] = 0.001
+        # Fix everything except Ns, Nnr + T and shift of the singlet (0, 4, 8, 9)
+        fix = np.array([1, 2, 3, 5, 6, 7, 10, 11], dtype=int)
         return model, p, bounds, fix, extra
 
     if mode == 0:
@@ -1170,7 +1311,62 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
     raise ValueError(f"build_reference_model: unknown mode {mode!r}")
 
 
-def instrumental(app, ref, mode=0, pool=None, request=None):
+# Where a Δθ search starts when the Δθ field is 0. It cannot start AT 0: the
+# smearing grows as Δθ^4 there, so every spectrum is flat in Δθ and the search
+# has no direction to move in. atan(R/L) of a source about 7 aperture radii
+# from the aperture, a usual geometry.
+DTHETA_SEARCH_START = 0.15     # rad
+
+
+def dtheta_alpha_fe_reference(B, source):
+    """Pure alpha-Fe reference of the CMS cosine smearing search ("Refine Δθ:
+    pure α-Fe"), for a spectrum of counts B: ``(model, p, bounds, fix, extra)``
+    as build_reference_model returns them.
+
+    A polarized Sextet at the alpha-Fe field and the natural width, its T (8)
+    and texture A (16) free from 10 and 0. Of the baseline, Ns (0) and its
+    curvature c²s (2) are free; the non-resonant part is the source's, set from
+    *source* -- 'f_LM' (the source's Lamb-Moessbauer factor) and 'C_high' (the
+    122/136 keV quanta counted) -- by an Expression, minimi_hi applying it at
+    every trial point:
+
+        Nnr = Ns (1 - f_LM) / f_LM + C_high,
+
+    and its O, c² and lin linked to the resonant part's (the table's default
+    links): the source's recoil 14.4 keV quanta and its high-energy ones come
+    from where the source is, as the resonant ones do, so they share its
+    curvature. 'C_static', the detector's static noise, does not depend on
+    where the source is: it is added to the spectrum afterwards, flat
+    (``extra['offset']``).
+    """
+    f_lm, c_high, c_static = float(source['f_LM']), float(source['C_high']), float(source['C_static'])
+    if not 0 < f_lm < 1:
+        raise SearchRefused("f_LM must be between 0 and 1")
+    if c_high < 0 or c_static < 0:
+        raise SearchRefused("C_high and static noise must not be negative")
+    background = estimate_edge_background(B)
+    ns = (background - c_high - c_static) * f_lm
+    if ns <= 0:
+        raise SearchRefused(f"C_high + static noise is not below the baseline ({background:g})")
+    model = ['Sextet']
+    p = np.array([ns, 0, 0, 0, 0, 0, 0, 0])
+    # Polarized Sextet (14): I, d, e, H, L, G, theta_k=90, phi_h=0, A=0, Am=0, a+, a-, GH, I13.
+    p = np.concatenate((p, np.array([10, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3])))
+    expressions = [f"p[0]*(1-{f_lm!r})/{f_lm!r}+{c_high!r}"]
+    targets = np.array([4], dtype=int)
+    # Onr, c²nr, linnr from Os, c²s, lins
+    extra = {'Distri': [0], 'Cor': [0], 'Recon': [0], 'confu': _links_of([5, 6, 7], [1, 2, 3], [1.0, 1.0, 1.0]),
+             'Expr': expressions, 'NExpr': targets, 'offset': c_static}
+    p = apply_links(p, extra['confu'], expressions, targets)
+    bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
+    bounds[0][0] = 0
+    bounds[0][8] = 0.001
+    # Fix everything except Ns, c²s + T and A of the sextet (0, 2, 8, 16)
+    fix = np.setdiff1d(np.arange(len(p)), [0, 2, 8, 16])
+    return model, p, bounds, fix, extra
+
+
+def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
     """
     Calculate or refine instrumental function.
 
@@ -1182,6 +1378,10 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
         request: the spectra to fit (see search_data); by default the first
             spectrum shown, every point. With the model (mode 1) several
             spectra are fitted together, with ONE instrumental function.
+        dtheta_search: CMS only -- refine the cosine smearing Δθ instead of
+            G, with G held at dtheta_search['G']; for pure alpha-Fe (mode 2)
+            also 'f_LM', 'C_high' and 'C_static' for the baseline
+            (dtheta_alpha_fe_reference).
 
     Returns:
         dict: Results containing parameters, errors, chi-squared, and file paths
@@ -1252,10 +1452,27 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
     if ref == 1:
         # Check for CMS mode
         if app.MS_fit.isChecked():
-            INS = np.array([float(app.GCMS)])
-            p0 = np.copy(INS)
-            print('Instrumental procedure for CMS start with', ref, mode)
-            print('Here is initial guess for INS: ', p0)
+            # CMS fits ONE number with the reference: G with the cosine
+            # smearing held (the Δθ field) -- or, for a Δθ search, Δθ with G
+            # held (dtheta_search['G']). The diameters' d/D is held either way,
+            # and each spectrum is smeared from where its drive is at rest
+            # (whole axes).
+            g_cms = float(app.GCMS) if dtheta_search is None else float(dtheta_search['G'])
+            dtheta = get_internal_dtheta(app)
+            r_ratio = get_internal_r_ratio(app)
+            ends = np.cumsum(data['lengths'] or [len(data['A'])])
+            v_center = [drive_rest_velocity(data['A'][a:b]) for a, b in zip(np.r_[0, ends[:-1]], ends)]
+            if data['lengths'] is None:
+                v_center = v_center[0]
+            if dtheta_search is None:
+                p0 = np.array([g_cms])
+            else:
+                # Δθ = 0 is a flat point of every spectrum (the smearing grows as
+                # Δθ^4 there), so a search cannot start from it
+                p0 = np.array([dtheta if dtheta > 0 else DTHETA_SEARCH_START])
+            print('Instrumental procedure for CMS start with', ref, mode,
+                  'fitting', 'G' if dtheta_search is None else 'dtheta')
+            print('Start: G =', g_cms, ' dtheta =', p0[0] if dtheta_search else dtheta, ' d/D =', r_ratio)
             CMS_ch = 1
         elif app.SMS_fit.isChecked():
             use_dat_metadata = bool(getattr(app, 'use_dat_instrumental_metadata', True))
@@ -1294,10 +1511,18 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
             bounds0[1][i * 3 + 1] = 1.5
     else:
         bounds0 = np.array([[-np.inf] * len(p0), [np.inf] * len(p0)])
-        bounds0[0][0] = 0.001
-        bounds0[1][0] = 1
-    
-    model, p, bounds, fix, extra = search_reference(app, mode, data, request, CMS_ch)
+        if dtheta_search is None:
+            bounds0[0][0] = 0.001
+            bounds0[1][0] = 1
+        else:
+            bounds0[0][0] = 0.0
+            bounds0[1][0] = np.pi / 2
+
+    if dtheta_search is not None and mode == 2:
+        model, p, bounds, fix, extra = dtheta_alpha_fe_reference(data['B_list'][0], dtheta_search)
+        extra['starts'] = [0]
+    else:
+        model, p, bounds, fix, extra = search_reference(app, mode, data, request, CMS_ch)
     Distri, Cor, Recon = extra['Distri'], extra['Cor'], extra['Recon']
     links = {'confu': extra['confu'], 'Expr': extra['Expr'], 'NExpr': extra['NExpr']}
 
@@ -1309,32 +1534,35 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
     _refuse_too_few_points(len(B), len(p) - len(np.unique(fix)), data['regions'])
 
     # ``lengths`` tells TI where each joined spectrum ends (None: one spectrum).
-    # CMS: TI needs the Norm of the G being fitted (p[-1]) and of the current JN.
+    # CMS: TI needs the Norm of the G it integrates with and of the current JN.
     cms_norm = cms_norm_following_g(pool, MulCoCMS)
-    if mode == 1:
-        if CMS_ch == 0:
-            def INSSS(x_exp, p, lengths=lengths):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon, lengths=lengths)
-        if CMS_ch == 1:
-            def INSSS(x_exp, p, lengths=lengths):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Distri, Cor, Met=1, Norm=cms_norm(JN, p[-1]), Recon=Recon, lengths=lengths)
+    # counts a reference adds to the spectrum after the model, flat: the
+    # detector's static noise of the alpha-Fe Δθ search
+    offset = extra.get('offset', 0.0)
+    if CMS_ch == 1:
+        # every reference (single line, model, pure alpha-Fe) the same way: the
+        # last entry of p is G -- or Δθ in a Δθ search
+        def cms_source(p):
+            return (p[-1], dtheta) if dtheta_search is None else (g_cms, p[-1])
 
-    # CMS_ch could not be equal to 1 for mode 0
-    # Not meaningful to use ESRF standard single line absorber for CMS
+        def INSSS(x_exp, p, lengths=lengths):
+            g, th = cms_source(p)
+            spectrum = m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, g, Distri, Cor, Met=1,
+                             Norm=cms_norm(JN, g), Recon=Recon, lengths=lengths, dtheta=th, v_center=v_center,
+                             r_ratio=r_ratio)
+            return spectrum + offset if offset else spectrum
+
+    elif mode == 1:
+        def INSSS(x_exp, p, lengths=lengths):
+            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon, lengths=lengths)
+
     elif mode == 0:
-        print(f"[Instrumental function] Mode 0: Creating INSSS function, CMS_ch={CMS_ch}")
-        if CMS_ch == 0:
-            def INSSS(x_exp, p, lengths=lengths):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
-            print(f"[Instrumental function] INSSS function created for CMS_ch=0")
+        def INSSS(x_exp, p, lengths=lengths):
+            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
 
     elif mode == 2:
-        if CMS_ch == 0:
-            def INSSS(x_exp, p, lengths=lengths):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
-        if CMS_ch == 1:
-            def INSSS(x_exp, p, lengths=lengths):
-                return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, p[-1], Met=1, Norm=cms_norm(JN, p[-1]), lengths=lengths)
+        def INSSS(x_exp, p, lengths=lengths):
+            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
 
     # Normalization function
     # to insure sum of amplitudes squared = 1 in case of SMS
@@ -1457,8 +1685,9 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
         print('x0:', x0)
         print('MulCo:', MulCo)
     if CMS_ch == 1:
-        print('G:', p[-1])
-    
+        g_out, dtheta_out = cms_source(p)
+        print('G:', g_out, ' dtheta:', dtheta_out, ' d/D:', r_ratio)
+
     # Calculate fitted spectra for plotting: every point, the excluded ones too
     F = INSSS(data['A'], p, data['lengths'])
     JN_save = np.copy(JN)
@@ -1472,8 +1701,8 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
     if CMS_ch == 0:
         insexp_path = os.path.join(app.params_dir, 'INSexp.txt')
     else:
-        insexp_path = os.path.join(app.params_dir, 'GCMS.txt')
-    
+        insexp_path = os.path.join(app.params_dir, GCMS_FILE)
+
     if CMS_ch == 0:
         with open(insexp_path, "w") as f:
             for i in range(0, len(INSp)):
@@ -1498,12 +1727,15 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
         # theoretical shape, after which selecting "Theory" fell back to the
         # Gaussians for ever and looked like the setting had stopped working.
         #
-        # Use "Reset to default values" to restore either description; it acts
-        # on the selected one and leaves the other alone.
+        # Use "Reset SMS instrumental function to default values" to restore
+        # either description; it acts on the selected one and leaves the other
+        # alone.
     else:
-        with open(insexp_path, "w") as f:
-            f.write(str('%.3f' % INSp[-1]))
-    
+        # G and Δθ together -- the one fitted with the other it was found with
+        # -- so they come back together at the next start; the diameters d and
+        # D as they are
+        write_gcms_file(app.params_dir, g_out, dtheta_out, *get_cms_diameters(app))
+
     # Return results (plotting will be done in main thread)
     return {
         'p': p,
@@ -1512,7 +1744,10 @@ def instrumental(app, ref, mode=0, pool=None, request=None):
         'mod_p_len': mod_p_len,
         'x0': x0 if CMS_ch == 0 else None,
         'MulCo': MulCo if CMS_ch == 0 else None,
-        'G': INSp[-1] if CMS_ch == 1 else None,
+        'G': g_out if CMS_ch == 1 else None,
+        'dtheta': dtheta_out if CMS_ch == 1 else None,
+        'fitted': ('dtheta' if dtheta_search is not None else 'G') if CMS_ch == 1 else 'INS',
+        'baseline_offset': offset,
         'insexp_path': insexp_path,
         'mode': mode,
         'CMS_ch': CMS_ch,

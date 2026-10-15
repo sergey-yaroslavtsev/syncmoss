@@ -174,6 +174,7 @@ def test_raw_to_dat_embeds_method_metadata(physics_app, tmp_path, mode):
 
     physics_app.MS_fit.setChecked(mode == "CMS")  # mutual exclusivity flips SMS
     physics_app.GCMS_input.setText("0.097")
+    physics_app.dtheta_input.setText("0.195")
 
     messages = []
     thread = RawToDatThread(physics_app, [raw_copy], physics_app.calibration_path, out_dir)
@@ -182,6 +183,7 @@ def test_raw_to_dat_embeds_method_metadata(physics_app, tmp_path, mode):
     thread.run()  # synchronous: no need to spin the thread
 
     physics_app.SMS_fit.setChecked(True)
+    physics_app.dtheta_input.setText("0")
 
     assert messages and messages[0][0] == "ok", f"conversion failed: {messages}"
     out_file = os.path.join(out_dir, "000.dat")
@@ -190,7 +192,7 @@ def test_raw_to_dat_embeds_method_metadata(physics_app, tmp_path, mode):
     meta = parse_dat_instrumental_metadata(out_file)
     if mode == "CMS":
         assert meta["has_gcms"] is True
-        assert meta["GCMS"] == pytest.approx(0.097)
+        assert meta["GCMS"] == pytest.approx(0.097) and meta["dtheta"] == pytest.approx(0.195)
         assert meta["has_insexp"] is False and meta["has_insint"] is False
         assert "#@GCMS" in messages[0][1]
     else:
@@ -369,7 +371,7 @@ def test_save_spectrum_with_metadata_roundtrip(tmp_path):
     with_meta = os.path.join(str(tmp_path), "with_meta.dat")
     save_spectrum_with_metadata(with_meta, A, B, ["#@GCMS 0.097"])
     assert read_dat_metadata_lines(with_meta) == ["#@GCMS 0.097"]
-    assert dat_metadata_key(with_meta) == ("CMS", 0.097)
+    assert dat_metadata_key(with_meta) == ("CMS", 0.097, 0.0, 5.0, 20.0)
 
     without_meta = os.path.join(str(tmp_path), "without_meta.dat")
     save_spectrum_with_metadata(without_meta, A, B, [])
@@ -402,7 +404,7 @@ def test_half_points_preserves_metadata(physics_app, tmp_path):
     src = write_dat_variant(tmp_path, "cms.dat", physics_app.calibration_path, ["#@GCMS 0.097"])
     out = os.path.join(str(tmp_path), "half.dat")
     assert process_half_spectrum(physics_app, src, out, auto_load=False)
-    assert dat_metadata_key(out) == ("CMS", 0.097)
+    assert dat_metadata_key(out) == ("CMS", 0.097, 0.0, 5.0, 20.0)
 
 
 def test_sum_keeps_matching_and_drops_conflicting_metadata(physics_app, tmp_path, monkeypatch):
@@ -421,7 +423,7 @@ def test_sum_keeps_matching_and_drops_conflicting_metadata(physics_app, tmp_path
                         staticmethod(lambda *a, **k: (out_same, "")))
     physics_app.process_path.setPlainText(repr([g1, g2]))
     sio.sum_all_spectra(physics_app)
-    assert dat_metadata_key(out_same) == ("CMS", 0.097)
+    assert dat_metadata_key(out_same) == ("CMS", 0.097, 0.0, 5.0, 20.0)
 
     out_conflict = os.path.join(str(tmp_path), "sum_conflict.dat")
     monkeypatch.setattr(sio.QFileDialog, "getSaveFileName",

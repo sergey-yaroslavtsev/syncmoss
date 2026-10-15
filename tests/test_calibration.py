@@ -67,7 +67,8 @@ def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False):
     MulCo, x0 = np.genfromtxt(os.path.join(_SRC_PARAMS, "INSint.txt"), delimiter=" ")
     INS = np.genfromtxt(os.path.join(_SRC_PARAMS, "INSexp.txt"), delimiter=" ")
     try:
-        GCMS = float(np.genfromtxt(os.path.join(_SRC_PARAMS, "GCMS.txt"), delimiter="\t"))
+        from syncmoss.instrumental_io import read_gcms_file
+        GCMS = read_gcms_file(_SRC_PARAMS)[0]          # "G" or "G Δθ"
     except Exception:
         GCMS = 0.1
 

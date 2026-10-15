@@ -997,7 +997,8 @@ def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, g
 
 
 def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gridcolor='gray', theme=None,
-                             lengths=None, starts=None, labels=None, exclusion_regions=None):
+                             lengths=None, starts=None, labels=None, exclusion_regions=None,
+                             baseline_offset=0.0):
     """
     Plot instrumental function fitting results on the given figure and save to files.
 
@@ -1006,7 +1007,8 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
     begin in p) and ``labels`` (the caption under each): every spectrum gets a
     panel of its own, side by side as a simultaneous fit shows them, with the
     search's one chi2 over the middle one. ``exclusion_regions`` are drawn as
-    grey bands: their points were not fitted.
+    grey bands: their points were not fitted. ``baseline_offset`` is what the
+    search added to its model besides p's baseline (a detector's static noise).
     """
     tc = _tc(theme)
     figure.clear()
@@ -1027,7 +1029,8 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
         ax1.plot(A_k, F_k, color='r')
 
         # Fill between fitted spectrum and this spectrum's baseline
-        ax1.fill_between(A_k, F_k.astype(float), calculate_baseline(p_k, A_k), color='r', alpha=1, zorder=2)
+        ax1.fill_between(A_k, F_k.astype(float), calculate_baseline(p_k, A_k) + baseline_offset, color='r', alpha=1,
+                         zorder=2)
 
         # Plot experimental data
         ax1.plot(A_k, B_k, linestyle='None', marker='x', color='m', gid=DATA_GID)

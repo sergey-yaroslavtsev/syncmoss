@@ -463,7 +463,8 @@ def _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve, flat_coun
 #  Main entry point                                                         #
 # ========================================================================= #
 
-def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, GCMS=0.1):
+def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, GCMS=0.1, dtheta=0.0,
+                r_ratio=0.0):
     """Fit the velocity calibration of a standard alpha-Fe absorber spectrum.
 
     Loads the calibration spectrum ``Cal_file``, auto-detects everything about
@@ -489,6 +490,11 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         Vel_start: Sweep orientation: ``1`` velocity starts at its maximum
             (down-up), ``0`` at its minimum (up-down).
         GCMS: Gaussian instrumental linewidth for CMS (the GUI GCMS box).
+        dtheta: cosine smearing for CMS in rad (the GUI Δθ box, models.TI's
+            ``dtheta``); 0 = none. Mean-preserving, so it barely moves the
+            velocity scale -- it fits the outer lines' broadening.
+        r_ratio: d/D of the CMS source and aperture diameters (the Supp
+            setting, models.TI's ``r_ratio``); 0 = a point source.
 
     Returns:
         tuple ``(v_folded, data_folded, fit_folded)`` -- the folded velocity
@@ -522,8 +528,11 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
                      MulCoCMS, INS, [0], [0], Met=1)[0]
 
         def fit_func(x, p):
+            # x is always the whole drive axis: its middle is the drive at rest,
+            # where the cosine smearing starts
             return m5.TI(x, p, model, JN, pool, 0.0, MulCoCMS, INS, [], [],
-                         Met=1, Norm=Norm)
+                         Met=1, Norm=Norm, dtheta=dtheta, v_center=0.5 * (np.min(x) + np.max(x)),
+                         r_ratio=r_ratio)
 
         INS_shift = 0
     elif VVV == 3:

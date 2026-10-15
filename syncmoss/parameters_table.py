@@ -111,9 +111,19 @@ def style_value_field(value_input):
 # table shows a fitted one, but keeps every digit of it (ValueLineEdit).
 SHOWN_DECIMALS = 3
 
+# Decimals the CMS source's fields show (G, Δθ, r/R; each keeps every digit).
+CMS_SOURCE_DECIMALS = 4
+
 # A plain number a value field shows as it is: no exponent and at most
 # SHOWN_DECIMALS decimals.
 _SHORT_NUMBER = re.compile(rf'-?\d+(\.\d{{0,{SHOWN_DECIMALS}}})?')
+
+
+def _short_number(decimals):
+    """_SHORT_NUMBER for *decimals* decimals."""
+    if decimals == SHOWN_DECIMALS:
+        return _SHORT_NUMBER
+    return re.compile(rf'-?\d+(\.\d{{0,{decimals}}})?')
 
 
 def format_parameter_value(value, decimals=SHOWN_DECIMALS):
@@ -135,20 +145,20 @@ def format_parameter_value(value, decimals=SHOWN_DECIMALS):
     return '0' if text == '-0' else text
 
 
-def shown_value_text(text):
+def shown_value_text(text, decimals=SHOWN_DECIMALS):
     """*text* as a value field shows it.
 
-    A number with more than SHOWN_DECIMALS decimals, or written with an
+    A number with more than *decimals* decimals, or written with an
     exponent, is shown rounded (format_parameter_value), and so is the X of an
     independent value ``=(X)``. Anything else -- a short number, a link, an
     empty or half-written field -- is shown as it is.
     """
     if split_independent_field(text) is not None:
-        return f"=({shown_value_text(text.strip()[2:-1])})"
-    if _SHORT_NUMBER.fullmatch(text.strip()):
+        return f"=({shown_value_text(text.strip()[2:-1], decimals)})"
+    if _short_number(decimals).fullmatch(text.strip()):
         return text
     try:
-        return format_parameter_value(float(text))
+        return format_parameter_value(float(text), decimals)
     except ValueError:
         return text
 
@@ -166,17 +176,23 @@ class ValueLineEdit(QLineEdit):
 
     The free-text columns (an Expression / PDF / dependency string or a Recon
     weight vector, flagged 'free_text' by select_model) are shown as they are.
+
+    *decimals* is how many decimals it shows (SHOWN_DECIMALS for a parameter);
+    *tool_tip*, when given, stays in the tooltip above the hidden digits.
     """
 
-    def __init__(self, text=""):
+    def __init__(self, text="", decimals=SHOWN_DECIMALS, tool_tip=""):
         super().__init__()
         self._whole_text = ""
         self._shown_text = ""
+        self._decimals = decimals
+        self._tool_tip = tool_tip
         self.textChanged.connect(self._update_tool_tip)
         self.setText(text)
+        self._update_tool_tip()
 
     def setText(self, text):
-        shown = text if self.property('free_text') else shown_value_text(text)
+        shown = text if self.property('free_text') else shown_value_text(text, self._decimals)
         self._whole_text, self._shown_text = text, shown
         super().setText(shown)
 
@@ -186,7 +202,8 @@ class ValueLineEdit(QLineEdit):
 
     def _update_tool_tip(self):
         whole = self.text()
-        self.setToolTip(whole if whole != super().text() else "")
+        hidden = whole if whole != super().text() else ""
+        self.setToolTip("\n\n".join(t for t in (self._tool_tip, hidden) if t))
 
 
 def _bound_value(text):

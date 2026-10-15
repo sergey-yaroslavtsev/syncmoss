@@ -4,7 +4,8 @@ The "Supp" (support) button menu and its actions.
 Everything reachable from the Supp button in the main window lives here:
 the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
 and the handlers for the small settings dialogs (integral points, instrumental
-lines, polarization, the Be / KB impurity presets), the Library export/import,
+lines, polarization, the CMS source and aperture diameters, the Be / KB impurity
+presets), the Library export/import,
 the two markdown viewers
 (models description and quick help), the License window, the (parked)
 Hamiltonian initial-guess helper and the highlighted "Contact the author"
@@ -40,11 +41,11 @@ from syncmoss.license_window import LicenseWindow
 import syncmoss.sms_theory as smst
 from syncmoss.instrumental_io import (
     DEFAULT_INSTRUMENTAL_METHOD, THEORY_BOUNDS, THEORY_START,
-    get_sms_instrumental_from_global_files, read_accurate_instrumental,
-    resolve_instrumental_for_file,
+    get_cms_diameters, get_internal_dtheta, get_internal_gcms, get_sms_instrumental_from_global_files,
+    read_accurate_instrumental, read_gcms_file, resolve_instrumental_for_file, write_gcms_file,
 )
 from syncmoss.instrumental_window import InstrumentalFunctionWindow
-from syncmoss.parameters_table import DOUBLET_NAMES
+from syncmoss.parameters_table import CMS_SOURCE_DECIMALS, DOUBLET_NAMES, ValueLineEdit
 
 # The two impurity presets of the model menu ('Be' and 'KB_nano'): a Doublet
 # each, kept in params_dir as one tab-separated line of its nine values. They
@@ -123,6 +124,8 @@ def build_supp_menu(main_window):
     set_integral_points_action.triggered.connect(lambda: open_integral_points_dialog(main_window))
     set_polarization_action = QAction("Set polarization", main_window)
     set_polarization_action.triggered.connect(lambda: open_polarization_dialog(main_window))
+    cms_diameters_action = QAction("Set CMS source and aperture diameters", main_window)
+    cms_diameters_action.triggered.connect(lambda: open_cms_diameters_dialog(main_window))
     ins_method_action = QAction(
         "Choose how to approximate instrumental function", main_window)
     ins_method_action.triggered.connect(
@@ -170,6 +173,7 @@ def build_supp_menu(main_window):
     # method dialog. open_instrumental_lines_dialog() is kept for callers that
     # still want the standalone editor.
     menu.addAction(set_polarization_action)
+    menu.addAction(cms_diameters_action)
     menu.addAction(ins_method_action)
     for action in preset_actions:
         menu.addAction(action)
@@ -601,6 +605,167 @@ def open_theory_find_dialog(main_window):
             return None
         out[key] = value
     return out
+
+
+# The source's f_LM the Δθ dialog proposes.
+DTHETA_SOURCE_F_LM = 0.7
+
+
+def open_dtheta_alpha_fe_dialog(main_window):
+    """The source's numbers for "Refine Δθ: pure α-Fe", or None to cancel it.
+
+    G is held while Δθ is fitted (prefilled from the G field); f_LM, C_high and
+    the static noise set the non-resonant baseline
+    (instrumental_io.dtheta_alpha_fe_reference). The dialog says how to find
+    them first.
+
+    Returns {'G', 'f_LM', 'C_high', 'C_static'}, or None if cancelled.
+    """
+    title = "Refine Δθ: pure α-Fe"
+    fields = (
+        ('G', "G [mm/s]", str(get_internal_gcms(main_window)),
+         lambda v: v >= 0, "must not be negative"),
+        ('f_LM', "f_LM of the source", str(DTHETA_SOURCE_F_LM),
+         lambda v: 0 < v < 1, "must be between 0 and 1"),
+        ('C_high', "C_high [counts/point]", "0",
+         lambda v: v >= 0, "must not be negative"),
+        ('C_static', "Static noise [counts/point]", "0",
+         lambda v: v >= 0, "must not be negative"),
+    )
+
+    dialog = QDialog(main_window)
+    dialog.setWindowTitle(title)
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(_wrapped_label(
+        "Nnr = Ns (1 − f_LM)/f_LM + C_high; static noise added flat.", dialog))
+    layout.addWidget(_wrapped_label(
+        "<b>First:</b> G and f_LM from a single-line spectrum. C_high: count rate with a "
+        "100 µm Cu foil × time per point, minus the static noise.", dialog))
+
+    editors = {}
+    for key, label, text, _check, _why in fields:
+        row = QHBoxLayout()
+        lab = QLabel(label)
+        lab.setMinimumWidth(200)
+        row.addWidget(lab)
+        # every digit kept, as in the G field it comes from
+        editor = ValueLineEdit(text, CMS_SOURCE_DECIMALS)
+        validator = QDoubleValidator(dialog)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        validator.setLocale(QLocale(QLocale.Language.C))
+        editor.setValidator(validator)
+        editor.setMaximumWidth(120)
+        row.addWidget(editor)
+        row.addStretch(1)
+        layout.addLayout(row)
+        editors[key] = editor
+
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                               | QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    dialog.setMinimumWidth(420)
+
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None
+
+    out = {}
+    for key, label, _text, check, why in fields:
+        try:
+            value = float(editors[key].text().strip().replace(',', '.'))
+        except ValueError:
+            QMessageBox.warning(main_window, title, f"{label}: please enter a number.")
+            return None
+        if not check(value):
+            QMessageBox.warning(main_window, title, f"{label}: {why}.")
+            return None
+        out[key] = value
+    return out
+
+
+def open_cms_diameters_dialog(main_window):
+    """Supp -> Set CMS source and aperture diameters: the diameters (mm) of the
+    CMS source's active spot, d, and of the aperture that limits the rays
+    reaching the detector (usually the sample), D, whose ratio d/D shapes the
+    cosine smearing (instrumental_io.get_internal_r_ratio). Saved at once with
+    the defaults (parameters/GCMS.txt, its G and Δθ as they are there).
+    Returns True when they were set."""
+    title = "CMS source and aperture diameters"
+    fields = (
+        ('source', "Source diameter d [mm]", lambda v: v >= 0, "must not be negative"),
+        ('aperture', "Aperture diameter D [mm]", lambda v: v > 0, "must be above 0"),
+    )
+    current = dict(zip(('source', 'aperture'), get_cms_diameters(main_window)))
+
+    dialog = QDialog(main_window)
+    dialog.setWindowTitle(title)
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(_wrapped_label(
+        "Affects CMS only. d: the source's active spot. D: the aperture — whatever limits the "
+        "rays reaching the detector, usually the sample or a lead mask on it, else the "
+        "detector window.", dialog))
+    layout.addWidget(_wrapped_label(
+        "<b>Only their ratio d/D matters</b>: it sets the shape of the cosine smearing, Δθ sets "
+        "its width. <b>And the ratio has a small effect</b>: Δθ, fitted, takes up nearly all of "
+        "it.", dialog))
+
+    editors = {}
+    for key, label, _check, _why in fields:
+        row = QHBoxLayout()
+        lab = QLabel(label)
+        lab.setMinimumWidth(200)
+        row.addWidget(lab)
+        editor = ValueLineEdit(str(current[key]), CMS_SOURCE_DECIMALS)
+        validator = QDoubleValidator(dialog)
+        validator.setBottom(0.0)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        validator.setLocale(QLocale(QLocale.Language.C))
+        editor.setValidator(validator)
+        editor.setMaximumWidth(120)
+        row.addWidget(editor)
+        row.addStretch(1)
+        layout.addLayout(row)
+        editors[key] = editor
+
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                               | QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    dialog.setMinimumWidth(520)
+
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return False
+
+    values = {}
+    for key, label, check, why in fields:
+        try:
+            value = float(editors[key].text().strip().replace(',', '.'))
+        except ValueError:
+            QMessageBox.warning(main_window, title, f"{label}: please enter a number.")
+            return False
+        if not check(value):
+            QMessageBox.warning(main_window, title, f"{label}: {why}.")
+            return False
+        values[key] = value
+
+    main_window.source_diameter_input.setText(str(values['source']))
+    main_window.aperture_diameter_input.setText(str(values['aperture']))
+    ratio = values['source'] / values['aperture']
+    # with the defaults: G and Δθ as they are saved, not as the fields hold them
+    try:
+        g, dtheta = read_gcms_file(main_window.params_dir)[:2]
+    except Exception:
+        g, dtheta = get_internal_gcms(main_window), get_internal_dtheta(main_window)
+    try:
+        write_gcms_file(main_window.params_dir, g, dtheta, values['source'], values['aperture'])
+    except OSError as e:
+        main_window.set_status(f"d/D = {ratio:g} set, not saved: {e}", "orange")
+        return True
+    main_window.set_status(f"d = {values['source']:g} mm, D = {values['aperture']:g} mm "
+                           f"(d/D = {ratio:g}), saved.", "blue")
+    return True
 
 
 def open_polarization_dialog(main_window):
