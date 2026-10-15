@@ -393,9 +393,9 @@ def cms_source_numbers(values):
 
 
 def r_ratio_of(source_diameter, aperture_diameter):
-    """d/D of the diameters, the r/R of the radii (models.TI's ``r_ratio``),
-    above 0 for any real source; 0 without an aperture, which the smearing
-    refuses (models.disc_rule)."""
+    """d/D of the diameters, the r/R of the radii (models.cms_smearing's
+    ``r_ratio``), above 0 for any real source; 0 without an aperture, which the
+    smearing refuses (models.disc_rule)."""
     return source_diameter / aperture_diameter if aperture_diameter > 0 else 0.0
 
 
@@ -427,8 +427,9 @@ def get_internal_gcms(app):
 
 
 def get_internal_dtheta(app):
-    """The CMS cosine smearing Δθ (rad) of the field next to G (models.TI's
-    ``dtheta``), falling back to parameters/GCMS.txt, then to 0 (none)."""
+    """The CMS cosine smearing Δθ (rad) of the field next to G
+    (models.cms_smearing's ``dtheta``), falling back to parameters/GCMS.txt,
+    then to 0 (none)."""
     try:
         return float(app.dtheta_input.text())
     except Exception:
@@ -453,16 +454,17 @@ def get_cms_diameters(app):
 
 
 def get_internal_r_ratio(app):
-    """d/D of the Supp setting's diameters (get_cms_diameters): models.TI's
-    ``r_ratio``."""
+    """d/D of the Supp setting's diameters (get_cms_diameters):
+    models.cms_smearing's ``r_ratio``."""
     return r_ratio_of(*get_cms_diameters(app))
 
 
 def drive_rest_velocity(A):
     """Where the drive is at rest on the velocity axis A of a spectrum (mm/s):
     the middle of its range, as the drive sweeps symmetrically (sine or
-    triangle). The cosine smearing scales velocities from there (models.TI's
-    ``v_center``). A must be the WHOLE axis, not the points a fit keeps."""
+    triangle). The cosine smearing scales velocities from there
+    (models.cms_smearing's ``v_center``). A must be the WHOLE axis, not the
+    points a fit keeps."""
     return 0.5 * (float(np.min(A)) + float(np.max(A)))
 
 
@@ -499,17 +501,19 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
             'INS'    : float G (CMS) or instrumental-function array (SMS)
             'x0'     : float
             'MulCo'  : float
-            'dtheta' : models.TI dtheta argument, CMS: the #@GCMS line's second
-                       number (0 when it has none), else the Δθ field; SMS: 0
-            'r_ratio': models.TI r_ratio argument, d/D of the source and
-                       aperture diameters, the same way from the line or the
-                       Supp setting; SMS: 0
+            'dtheta' : the cosine smearing's Δθ (models.cms_smearing), CMS:
+                       the #@GCMS line's second number (0 when it has none),
+                       else the Δθ field; SMS: 0
+            'r_ratio': its d/D of the source and aperture diameters, the same
+                       way from the line or the Supp setting; SMS: 0
             'source' : 'file' or 'internal'
             'note'   : human-readable description for the log box
 
-    The velocity the cosine smearing starts from, models.TI's v_center, is not
-    here: it needs the spectrum's velocities (drive_rest_velocity) and the
-    callers add it as 'v_center'.
+    The velocity the cosine smearing starts from, models.cms_smearing's
+    v_center, is not here: it needs the spectrum's velocities
+    (drive_rest_velocity) and the callers add it as 'v_center'. The smearing
+    itself, and with it the Norm, is prepared for the velocities and JN of
+    each TI call (source_for).
     """
     ui_method = force_method or (
         'CMS' if (getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked()) else 'SMS'
@@ -624,28 +628,40 @@ def analyze_instrumental_methods(app, spectrum_files, use_dat_metadata):
     return overridden, nonuniform, resolved
 
 
-def compute_norm(pool, JN, method_params):
+def compute_norm(pool, JN, method_params, x=None, smearing=None):
     """Normalization integral for a resolved method (CMS or SMS): the part of the
-    unit-area source line that TI's grid samples. It must be computed with the
-    same JN and source as the TI call it is passed to; how CMS and SMS use it
-    is explained at "SOURCE NORMALISATION" in models.TI. Always without the CMS
-    cosine smearing (``dtheta``): that is explained there too."""
+    unit-area source line that TI's grid samples -- TI's own node sum for an
+    empty model. It must be computed with the same JN and source as the TI
+    call it is passed to; how CMS and SMS use it is explained at "SOURCE
+    NORMALISATION" in models.TI. A number, the same at every velocity. With
+    the CMS cosine smearing (*smearing*, prepared for the velocities *x*), the
+    source differs from velocity to velocity, and so does this: an array over
+    x."""
     pNorm = np.array([float(0)] * number_of_baseline_parameters)
     pNorm[0] = 1
-    return m5.TI(
-        np.array([float(1000)]), pNorm, [], JN, pool,
+    if smearing is None:
+        return m5.TI(
+            np.array([float(1000)]), pNorm, [], JN, pool,
+            method_params['x0'], method_params['MulCo'], method_params['INS'],
+            [0], [0], Met=method_params['Met'],
+        )[0]
+    return np.asarray(m5.TI(
+        np.asarray(x, dtype=float), pNorm, [], JN, pool,
         method_params['x0'], method_params['MulCo'], method_params['INS'],
-        [0], [0], Met=method_params['Met'],
-    )[0]
+        [0], [0], Met=method_params['Met'], smearing=smearing,
+    ), dtype=float)
 
 
-def smearing_for(x, JN, method_params):
-    """The cosine smearing TI takes (models.cms_smearing) for the velocities x
-    at JN nodes, from a resolved method: None for SMS or without Δθ. Prepared
-    like the Norm, before TI is called, for exactly that call's x and JN."""
+def source_for(pool, x, JN, method_params):
+    """The source of a TI call for the velocities x at JN nodes, from a
+    resolved method, as TI takes it: (Norm, smearing) -- the cosine smearing
+    (models.cms_smearing; None for SMS or without Δθ) and the Norm of the
+    source with it (compute_norm). Prepared before TI is called, for exactly
+    that call's x and JN."""
     mp = method_params
-    return m5.cms_smearing(x, JN, mp['MulCo'], mp['INS'], mp['Met'], mp.get('dtheta', 0.0),
-                           mp.get('v_center', 0.0), mp.get('r_ratio', 0.0))
+    smearing = m5.cms_smearing(x, JN, mp['MulCo'], mp['INS'], mp['Met'], mp.get('dtheta', 0.0),
+                               mp.get('v_center', 0.0), mp.get('r_ratio', 0.0))
+    return compute_norm(pool, JN, mp, x, smearing), smearing
 
 
 def cms_norm_following_g(pool, MulCoCMS):
@@ -688,8 +704,7 @@ def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
     by the instrumental-function fit.
     """
     JN_hi = int(JN) * HIRES_INTEGRATION_FACTOR
-    norm_hi = compute_norm(pool, JN_hi, method_params)
-    smearing_hi = smearing_for(A, JN_hi, method_params)
+    norm_hi, smearing_hi = source_for(pool, A, JN_hi, method_params)
     SPC_hi = m5.TI(
         A, p, model, JN_hi, pool,
         method_params['x0'], method_params['MulCo'], method_params['INS'],
@@ -1567,11 +1582,20 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
             return (p[-1], dtheta) if dtheta_search is None else (g_cms, p[-1])
 
         def INSSS(x_exp, p, lengths=lengths):
-            # G or Δθ is being fitted: the smearing is prepared for every call
+            # G or Δθ is being fitted: the source -- its smearing and, with it,
+            # its Norm, one per spectrum -- is prepared for every call. Without
+            # smearing, the plain Norm of G (cms_norm).
             g, th = cms_source(p)
             smearing = m5.cms_smearing(x_exp, JN, MulCoCMS, g, 1, th, v_center, r_ratio, lengths)
+            if smearing is None:
+                norm = cms_norm(JN, g)
+            else:
+                source = {'x0': 0, 'MulCo': MulCoCMS, 'INS': g, 'Met': 1}
+                norm = (compute_norm(pool, JN, source, x_exp, smearing) if lengths is None else
+                        [compute_norm(pool, JN, source, x_i, s_i) for x_i, s_i
+                         in zip(np.split(np.asarray(x_exp, dtype=float), np.cumsum(lengths)[:-1]), smearing)])
             spectrum = m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, g, Distri, Cor, Met=1,
-                             Norm=cms_norm(JN, g), Recon=Recon, lengths=lengths, smearing=smearing)
+                             Norm=norm, Recon=Recon, lengths=lengths, smearing=smearing)
             return spectrum + offset if offset else spectrum
 
     elif mode == 1:

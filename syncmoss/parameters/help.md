@@ -224,7 +224,9 @@ an explicit message and reddened fields rather than failing halfway through.
   is 1 % off. Δθ is the angle of the point source whose cos θ has the same
   spread — atan(R/L) at the distance L from an aperture of radius R,
   atan((R⁴ + 6R²r² + r⁴)^¼ / L) for a source of radius r; the disc itself is
-  computed exactly, at any angle. Both come from the defaults at start, are
+  computed exactly, at any angle. The integration keeps up with it to
+  Δθ ≈ 0.5 rad at JN 64 (≈ 0.3 at JN 32); beyond, the cyan line wiggles:
+  raise JN. Both come from the defaults at start, are
   written into `#@GCMS` of converted `.dat` files, and a file's own values are
   used for it. The fields show 4 decimals and keep every digit (the tooltip
   shows them all).

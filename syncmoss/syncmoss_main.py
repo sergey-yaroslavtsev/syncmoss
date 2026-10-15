@@ -122,8 +122,7 @@ from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
     analyze_instrumental_methods,
     build_dat_metadata_lines,
-    compute_norm,
-    smearing_for,
+    source_for,
     hires_model_diff,
     get_sms_instrumental_from_global_files,
     get_internal_gcms,
@@ -741,7 +740,6 @@ class ShowModelThread(QThread):
             method_params_list = []
             for section_file, axis in zip(section_files, section_axes):
                 mp_section = resolve_instrumental_for_file(self.main_window, section_file, use_dat_metadata=use_dat_metadata)
-                mp_section['Norm'] = compute_norm(pool, JN, mp_section)
                 mp_section['v_center'] = drive_rest_velocity(axis)
                 method_params_list.append(mp_section)
 
@@ -802,12 +800,13 @@ class ShowModelThread(QThread):
                     c_arg = c_slice if len(c_slice) > 0 else [0]
                     r_arg = r_slice if len(r_slice) > 0 else [0]
 
-                    # Calculate fitted spectrum for this section
+                    # Calculate fitted spectrum for this section, with its source
+                    norm_section, smearing_section = source_for(pool, A_section, JN, mp_section)
                     SPC_f_section = TI(A_section, p_section, model_sections[spc_idx], JN, pool,
                                        mp_section['x0'], mp_section['MulCo'],
                                        mp_section['INS'], d_arg, c_arg,
-                                       Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol, Recon=r_arg,
-                                       smearing=smearing_for(A_section, JN, mp_section))
+                                       Met=mp_section['Met'], Norm=norm_section, pol=pol, Recon=r_arg,
+                                       smearing=smearing_section)
                     SPC_f_sections.append(SPC_f_section)
 
                     # High-resolution convergence check for this section (cyan line)
@@ -834,9 +833,10 @@ class ShowModelThread(QThread):
                     self.finished.emit(A, B, SPC_f, FS_all, FS_pos_all, p_all, model, True, backgrounds, instrumental_note, hires_diff, Distri_sub, Cor_sub, Recon, [len(a) for a in A_list])
             else:
                 # Single spectrum case: full spectrum + convergence check
+                norm, smearing = source_for(pool, A, JN, method_params)
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
-                           method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon,
-                           smearing=smearing_for(A, JN, method_params))
+                           method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=norm, pol=pol, Recon=Recon,
+                           smearing=smearing)
 
                 hires_diff = hires_model_diff(pool, JN, A, p, model, method_params,
                                               SPC_f, Distri, Cor, pol=pol, Recon=Recon)

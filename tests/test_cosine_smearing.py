@@ -61,10 +61,25 @@ def _empty_store():
     m5._NODE_SUMS.clear()
 
 
+def _norm(x, JN, smearing, G=_G, lengths=None):
+    """The Norm of the CMS source with *smearing* (prepared for x), as TI's
+    callers pass it: compute_norm with that smearing -- one per spectrum."""
+    source = dict(x0=0.0, MulCo=MulCoCMS, INS=G, Met=1)
+    x = np.asarray(x, dtype=float)
+    if lengths is None:
+        return iio.compute_norm(_SerialPool(), JN, source, x, smearing)
+    pieces = np.split(x, np.cumsum(lengths)[:-1])
+    return [iio.compute_norm(_SerialPool(), JN, source, x_i, s_i)
+            for x_i, s_i in zip(pieces, smearing or [None] * len(pieces))]
+
+
 def _cms(x, p, model, JN, dtheta=0.0, Norm=1.0, lengths=None, Recon=[0], v_center=0.0, r_ratio=_RATIO):
-    """TI of a CMS spectrum with the smearing prepared for it, as TI's callers do."""
+    """TI of a CMS spectrum with the smearing prepared for it, as TI's callers
+    do; Norm=None: the source's own (_norm), as they pass it."""
     x = np.asarray(x, dtype=float)
     smearing = m5.cms_smearing(x, JN, MulCoCMS, _G, 1, dtheta, v_center, r_ratio, lengths)
+    if Norm is None:
+        Norm = _norm(x, JN, smearing, lengths=lengths)
     return np.asarray(m5.TI(x, np.asarray(p, dtype=float), list(model), JN, _SerialPool(), 0.0, MulCoCMS, _G,
                             [0], [0], Met=1, Norm=Norm, lengths=lengths, Recon=Recon, smearing=smearing),
                       dtype=float)
@@ -221,6 +236,24 @@ def test_sms_and_zero_dtheta_have_no_smearing():
     assert smeared[1] is None and np.shape(smeared[0][0]) == (16, 41)
 
 
+def test_the_smeared_source_s_own_norm_leaves_nothing_absorbed_flat():
+    """The Norm that goes with a smeared source is that source's own node sum,
+    one per velocity (compute_norm with the smearing): an absorber that absorbs
+    nothing gives N0 + N1 exactly at every velocity, one spectrum or several
+    (Nbaseline, a Norm per spectrum). The unsmeared Norm does not, once the
+    smearing is wide for the grid (here JN 32 at 0.8 rad: off by > 1e-3)."""
+    v = np.linspace(-12.0, 12.0, 241)
+    p = _singlets([(5.0, 0.0)], 2.0)                    # a line of thickness 0: transparent
+    p[4] = 0.5                                          # N1
+    for JN, dtheta in ((64, 0.2), (32, 0.8)):
+        np.testing.assert_allclose(_cms(v, p, ['Singlet'], JN, dtheta, None), 2.5, rtol=0, atol=1e-12)
+        both = _cms(np.concatenate([v, v + 1.0]), np.concatenate([p, p]), ['Singlet', 'Nbaseline', 'Singlet'], JN,
+                    dtheta, None, lengths=[len(v), len(v)], v_center=[0.0, 1.0])
+        np.testing.assert_allclose(both, 2.5, rtol=0, atol=1e-12)
+    plain = iio.compute_norm(_SerialPool(), 32, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
+    assert np.abs(_cms(v, p, ['Singlet'], 32, 0.8, plain) - 2.5).max() > 1e-3
+
+
 def test_a_smearing_prepared_for_other_points_or_nodes_is_refused():
     """TI would otherwise skip nodes or misplace lines."""
     x = np.linspace(-8.0, 8.0, 41)
@@ -275,10 +308,9 @@ def test_smeared_model_follows_the_exact_smeared_integral(name):
     lines = _ALPHA_FE[name]
     v = np.linspace(-8.0, 8.0, 161)                     # 0.1 mm/s: on the line cores
     p = _singlets(lines)
-    Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
-    plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, Norm) - _exact(v, lines)).max()
+    plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, None) - _exact(v, lines)).max()
     exact_smeared = _exact_disc(v, lines, _RATIO, _DTHETA)
-    smeared_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm) - exact_smeared).max()
+    smeared_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, _DTHETA, None) - exact_smeared).max()
     assert smeared_error < 1.25 * plain_error
     assert np.abs(exact_smeared - _exact(v, lines)).max() > 10 * smeared_error
 
@@ -292,12 +324,11 @@ def test_smearing_starts_where_the_drive_is_at_rest():
     v_center = iio.drive_rest_velocity(v)
     assert v_center == pytest.approx(0.4)
     p = _singlets(lines)
-    Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
-    plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, Norm) - _exact(v, lines)).max()
-    model = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm, v_center=v_center)
+    plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, None) - _exact(v, lines)).max()
+    model = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, None, v_center=v_center)
     error = np.abs(model - _exact_disc(v, lines, _RATIO, _DTHETA, v_center)).max()
     assert error < 1.25 * plain_error
-    assert np.abs(model - _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm)).max() > 2 * error
+    assert np.abs(model - _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, None)).max() > 2 * error
 
 
 def test_disc_model_follows_the_exact_disc_integral():
@@ -307,11 +338,10 @@ def test_disc_model_follows_the_exact_disc_integral():
     lines = _ALPHA_FE["thick"]
     v = np.linspace(-7.6, 8.4, 81)
     p = _singlets(lines)
-    Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
-    plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, Norm) - _exact(v, lines)).max()
+    plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, None) - _exact(v, lines)).max()
     exact_disc = _exact_disc(v, lines, x, _DTHETA, v_center)
-    disc = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm, v_center=v_center, r_ratio=x)
-    default = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm, v_center=v_center)
+    disc = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, None, v_center=v_center, r_ratio=x)
+    default = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, None, v_center=v_center)
     error = np.abs(disc - exact_disc).max()
     assert error < 1.25 * plain_error
     assert np.abs(default - exact_disc).max() > 2 * error
@@ -338,10 +368,9 @@ def test_lines_move_out_and_grow_as_the_rays_have_it():
     mm/s, and not at all at v_center, where every ray sees one velocity."""
     JN = 64
     v = np.linspace(-12.0, 12.0, 2401)
-    Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
 
     def dip(x, dtheta, vv=v):
-        return 1 - _cms(vv, _singlets([(x, 0.3)]), ['Singlet'], JN, dtheta, Norm)
+        return 1 - _cms(vv, _singlets([(x, 0.3)]), ['Singlet'], JN, dtheta, None)
 
     q = np.linspace(0.0, (1 + _RATIO) ** 2, 200001)
     c, w = _ray_density(_RATIO, _DTHETA, q)
@@ -457,26 +486,25 @@ def test_recon_variants_carry_dtheta_v_center_and_r_over_r(sections):
 # --- the callers pass the resolved method's dtheta, v_center and r_ratio on -------
 
 def _mp(dtheta, v_center, r_ratio=_RATIO):
-    mp = dict(method='CMS', Met=1, INS=_G, x0=0.0, MulCo=MulCoCMS, dtheta=dtheta, v_center=v_center,
-              r_ratio=r_ratio)
-    mp['Norm'] = iio.compute_norm(_SerialPool(), 16, mp)
-    return mp
+    return dict(method='CMS', Met=1, INS=_G, x0=0.0, MulCo=MulCoCMS, dtheta=dtheta, v_center=v_center,
+                r_ratio=r_ratio)
 
 
 @pytest.mark.parametrize("r_ratio", [_RATIO, 1.0])
 def test_component_curves_hires_check_and_model_spectrum_use_the_smearing(r_ratio):
+    """Each prepares its source -- the smearing and the smeared source's own
+    Norm (source_for) -- for its own velocities and JN."""
     from syncmoss import fitting_io
     from syncmoss.spectrum_io import compute_model_spectrum
     x = np.linspace(-8.0, 8.0, 41)
     p = _singlets([(5.0, 3.0)])
     mp = _mp(_DTHETA, 0.3, r_ratio)
-    smeared = _cms(x, p, ['Singlet'], 16, _DTHETA, mp['Norm'], v_center=0.3, r_ratio=r_ratio)
+    smeared = _cms(x, p, ['Singlet'], 16, _DTHETA, None, v_center=0.3, r_ratio=r_ratio)
     FS, _ = fitting_io.compute_component_curves(x, [p], [['Singlet']], [], [], 16, _SerialPool(), mp,
                                                 m5.SMS_POL_DEFAULT)
     np.testing.assert_allclose(np.asarray(FS[0], dtype=float), smeared, rtol=1e-12, atol=0)
     hires = np.asarray(iio.hires_model_diff(_SerialPool(), 16, x, p, ['Singlet'], mp, smeared), dtype=float)
-    hi = _cms(x, p, ['Singlet'], 16 * iio.HIRES_INTEGRATION_FACTOR, _DTHETA,
-              iio.compute_norm(_SerialPool(), 16 * iio.HIRES_INTEGRATION_FACTOR, mp), v_center=0.3,
+    hi = _cms(x, p, ['Singlet'], 16 * iio.HIRES_INTEGRATION_FACTOR, _DTHETA, None, v_center=0.3,
               r_ratio=r_ratio)
     np.testing.assert_allclose(hires, hi - smeared, rtol=0, atol=1e-12)
     job = dict(A=x, p=p, model=['Singlet'], JN=16, method_params=mp, Distri=[0], Cor=[0], Recon=[0],
@@ -902,10 +930,9 @@ def _synthetic_cms(tmp_path, model, p, v, G, dtheta, r_ratio, JN, offset=0.0, ax
     """A CMS spectrum of *model* at *p* with the source G, Δθ, r/R (plus a flat
     *offset*), written as a plain two-column .dat (no #@GCMS: the fields decide)
     on its axis times *axis_scale* (a calibration that much off)."""
-    Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=G, Met=1))
     smearing = m5.cms_smearing(v, JN, MulCoCMS, G, 1, dtheta, iio.drive_rest_velocity(v), r_ratio)
-    counts = np.asarray(m5.TI(v, p, model, JN, _SerialPool(), 0.0, MulCoCMS, G, [0], [0], Met=1, Norm=Norm,
-                              smearing=smearing), dtype=float)
+    counts = np.asarray(m5.TI(v, p, model, JN, _SerialPool(), 0.0, MulCoCMS, G, [0], [0], Met=1,
+                              Norm=_norm(v, JN, smearing, G), smearing=smearing), dtype=float)
     path = os.path.join(str(tmp_path), "synthetic.dat")
     np.savetxt(path, np.column_stack([v * axis_scale, counts + offset]))
     return path
@@ -980,11 +1007,11 @@ def test_cms_searches_with_the_model_over_nbaseline_spectra(physics_app, tmp_pat
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, _, Recon, _ = model_io.read_model(app)
     p = iio.apply_links(p, iio._links_of(con1, con2, con3), Expr, NExpr)
     v = np.concatenate(axes)
-    Norm = iio.compute_norm(_SerialPool(), app.JN0, dict(x0=0.0, MulCo=MulCoCMS, INS=G, Met=1))
     smearing = m5.cms_smearing(v, app.JN0, MulCoCMS, G, 1, dtheta, [iio.drive_rest_velocity(a) for a in axes],
                                r_ratio, [64, 64])
     counts = np.asarray(m5.TI(v, p, model, app.JN0, _SerialPool(), 0.0, MulCoCMS, G, Distri, Cor, Met=1,
-                              Norm=Norm, Recon=Recon, lengths=[64, 64], smearing=smearing), dtype=float)
+                              Norm=_norm(v, app.JN0, smearing, G, [64, 64]), Recon=Recon, lengths=[64, 64],
+                              smearing=smearing), dtype=float)
     for path, a, c in zip(paths, axes, np.split(counts, 2)):
         np.savetxt(path, np.column_stack([a, c]))
     try:

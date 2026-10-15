@@ -455,20 +455,18 @@ def subtract_model_from_spectrum(main_window):
         # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
         pol = float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
-        from syncmoss.instrumental_io import (resolve_instrumental_for_file, compute_norm, drive_rest_velocity,
-                                              smearing_for)
+        from syncmoss.instrumental_io import resolve_instrumental_for_file, drive_rest_velocity, source_for
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)
-        method_params['Norm'] = compute_norm(main_window.pool, JN, method_params)
         method_params['v_center'] = drive_rest_velocity(A)
 
         # Calculate model spectrum
         try:
+            norm, smearing = source_for(main_window.pool, A, JN, method_params)
             SPC_f = TI(A, p, model, JN, main_window.pool,
                          method_params['x0'], method_params['MulCo'],
                          method_params['INS'], Distri, Cor,
-                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon,
-                         smearing=smearing_for(A, JN, method_params))
+                         Met=method_params['Met'], Norm=norm, pol=pol, Recon=Recon, smearing=smearing)
         except Exception as e:
             main_window.set_status(f"Error calculating model spectrum: {e}", "red")
             return
@@ -599,10 +597,9 @@ def compute_model_spectrum(job, pool):
     """The model counts of *job* (prepare_model_spectrum): the calculation
     itself, run in a worker thread -- the call Show model makes for its model
     curve."""
-    from syncmoss.instrumental_io import compute_norm, smearing_for
+    from syncmoss.instrumental_io import source_for
     mp = job['method_params']
-    norm = compute_norm(pool, job['JN'], mp)
-    smearing = smearing_for(job['A'], job['JN'], mp)
+    norm, smearing = source_for(pool, job['A'], job['JN'], mp)
     # TI sums its pool results as an object array; the counts are plain floats
     return np.asarray(TI(job['A'], job['p'], job['model'], job['JN'], pool, mp['x0'], mp['MulCo'],
                          mp['INS'], job['Distri'], job['Cor'], Met=mp['Met'], Norm=norm,

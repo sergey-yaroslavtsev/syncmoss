@@ -490,12 +490,13 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         Vel_start: Sweep orientation: ``1`` velocity starts at its maximum
             (down-up), ``0`` at its minimum (up-down).
         GCMS: Gaussian instrumental linewidth for CMS (the GUI GCMS box).
-        dtheta: cosine smearing for CMS in rad (the GUI Δθ box, models.TI's
-            ``dtheta``); 0 = none. With it the model's lines sit out by
-            ~<1/cos theta> and broaden, so the calibration gives the
-            transducer velocity -- the axis the fits with the same dtheta take.
+        dtheta: cosine smearing for CMS in rad (the GUI Δθ box,
+            models.cms_smearing's ``dtheta``); 0 = none. With it the model's
+            lines sit out by ~<1/cos theta> and broaden, so the calibration
+            gives the transducer velocity -- the axis the fits with the same
+            dtheta take.
         r_ratio: d/D of the CMS source and aperture diameters (the Supp
-            setting, models.TI's ``r_ratio``), above 0 when dtheta is.
+            setting, models.cms_smearing's ``r_ratio``), above 0 when dtheta is.
 
     Returns:
         tuple ``(v_folded, data_folded, fit_folded)`` -- the folded velocity
@@ -531,10 +532,14 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         def fit_func(x, p):
             # x is always the whole drive axis: its middle is the drive at rest,
             # where the cosine smearing starts. The axis is what the calibration
-            # fits, so the smearing is prepared for every call.
+            # fits, so the smearing -- and with it the smeared source's own
+            # Norm, an array over x (the same empty-model sum as Norm above) --
+            # is prepared for every call.
             smearing = m5.cms_smearing(x, JN, MulCoCMS, INS, 1, dtheta, 0.5 * (np.min(x) + np.max(x)), r_ratio)
+            norm = Norm if smearing is None else np.asarray(
+                m5.TI(x, pNorm, [], JN, pool, 0.0, MulCoCMS, INS, [0], [0], Met=1, smearing=smearing), dtype=float)
             return m5.TI(x, p, model, JN, pool, 0.0, MulCoCMS, INS, [], [],
-                         Met=1, Norm=Norm, smearing=smearing)
+                         Met=1, Norm=norm, smearing=smearing)
 
         INS_shift = 0
     elif VVV == 3:

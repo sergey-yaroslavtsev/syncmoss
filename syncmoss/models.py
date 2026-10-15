@@ -70,7 +70,8 @@ T = 1
 
 def erf(z):
     # Abramowitz & Stegun 7.1.26, |error| < 1.5e-7. An array element by element
-    # (the cosine smearing); a scalar exactly as limits() has always had it.
+    # (the point source's box, archived in docs/cosine_smearing/point_source.py);
+    # a scalar exactly as limits() has always had it.
     if isinstance(z, np.ndarray):
         x = z
         sign = np.where(x.real >= 0, 1, -1)
@@ -427,9 +428,8 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 # circular aperture, exact at any angle. (A point source, cos(theta) uniform
 # on [cos dtheta, 1], is the disc's limit d/D -> 0 and no source of its own:
 # its closed-form box was taken out on 2026-10-15 and is kept in
-# docs/cosine_smearing/point_source.py, local.) The node sum of the smeared line
-# on the CMS grid moves from Norm by < 3e-6 at JN = 64 (dtheta <= 0.3 rad,
-# |v - v_c| <= 12 mm/s), so Norm is left as it is -- see "SOURCE
+# docs/cosine_smearing/point_source.py, local.) The Norm that goes with the
+# smeared source is that source's own, one per velocity -- see "SOURCE
 # NORMALISATION" in TI. (docs/cosine_smearing.md, local, has the proof that
 # this equals averaging over the rays, and the accuracy.)
 # Before 2026-10-14 the axis was taken as the mean ray's velocity (an alpha-Fe
@@ -438,6 +438,14 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 #
 # Neglected: the absorber path length t/cos(theta) (its mean, ~ dtheta^2/4, is
 # absorbed in the fitted thickness).
+#
+# Accuracy limit: the smearing keeps the plain integral's accuracy up to
+# dtheta ~ 0.5 rad at JN = 64 (~0.3 at JN = 32, ~0.6 at JN = 128; at JN = 256
+# within 5e-5 of averaging over the rays even at 1.4 rad). Beyond, the smeared
+# line is a box several mm/s wide that the CMS grid -- dense at the source
+# line, sparse in its wings -- cannot resolve: the model wiggles about the true
+# (smooth, sharp-edged) shape, and so does the cyan line, the 4*JN check
+# (docs/cosine_smearing.md, §4).
 # ===========================================================================
 
 # --- the disc source (r_ratio = r/R > 0) --------------------------------------
@@ -465,12 +473,17 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 # must be resolved across the box: 8 nodes per width of the point source's box
 # at the same dtheta, in units of the source line's width, keep the error at
 # ~1e-5 of the source peak (box 1, 2, 3, 4, 6 widths: 12, 16, 24, 32, 48
-# nodes), and below one width 12 nodes do. The tests pin it.
+# nodes), and below one width 12 nodes do. The tests pin it. The fine grid
+# (20001 points) is good to 3e-8 of the source peak (against 200001). The
+# kernel has no closed form (its lens edge is arccosines and a square root of
+# y); closed-form flat slices of it, as the point source's box, would need
+# ~500 slices for 1e-6 against 12 nodes (docs/cosine_smearing.md, §2).
 #
 # None of this depends on the absorber. TI's caller prepares it with the other
-# instrumental inputs (Norm): cms_smearing, the smeared source line at every
-# node of TI's grid and the absorber's shift, once per fit (per call where G,
-# dtheta or the axis are being fitted). TI takes it (smearing=) and hands each
+# instrumental inputs: cms_smearing, the smeared source line at every node of
+# TI's grid and the absorber's shift, and with it the smeared source's Norm
+# (instrumental_io.source_for), once per fit (per call where G, dtheta or the
+# axis are being fitted). TI takes them (smearing=, Norm=) and hands each
 # TImod its node's line and the shift; TImod adds that line in place of the
 # plain source line and moves the absorber. Nothing is kept anywhere.
 DISC_NODES_MIN = 12
@@ -2373,10 +2386,10 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             if source_line is None:
                 N += Voight(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo)
             else:
-                # Cosine smearing, computed by TI for this node (cms_smearing):
-                # the source line averaged over the rays about their mean, and
-                # the absorber moved to the mean ray's velocity
-                # v_center + (v - v_center)*<cos theta>.
+                # Cosine smearing, prepared by TI's caller (cms_smearing) and
+                # handed to this node by TI: the source line averaged over the
+                # rays about their mean, and the shift that moves the absorber
+                # to the mean ray's velocity v_center + (v - v_center)*<cos theta>.
                 N += source_line
                 E = E - absorber_shift
             # N += Wid/2/np.pi/((E - SCR*MulCo)**2 + (Wid/2)**2)
@@ -3358,6 +3371,8 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
         smearing = [smearing]
     if smearing is not None and len(smearing) != n_sec:
         raise ValueError(f"cosine smearing given for {len(smearing)} spectra, the model has {n_sec}")
+    if isinstance(Norm, list) and len(Norm) != n_sec:
+        raise ValueError(f"Norm given for {len(Norm)} spectra, the model has {n_sec}")
     if n_sec == 1:
         x_separate = [x_exp]
     elif lengths is not None:
@@ -3393,11 +3408,13 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
     for i in range(0, n_sec):
         # Instrumental parameters (and the matching source-line grid) for this
         # section: per-section values when lists were passed, else the shared
-        # scalars.
+        # scalars. The Norm can be a list on its own: each spectrum's source
+        # has its own once it is smeared (TI's docstring).
         if per_section:
             x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0[i], MulCo[i], INS[i], Met[i], Norm[i]
         else:
-            x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0, MulCo, INS, Met, Norm
+            x0_i, MulCo_i, INS_i, Met_i = x0, MulCo, INS, Met
+            Norm_i = Norm[i] if isinstance(Norm, list) else Norm
         smearing_i = None if smearing is None else smearing[i]
         lines_i, shift_i = _smearing_rows(smearing_i, x_separate[i], JN)
         E = _node_grid(Met_i, JN)
@@ -3458,12 +3475,16 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     ``Norm`` is the same integration sum for an empty model
     (instrumental_io.compute_norm, with the same JN, grid and source): the part
     of the unit-area source line that the grid samples. CMS and SMS use it
-    differently -- see "SOURCE NORMALISATION" in the body.
+    differently -- see "SOURCE NORMALISATION" in the body. A number; for a
+    smeared CMS spectrum the smeared source's own, an array over its
+    velocities (compute_norm with the smearing); for a model with Nbaseline
+    sections, one number for all or a list with one per spectrum.
 
     ``smearing`` is the cosine smearing of a CMS spectrum, ``x_exp`` being the
     transducer velocity: what cms_smearing prepares for these velocities and
     JN (per Nbaseline section, a list: cms_smearing with ``lengths``), or None.
     TI hands each TImod its node's source line and the absorber's shift.
+    instrumental_io.source_for prepares the two together.
 
     For a model with Nbaseline sections ``x_exp`` holds the velocities of every
     spectrum, one spectrum after the other. ``lengths`` gives the number of
@@ -3507,6 +3528,10 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             if len(smearing) != 1:
                 raise ValueError(f"{len(smearing)} cosine smearings given for one spectrum")
             smearing = smearing[0]
+        if isinstance(Norm, list):                 # one per spectrum, for one spectrum
+            if len(Norm) != 1:
+                raise ValueError(f"Norm given for {len(Norm)} spectra, the model has one")
+            Norm = Norm[0]
         lines, shift = _smearing_rows(smearing, x_exp, JN)
         H = _pool_starmap(pool, TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon, 0, JN, None, line, shift) for Ex, line in zip(E, lines)])
         H = np.array(H, dtype=object).sum(axis=0)
@@ -3566,14 +3591,14 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         # area of S inside the window: W = 1 for SMS, and for CMS W is taken as
         # Norm itself, the grid's own measure of what it samples.
         #
-        # CMS cosine smearing (dtheta) averages the source line over the rays
-        # about their mean, over the disc kernel that grows with |v - v_center|
-        # (Voight_disc). Norm is still the unsmeared line's: the smeared line's
-        # node sum differs from it by < 3e-6 at JN = 64 (dtheta <= 0.3 rad,
-        # |v - v_center| <= 12 mm/s, G = 0.075, d/D 0.25 or 1) and by < 5e-5 at
-        # JN = 32 (dtheta <= 0.2): the average moves how the grid samples the
-        # line, not its area. Only a wide kernel on few nodes shows it: 2e-4 at
-        # JN = 32, dtheta = 0.3, |v - v_center| = 12 (d/D 0.25; 7e-5 for d/D 1).
+        # CMS cosine smearing averages the source line over the rays about their
+        # mean, over the disc kernel that grows with |v - v_center|
+        # (Voight_disc): the source differs from velocity to velocity, and so
+        # does the part of it the grid samples. The caller passes that
+        # source's own Norm, an array over the velocities (compute_norm with
+        # the smearing), so an empty absorber gives exactly N0 + N1. (The
+        # unsmeared Norm is off by < 3e-6 at JN = 64 up to dtheta = 0.3 rad,
+        # but by up to 1e-2 beyond the accuracy limit -- docs/cosine_smearing.md.)
         #
         # WHEN THE CMS INTEGRATION CHANGES:
         # * another map, edge or JN: nothing to do, PROVIDED Norm comes from
@@ -3585,9 +3610,11 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         #     C = N0 * (1 - sum_m S(E_m - v) * h * (1 - T(E_m))) + N1;
         # * a CMS source that is not unit-area, or a window that holds all of
         #   it: back to the division (or the W form above).
-        # Every caller passes the Norm of the G it integrates with. The CMS
-        # instrumental-function search fits G, so it recomputes Norm whenever G
-        # changes (instrumental_io.cms_norm_following_g).
+        # Every caller passes the Norm of the source it integrates with: of its
+        # G, and with the smearing, of the smeared source at these velocities
+        # (instrumental_io.source_for). The CMS instrumental-function search
+        # fits G or dtheta, so it prepares its Norm whenever they change
+        # (instrumental_io.cms_norm_following_g without smearing).
         if Met_repr == 1:
             Hc = N0 * (H * D + (1 - Norm)) + N1
         else:
