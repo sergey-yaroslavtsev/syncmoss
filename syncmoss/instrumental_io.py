@@ -393,8 +393,9 @@ def cms_source_numbers(values):
 
 
 def r_ratio_of(source_diameter, aperture_diameter):
-    """d/D of the diameters, the r/R of the radii (models.TI's ``r_ratio``);
-    0, a point source, for a source of no size."""
+    """d/D of the diameters, the r/R of the radii (models.TI's ``r_ratio``),
+    above 0 for any real source; 0 without an aperture, which the smearing
+    refuses (models.disc_rule)."""
     return source_diameter / aperture_diameter if aperture_diameter > 0 else 0.0
 
 
@@ -638,6 +639,15 @@ def compute_norm(pool, JN, method_params):
     )[0]
 
 
+def smearing_for(x, JN, method_params):
+    """The cosine smearing TI takes (models.cms_smearing) for the velocities x
+    at JN nodes, from a resolved method: None for SMS or without Δθ. Prepared
+    like the Norm, before TI is called, for exactly that call's x and JN."""
+    mp = method_params
+    return m5.cms_smearing(x, JN, mp['MulCo'], mp['INS'], mp['Met'], mp.get('dtheta', 0.0),
+                           mp.get('v_center', 0.0), mp.get('r_ratio', 0.0))
+
+
 def cms_norm_following_g(pool, MulCoCMS):
     """``norm(JN, G)``: compute_norm of the CMS source of width G on JN points.
 
@@ -679,12 +689,11 @@ def hires_model_diff(pool, JN, A, p, model, method_params, SPC_f,
     """
     JN_hi = int(JN) * HIRES_INTEGRATION_FACTOR
     norm_hi = compute_norm(pool, JN_hi, method_params)
+    smearing_hi = smearing_for(A, JN_hi, method_params)
     SPC_hi = m5.TI(
         A, p, model, JN_hi, pool,
         method_params['x0'], method_params['MulCo'], method_params['INS'],
-        Distri, Cor, Met=method_params['Met'], Norm=norm_hi, pol=pol, Recon=Recon,
-        dtheta=method_params.get('dtheta', 0.0), v_center=method_params.get('v_center', 0.0),
-        r_ratio=method_params.get('r_ratio', 0.0),
+        Distri, Cor, Met=method_params['Met'], Norm=norm_hi, pol=pol, Recon=Recon, smearing=smearing_hi,
     )
     return SPC_hi - SPC_f
 
@@ -1312,10 +1321,19 @@ def build_reference_model(app, mode, B, CMS_ch=0, free_absorber_width=False):
 
 
 # Where a Δθ search starts when the Δθ field is 0. It cannot start AT 0: the
-# smearing grows as Δθ^4 there, so every spectrum is flat in Δθ and the search
-# has no direction to move in. atan(R/L) of a source about 7 aperture radii
-# from the aperture, a usual geometry.
+# smearing grows as 1 - cos Δθ ~ Δθ^2/2 there, so every spectrum is flat in Δθ
+# and the search has no direction to move in. atan(R/L) of a source about 7
+# aperture radii from the aperture, a usual geometry.
 DTHETA_SEARCH_START = 0.15     # rad
+
+# How far "Refine Δθ: pure α-Fe" lets H go from the alpha-Fe field, T. H is free
+# because the alpha-Fe line positions set the axis scale in the calibration:
+# with H held the refine reads them again and gives back the Δθ the calibration
+# was made with (docs/cosine_smearing.md, study parts H and H2). An axis
+# calibrated at Δθ_cal moves H by ~H (Δθ^2 - Δθ_cal^2)/4 -- 0.33 T for 0.2 from
+# a calibration without smearing, 0.74 T for 0.3 -- and the bound only keeps a
+# poorly determined Δθ from running off with H.
+DTHETA_FIELD_MARGIN = 1.0
 
 
 def dtheta_alpha_fe_reference(B, source):
@@ -1323,8 +1341,10 @@ def dtheta_alpha_fe_reference(B, source):
     pure α-Fe"), for a spectrum of counts B: ``(model, p, bounds, fix, extra)``
     as build_reference_model returns them.
 
-    A polarized Sextet at the alpha-Fe field and the natural width, its T (8)
-    and texture A (16) free from 10 and 0. Of the baseline, Ns (0) and its
+    A polarized Sextet at the natural width, its T (8) and texture A (16) free
+    from 10 and 0, its field H (11) free from the alpha-Fe field within
+    DTHETA_FIELD_MARGIN, so that Δθ comes from the line shape whatever the
+    axis scale. Of the baseline, Ns (0) and its
     curvature c²s (2) are free; the non-resonant part is the source's, set from
     *source* -- 'f_LM' (the source's Lamb-Moessbauer factor) and 'C_high' (the
     122/136 keV quanta counted) -- by an Expression, minimi_hi applying it at
@@ -1361,8 +1381,9 @@ def dtheta_alpha_fe_reference(B, source):
     bounds = np.array([[-np.inf] * len(p), [np.inf] * len(p)], dtype=float)
     bounds[0][0] = 0
     bounds[0][8] = 0.001
-    # Fix everything except Ns, c²s + T and A of the sextet (0, 2, 8, 16)
-    fix = np.setdiff1d(np.arange(len(p)), [0, 2, 8, 16])
+    bounds[0][11], bounds[1][11] = ALPHA_FE_FIELD - DTHETA_FIELD_MARGIN, ALPHA_FE_FIELD + DTHETA_FIELD_MARGIN
+    # Fix everything except Ns, c²s + T, H and A of the sextet (0, 2, 8, 11, 16)
+    fix = np.setdiff1d(np.arange(len(p)), [0, 2, 8, 11, 16])
     return model, p, bounds, fix, extra
 
 
@@ -1468,7 +1489,7 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
                 p0 = np.array([g_cms])
             else:
                 # Δθ = 0 is a flat point of every spectrum (the smearing grows as
-                # Δθ^4 there), so a search cannot start from it
+                # Δθ^2 there), so a search cannot start from it
                 p0 = np.array([dtheta if dtheta > 0 else DTHETA_SEARCH_START])
             print('Instrumental procedure for CMS start with', ref, mode,
                   'fitting', 'G' if dtheta_search is None else 'dtheta')
@@ -1546,10 +1567,11 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
             return (p[-1], dtheta) if dtheta_search is None else (g_cms, p[-1])
 
         def INSSS(x_exp, p, lengths=lengths):
+            # G or Δθ is being fitted: the smearing is prepared for every call
             g, th = cms_source(p)
+            smearing = m5.cms_smearing(x_exp, JN, MulCoCMS, g, 1, th, v_center, r_ratio, lengths)
             spectrum = m5.TI(x_exp, p[:mod_p_len], model, JN, pool, 0, MulCoCMS, g, Distri, Cor, Met=1,
-                             Norm=cms_norm(JN, g), Recon=Recon, lengths=lengths, dtheta=th, v_center=v_center,
-                             r_ratio=r_ratio)
+                             Norm=cms_norm(JN, g), Recon=Recon, lengths=lengths, smearing=smearing)
             return spectrum + offset if offset else spectrum
 
     elif mode == 1:
@@ -1747,6 +1769,8 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
         'G': g_out if CMS_ch == 1 else None,
         'dtheta': dtheta_out if CMS_ch == 1 else None,
         'fitted': ('dtheta' if dtheta_search is not None else 'G') if CMS_ch == 1 else 'INS',
+        # pure alpha-Fe's free field: off the alpha-Fe one, the axis scale is off
+        'field': float(p[number_of_baseline_parameters + 3]) if dtheta_search is not None and mode == 2 else None,
         'baseline_offset': offset,
         'insexp_path': insexp_path,
         'mode': mode,

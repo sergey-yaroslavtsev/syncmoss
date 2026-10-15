@@ -123,6 +123,7 @@ from syncmoss.instrumental_io import (
     analyze_instrumental_methods,
     build_dat_metadata_lines,
     compute_norm,
+    smearing_for,
     hires_model_diff,
     get_sms_instrumental_from_global_files,
     get_internal_gcms,
@@ -806,8 +807,7 @@ class ShowModelThread(QThread):
                                        mp_section['x0'], mp_section['MulCo'],
                                        mp_section['INS'], d_arg, c_arg,
                                        Met=mp_section['Met'], Norm=mp_section['Norm'], pol=pol, Recon=r_arg,
-                                       dtheta=mp_section.get('dtheta', 0.0), v_center=mp_section['v_center'],
-                                       r_ratio=mp_section.get('r_ratio', 0.0))
+                                       smearing=smearing_for(A_section, JN, mp_section))
                     SPC_f_sections.append(SPC_f_section)
 
                     # High-resolution convergence check for this section (cyan line)
@@ -836,8 +836,7 @@ class ShowModelThread(QThread):
                 # Single spectrum case: full spectrum + convergence check
                 SPC_f = TI(A, p, model, JN, pool, method_params['x0'], method_params['MulCo'],
                            method_params['INS'], Distri, Cor, Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon,
-                           dtheta=method_params.get('dtheta', 0.0), v_center=method_params['v_center'],
-                           r_ratio=method_params.get('r_ratio', 0.0))
+                           smearing=smearing_for(A, JN, method_params))
 
                 hires_diff = hires_model_diff(pool, JN, A, p, model, method_params,
                                               SPC_f, Distri, Cor, pol=pol, Recon=Recon)
@@ -1215,7 +1214,7 @@ class PhysicsApp(QMainWindow):
         self.SMS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.SMS_fit))
 
         # The CMS source: the Gaussian width G of its line and the cosine
-        # smearing dtheta (models.Voight_box / Voight_disc); the source and
+        # smearing dtheta (models.Voight_disc); the source and
         # aperture diameters d and D, whose ratio sets the smearing's shape, are
         # a Supp setting (the stores below). An SMS spectrum uses none of them.
         # All start from parameters/GCMS.txt (Δθ 0 and the default diameters
@@ -3259,8 +3258,9 @@ class PhysicsApp(QMainWindow):
                     f"Results saved to {self.dir_path}", "green")
             elif result.get('CMS_ch') == 1:
                 fitted = 'Δθ' if result['fitted'] == 'dtheta' else 'G'
+                field = f", H {result['field']:.3f} T" if result.get('field') is not None else ""
                 self.set_status(
-                    f"{fitted} found: G {result['G']:.4f} mm/s, Δθ {result['dtheta']:.4f} rad (saved as "
+                    f"{fitted} found: G {result['G']:.4f} mm/s, Δθ {result['dtheta']:.4f} rad{field} (saved as "
                     f"defaults). χ² = {result['hi2']:.3f}", "green")
             else:
                 self.set_status(f"Instrumental function completed. χ² = {result['hi2']:.3f}\nResults saved to {self.dir_path}", "green")

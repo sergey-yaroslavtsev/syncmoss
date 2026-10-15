@@ -455,7 +455,8 @@ def subtract_model_from_spectrum(main_window):
         # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
         pol = float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
-        from syncmoss.instrumental_io import resolve_instrumental_for_file, compute_norm, drive_rest_velocity
+        from syncmoss.instrumental_io import (resolve_instrumental_for_file, compute_norm, drive_rest_velocity,
+                                              smearing_for)
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)
         method_params['Norm'] = compute_norm(main_window.pool, JN, method_params)
@@ -467,8 +468,7 @@ def subtract_model_from_spectrum(main_window):
                          method_params['x0'], method_params['MulCo'],
                          method_params['INS'], Distri, Cor,
                          Met=method_params['Met'], Norm=method_params['Norm'], pol=pol, Recon=Recon,
-                         dtheta=method_params.get('dtheta', 0.0), v_center=method_params['v_center'],
-                         r_ratio=method_params.get('r_ratio', 0.0))
+                         smearing=smearing_for(A, JN, method_params))
         except Exception as e:
             main_window.set_status(f"Error calculating model spectrum: {e}", "red")
             return
@@ -599,14 +599,14 @@ def compute_model_spectrum(job, pool):
     """The model counts of *job* (prepare_model_spectrum): the calculation
     itself, run in a worker thread -- the call Show model makes for its model
     curve."""
-    from syncmoss.instrumental_io import compute_norm
+    from syncmoss.instrumental_io import compute_norm, smearing_for
     mp = job['method_params']
     norm = compute_norm(pool, job['JN'], mp)
+    smearing = smearing_for(job['A'], job['JN'], mp)
     # TI sums its pool results as an object array; the counts are plain floats
     return np.asarray(TI(job['A'], job['p'], job['model'], job['JN'], pool, mp['x0'], mp['MulCo'],
                          mp['INS'], job['Distri'], job['Cor'], Met=mp['Met'], Norm=norm,
-                         pol=job['pol'], Recon=job['Recon'], dtheta=mp.get('dtheta', 0.0),
-                         v_center=mp.get('v_center', 0.0), r_ratio=mp.get('r_ratio', 0.0)), dtype=float)
+                         pol=job['pol'], Recon=job['Recon'], smearing=smearing), dtype=float)
 
 
 def save_model_spectrum(main_window, job, counts):

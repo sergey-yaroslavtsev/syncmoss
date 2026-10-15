@@ -213,26 +213,30 @@ an explicit message and reddened fields rather than failing halfway through.
 - **G** and **Δθ** (under the CMS/SMS boxes) describe the CMS source; SMS
   spectra ignore them. **G** is the Gaussian width (FWHM, mm/s) of the source
   line. **Δθ** (rad, 0 = off) is the *cosine smearing*: a photon leaving the
-  source at the angle θ to the drive axis sees the drive velocity times cos θ,
-  so a line broadens in proportion to its distance from the velocity at which
-  the drive is at rest — the middle of the spectrum's velocity range. Lines keep
-  their positions and areas (the calibration, made in the same geometry, holds
-  the mean factor); at Δθ = 0.2 an outer α-Fe line gets 0.03 mm/s rms wider. Δθ
-  is the angle of the point source with the same spread of cos θ — atan(R/L) at
-  the distance L from an aperture of radius R, ≈ atan((R⁴ + 6R²r² + r⁴)^¼ / L)
-  for a source of radius r. Both come from the defaults at start, are written
-  into `#@GCMS` of converted `.dat` files, and a file's own values are used for
-  it. The fields show 4 decimals and keep every digit (the tooltip shows them
-  all).
+  source at the angle θ to the drive axis sees the drive velocity times cos θ.
+  The velocity axis is the **transducer velocity**, so with Δθ a line moves out
+  and broadens in proportion to its distance from the velocity at which the
+  drive is at rest — the middle of the spectrum's velocity range. At Δθ = 0.2
+  an outer α-Fe line sits 1 % farther out (⟨1/cos θ⟩), its area is 1 % larger,
+  and it gets 0.03 mm/s rms wider. A laser calibration gives the transducer
+  velocity; an α-Fe calibration gives it when made with the same Δθ (it uses
+  the Δθ field) — calibrated at Δθ = 0 and fitted at Δθ = 0.2, every velocity
+  is 1 % off. Δθ is the angle of the point source whose cos θ has the same
+  spread — atan(R/L) at the distance L from an aperture of radius R,
+  atan((R⁴ + 6R²r² + r⁴)^¼ / L) for a source of radius r; the disc itself is
+  computed exactly, at any angle. Both come from the defaults at start, are
+  written into `#@GCMS` of converted `.dat` files, and a file's own values are
+  used for it. The fields show 4 decimals and keep every digit (the tooltip
+  shows them all).
 - *Supp* → **Set CMS source and aperture diameters**: d, the source's active
   spot, and D, the aperture — whatever limits the rays reaching the detector,
   usually the sample or a lead mask on it. Only their ratio d/D matters: it
   sets the shape of the smearing, Δθ its width, and it has a small effect —
   with Δθ fitted, a thick α-Fe spectrum changes by 0.2 % of its dip from a
-  point source to d = D, by < 0.1 % with d/D off by a factor of 2. d/D and D/d
+  tiny source to d = D, by < 0.1 % with d/D off by a factor of 2. d/D and D/d
   act alike: a large source behind a small aperture (d/D = 10) is nearly a
-  point source, as a small one behind a large aperture is. d = 0 is a point
-  source. The default, 5 and 20 mm (d/D = 0.25), is the least bad guess when
+  point, as a small one behind a large aperture is. Both must be above 0 (no
+  source is a point). The default, 5 and 20 mm (d/D = 0.25), is the least bad guess when
   the geometry is not known (≤ 0.11 % of the dip whatever it is). Saved with
   the defaults at once, and written into `#@GCMS` with G and Δθ.
 - The **Instrumental function** button holds every instrumental-function
@@ -252,11 +256,14 @@ an explicit message and reddened fields rather than failing halfway through.
   source — G, its f_LM, C_high (the 122/136 keV quanta counted per point) and
   the static noise of the detector — and sets the non-resonant baseline to
   Nnr = Ns (1 − f_LM)/f_LM + C_high, curving with Ns (linked), with the static
-  noise added flat; T, the texture A, Ns and its curvature are free. Find G and
-  f_LM first from a single-line spectrum, where Δθ hardly matters, and C_high as
-  the count rate with a 100 µm Cu foil in the beam times the counting time of
-  one point, less the static noise. *model* fits the table's model with its
-  links as set. Every CMS search stores G and Δθ as the defaults.
+  noise added flat; T, the texture A, Ns and its curvature are free, and so is
+  the field, within 1 T of the α-Fe one: the calibration has already used the
+  line positions, so Δθ comes from the line shape. A field off 33.04 T means
+  the axis is off by as much — calibrate again with the Δθ found. Find G and f_LM first
+  from a single-line spectrum, where Δθ hardly matters, and C_high as the count
+  rate with a 100 µm Cu foil in the beam times the counting time of one point,
+  less the static noise. *model* fits the table's model with its links as set.
+  Every CMS search stores G and Δθ as the defaults.
 - *Instrumental function -> Overwrite instrumental function in selected .dat
   files* writes the instrumental function in memory — for the CMS/SMS mode
   selected, the lines RAW → .dat conversion writes — into every `.dat` file of

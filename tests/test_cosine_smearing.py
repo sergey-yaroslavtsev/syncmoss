@@ -1,24 +1,26 @@
-"""Cosine smearing of CMS spectra (models.Voight_box / Voight_disc, TI's
-``dtheta``, ``v_center`` and ``r_ratio``), its storage next to G (#@GCMS and
-GCMS.txt: G, Δθ, then r/R), the searches that fit G or Δθ, and the error function
-it is built on (models.erf, Abramowitz & Stegun 7.1.26).
+"""Cosine smearing of CMS spectra (models.Voight_disc, models.cms_smearing,
+which TI's callers prepare and pass as TI's ``smearing``), its storage next to
+G (#@GCMS and GCMS.txt: G, Δθ, then the diameters), the searches that fit G or
+Δθ, and models.erf.
 
 A photon leaving the moving source at the angle theta to the drive axis sees
-the drive velocity times cos(theta). For a point source cos(theta) is uniform on
-[cos(dtheta), 1]; the velocity calibration already holds the mean factor, and
-the drive is at rest at v_center, the middle of the velocity range. So a ray
-sees v_center + (v - v_center)*s, s = cos(theta)/<cos>. TI averages the SOURCE
-line over the matching box of width MulCo*(v - v_center)*(1 - cos dtheta)/<cos>
-at the energies the absorber is computed at anyway (one absorber evaluation per
+the drive velocity times cos(theta). The velocity axis is the transducer's and
+the drive is at rest at v_center, the middle of the velocity range, so a ray
+sees v_center + (v - v_center)*cos(theta). For a disc source in front of an
+aperture the density of cos(theta) is the overlap of the two (exact, any
+angle); a point -- cos(theta) uniform on [cos(dtheta), 1] -- is its limit, and
+no source of its own. TI computes the absorber at the mean ray's velocity and
+averages the SOURCE line over the rays about it (one absorber evaluation per
 node, as without smearing).
 
-Pinned: erf on arrays; the cumulative and the box average of Voight; dtheta = 0
-is the former model and SMS ignores dtheta; TI against the exact smeared
-integral (absorber-energy integration averaged over s), about 0 and about a
-shifted centre; a part of the points gives the same values; areas and
-positions kept, broadening growing as (v - v_center)^2; Nbaseline sections, the
-node-sum store and TI_recon_variants carrying both; the callers that pass them
-on; the #@GCMS / GCMS.txt second number; the GUI field next to G. Serial pool.
+Pinned: erf on arrays; the disc kernel against its own definition, the point
+limit and the small-angle spread, and d/D = 0 refused; dtheta = 0 is the
+former model and SMS ignores dtheta; TI against the exact smeared integral
+(absorber-energy integration averaged over the rays), about 0 and about a
+shifted centre; a part of the points gives the same values; lines moving out
+and growing as the rays have it, broadening as (v - v_center)^2; Nbaseline
+sections, the node-sum store and TI_recon_variants carrying the smearing; the
+callers that pass it on; #@GCMS / GCMS.txt; the GUI. Serial pool.
 """
 import json
 import math
@@ -49,6 +51,7 @@ _G = float(_frozen("GCMS.txt", delimiter='\t'))
 _MULCO_SMS, _X0_SMS = (float(v) for v in _frozen("INSint.txt"))
 _INS_SMS = np.atleast_1d(_frozen("INSexp.txt"))
 _DTHETA = 0.2                                     # rad; the MossLab spectra need ~0.195
+_RATIO = iio.DEFAULT_SOURCE_DIAMETER / iio.DEFAULT_APERTURE_DIAMETER   # d/D 0.25, the default
 
 
 @pytest.fixture(autouse=True)
@@ -58,11 +61,13 @@ def _empty_store():
     m5._NODE_SUMS.clear()
 
 
-def _cms(x, p, model, JN, dtheta=0.0, Norm=1.0, lengths=None, Recon=[0], v_center=0.0, r_ratio=0.0):
-    return np.asarray(m5.TI(np.asarray(x, dtype=float), np.asarray(p, dtype=float), list(model), JN,
-                            _SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, Norm=Norm,
-                            lengths=lengths, Recon=Recon, dtheta=dtheta, v_center=v_center,
-                            r_ratio=r_ratio), dtype=float)
+def _cms(x, p, model, JN, dtheta=0.0, Norm=1.0, lengths=None, Recon=[0], v_center=0.0, r_ratio=_RATIO):
+    """TI of a CMS spectrum with the smearing prepared for it, as TI's callers do."""
+    x = np.asarray(x, dtype=float)
+    smearing = m5.cms_smearing(x, JN, MulCoCMS, _G, 1, dtheta, v_center, r_ratio, lengths)
+    return np.asarray(m5.TI(x, np.asarray(p, dtype=float), list(model), JN, _SerialPool(), 0.0, MulCoCMS, _G,
+                            [0], [0], Met=1, Norm=Norm, lengths=lengths, Recon=Recon, smearing=smearing),
+                      dtype=float)
 
 
 def _singlets(lines, N0=1.0):
@@ -72,13 +77,12 @@ def _singlets(lines, N0=1.0):
     return np.concatenate([p] + [[t, x, NAT_WIDTH, 0.0] for x, t in lines])
 
 
-def _scales(dtheta, n):
-    """Gauss-Legendre nodes and weights (summing to 1) of the velocity scale
-    s = cos(theta)/<cos>, cos(theta) uniform on [cos(dtheta), 1]."""
-    c = np.cos(dtheta)
-    lo, hi = c / ((1 + c) / 2), 1 / ((1 + c) / 2)
+def _cosines(dtheta, n):
+    """Gauss-Legendre nodes and weights (summing to 1) of cos(theta) of the
+    rays of a point -- uniform on [cos(dtheta), 1]: the disc's limit."""
+    lo = np.cos(dtheta)
     t, w = np.polynomial.legendre.leggauss(n)
-    return (lo + hi) / 2 + (hi - lo) / 2 * t, w / 2
+    return (lo + 1) / 2 + (1 - lo) / 2 * t, w / 2
 
 
 # --- erf --------------------------------------------------------------------------
@@ -100,46 +104,11 @@ def test_limits_keeps_its_erf():
     assert m5.erf(0.5) == 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * np.exp(-0.5 * 0.5)
 
 
-# --- the cumulative and the box average of Voight ---------------------------------
+# --- the disc source: Voight averaged over the disc kernel ------------------------
 
 _GL, _GG = NAT_WIDTH * MulCoCMS, _G * MulCoCMS
 _U = np.linspace(-3.0, 3.0, 6001)
 _PEAK = m5.Voight(_GL, _GG, np.array([0.0]))[0]
-# erf is good to 1.5e-7; the slope of its cumulative -- what a narrow box sees --
-# to ~1e-5 of the peak (9e-6 at this G), a box of 1e-3 and wider to 1.5e-6
-_SLOPE_TOL, _BOX_TOL = 2e-5, 5e-6
-
-
-def test_voight_cdf_is_the_integral_of_voight():
-    h = 1e-6
-    slope = (m5._voight_cdf(_GL, _GG, _U + h) - m5._voight_cdf(_GL, _GG, _U - h)) / (2 * h)
-    assert np.abs(slope - m5.Voight(_GL, _GG, _U)).max() < _SLOPE_TOL * _PEAK
-    ends = m5._voight_cdf(_GL, _GG, np.array([-1e8, 1e8]))
-    assert ends[0] == pytest.approx(0.0, abs=1e-6) and ends[1] == pytest.approx(1.0, abs=1e-6)
-
-
-@pytest.mark.parametrize("W", [1e-3, 0.02, 0.06, -0.06])
-def test_voight_box_is_voight_averaged_over_the_box(W):
-    u = _U[::10]
-    t = np.linspace(-abs(W) / 2, abs(W) / 2, 2001)
-    brute = np.trapezoid(m5.Voight(_GL, _GG, (u[:, None] + t[None, :]).ravel()).reshape(len(u), len(t)),
-                         t, axis=1) / abs(W)
-    got = m5.Voight_box(_GL, _GG, u, np.full_like(u, W))
-    assert np.abs(got - brute).max() < _BOX_TOL * _PEAK
-
-
-def test_voight_box_too_narrow_to_matter_is_the_point_value():
-    width = _GL + _GG
-    limit = m5._BOX_POINT_LIMIT * width
-    point = m5.Voight(_GL, _GG, _U)
-    assert np.array_equal(m5.Voight_box(_GL, _GG, _U, np.full_like(_U, limit / 2)), point)
-    assert np.array_equal(m5.Voight_box(_GL, _GG, _U, np.zeros_like(_U)), point)
-    # just above the switch the box average is the point value within erf's slope
-    above = m5.Voight_box(_GL, _GG, _U, np.full_like(_U, 2 * limit))
-    assert np.abs(above - point).max() < 3 * _SLOPE_TOL * _PEAK
-
-
-# --- the disc source: Voight averaged over the disc kernel ------------------------
 
 def _lens(d, r1, r2):
     """Overlap area of two discs of radii r1 and r2, centres d apart."""
@@ -153,52 +122,73 @@ def _lens(d, r1, r2):
     return area
 
 
-def _disc_density(x, q):
-    """Density of q = (rho/R)^2 over the rays of a disc source of radius x*R
-    and an aperture of radius R: rho, the offset of a ray in the aperture plane
-    from where it left the source, is the difference of a point of each disc, so
-    its density in the plane is their overlap at distance rho -- and dq is
-    rho drho (times 2), so in q it is that overlap itself."""
-    return _lens(np.sqrt(q), 1.0, x)
+def _ray_density(x, dtheta, q):
+    """cos(theta) of the rays at q = (rho/R)^2 and their density in q, for a
+    disc source of radius x*R in front of an aperture of radius R: rho, the
+    offset of a ray in the aperture plane from where it left the source, is the
+    difference of a point of each disc, so its density in the plane is their
+    overlap at distance rho (and dq is rho drho, times 2), times the solid angle
+    dA*cos^3(theta)/L^2 a source point sends the aperture element dA. R/L from
+    dtheta: tan(dtheta) = (R/L)*(1 + 6x^2 + x^4)^(1/4), the point source with
+    the same spread at small angles."""
+    a2 = math.tan(dtheta) ** 2 / math.sqrt(1 + 6 * x ** 2 + x ** 4)
+    c = 1 / np.sqrt(1 + a2 * np.asarray(q, dtype=float))
+    return c, _lens(np.sqrt(q), 1.0, x) * c ** 3
 
 
 @pytest.mark.parametrize("x", [0.3, 1.0, 2.5])
-@pytest.mark.parametrize("W", [0.02, -0.06, 0.15])
-def test_voight_disc_is_voight_averaged_over_the_disc_kernel(x, W):
-    """The kernel is the ray density in q scaled to the spread of the point box
-    of width W (tau = (q - <q>)/(sqrt(12) std q)); a fine sum over q against
-    the few nodes of the Gauss rule."""
+@pytest.mark.parametrize("U, dtheta", [(1.0, 0.2), (-3.0, 0.2), (2.0, 0.4)])
+def test_voight_disc_is_voight_averaged_over_the_rays(x, U, dtheta):
+    """The source line averaged over the rays about their mean: a fine sum over
+    q with the rays' own weights (r/R = 2.5 as it is, the aperture the smaller
+    disc) against the few nodes of the Gauss rule. The point source's box at
+    the same dtheta is 0.02, 0.06 and 0.16 wide here."""
     q = np.linspace(0.0, (1 + x) ** 2, 40001)
-    w = _disc_density(x, q)
+    c, w = _ray_density(x, dtheta, q)
     w[[0, -1]] /= 2
     w /= w.sum()
-    mean = np.sum(w * q)
-    tau = (q - mean) / np.sqrt(12 * np.sum(w * (q - mean) ** 2))
+    y = (1 - c) - np.sum(w * (1 - c))
     u = _U[::10]
     keep = np.flatnonzero(w)[::8]
-    brute = sum(wi * m5.Voight(_GL, _GG, u + W * t) for t, wi in zip(tau[keep], w[keep])) / w[keep].sum()
-    got = m5.Voight_disc(_GL, _GG, u, np.full_like(u, W), x)
+    brute = sum(wi * m5.Voight(_GL, _GG, u + U * yi) for yi, wi in zip(y[keep], w[keep])) / w[keep].sum()
+    got, mean = m5.Voight_disc(_GL, _GG, u, np.full_like(u, U), dtheta, x)
     assert np.abs(got - brute).max() < 1e-5 * _PEAK
+    assert mean == pytest.approx(np.sum(w * (1 - c)), rel=1e-6)
 
 
-def test_disc_rule_has_the_spread_of_the_point_box():
-    """Weights summing to 1, mean 0 and the variance of the unit box (1/12),
-    whatever r/R; r and R play the same part."""
+def test_disc_rule_is_the_point_box_for_a_tiny_disc_and_at_small_angles():
+    """Weights summing to 1. A tiny disc is a point at any angle: y = 1 -
+    cos(theta) uniform on [0, 1 - cos dtheta]. At small angles every disc's y
+    has that box's spread, (1 - cos dtheta)^2/12 -- what dtheta means for a
+    disc. r and R play the same part. A source of no size is refused."""
+    for dtheta in (0.2, 0.6, 1.0):
+        y, w = m5.disc_rule(dtheta, 1e-4)
+        box = 1 - np.cos(dtheta)
+        mean = np.sum(w * y)
+        assert len(y) == m5.DISC_NODES_MIN and w.sum() == pytest.approx(1.0, abs=1e-14)
+        assert mean == pytest.approx(box / 2, rel=1e-6)
+        assert np.sum(w * (y - mean) ** 2) == pytest.approx(box ** 2 / 12, rel=1e-6)
+    for no_size in (0.0, -0.5):
+        with pytest.raises(ValueError, match="source of some size"):
+            m5.disc_rule(_DTHETA, no_size)
     for x in (1e-3, 0.3, 1.0, 2.5):
         for nodes in (m5.DISC_NODES_MIN, 2 * m5.DISC_NODES_MIN):
-            tau, w = m5.disc_rule(x, nodes)
-            assert len(tau) == nodes
-            assert w.sum() == pytest.approx(1.0, abs=1e-14) and np.sum(w * tau) == pytest.approx(0.0, abs=1e-14)
-            assert np.sum(w * tau ** 2) == pytest.approx(1 / 12, rel=1e-12)
-    for a, b in zip(m5.disc_rule(0.6), m5.disc_rule(1 / 0.6)):
+            y, w = m5.disc_rule(1e-3, x, nodes)
+            assert len(y) == nodes and w.sum() == pytest.approx(1.0, abs=1e-14)
+            assert np.sum(w * (y - np.sum(w * y)) ** 2) == pytest.approx((1 - np.cos(1e-3)) ** 2 / 12, rel=1e-5)
+    for a, b in zip(m5.disc_rule(0.2, 0.6), m5.disc_rule(0.2, 1 / 0.6)):
         np.testing.assert_allclose(a, b, rtol=0, atol=1e-15)
 
 
-def test_a_small_disc_is_the_point_source():
-    """r/R -> 0: the rays of a point source, cos(theta) uniform -- the box."""
-    for W in (0.02, 0.06, 0.15):
-        box = m5.Voight_box(_GL, _GG, _U, np.full_like(_U, W))
-        assert np.abs(m5.Voight_disc(_GL, _GG, _U, np.full_like(_U, W), 1e-4) - box).max() < 1e-5 * _PEAK
+def test_a_small_disc_is_a_point():
+    """r/R -> 0: the rays of a point, cos(theta) uniform on [cos dtheta, 1] (a
+    fine Gauss-Legendre sum over cos(theta)) -- the disc's limit, at any angle."""
+    for U, dtheta in ((1.0, 0.2), (3.0, 0.2), (0.3, 1.0)):
+        c, w = _cosines(dtheta, 200)
+        y = (1 - c) - np.sum(w * (1 - c))
+        point = sum(wi * m5.Voight(_GL, _GG, _U + U * yi) for yi, wi in zip(y, w))
+        disc, _ = m5.Voight_disc(_GL, _GG, _U, np.full_like(_U, U), dtheta, 1e-4)
+        assert np.abs(disc - point).max() < 1e-5 * _PEAK
 
 
 # --- TI: off, SMS, and the exact smeared integral ---------------------------------
@@ -218,14 +208,30 @@ def test_zero_dtheta_is_the_former_model():
                           former)
 
 
-def test_sms_ignores_dtheta():
+def test_sms_and_zero_dtheta_have_no_smearing():
+    """Nothing to prepare for an SMS spectrum or at dtheta = 0: TI then
+    computes as it always did."""
     x = np.linspace(-6.0, 6.0, 41)
-    p = _singlets([(3.0, 2.0)])
+    assert m5.cms_smearing(x, 16, _MULCO_SMS, _INS_SMS, 0, _DTHETA, 0.3, 0.5) is None
+    assert m5.cms_smearing(x, 16, MulCoCMS, _G, 1, 0.0, 0.3, 0.5) is None
+    assert m5.cms_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
+                           [0.0, _DTHETA], 0.3, 0.5, [41, 41]) is None
+    smeared = m5.cms_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
+                              _DTHETA, 0.3, 0.5, [41, 41])
+    assert smeared[1] is None and np.shape(smeared[0][0]) == (16, 41)
 
-    def sms(**kw):
-        return np.asarray(m5.TI(x, p, ['Singlet'], 16, _SerialPool(), _X0_SMS, _MULCO_SMS, _INS_SMS,
-                                [0], [0], Met=0, **kw), dtype=float)
-    assert np.array_equal(sms(dtheta=_DTHETA, v_center=0.3, r_ratio=0.5), sms())
+
+def test_a_smearing_prepared_for_other_points_or_nodes_is_refused():
+    """TI would otherwise skip nodes or misplace lines."""
+    x = np.linspace(-8.0, 8.0, 41)
+    p = _singlets([(5.0, 3.0)])
+    smearing = m5.cms_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, 0.3, _RATIO)
+    for xs, JN in ((x[:-1], 16), (x, 32)):
+        with pytest.raises(ValueError, match="cosine smearing prepared for"):
+            m5.TI(xs, p, ['Singlet'], JN, _SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, smearing=smearing)
+    with pytest.raises(ValueError, match="cosine smearing given for 1 spectra, the model has 2"):
+        m5.TI(np.concatenate([x, x]), np.concatenate([p, p]), ['Singlet', 'Nbaseline', 'Singlet'], 16,
+              _SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, lengths=[41, 41], smearing=[smearing])
 
 
 def _sigma(E, lines):
@@ -243,25 +249,35 @@ def _exact(v, lines):
     return 1 - source @ absorbed * h
 
 
-def _exact_smeared(v, lines, dtheta, v_center=0.0):
-    """_exact averaged over the rays: velocity v_center + (v - v_center)*s
-    (Gauss-Legendre in s: the spectrum is smooth over the 2 % of scale it spans)."""
-    s, w = _scales(dtheta, 8)
-    return sum(wi * _exact(v_center + (v - v_center) * si, lines) for si, wi in zip(s, w))
+def _exact_disc(v, lines, x, dtheta, v_center=0.0):
+    """_exact averaged over the rays of a disc source of r/R = x (_ray_density,
+    Gauss-Legendre in q on the flat part and on the lens), each at the velocity
+    v_center + (v - v_center)*cos(theta) with its exact cos(theta)."""
+    pieces = [(0.0, (1 - x) ** 2, 8), ((1 - x) ** 2, (1 + x) ** 2, 24)]
+    q, w = [], []
+    for a, b, n in pieces:
+        t, wt = np.polynomial.legendre.leggauss(n)
+        q.append((a + b) / 2 + (b - a) / 2 * t)
+        w.append((b - a) / 2 * wt)
+    c, density = _ray_density(x, dtheta, np.concatenate(q))
+    w = np.concatenate(w) * density
+    w /= w.sum()
+    return sum(wi * _exact(v_center + (v - v_center) * ci, lines) for ci, wi in zip(c, w))
 
 
 @pytest.mark.parametrize("name", sorted(_ALPHA_FE))
 def test_smeared_model_follows_the_exact_smeared_integral(name):
-    """With dtheta, TI is as close to the exact smeared spectrum as it is to the
-    exact one without: the smearing adds no error of its own. And what is
-    compared is not small: the smearing moves the spectrum far more."""
+    """With dtheta (the default d/D), TI is as close to the exact smeared
+    spectrum as it is to the exact one without: the smearing adds no error of
+    its own. And what is compared is not small: the smearing moves the spectrum
+    far more."""
     JN = 64
     lines = _ALPHA_FE[name]
     v = np.linspace(-8.0, 8.0, 161)                     # 0.1 mm/s: on the line cores
     p = _singlets(lines)
     Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
     plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, Norm) - _exact(v, lines)).max()
-    exact_smeared = _exact_smeared(v, lines, _DTHETA)
+    exact_smeared = _exact_disc(v, lines, _RATIO, _DTHETA)
     smeared_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm) - exact_smeared).max()
     assert smeared_error < 1.25 * plain_error
     assert np.abs(exact_smeared - _exact(v, lines)).max() > 10 * smeared_error
@@ -272,43 +288,22 @@ def test_smearing_starts_where_the_drive_is_at_rest():
     well, and differs from the smearing about 0 by more than that error."""
     JN = 64
     lines = _ALPHA_FE["thick"]
-    v = np.linspace(-7.6, 8.4, 161)                     # the drive at rest at +0.4 mm/s
+    v = np.linspace(-7.6, 8.4, 161)                     # the drive at rest at +0.4 mm/s; on the cores
     v_center = iio.drive_rest_velocity(v)
     assert v_center == pytest.approx(0.4)
     p = _singlets(lines)
     Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
     plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, Norm) - _exact(v, lines)).max()
     model = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm, v_center=v_center)
-    error = np.abs(model - _exact_smeared(v, lines, _DTHETA, v_center)).max()
+    error = np.abs(model - _exact_disc(v, lines, _RATIO, _DTHETA, v_center)).max()
     assert error < 1.25 * plain_error
     assert np.abs(model - _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm)).max() > 2 * error
 
 
-def _exact_disc(v, lines, x, dtheta, v_center=0.0):
-    """_exact averaged over the rays of a disc source of r/R = x: q from its own
-    density (_disc_density, Gauss-Legendre on the flat part and on the lens),
-    the velocity scale s = 1 - k*tau, k = (1 - cos dtheta)/<cos> the width of
-    the point source's box with the same spread (1 - cos(theta) ~ q, as the
-    model takes it)."""
-    pieces = [(0.0, (1 - x) ** 2, 8), ((1 - x) ** 2, (1 + x) ** 2, 24)]
-    q, w = [], []
-    for a, b, n in pieces:
-        t, wt = np.polynomial.legendre.leggauss(n)
-        q.append((a + b) / 2 + (b - a) / 2 * t)
-        w.append((b - a) / 2 * wt)
-    q, w = np.concatenate(q), np.concatenate(w)
-    w = w * _disc_density(x, q)
-    w /= w.sum()
-    mean = np.sum(w * q)
-    tau = (q - mean) / np.sqrt(12 * np.sum(w * (q - mean) ** 2))
-    k = (1 - np.cos(dtheta)) / ((1 + np.cos(dtheta)) / 2)
-    return sum(wi * _exact(v_center + (v - v_center) * (1 - k * ti), lines) for ti, wi in zip(tau, w))
-
-
 def test_disc_model_follows_the_exact_disc_integral():
-    """With a disc source TI is as close to the exact spectrum as without
-    smearing; the point source with the same Δθ is not."""
-    JN, x, v_center = 64, 0.5, 0.4
+    """A source as large as the aperture (d/D 1): TI is as close to the exact
+    spectrum as without smearing; the default d/D at the same Δθ is not."""
+    JN, x, v_center = 64, 1.0, 0.4
     lines = _ALPHA_FE["thick"]
     v = np.linspace(-7.6, 8.4, 81)
     p = _singlets(lines)
@@ -316,10 +311,10 @@ def test_disc_model_follows_the_exact_disc_integral():
     plain_error = np.abs(_cms(v, p, ['Singlet'] * 6, JN, 0.0, Norm) - _exact(v, lines)).max()
     exact_disc = _exact_disc(v, lines, x, _DTHETA, v_center)
     disc = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm, v_center=v_center, r_ratio=x)
-    point = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm, v_center=v_center)
+    default = _cms(v, p, ['Singlet'] * 6, JN, _DTHETA, Norm, v_center=v_center)
     error = np.abs(disc - exact_disc).max()
     assert error < 1.25 * plain_error
-    assert np.abs(point - exact_disc).max() > 2 * error
+    assert np.abs(default - exact_disc).max() > 2 * error
 
 
 def test_a_part_of_the_points_gives_the_same_values():
@@ -333,25 +328,38 @@ def test_a_part_of_the_points_gives_the_same_values():
                                rtol=1e-13, atol=0)
 
 
-def test_smearing_keeps_areas_and_positions_and_grows_as_v_squared():
-    """Line areas stay (to the variance of s, 3e-5) and so do centroids; the
-    dip of a line at 6 mm/s gets shallower by several %, of a line at 0.84
-    mm/s by (0.84/5.31)^2 of what one at 5.31 loses, of a line at 0 by nothing."""
+def test_lines_move_out_and_grow_as_the_rays_have_it():
+    """On the transducer axis a ray at cos(theta) shows the spectrum stretched
+    by 1/cos(theta) about v_center: a line's area grows by <1/cos> and its
+    centroid moves out by <1/cos^2>/<1/cos>, the means over the rays of the
+    default d/D (_ray_density, a fine sum) -- about 1 % each at 0.2 rad (to
+    the tails the ±12 mm/s range cuts, 1e-4). Its depth falls as its copies
+    spread: by several % at 5.31 mm/s, by about (0.84/5.31)^2 of that at 0.84
+    mm/s, and not at all at v_center, where every ray sees one velocity."""
     JN = 64
     v = np.linspace(-12.0, 12.0, 2401)
+    Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
 
-    def dip(x, dtheta):
-        return 1 - _cms(v, _singlets([(x, 0.3)]), ['Singlet'], JN, dtheta)
+    def dip(x, dtheta, vv=v):
+        return 1 - _cms(vv, _singlets([(x, 0.3)]), ['Singlet'], JN, dtheta, Norm)
 
+    q = np.linspace(0.0, (1 + _RATIO) ** 2, 200001)
+    c, w = _ray_density(_RATIO, _DTHETA, q)
+    w[[0, -1]] /= 2
+    w /= w.sum()
+    sec, sec2 = np.sum(w / c), np.sum(w / c ** 2)                    # <1/cos>, <1/cos^2>
     plain, smeared = dip(6.0, 0.0), dip(6.0, _DTHETA)
     area0, area = np.trapezoid(plain, v), np.trapezoid(smeared, v)
-    assert abs(area / area0 - 1) < 1e-4
-    assert abs(np.trapezoid(smeared * v, v) / area - np.trapezoid(plain * v, v) / area0) < 1e-3
-    assert smeared.max() < 0.96 * plain.max()
+    assert area / area0 == pytest.approx(sec, rel=2e-4)
+    centroid0, centroid = np.trapezoid(plain * v, v) / area0, np.trapezoid(smeared * v, v) / area
+    assert centroid / centroid0 == pytest.approx(sec2 / sec, rel=2e-4)
 
-    loss = {x: dip(x, 0.0).max() - dip(x, _DTHETA).max() for x in (0.0, LINE_RATIO_34 * ALPHA_FE_V_OUTER,
-                                                                  ALPHA_FE_V_OUTER)}
+    def depth(x, dtheta):                           # a grid fine enough for the peak that moved out
+        return dip(x, dtheta, np.linspace(x * 0.995, x * 1.025, 601) if x else np.linspace(-0.02, 0.02, 81)).max()
+
     inner, outer = LINE_RATIO_34 * ALPHA_FE_V_OUTER, ALPHA_FE_V_OUTER
+    loss = {x: depth(x, 0.0) - depth(x, _DTHETA) for x in (0.0, inner, outer)}
+    assert loss[outer] > 0.04 * depth(outer, 0.0)
     assert loss[inner] / loss[outer] == pytest.approx((inner / outer) ** 2, rel=0.15)
     assert abs(loss[0.0]) < 1e-3 * loss[outer]
 
@@ -363,11 +371,12 @@ def test_a_cms_section_is_smeared_and_an_sms_section_is_not():
     n = len(x)
     p_cms, p_sms = _singlets([(5.0, 3.0)], 2.0), _singlets([(5.0, 1.0)], 3.0)
     for dtheta, v_center in ((_DTHETA, 0.3), ([_DTHETA, _DTHETA], [0.3, -2.0]), ([_DTHETA, 0.0], [0.3, 0.0])):
+        smearing = m5.cms_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
+                                   dtheta, v_center, _RATIO, [n, n])
         mixed = np.asarray(m5.TI(np.concatenate([x, x]), np.concatenate([p_cms, p_sms]),
                                  ['Singlet', 'Nbaseline', 'Singlet'], 16, _SerialPool(),
                                  [0.0, _X0_SMS], [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [0], [0],
-                                 Met=[1, 0], Norm=[1, 1], lengths=[n, n], dtheta=dtheta,
-                                 v_center=v_center), dtype=float)
+                                 Met=[1, 0], Norm=[1, 1], lengths=[n, n], smearing=smearing), dtype=float)
         np.testing.assert_allclose(mixed[:n], _cms(x, p_cms, ['Singlet'], 16, _DTHETA, v_center=0.3),
                                    rtol=1e-12, atol=0)
         sms = np.asarray(m5.TI(x, p_sms, ['Singlet'], 16, _SerialPool(), _X0_SMS, _MULCO_SMS, _INS_SMS,
@@ -381,12 +390,13 @@ def test_each_section_has_its_own_r_over_r():
     n = len(x)
     p = np.concatenate([_singlets([(5.0, 3.0)]), _singlets([(-5.0, 2.0)])])
     both = _cms(np.concatenate([x, x]), p, ['Singlet', 'Nbaseline', 'Singlet'], 16, _DTHETA, lengths=[n, n],
-                v_center=[0.3, 0.3], r_ratio=[0.5, 0.0])
-    disc = _cms(x, p[:NB + 4], ['Singlet'], 16, _DTHETA, v_center=0.3, r_ratio=0.5)
-    point = _cms(x, p[NB + 4:], ['Singlet'], 16, _DTHETA, v_center=0.3)
-    np.testing.assert_allclose(both[:n], disc, rtol=1e-12, atol=0)
-    np.testing.assert_allclose(both[n:], point, rtol=1e-12, atol=0)
-    assert not np.allclose(disc, _cms(x, p[:NB + 4], ['Singlet'], 16, _DTHETA, v_center=0.3), rtol=1e-6, atol=0)
+                v_center=[0.3, 0.3], r_ratio=[0.5, 1.0])
+    first = _cms(x, p[:NB + 4], ['Singlet'], 16, _DTHETA, v_center=0.3, r_ratio=0.5)
+    second = _cms(x, p[NB + 4:], ['Singlet'], 16, _DTHETA, v_center=0.3, r_ratio=1.0)
+    np.testing.assert_allclose(both[:n], first, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(both[n:], second, rtol=1e-12, atol=0)
+    assert not np.allclose(first, _cms(x, p[:NB + 4], ['Singlet'], 16, _DTHETA, v_center=0.3, r_ratio=1.0),
+                           rtol=1e-6, atol=0)
 
 
 def test_the_node_sum_store_tells_dtheta_v_center_and_r_over_r_apart():
@@ -398,7 +408,7 @@ def test_the_node_sum_store_tells_dtheta_v_center_and_r_over_r_apart():
     off = _cms(xx, p, model, 16, 0.0, lengths=[n, n])
     on = _cms(xx, p, model, 16, _DTHETA, lengths=[n, n])
     moved = _cms(xx, p, model, 16, _DTHETA, lengths=[n, n], v_center=[0.0, 1.0])
-    disc = _cms(xx, p, model, 16, _DTHETA, lengths=[n, n], r_ratio=[0.0, 0.5])
+    disc = _cms(xx, p, model, 16, _DTHETA, lengths=[n, n], r_ratio=[_RATIO, 0.5])
     assert not np.allclose(on, off) and not np.allclose(moved[n:], on[n:])
     assert not np.allclose(disc[n:], on[n:], rtol=1e-6, atol=0)
     assert np.array_equal(moved[:n], on[:n]) and np.array_equal(disc[:n], on[:n])
@@ -406,7 +416,7 @@ def test_the_node_sum_store_tells_dtheta_v_center_and_r_over_r_apart():
     m5._NODE_SUMS.clear()
     assert np.array_equal(_cms(xx, p, model, 16, _DTHETA, lengths=[n, n]), on)
     m5._NODE_SUMS.clear()
-    assert np.array_equal(_cms(xx, p, model, 16, _DTHETA, lengths=[n, n], r_ratio=[0.0, 0.5]), disc)
+    assert np.array_equal(_cms(xx, p, model, 16, _DTHETA, lengths=[n, n], r_ratio=[_RATIO, 0.5]), disc)
 
 
 with open(os.path.join(os.path.dirname(__file__), "golden_models.json")) as _f:
@@ -431,7 +441,8 @@ def test_recon_variants_carry_dtheta_v_center_and_r_over_r(sections):
     p = np.array(p, dtype=float)
     recons = [[w] for w in _W]
     got = m5.TI_recon_variants(x, p, model, 16, _SerialPool(), 0.0, MulCoCMS, _G, [0], [0], 1, 1,
-                               m5.SMS_POL_DEFAULT, recons, lengths, dtheta=_DTHETA, v_center=vc, r_ratio=rr)
+                               m5.SMS_POL_DEFAULT, recons, lengths,
+                               smearing=m5.cms_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, vc, rr, lengths))
     for R, spectrum in zip(recons, got):
         m5._NODE_SUMS.clear()
         np.testing.assert_allclose(np.asarray(spectrum, dtype=float),
@@ -445,14 +456,14 @@ def test_recon_variants_carry_dtheta_v_center_and_r_over_r(sections):
 
 # --- the callers pass the resolved method's dtheta, v_center and r_ratio on -------
 
-def _mp(dtheta, v_center, r_ratio=0.0):
+def _mp(dtheta, v_center, r_ratio=_RATIO):
     mp = dict(method='CMS', Met=1, INS=_G, x0=0.0, MulCo=MulCoCMS, dtheta=dtheta, v_center=v_center,
               r_ratio=r_ratio)
     mp['Norm'] = iio.compute_norm(_SerialPool(), 16, mp)
     return mp
 
 
-@pytest.mark.parametrize("r_ratio", [0.0, 0.5])
+@pytest.mark.parametrize("r_ratio", [_RATIO, 1.0])
 def test_component_curves_hires_check_and_model_spectrum_use_the_smearing(r_ratio):
     from syncmoss import fitting_io
     from syncmoss.spectrum_io import compute_model_spectrum
@@ -666,11 +677,9 @@ def test_r_over_r_is_the_supp_setting_of_two_diameters(physics_app, monkeypatch)
         assert "Only their ratio d/D matters" in shown['text'] and "small effect" in shown['text']
         assert iio.get_cms_diameters(physics_app) == (1.0, 0.1) and iio.get_internal_r_ratio(physics_app) == 10.0
         assert iio.read_gcms_file(physics_app.params_dir) == (_G, 0.0, 1.0, 0.1)
-        physics_app.source_diameter_input.setText("0")      # a point source
-        assert iio.get_internal_r_ratio(physics_app) == 0.0
         _drive_dialog(monkeypatch, accept=False, edits={0: "3"})
         assert not open_cms_diameters_dialog(physics_app)   # cancelled: nothing set
-        assert iio.get_cms_diameters(physics_app) == (0.0, 0.1)
+        assert iio.get_cms_diameters(physics_app) == (1.0, 0.1)
     finally:
         physics_app.GCMS_input.setText(str(_G))
         physics_app.source_diameter_input.setText(str(iio.DEFAULT_SOURCE_DIAMETER))
@@ -678,8 +687,9 @@ def test_r_over_r_is_the_supp_setting_of_two_diameters(physics_app, monkeypatch)
 
 
 @pytest.mark.gui
-@pytest.mark.parametrize("index, text", [(0, "-1"), (1, "0"), (1, "x")])
+@pytest.mark.parametrize("index, text", [(0, "-1"), (0, "0"), (1, "0"), (1, "x")])
 def test_the_diameters_dialog_refuses_what_it_cannot_use(physics_app, monkeypatch, index, text):
+    """No source is a point: d = 0 is refused, as D = 0 is."""
     from syncmoss.supp_menu import open_cms_diameters_dialog
     _, warned = _drive_dialog(monkeypatch, edits={index: text})
     assert not open_cms_diameters_dialog(physics_app) and warned
@@ -828,14 +838,17 @@ def test_cms_single_line_reference():
 
 
 def test_dtheta_alpha_fe_reference_takes_the_non_resonant_baseline_from_the_source():
-    """Ns, its curvature c²s, T and A free; Nnr = Ns (1 - f_LM)/f_LM + C_high
-    -- the source's recoil and high-energy quanta -- linked to Ns's curvature,
-    as the table links them; the static noise added flat, after the model."""
+    """Ns, its curvature c²s, T, A and H free -- H within 1 T of the alpha-Fe
+    field: the calibration has used the line positions for the axis scale --;
+    Nnr = Ns (1 - f_LM)/f_LM + C_high -- the source's recoil and high-energy
+    quanta -- linked to Ns's curvature, as the table links them; the static
+    noise added flat, after the model."""
     from syncmoss.constants import ALPHA_FE_FIELD
     f, c_high, c_static = _SOURCE['f_LM'], _SOURCE['C_high'], _SOURCE['C_static']
     model, p, bounds, fix, extra = iio.dtheta_alpha_fe_reference(np.full(64, 1e4), _SOURCE)
-    assert model == ['Sextet'] and _free(p, fix) == [0, 2, NB, NB + 8]
+    assert model == ['Sextet'] and _free(p, fix) == [0, 2, NB, NB + 3, NB + 8]
     assert (p[NB], p[NB + 3], p[NB + 4], p[NB + 8]) == (10, ALPHA_FE_FIELD, NAT_WIDTH, 0)
+    assert (bounds[0][NB + 3], bounds[1][NB + 3]) == (ALPHA_FE_FIELD - 1.0, ALPHA_FE_FIELD + 1.0)
     assert extra['offset'] == c_static
     assert p[0] + p[4] + c_static == pytest.approx(1e4)      # the spectrum's baseline to start
     p[0], p[2] = 5000.0, 3.0
@@ -885,14 +898,16 @@ def test_dtheta_dialog_refuses_a_number_it_cannot_use(physics_app, monkeypatch, 
     assert warned, "the user should have been told why"
 
 
-def _synthetic_cms(tmp_path, model, p, v, G, dtheta, r_ratio, JN, offset=0.0):
+def _synthetic_cms(tmp_path, model, p, v, G, dtheta, r_ratio, JN, offset=0.0, axis_scale=1.0):
     """A CMS spectrum of *model* at *p* with the source G, Δθ, r/R (plus a flat
-    *offset*), written as a plain two-column .dat (no #@GCMS: the fields decide)."""
+    *offset*), written as a plain two-column .dat (no #@GCMS: the fields decide)
+    on its axis times *axis_scale* (a calibration that much off)."""
     Norm = iio.compute_norm(_SerialPool(), JN, dict(x0=0.0, MulCo=MulCoCMS, INS=G, Met=1))
+    smearing = m5.cms_smearing(v, JN, MulCoCMS, G, 1, dtheta, iio.drive_rest_velocity(v), r_ratio)
     counts = np.asarray(m5.TI(v, p, model, JN, _SerialPool(), 0.0, MulCoCMS, G, [0], [0], Met=1, Norm=Norm,
-                              dtheta=dtheta, v_center=iio.drive_rest_velocity(v), r_ratio=r_ratio), dtype=float)
+                              smearing=smearing), dtype=float)
     path = os.path.join(str(tmp_path), "synthetic.dat")
-    np.savetxt(path, np.column_stack([v, counts + offset]))
+    np.savetxt(path, np.column_stack([v * axis_scale, counts + offset]))
     return path
 
 
@@ -912,20 +927,20 @@ def _cms_search_app(app, path, G, dtheta, r_ratio):
 
 @pytest.mark.gui
 def test_refine_single_line_in_cms_finds_g(physics_app, tmp_path):
-    """A single line made with G 0.09 (Δθ 0.1 held, a point source): found
+    """A single line made with G 0.09 (Δθ 0.1 held, the default d/D): found
     from G 0.12, and G and Δθ written as the defaults, with the diameters."""
     p = np.zeros(NB)
     p[0], p[4] = 6000.0, 4000.0
     p = np.concatenate([p, [3.0, -0.12, NAT_WIDTH, 0.0]])
     v = np.linspace(-4.0, 4.4, 128)
-    path = _synthetic_cms(tmp_path, ['Singlet'], p, v, 0.09, 0.1, 0.0, 32)
-    app = _cms_search_app(physics_app, path, 0.12, 0.1, 0.0)
+    path = _synthetic_cms(tmp_path, ['Singlet'], p, v, 0.09, 0.1, _RATIO, 32)
+    app = _cms_search_app(physics_app, path, 0.12, 0.1, _RATIO)
     try:
         result = iio.instrumental(app, 1, 0, pool=_SerialPool())
         assert result['fitted'] == 'G' and result['dtheta'] == 0.1
         assert result['G'] == pytest.approx(0.09, rel=1e-3)          # the minimiser's stop, not the model
         assert result['p'][NB:NB + 2] == pytest.approx([3.0, -0.12], rel=1e-3)
-        assert iio.read_gcms_file(app.params_dir) == (result['G'], 0.1, 0.0, 10.0)
+        assert iio.read_gcms_file(app.params_dir) == (result['G'], 0.1, 10.0 * _RATIO, 10.0)
     finally:
         app.SMS_fit.setChecked(True)
 
@@ -966,9 +981,10 @@ def test_cms_searches_with_the_model_over_nbaseline_spectra(physics_app, tmp_pat
     p = iio.apply_links(p, iio._links_of(con1, con2, con3), Expr, NExpr)
     v = np.concatenate(axes)
     Norm = iio.compute_norm(_SerialPool(), app.JN0, dict(x0=0.0, MulCo=MulCoCMS, INS=G, Met=1))
+    smearing = m5.cms_smearing(v, app.JN0, MulCoCMS, G, 1, dtheta, [iio.drive_rest_velocity(a) for a in axes],
+                               r_ratio, [64, 64])
     counts = np.asarray(m5.TI(v, p, model, app.JN0, _SerialPool(), 0.0, MulCoCMS, G, Distri, Cor, Met=1,
-                              Norm=Norm, Recon=Recon, lengths=[64, 64], dtheta=dtheta,
-                              v_center=[iio.drive_rest_velocity(a) for a in axes], r_ratio=r_ratio), dtype=float)
+                              Norm=Norm, Recon=Recon, lengths=[64, 64], smearing=smearing), dtype=float)
     for path, a, c in zip(paths, axes, np.split(counts, 2)):
         np.savetxt(path, np.column_stack([a, c]))
     try:
@@ -988,8 +1004,8 @@ def test_cms_searches_with_the_model_over_nbaseline_spectra(physics_app, tmp_pat
 @pytest.mark.gui
 def test_refine_dtheta_without_smearing(physics_app, tmp_path):
     """Pure alpha-Fe with no smearing (Δθ 0): the search cannot start at 0 --
-    the spectrum changes as Δθ^4 there -- so it starts at 0.15 and goes down,
-    here to the bound 0 itself, fitting the spectrum as exactly as Δθ 0 does."""
+    the spectrum changes as Δθ^2 there -- so it starts at 0.15 and goes down,
+    fitting the spectrum as exactly as Δθ 0 does."""
     model, p, _, _, extra = iio.dtheta_alpha_fe_reference(np.full(8, 1e4), _SOURCE)
     p[0], p[2], p[NB], p[NB + 8] = 7000.0, 2.0, 8.0, 0.3
     p = iio.apply_links(p, extra['confu'], extra['Expr'], extra['NExpr'])
@@ -1007,27 +1023,37 @@ def test_refine_dtheta_without_smearing(physics_app, tmp_path):
 
 
 @pytest.mark.gui
-def test_refine_dtheta_from_pure_alpha_fe_finds_it(physics_app, tmp_path):
+@pytest.mark.parametrize("axis_scale", [1.0, 1.001])
+def test_refine_dtheta_from_pure_alpha_fe_finds_it(physics_app, tmp_path, axis_scale):
     """Pure alpha-Fe made with Δθ 0.2 from a disc source (d/D 0.5) and the
     dialog's baseline, its static noise flat on top: found from 0.15 (the field
-    at 0) with G held at the dialog's, and G and Δθ written as the defaults."""
+    at 0) with G held at the dialog's -- also on an axis 0.1 % off, which the
+    field, free within 1 T, takes up -- and G and Δθ written as the defaults."""
+    from syncmoss.constants import ALPHA_FE_FIELD
     model, p, _, _, extra = iio.dtheta_alpha_fe_reference(np.full(8, 1e4), _SOURCE)
     p[0], p[2], p[NB], p[NB + 8] = 7000.0, 2.0, 8.0, 0.3
     p = iio.apply_links(p, extra['confu'], extra['Expr'], extra['NExpr'])
     v = np.linspace(-11.0, 11.4, 128)                  # the drive at rest at +0.2 mm/s
-    path = _synthetic_cms(tmp_path, model, p, v, _SOURCE['G'], 0.2, 0.5, 32, offset=_SOURCE['C_static'])
+    path = _synthetic_cms(tmp_path, model, p, v, _SOURCE['G'], 0.2, 0.5, 32, offset=_SOURCE['C_static'],
+                          axis_scale=axis_scale)
     app = _cms_search_app(physics_app, path, 0.1, 0.0, 0.5)
     try:
         result = iio.instrumental(app, 1, 2, pool=_SerialPool(), dtheta_search=_SOURCE)
         assert result['fitted'] == 'dtheta' and result['G'] == _SOURCE['G']
-        assert result['dtheta'] == pytest.approx(0.2, rel=1e-3)
-        assert result['p'][[0, 2, NB, NB + 8]] == pytest.approx([7000.0, 2.0, 8.0, 0.3], rel=1e-3)
+        assert result['field'] == pytest.approx(ALPHA_FE_FIELD * axis_scale, rel=1e-4)
+        if axis_scale == 1:
+            assert result['dtheta'] == pytest.approx(0.2, rel=1e-3)
+            assert result['p'][[0, 2, NB, NB + 8]] == pytest.approx([7000.0, 2.0, 8.0, 0.3], rel=1e-3)
+        else:                                          # the widths are 0.1 % off too
+            assert result['dtheta'] == pytest.approx(0.2, rel=2e-2)
         assert result['baseline_offset'] == _SOURCE['C_static']
         assert iio.read_gcms_file(app.params_dir) == (_SOURCE['G'], result['dtheta'], 5.0, 10.0)
         # the window takes both into the fields, even after a switch to SMS meanwhile
         app.SMS_fit.setChecked(True)
         app.on_instrumental_finished(result)
         assert (iio.get_internal_gcms(app), iio.get_internal_dtheta(app)) == (_SOURCE['G'], result['dtheta'])
-        assert "Δθ found" in app.log.toPlainText()
+        assert "Δθ found" in app.log.toPlainText() and f"H {result['field']:.3f} T" in app.log.toPlainText()
     finally:
         app.SMS_fit.setChecked(True)
+
+

@@ -24,6 +24,7 @@ from syncmoss.spectrum_parameters import first_spectrum_parameters, table_uses_n
 from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
     compute_norm,
+    smearing_for,
     same_method_params,
     hires_model_diff,
     drive_rest_velocity,
@@ -272,6 +273,7 @@ def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_param
     DiEn = 0
     CoEn = 0
     ReEn = 0
+    smearing = smearing_for(A, JN, method_params)          # the same for every component
     for i in range(len(Ps)):
         DiSt, CoSt, ReSt = DiEn, CoEn, ReEn
         DiEn += Psm[i].count('Distr')
@@ -287,9 +289,7 @@ def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_param
                         method_params['x0'], method_params['MulCo'],
                         method_params['INS'], distri_slice, cor_slice,
                         Met=method_params['Met'], Norm=method_params['Norm'], pol=pol,
-                        Recon=recon_slice, dtheta=method_params.get('dtheta', 0.0),
-                        v_center=method_params.get('v_center', 0.0),
-                        r_ratio=method_params.get('r_ratio', 0.0)))
+                        Recon=recon_slice, smearing=smearing))
         FS_pos.append(mod_pos(Ps[i], Psm[i], method_params['INS'], Met=method_params['Met']))
     return FS, FS_pos
 
@@ -593,15 +593,19 @@ def fit_model(app, inputs, spectrum_files, pool):
             # — the original code path.
             dtheta0, r_ratio0 = mp0.get('dtheta', 0.0), mp0.get('r_ratio', 0.0)
 
-            def func(x, p, recon=Recon, lengths=lengths):
+            def smearing_of(x, lengths):
+                return m5.cms_smearing(x, JN, mp0['MulCo'], mp0['INS'], mp0['Met'], dtheta0, v_center_arg,
+                                       r_ratio0, lengths)
+
+            def func(x, p, smearing, recon=Recon, lengths=lengths):
                 return m5.TI(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
                              Distri, Cor, Met=mp0['Met'], Norm=mp0['Norm'], pol=pol, Recon=recon,
-                             lengths=lengths, dtheta=dtheta0, v_center=v_center_arg, r_ratio=r_ratio0)
+                             lengths=lengths, smearing=smearing)
 
-            def func_variants(x, p, recons, lengths=lengths):
+            def func_variants(x, p, recons, smearing, lengths=lengths):
                 return m5.TI_recon_variants(x, p, model, JN, pool, mp0['x0'], mp0['MulCo'], mp0['INS'],
                                             Distri, Cor, mp0['Met'], mp0['Norm'], pol, recons, lengths,
-                                            dtheta=dtheta0, v_center=v_center_arg, r_ratio=r_ratio0)
+                                            smearing=smearing)
         else:
             # Dedicated per-section instrumental parameters (e.g. mixing CMS and
             # SMS): TI receives one value per section as lists. The full model and
@@ -616,27 +620,33 @@ def fit_model(app, inputs, spectrum_files, pool):
             dtheta_list = [mp_i.get('dtheta', 0.0) for mp_i in method_params_list]
             r_ratio_list = [mp_i.get('r_ratio', 0.0) for mp_i in method_params_list]
 
-            def func(x, p, recon=Recon, lengths=lengths):
+            def smearing_of(x, lengths):
+                return m5.cms_smearing(x, JN, mulco_list, ins_list, met_list, dtheta_list, v_centers,
+                                       r_ratio_list, lengths)
+
+            def func(x, p, smearing, recon=Recon, lengths=lengths):
                 return m5.TI(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
                              Distri, Cor, Met=met_list, Norm=norm_list, pol=pol, Recon=recon,
-                             lengths=lengths, dtheta=dtheta_list, v_center=v_centers, r_ratio=r_ratio_list)
+                             lengths=lengths, smearing=smearing)
 
-            def func_variants(x, p, recons, lengths=lengths):
+            def func_variants(x, p, recons, smearing, lengths=lengths):
                 return m5.TI_recon_variants(x, p, model, JN, pool, x0_list, mulco_list, ins_list,
                                             Distri, Cor, met_list, norm_list, pol, recons, lengths,
-                                            dtheta=dtheta_list, v_center=v_centers, r_ratio=r_ratio_list)
+                                            smearing=smearing)
+
+        # The cosine smearing of the CMS spectra (None without), prepared once
+        # like the Norm: for the fitted points and, when exclusion regions leave
+        # some out, for every point (the curves drawn after the fit)
+        smearing_data = smearing_of(A_data, lengths_data)
+        smearing_all = smearing_data if A_data is A else smearing_of(A, lengths)
 
         # The model at the fitted points (each spectrum keeps its own number of
         # them when exclusion regions are applied)
-        if regions:
-            def func_data(x, p, recon=Recon):
-                return func(x, p, recon, lengths_data)
+        def func_data(x, p, recon=Recon):
+            return func(x, p, smearing_data, recon, lengths_data)
 
-            def func_variants_data(x, p, recons):
-                return func_variants(x, p, recons, lengths_data)
-        else:
-            func_data = func
-            func_variants_data = func_variants
+        def func_variants_data(x, p, recons):
+            return func_variants(x, p, recons, smearing_data, lengths_data)
 
         # Box bounds (from the table: read_fit_inputs), and the user's fixes
         # with the automatic ones: constraints, distribution expressions,
@@ -810,7 +820,7 @@ def fit_model(app, inputs, spectrum_files, pool):
         print(f'[Fitting] Covariance matrix shape: {covariance_matrix.shape}')
 
         # Calculate fitted spectrum for plotting
-        SPC_f = func(A, p)
+        SPC_f = func(A, p, smearing_all)
         
         # For simultaneous fitting, we need to separate results for each spectrum
         # (model_separate and begining_spc were computed before the minimization)
@@ -846,8 +856,7 @@ def fit_model(app, inputs, spectrum_files, pool):
                                        mp_i['x0'], mp_i['MulCo'], mp_i['INS'],
                                        d_arg, c_arg,
                                        Met=mp_i['Met'], Norm=mp_i['Norm'], pol=pol, Recon=r_arg,
-                                       dtheta=mp_i.get('dtheta', 0.0), v_center=mp_i['v_center'],
-                                       r_ratio=mp_i.get('r_ratio', 0.0))
+                                       smearing=smearing_for(A_list[NumSpc], JN, mp_i))
                 SPC_f_list.append(SPC_f_separate)
 
                 # High-resolution convergence check for this section (cyan line)

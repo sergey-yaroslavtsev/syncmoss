@@ -400,106 +400,81 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 #
 # A photon leaving the moving source at the angle theta to the drive axis is
 # Doppler-shifted by u*cos(theta), u the drive velocity (0 with the source at
-# rest), not by u. For a point source in front of a circular aperture,
-# cos(theta) of the photons that reach it is UNIFORM on [cos(dtheta), 1] (the
-# solid-angle element is 2*pi*d(cos theta)), dtheta being the half-angle the
-# aperture subtends. A uniform disc source is close to a point source with an
-# EFFECTIVE dtheta, larger than the geometric one: what shows in a spectrum is
-# the spread of cos(theta) (its mean goes into the velocity scale), and the
-# disc's differs only in higher moments.
+# rest), not by u. The velocity axis v is the TRANSDUCER's velocity -- what a
+# laser calibration measures, and what an alpha-Fe calibration gives when it
+# is made with the same dtheta (Calibration passes it on): u = v - v_c, v_c
+# where the drive is at rest, the middle of the velocity range (the drive
+# sweeps symmetrically, while the axis zero is the alpha-Fe centroid, off by
+# the source's isomer shift). A ray therefore sees
+#     v_c + (v - v_c)*cos(theta):
+# the lines move out, by ~<1/cos>, as well as broaden. With dtheta = 0 the axis
+# is every ray's velocity.
 #
-# On the calibrated axis v the source is at rest at v_c, the middle of the
-# velocity range: the drive sweeps symmetrically, while the axis zero is the
-# alpha-Fe centroid (off by the source's isomer shift). The axis comes from an
-# alpha-Fe calibration in the same geometry, so it already holds the MEAN
-# Doppler factor <cos>. A ray therefore sees v_c + (v - v_c)*s, with
-# s = cos(theta)/<cos> uniform on an interval of width (1 - cos dtheta)/<cos>
-# around 1: <s> = 1, so the lines stay where the calibration put them, and their
-# areas are kept.
+# Averaging over the rays would need the absorber at every ray's own energies.
+# With y = 1 - cos(theta) and <y> its mean over the rays, substituting
+# u -> u + MulCo*(v - v_c)*(y - <y>) puts the average on the SOURCE instead,
+# the absorber being computed once, at the MEAN ray's velocity:
+#     int S(u) T(MulCo*(v_c + (v - v_c)*cos(theta)) + u) du
+#         = int S(u + MulCo*(v - v_c)*(y - <y>)) T(MulCo*v_ray + u) du,
+#     v_ray = v_c + (v - v_c)*<cos>,
+# i.e. at velocity v the absorber is taken at v_ray, and the source line is S
+# averaged over the rays' y about their mean, so that it stays centred where
+# the CMS grid is densest (the same average taken from y = 0, the absorber at v
+# itself, is as exact but samples the line ten times worse at JN = 32).
 #
-# Averaging over s would need the absorber at every ray's own energies.
-# Substituting u -> u + MulCo*(v - v_c)*(1 - s) puts the average on the SOURCE
-# instead, at the energies E the absorber is computed at anyway:
-#     int S(u) T(MulCo*(v_c + (v - v_c)*s) + u) du
-#         = int S(u + MulCo*(v - v_c)*(1 - s)) T(MulCo*v + u) du,
-# i.e. at velocity v the source line is S averaged over a box of width
-#     W = MulCo*(v - v_c)*(1 - cos dtheta)/<cos>,   <cos> = (1 + cos dtheta)/2,
-# centred on u:  S_box(u) = [F(u + W/2) - F(u - W/2)]/W,  F the cumulative of S.
-# Voight_box below is that average for Voight, from the closed-form cumulatives
-# of its four terms (_voight_cdf). Its node sum on the CMS grid moves from Norm
-# by < 3e-6 at JN = 64 (dtheta <= 0.3 rad, |v - v_c| <= 12 mm/s), so Norm is
-# left as it is -- see "SOURCE NORMALISATION" in TI. (docs/cosine_smearing.md,
-# local, has the proof that this equals averaging over the rays, and the
-# accuracy.)
+# The rays' cos(theta) is spread by the size of the source and of the aperture
+# that limits them: Voight_disc below, a uniform disc source in front of a
+# circular aperture, exact at any angle. (A point source, cos(theta) uniform
+# on [cos dtheta, 1], is the disc's limit d/D -> 0 and no source of its own:
+# its closed-form box was taken out on 2026-10-15 and is kept in
+# docs/cosine_smearing/point_source.py, local.) The node sum of the smeared line
+# on the CMS grid moves from Norm by < 3e-6 at JN = 64 (dtheta <= 0.3 rad,
+# |v - v_c| <= 12 mm/s), so Norm is left as it is -- see "SOURCE
+# NORMALISATION" in TI. (docs/cosine_smearing.md, local, has the proof that
+# this equals averaging over the rays, and the accuracy.)
+# Before 2026-10-14 the axis was taken as the mean ray's velocity (an alpha-Fe
+# calibration made without dtheta gives about that): the former model at v_ray
+# is this one at v, the two differing by the scale <cos> of the axis about v_c.
 #
 # Neglected: the absorber path length t/cos(theta) (its mean, ~ dtheta^2/4, is
 # absorbed in the fitted thickness).
 # ===========================================================================
 
-# Below this fraction of the line width the box average IS the point value:
-# they differ by ~(W/width)^2, while the difference of the two cumulatives
-# carries a rounding error ~eps*width/W; the two meet at W ~ cbrt(eps)*width.
-# (erf's own 1.5e-7 adds a part that does not depend on W: the cumulative's
-# slope is off by up to 1.5e-5 of the Gaussian term's peak.)
-_BOX_POINT_LIMIT = np.cbrt(np.finfo(float).eps)
-
-
-def _voight_cdf(gL, gG, S):
-    """Cumulative of Voight(gL, gG, .) at S: the integral from -inf to S, term
-    by term (Lorentzian -> arctan, Gaussian -> erf, irrational -> x/sqrt(1+x^2),
-    sech^2 -> tanh). The width and weight block is Voight's, verbatim; the
-    tests check that the derivative of this is Voight."""
-    ro = gL/(gL+gG)
-    WG = (1 - ro*(0.66000 + 0.15021*ro - 1.24984*ro**2 + 4.74052*ro**3 - 9.48291*ro**4 + 8.48252*ro**5 - 2.95553*ro**6)) * (gG + gL)
-    WL = (1 - (1-ro)*(-0.42179 - 1.25693*ro + 10.30003*ro**2 - 23.45651*ro**3 + 29.14158*ro**4 - 16.50453*ro**5 + 3.19974*ro**6)) * (gG + gL)
-    WI = (1.19913 + 1.43021*ro - 15.36331*ro**2 + 47.06071*ro**3 - 73.61822*ro**4 + 57.92559*ro**5 - 17.80614*ro**6) * (gG + gL)
-    WP = (1.10186 - 0.47745*ro - 0.68688*ro**2 + 2.76622*ro**3 - 4.55466*ro**4 + 4.05475*ro**5 - 1.26571*ro**6) * (gG + gL)
-
-    cl = ro*(1+(1-ro)*(-0.30165-1.38927*ro+9.31550*ro**2-24.10743*ro**3+34.96491*ro**4-21.18862*ro**5+3.70290*ro**6))
-    ci = ro*(1-ro)*(0.25437-0.14107*ro+3.23653*ro**2-11.09215*ro**3+22.10544*ro**4-24.12407*ro**5+9.76947*ro**6)
-    cp = ro*(1-ro)*(1.01579+1.50429*ro-9.21815*ro**2+23.59717*ro**3-39.71134*ro**4+32.83023*ro**5-10.02142*ro**6)
-    cg = 1 - cl - ci - cp
-
-    a = WI/2/(2**(2/3)-1)**(1/2)
-    return cl * (0.5 + np.arctan(S / (WL / 2)) / np.pi)\
-        + cg * (0.5 + 0.5 * erf(S / (WG / 2 / np.sqrt(2 * np.log(2))) / np.sqrt(2)))\
-        + ci * (0.5 + 0.5 * (S / a) / np.sqrt(1 + (S / a) ** 2))\
-        + cp * (0.5 + 0.5 * np.tanh(S / (WP/2/np.log(2**(1/2)+1))))
-
-
-def Voight_box(gL, gG, S, W):
-    """Voight(gL, gG, .) averaged over a box of width W centred on S (cosine
-    smearing of the CMS source, see above). Even in W; the point value where
-    the box is too narrow to matter (_BOX_POINT_LIMIT)."""
-    W = np.abs(W) * np.ones_like(S)
-    point = W < _BOX_POINT_LIMIT * (gL + gG)
-    Wb = np.where(point, 1.0, W)
-    box = (_voight_cdf(gL, gG, S + Wb / 2) - _voight_cdf(gL, gG, S - Wb / 2)) / Wb
-    return np.where(point, Voight(gL, gG, S), box)
-
-
-# --- a disc source (r_ratio = r/R > 0) ----------------------------------------
-# A uniform disc source of radius r on the axis, in front of a circular aperture
-# of radius R: cos(theta) of the rays is distributed as the overlap area of the
-# two discs at the transverse distance rho between a source point and an
-# aperture point (the cos^3 of the solid angle cancels the Jacobian). With
-# 1 - cos ~ rho^2/2L^2, q = (rho/R)^2 has the density A(sqrt q; r/R) on
-# [0, (1 + r/R)^2] -- flat up to (1 - r/R)^2, then the lens-shaped overlap down
-# to zero -- so the SHAPE depends on r/R alone (the same for r/R and R/r), and
-# dtheta keeps one meaning for every r/R: the point source with the same spread
-# of cos(theta). In units of that point source's box, tau = (q - <q>)/
-# (sqrt(12) std q) has mean 0 and variance 1/12; r/R -> 0 is the box itself.
-# The average int p(tau) S(u + W tau) dtau has no closed form: a Gauss rule for
-# this weight (Stieltjes on a fine grid, then Golub-Welsch) does it with one
-# call of Voight per node. The integrand is smooth however sharp the kernel's
-# edges are, but the source line must be resolved across the box: measured
-# against the kernel itself (r/R 0.5 and 1, G 0.03 and 0.075), 8 nodes per box
-# width in units of the source line's width keep the error at ~1e-5 of the
-# source peak (box 1, 2, 3, 4, 6 widths: 12, 16, 24, 32, 48 nodes), and below
-# one width 12 nodes do. The tests pin it.
+# --- the disc source (r_ratio = r/R > 0) --------------------------------------
+# A uniform disc source of radius r on the axis, a circular aperture of radius
+# R at the distance L. The ray from a source point to an aperture point rho
+# apart (across the axis) has cos(theta) = L/sqrt(L^2 + rho^2), and the
+# isotropic source sends along it the solid angle dA*cos^3(theta)/L^2 of the
+# aperture element dA. The density of rho in the plane is the overlap area of
+# the two discs with centres rho apart, so q = (rho/R)^2 has the density
+#     A(sqrt q; 1, r/R) * cos^3(theta),   cos(theta) = 1/sqrt(1 + a^2 q),  a = R/L,
+# on [0, (1 + r/R)^2]. As dq/dy = 2/(a^2 cos^3(theta)), y = 1 - cos(theta) has
+# the density A(sqrt q(y); 1, r/R) itself: flat up to y at q = (1 - r/R)^2,
+# then the lens-shaped overlap down to zero. Exact, no small-angle
+# approximation: r/R -> 0 is the point source's box, and r and R play the same
+# part (the kernel is that of x = min(r/R, R/r) in units of the larger radius).
+# dtheta keeps one meaning for every r/R: the angle of the point source whose
+# cos(theta) has the same spread at small angles. q has the variance
+# (1 + 6x^2 + x^4)/12, the point source's 1/12, so
+#     tan(dtheta) = a*(1 + 6x^2 + x^4)^(1/4),
+# which for the point source is its geometric half-angle.
+# The average  sum_k w_k S(u + MulCo*(v - v_c)*(y_k - <y>))  is a Gauss rule for
+# this density (Stieltjes on a fine grid in y, then Golub-Welsch), one Voight
+# per node; its <y> = sum_k w_k y_k is the fine grid's to rounding. The
+# integrand is smooth however sharp the kernel's edges are, but the source line
+# must be resolved across the box: 8 nodes per width of the point source's box
+# at the same dtheta, in units of the source line's width, keep the error at
+# ~1e-5 of the source peak (box 1, 2, 3, 4, 6 widths: 12, 16, 24, 32, 48
+# nodes), and below one width 12 nodes do. The tests pin it.
+#
+# None of this depends on the absorber. TI's caller prepares it with the other
+# instrumental inputs (Norm): cms_smearing, the smeared source line at every
+# node of TI's grid and the absorber's shift, once per fit (per call where G,
+# dtheta or the axis are being fitted). TI takes it (smearing=) and hands each
+# TImod its node's line and the shift; TImod adds that line in place of the
+# plain source line and moves the absorber. Nothing is kept anywhere.
 DISC_NODES_MIN = 12
 DISC_NODES_PER_WIDTH = 8
-_DISC_RULES = {}
 
 
 def _disc_overlap(d, x):
@@ -534,35 +509,109 @@ def _gauss_rule(x, w, M):
     return nodes, vectors[0] ** 2
 
 
-def disc_rule(r_ratio, nodes=DISC_NODES_MIN):
-    """(tau, weights) of the disc kernel for r/R = r_ratio > 0 (see above),
-    *nodes* of them; computed once per ratio and node count."""
+def disc_rule(dtheta, r_ratio, nodes=DISC_NODES_MIN):
+    """(y, weights) of the disc kernel (see above): y = 1 - cos(theta) at the
+    *nodes* nodes, for the angle dtheta > 0 and r/R = r_ratio > 0."""
+    if not r_ratio > 0:
+        raise ValueError(f"cosine smearing needs a source of some size: d/D = {r_ratio:g}, it must be above 0")
     x = min(r_ratio, 1 / r_ratio)
-    rule = _DISC_RULES.get((x, nodes))
-    if rule is None:
-        q = np.linspace(0.0, (1 + x) ** 2, 20001)
-        w = _disc_overlap(np.sqrt(q), x)
-        w[0] /= 2                                       # trapezoid weights on the grid
-        w[-1] /= 2
-        w /= w.sum()
-        mean = np.sum(w * q)
-        tau = (q - mean) / (np.sqrt(12) * np.sqrt(np.sum(w * (q - mean) ** 2)))
-        rule = _DISC_RULES[(x, nodes)] = _gauss_rule(tau, w, nodes)
-    return rule
+    a2 = np.tan(dtheta) ** 2 / np.sqrt(1 + 6 * x ** 2 + x ** 4)          # (R/L)^2
+    sec_end = np.sqrt(1 + a2 * (1 + x) ** 2)                              # 1/cos(theta) of the widest ray
+    y = np.linspace(0.0, a2 * (1 + x) ** 2 / (sec_end * (sec_end + 1)), 20001)  # 1 - cos, no cancellation
+    q = y * (2 - y) / ((1 - y) ** 2 * a2)              # (rho/R)^2 of the rays at y
+    w = _disc_overlap(np.sqrt(q), x)
+    w[0] /= 2                                           # trapezoid weights on the grid
+    w[-1] /= 2
+    w /= w.sum()
+    mean = np.sum(w * y)
+    std = np.sqrt(np.sum(w * (y - mean) ** 2))
+    t, weights = _gauss_rule((y - mean) / std, w, nodes)    # standardised: the recurrence keeps its digits
+    return mean + std * t, weights
 
 
-def Voight_disc(gL, gG, S, W, r_ratio):
-    """Voight(gL, gG, .) averaged over the disc kernel of r/R = r_ratio, W being
-    the box width of the point source with the same spread (signed: the kernel
-    is not symmetric). The node count follows the widest box (in units of 4, so
-    that a fit reuses a handful of rules)."""
-    widths = float(np.max(np.abs(W))) / float(np.min(gL + gG))
-    nodes = max(DISC_NODES_MIN, 4 * int(np.ceil(DISC_NODES_PER_WIDTH * widths / 4)))
-    tau, weights = disc_rule(r_ratio, nodes)
-    out = weights[0] * Voight(gL, gG, S + W * tau[0])
-    for t, wt in zip(tau[1:], weights[1:]):
-        out = out + wt * Voight(gL, gG, S + W * t)
-    return out
+def Voight_disc(gL, gG, S, U, dtheta, r_ratio):
+    """Voight(gL, gG, .) averaged over the rays of a disc source of r/R =
+    r_ratio about their mean (see above), and that mean <y>:
+    sum_k w_k Voight(S + U*(y_k - <y>)), U = MulCo*(v - v_c) (signed; S and U
+    broadcast) and y_k = 1 - cos(theta) at the nodes of disc_rule. The node
+    count follows the widest box of the point source with the same dtheta,
+    |U|*(1 - cos dtheta), in units of the line width."""
+    widths = float(np.max(np.abs(U))) * 2 * np.sin(dtheta / 2) ** 2 / float(np.min(gL + gG))
+    y, weights = disc_rule(dtheta, r_ratio, max(DISC_NODES_MIN, int(np.ceil(DISC_NODES_PER_WIDTH * widths))))
+    mean = np.dot(weights, y)
+    S, U = np.broadcast_arrays(np.asarray(S, dtype=float), np.asarray(U, dtype=float))
+    out = 0.0
+    for yk, wk in zip(y - mean, weights):
+        out = out + wk * Voight(gL, gG, (S + U * yk).ravel()).reshape(S.shape)
+    return out, mean
+
+
+def _node_grid(Met, JN):
+    """TI's integration nodes EE for the method Met, JN of them."""
+    return np.linspace(-1 + (10 ** -2)*(Met == 1 or Met ==2) + 10**-3, 1 - (10 ** -2)*(Met == 1 or Met ==2) - 10**-3, JN)
+
+
+def _cms_map_coefficients(JN):
+    """The coefficients of TImod's CMS map (Met == 1) from the node EE to the
+    source offset, for JN nodes (chosen and explained in TImod)."""
+    if JN < 56:
+        return np.array([-0.00317686, 20.7572, -30.7854])
+    return np.array([0.027181, 22.7718, -33.6937])
+
+
+def cms_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=None):
+    """The cosine smearing TI takes (smearing=), prepared by its caller with
+    the other instrumental inputs (Norm): for the spectrum x on TI's grid of
+    JN nodes, the pair (lines, shift) -- at every node the source line averaged
+    over the rays about their mean (a row per node: Voight_disc at the node's
+    source offset), and MulCo*(x - v_center)*<y>, the shift that puts the
+    absorber at the mean ray's velocity. None without smearing (not CMS, or
+    dtheta = 0). v_center is where the drive is at rest, the middle of the
+    spectrum's WHOLE velocity range (instrumental_io.drive_rest_velocity), so
+    that a part of its points gives the same values.
+    With *lengths* (the spectra of an Nbaseline model, one after the other): a
+    list with one per spectrum, or None when none is smeared. The values are
+    given as TI takes them: MulCo, INS and Met per spectrum when Met is a list,
+    dtheta, v_center and r_ratio each a value or a list."""
+    if lengths is None:
+        return _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio)
+    per_section = isinstance(Met, (list, tuple, np.ndarray))
+
+    def own(value, i):
+        return value[i] if isinstance(value, (list, tuple, np.ndarray)) else value
+
+    pieces = np.split(np.asarray(x, dtype=float), np.cumsum(lengths)[:-1])
+    smearings = [_smearing_of_spectrum(xi, JN, *((MulCo[i], INS[i], Met[i]) if per_section else (MulCo, INS, Met)),
+                                       own(dtheta, i), own(v_center, i), own(r_ratio, i))
+                 for i, xi in enumerate(pieces)]
+    return None if bu.all(s is None for s in smearings) else smearings   # bu: numpy's all is imported here
+
+
+def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio):
+    """cms_smearing of one spectrum."""
+    if Met != 1 or dtheta == 0:
+        return None
+    U = (np.asarray(x, dtype=float) - v_center) * MulCo
+    EE = _node_grid(1, JN)
+    cof = _cms_map_coefficients(JN)
+    offsets = cof[0] * np.log((1 + EE) / (1 - EE)) + cof[1] * np.log((2 + EE) / (2 - EE)) \
+        + cof[2] * np.log((3 + EE) / (3 - EE))
+    lines, mean = Voight_disc(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None], U[None, :], dtheta, r_ratio)
+    return lines, U * mean
+
+
+def _smearing_rows(smearing, x, JN):
+    """What TImod takes from TI's smearing= for the spectrum x: its line at
+    every node (None at each without smearing) and the absorber's shift. A
+    smearing prepared for another number of points or nodes is refused (TI
+    would otherwise skip nodes)."""
+    if smearing is None:
+        return [None] * int(JN), None              # int: a 0-d array JN would multiply [None] element by element
+    lines, shift = smearing
+    if np.shape(lines) != (int(JN), len(x)):
+        raise ValueError(f"cosine smearing prepared for {np.shape(lines)[1]} points on {np.shape(lines)[0]} nodes, "
+                         f"used for {len(x)} points on {int(JN)}")
+    return lines, shift
 
 
 # ===========================================================================
@@ -2243,7 +2292,7 @@ _COMPONENT_SLOTS = {'Singlet': 4, 'Doublet': 9, 'Sextet': 14, 'Sextet(rough)': 1
                     'Hamilton_mc': 12, 'Hamilton_pc': 9}
 
 
-def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0, JN=64, recon_cache=None, dtheta=0.0, v_center=0.0, r_ratio=0.0):
+def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0, JN=64, recon_cache=None, source_line=None, absorber_shift=None):
         # SCR = np.array(x_exp)
         SCR = x_exp
         N = np.array([float(0)]*len(SCR))
@@ -2314,29 +2363,22 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             # Former set, window +-4.716 mm/s (its map folded back near EE = 0:
             # negative node weights): [2.09026977e-02, 2.22979289e+01, -3.35214526e+01].
             # The CMS Norm ("SOURCE NORMALISATION" in TI) follows by itself, as
-            # compute_norm runs this same map with the same JN.
-            if JN < 56:
-                cof = np.array([-0.00317686, 20.7572, -30.7854])
-            else:
-                cof = np.array([0.027181, 22.7718, -33.6937])
+            # compute_norm runs this same map with the same JN. The two sets live
+            # in _cms_map_coefficients (cms_smearing uses the same map).
+            cof = _cms_map_coefficients(JN)
             E = MulCo * SCR + cof[0] * np.log((1 + EE) / (1 - EE)) \
                             + cof[1] * np.log((2 + EE) / (2 - EE)) \
                             + cof[2] * np.log((3 + EE) / (3 - EE))
 
-            if dtheta == 0:
+            if source_line is None:
                 N += Voight(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo)
             else:
-                # Cosine smearing (see Voight_box): at velocity v the source line
-                # averaged over a box of width MulCo*(v - v_center)*(1 - cos dtheta)/<cos>,
-                # v_center being where the drive is at rest -- a point source; a
-                # disc source (r_ratio = r/R > 0) over its own kernel of the same
-                # spread (Voight_disc).
-                cos_m = np.cos(dtheta)
-                W_smear = (SCR - v_center) * MulCo * (1 - cos_m) / ((1 + cos_m) / 2)
-                if r_ratio == 0:
-                    N += Voight_box(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo, W_smear)
-                else:
-                    N += Voight_disc(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo, W_smear, r_ratio)
+                # Cosine smearing, computed by TI for this node (cms_smearing):
+                # the source line averaged over the rays about their mean, and
+                # the absorber moved to the mean ray's velocity
+                # v_center + (v - v_center)*<cos theta>.
+                N += source_line
+                E = E - absorber_shift
             # N += Wid/2/np.pi/((E - SCR*MulCo)**2 + (Wid/2)**2)
             # N += (Wid / 2 / np.pi / ((E - SCR * MulCo) ** 2 + (Wid / 2) ** 2)) ** 2 * Wid * np.pi
         elif Met == 2:
@@ -3272,15 +3314,14 @@ _NODE_SUMS_LOCK = threading.Lock()
 _P_INDEX = _re.compile(r'p\[\s*(\d+)\s*\]')
 
 
-def _node_sum_key(x, p, v_from, v_to, model_i, strings, recons, JN, x0, MulCo, INS, Met, pol, offsets, dtheta,
-                  v_center, r_ratio):
+def _node_sum_key(x, p, v_from, v_to, model_i, strings, recons, JN, x0, MulCo, INS, Met, pol, offsets, smearing):
     """Digest of everything one spectrum's node sum depends on: its velocities,
     its component parameters p[v_from:v_to] (its baseline excluded), the values
     of the p[k] named in the distribution/correlation expressions, those
     expressions themselves, the Recon weights, the instrumental function, JN,
-    the polarization, the cosine smearing and the section's offsets. None --
-    never reused -- when an expression addresses p in a way that cannot be read
-    off (p[2+3], ...)."""
+    the polarization, the cosine smearing (its lines and shift, or None) and
+    the section's offsets. None -- never reused -- when an expression addresses
+    p in a way that cannot be read off (p[2+3], ...)."""
     refs = []
     for s in strings:
         s = str(s)
@@ -3296,20 +3337,27 @@ def _node_sum_key(x, p, v_from, v_to, model_i, strings, recons, JN, x0, MulCo, I
     for r in recons:
         h.update(np.ascontiguousarray(np.asarray(r, dtype=float).ravel()).tobytes())
     h.update(np.ascontiguousarray(np.atleast_1d(np.asarray(INS, dtype=float))).tobytes())
+    if smearing is not None:
+        for part in smearing:                                   # its lines and the absorber's shift
+            h.update(np.ascontiguousarray(part, dtype=float).tobytes())
     h.update(repr((tuple(str(m) for m in model_i), int(JN), float(x0), float(MulCo), int(Met), float(pol),
-                   float(dtheta), float(v_center), float(r_ratio), tuple(str(s) for s in strings),
-                   offsets)).encode())
+                   smearing is None, tuple(str(s) for s in strings), offsets)).encode())
     return h.digest()
 
 
-def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, Recon, lengths, dtheta,
-                       v_center, r_ratio):
+def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, Recon, lengths, smearing):
     """TI's bookkeeping for every spectrum (Nbaseline section) of a model: its
     velocities, model rows, source-line grid E/D, baseline N0/N1, offsets into
-    p / Distri / Cor / Recon, and the key of its node sum (_node_sum_key). A
-    model without Nbaseline is one section. Shared by TI and TI_recon_variants."""
+    p / Distri / Cor / Recon, its cosine smearing (the lines and shift TImod
+    takes; *smearing* as TI takes it) and the key of its node sum
+    (_node_sum_key). A model without Nbaseline is one section. Shared by TI and
+    TI_recon_variants."""
     per_section = isinstance(Met, (list, tuple, np.ndarray))
     n_sec = list(model).count('Nbaseline') + 1
+    if smearing is not None and not isinstance(smearing, list):
+        smearing = [smearing]
+    if smearing is not None and len(smearing) != n_sec:
+        raise ValueError(f"cosine smearing given for {len(smearing)} spectra, the model has {n_sec}")
     if n_sec == 1:
         x_separate = [x_exp]
     elif lengths is not None:
@@ -3350,10 +3398,9 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
             x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0[i], MulCo[i], INS[i], Met[i], Norm[i]
         else:
             x0_i, MulCo_i, INS_i, Met_i, Norm_i = x0, MulCo, INS, Met, Norm
-        dtheta_i = dtheta[i] if isinstance(dtheta, (list, tuple, np.ndarray)) else dtheta
-        v_center_i = v_center[i] if isinstance(v_center, (list, tuple, np.ndarray)) else v_center
-        r_ratio_i = r_ratio[i] if isinstance(r_ratio, (list, tuple, np.ndarray)) else r_ratio
-        E = np.linspace(-1 + (10 ** -2)*(Met_i == 1 or Met_i ==2) + 10**-3, 1 - (10 ** -2)*(Met_i == 1 or Met_i ==2) - 10**-3, JN)
+        smearing_i = None if smearing is None else smearing[i]
+        lines_i, shift_i = _smearing_rows(smearing_i, x_separate[i], JN)
+        E = _node_grid(Met_i, JN)
         D = (E[1] - E[0])
         N0 = (p[V]   + p[V+3] * p[V]  /10**2 * ((-1) * p[V+1] + x_separate[i]) + p[V+2] * p[V]   / 10 ** 4 * ((-1) * p[V+1] + x_separate[i]) ** 2)
         N1 =  p[V+4] + p[V+7] * p[V+4]/10**2 * ((-1) * p[V+5] + x_separate[i]) + p[V+6] * p[V+4] / 10 ** 4 * ((-1) * p[V+5] + x_separate[i]) ** 2
@@ -3383,11 +3430,11 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
         strings = list(Distri[Di_i:Di_i + ms.count('Distr')]) + list(Cor[Co_i:Co_i + ms.count('Corr')])
         recons = list(Recon[Re_i:Re_i + ms.count('Recon')])
         key = _node_sum_key(x_separate[i], p, V_i, V, ms, strings, recons, JN, x0_i, MulCo_i, INS_i,
-                            Met_i, pol, (V_i, Di_i, Co_i, Re_i), dtheta_i, v_center_i, r_ratio_i) \
+                            Met_i, pol, (V_i, Di_i, Co_i, Re_i), smearing_i) \
             if NODE_SUM_REUSE else None
         sections.append(dict(x=x_separate[i], model=model_separate[i], E=E, D=D, x0=x0_i, MulCo=MulCo_i,
                              INS=INS_i, Met=Met_i, Norm=Norm_i, N0=N0, N1=N1, V=V_i, Di=Di_i, Co=Co_i,
-                             Re=Re_i, key=key, dtheta=dtheta_i, v_center=v_center_i, r_ratio=r_ratio_i))
+                             Re=Re_i, key=key, lines=lines_i, shift=shift_i))
     return sections
 
 
@@ -3400,7 +3447,7 @@ def _section_spectrum(s, H):
     return H * s['N0'] / s['Norm'] * s['D'] + s['N1']
 
 
-def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0], lengths=None, dtheta=0.0, v_center=0.0, r_ratio=0.0):  # num - number of Gausians # PS - spc, p - InsFun
+def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0], lengths=None, smearing=None):  # num - number of Gausians # PS - spc, p - InsFun
     """Compute the Mossbauer transmission spectrum (full transmission integral).
 
     Integrates the per-energy model ``TImod`` over the source line shape using
@@ -3413,15 +3460,10 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     of the unit-area source line that the grid samples. CMS and SMS use it
     differently -- see "SOURCE NORMALISATION" in the body.
 
-    ``dtheta`` (rad) is the cosine smearing of a CMS spectrum: the half-angle
-    of the cone of photons from the source to the detector (see Voight_box).
-    It acts on Met == 1 only; 0 switches it off. ``v_center`` (mm/s) is where
-    the drive is at rest on the spectrum's velocity axis, the middle of its
-    full range (instrumental_io.drive_rest_velocity) -- from the WHOLE spectrum,
-    so that a part of its points gives the same values. ``r_ratio`` is the
-    source radius over the aperture radius: 0 a point source (the box), above
-    it a disc (Voight_disc) whose spread dtheta still describes. With
-    per-section lists (below) all three may be lists too.
+    ``smearing`` is the cosine smearing of a CMS spectrum, ``x_exp`` being the
+    transducer velocity: what cms_smearing prepares for these velocities and
+    JN (per Nbaseline section, a list: cms_smearing with ``lengths``), or None.
+    TI hands each TImod its node's source line and the absorber's shift.
 
     For a model with Nbaseline sections ``x_exp`` holds the velocities of every
     spectrum, one spectrum after the other. ``lengths`` gives the number of
@@ -3451,16 +3493,22 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     # passing scalars reproduces the original single-method behaviour exactly.
     per_section = isinstance(Met, (list, tuple, np.ndarray))
     Met_repr = Met[0] if per_section else Met
-    E = np.linspace(-1 + (10 ** -2)*(Met_repr == 1 or Met_repr ==2) + 10**-3, 1 - (10 ** -2)*(Met_repr == 1 or Met_repr ==2) - 10**-3, JN)
+    E = _node_grid(Met_repr, JN)
 
     D = (E[1] - E[0])
     if model.count('Nbaseline') == 0:
         # Recon travels after the default-valued middle args (Mett,O,Di,Co,V,
         # return_layer_matrix) so the parallel weight list reaches every TImod
         # worker positionally (starmap cannot pass keywords); JN follows Re, for
-        # the CMS map's choice of coefficients, and dtheta, v_center and
-        # r_ratio follow recon_cache.
-        H = _pool_starmap(pool, TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon, 0, JN, None, dtheta, v_center, r_ratio) for Ex in E])
+        # the CMS map's choice of coefficients, and the node's smeared source
+        # line and the absorber's shift (None and None without smearing) follow
+        # recon_cache.
+        if isinstance(smearing, list):             # cms_smearing with lengths, for one spectrum
+            if len(smearing) != 1:
+                raise ValueError(f"{len(smearing)} cosine smearings given for one spectrum")
+            smearing = smearing[0]
+        lines, shift = _smearing_rows(smearing, x_exp, JN)
+        H = _pool_starmap(pool, TImod, [(x_exp, p, model, Ex, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], 0, 0, number_of_baseline_parameters, False, Recon, 0, JN, None, line, shift) for Ex, line in zip(E, lines)])
         H = np.array(H, dtype=object).sum(axis=0)
 
         # Ht = np.array([[float(0)] * len(x_exp)] * JN)
@@ -3518,14 +3566,14 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         # area of S inside the window: W = 1 for SMS, and for CMS W is taken as
         # Norm itself, the grid's own measure of what it samples.
         #
-        # CMS cosine smearing (dtheta) averages the source line over a box that
-        # grows with |v - v_center| (Voight_box). Norm is still the unsmeared
-        # line's: the smeared line's node sum differs from it by < 3e-6 at
-        # JN = 64 (dtheta <= 0.3 rad, |v - v_center| <= 12 mm/s, G = 0.075; that
-        # is erf's 1.5e-7, through the slope of the cumulative -- the box itself
-        # gives < 3e-7) and by 4e-5 at JN = 32 (dtheta <= 0.2): the box moves
-        # how the grid samples the line, not its area. Only a wide box on few
-        # nodes shows it: 8e-4 at JN = 32, dtheta = 0.3, |v - v_center| = 12.
+        # CMS cosine smearing (dtheta) averages the source line over the rays
+        # about their mean, over the disc kernel that grows with |v - v_center|
+        # (Voight_disc). Norm is still the unsmeared line's: the smeared line's
+        # node sum differs from it by < 3e-6 at JN = 64 (dtheta <= 0.3 rad,
+        # |v - v_center| <= 12 mm/s, G = 0.075, d/D 0.25 or 1) and by < 5e-5 at
+        # JN = 32 (dtheta <= 0.2): the average moves how the grid samples the
+        # line, not its area. Only a wide kernel on few nodes shows it: 2e-4 at
+        # JN = 32, dtheta = 0.3, |v - v_center| = 12 (d/D 0.25; 7e-5 for d/D 1).
         #
         # WHEN THE CMS INTEGRATION CHANGES:
         # * another map, edge or JN: nothing to do, PROVIDED Norm comes from
@@ -3549,7 +3597,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         # Pass 1, section by section: grid, baseline, offsets (TI's own
         # bookkeeping) and the key of the section's node sum.
         sections = _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol,
-                                      Recon, lengths, dtheta, v_center, r_ratio)
+                                      Recon, lengths, smearing)
 
         # Pass 2: the stored sums, then ONE pool submission for the sections
         # that still need computing -- each summed exactly as before.
@@ -3564,8 +3612,8 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
             for s in todo:
                 first = len(tasks)
                 tasks += [(s['x'], p, s['model'], Ex, s['x0'], s['MulCo'], s['INS'], Distri, Cor, s['Met'], pol,
-                           -2, [], s['Di'], s['Co'], s['V'], False, Recon, s['Re'], JN, None, s['dtheta'],
-                           s['v_center'], s['r_ratio']) for Ex in s['E']]
+                           -2, [], s['Di'], s['Co'], s['V'], False, Recon, s['Re'], JN, None, line, s['shift'])
+                          for Ex, line in zip(s['E'], s['lines'])]
                 spans.append((first, len(tasks)))
             H = _pool_starmap(pool, TImod, tasks)
             with _NODE_SUMS_LOCK:
@@ -3592,15 +3640,17 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
 # node at unit weight (TImod's recon_cache) and recombines it for every list.
 
 def TImod_recon_group(x_exp, p, model, EEs, x0, MulCo, INS, Distri, Cor, Met, pol, recon_variants, JN, Di, Co, V, Re,
-                      dtheta=0.0, v_center=0.0, r_ratio=0.0):
+                      lines=None, shift=None):
     """Per weight list, the sum over the nodes EEs of TImod's result; at each node
-    the Recon copies are computed once (recon_cache) for all the lists."""
+    the Recon copies are computed once (recon_cache) for all the lists. *lines*
+    and *shift*: the nodes' smeared source lines and the absorber's shift
+    (cms_smearing), or None."""
     sums = [None] * len(recon_variants)
-    for EE in EEs:
+    for k, EE in enumerate(EEs):
         cache = {}
         for j, R in enumerate(recon_variants):
             r = np.asarray(TImod(x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met, pol, -2, [], Di, Co, V,
-                                 False, R, Re, JN, cache, dtheta, v_center, r_ratio), dtype=float)
+                                 False, R, Re, JN, cache, None if lines is None else lines[k], shift), dtype=float)
             sums[j] = r if sums[j] is None else sums[j] + r
     return sums
 
@@ -3614,7 +3664,7 @@ def _ti_task(kind, args):
 
 
 def TI_recon_variants(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, recon_variants,
-                      lengths=None, dtheta=0.0, v_center=0.0, r_ratio=0.0):
+                      lengths=None, smearing=None):
     """TI's spectra for several Recon weight lists (``recon_variants``) that share
     EVERY other input, in one pool submission; a list of spectra, one per weight
     list, equal to TI's up to rounding.
@@ -3625,7 +3675,7 @@ def TI_recon_variants(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri, Cor, Me
     block of nodes for all the lists (TImod_recon_group); its sums are not
     stored, as they are summed copy by copy rather than as TI sums them."""
     variants = [_spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, R, lengths,
-                                   dtheta, v_center, r_ratio)
+                                   smearing)
                 for R in recon_variants]
     n_var, n_sec = len(variants), len(variants[0])
     workers = max(1, int(getattr(pool, '_processes', 1) or 1))
@@ -3634,28 +3684,30 @@ def TI_recon_variants(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri, Cor, Me
     for i in range(n_sec):
         keys = [v[i]['key'] for v in variants]
         s = variants[0][i]
-
-        def node_tasks(R):
-            return [('node', (s['x'], p, s['model'], Ex, s['x0'], s['MulCo'], s['INS'], Distri, Cor, s['Met'],
-                              pol, -2, [], s['Di'], s['Co'], s['V'], False, R, s['Re'], JN, None, s['dtheta'],
-                              s['v_center'], s['r_ratio'])) for Ex in s['E']]
-
-        if keys[0] is not None and bu.all(k == keys[0] for k in keys):   # bu: numpy's all is imported here
+        shared = keys[0] is not None and bu.all(k == keys[0] for k in keys)   # bu: numpy's all is imported here
+        if shared:
             with _NODE_SUMS_LOCK:
                 H = _NODE_SUMS.get(keys[0])
             if H is not None:
                 for v in range(n_var):
                     sums[v][i] = H
                 continue
+
+        def node_tasks(R):
+            return [('node', (s['x'], p, s['model'], Ex, s['x0'], s['MulCo'], s['INS'], Distri, Cor, s['Met'],
+                              pol, -2, [], s['Di'], s['Co'], s['V'], False, R, s['Re'], JN, None, line,
+                              s['shift'])) for Ex, line in zip(s['E'], s['lines'])]
+
+        if shared:
             first = len(tasks)
             tasks += node_tasks(recon_variants[0])
             jobs.append(('shared', i, first, len(tasks), keys[0], None))
         elif 'Recon' in list(s['model']):
             first = len(tasks)
-            for blk in np.array_split(s['E'], min(len(s['E']), workers)):
-                tasks.append(('group', (s['x'], p, s['model'], blk, s['x0'], s['MulCo'], s['INS'], Distri, Cor,
-                                        s['Met'], pol, list(recon_variants), JN, s['Di'], s['Co'], s['V'], s['Re'],
-                                        s['dtheta'], s['v_center'], s['r_ratio'])))
+            for idx in np.array_split(np.arange(len(s['E'])), min(len(s['E']), workers)):
+                tasks.append(('group', (s['x'], p, s['model'], s['E'][idx], s['x0'], s['MulCo'], s['INS'], Distri,
+                                        Cor, s['Met'], pol, list(recon_variants), JN, s['Di'], s['Co'], s['V'],
+                                        s['Re'], [s['lines'][k] for k in idx], s['shift'])))
             jobs.append(('group', i, first, len(tasks), None, None))
         else:
             for v in range(n_var):

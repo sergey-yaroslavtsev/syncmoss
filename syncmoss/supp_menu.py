@@ -693,7 +693,7 @@ def open_cms_diameters_dialog(main_window):
     Returns True when they were set."""
     title = "CMS source and aperture diameters"
     fields = (
-        ('source', "Source diameter d [mm]", lambda v: v >= 0, "must not be negative"),
+        ('source', "Source diameter d [mm]", lambda v: v > 0, "must be above 0"),
         ('aperture', "Aperture diameter D [mm]", lambda v: v > 0, "must be above 0"),
     )
     current = dict(zip(('source', 'aperture'), get_cms_diameters(main_window)))
