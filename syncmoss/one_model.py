@@ -225,6 +225,7 @@ class OneModelResult:
         self._covariance_row = {int(index): row for row, index in enumerate(free)}
         self.chi2 = result['chi2']
         self.chi2_spread = result.get('chi2_spread')
+        self.deviance = result.get('deviance')
 
     # --- the spectra ----------------------------------------------------------
 
@@ -258,6 +259,9 @@ class OneModelResult:
 
     def chi2_spread_of(self, k):
         return self.chi2_spread
+
+    def deviance_of(self, k):
+        return self.deviance
 
     def model_of(self, k):
         return list(self.template['model'])

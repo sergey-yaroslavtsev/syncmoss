@@ -148,6 +148,9 @@ class SequenceSeries:
     def chi2_spread_of(self, k):
         return self.items[k][1].get('chi2_spread')
 
+    def deviance_of(self, k):
+        return self.items[k][1].get('deviance')
+
 
 class NbaselineSeries:
     """The spectra of a simultaneous fit of a model built with Nbaseline rows:
@@ -260,6 +263,9 @@ class NbaselineSeries:
 
     def chi2_spread_of(self, k):
         return self.result.get('chi2_spread')
+
+    def deviance_of(self, k):
+        return self.result.get('deviance')
 
 
 class _Canvas(FigureCanvas):
@@ -389,7 +395,7 @@ class ResultWindow(QMainWindow):
             main.dir_path, z_order=self.z_order, gridcolor=main.gridcolor,
             theme=main._theme, model=result.model_of(k), hires_diff=hires,
             chi2_spread=result.chi2_spread_of(k), save=False,
-            exclusion_regions=result.exclusion_regions_of(k))
+            exclusion_regions=result.exclusion_regions_of(k), deviance=result.deviance_of(k))
         self.canvas.draw()
 
     def replot_result(self, row_index):

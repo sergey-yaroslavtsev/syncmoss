@@ -29,22 +29,24 @@ SYNCmoss Levenberg-Marquardt least-squares minimiser.
 
 Public API:
     minimi_hi(model_func, x_exp, y_exp, p0, fix=, confu=, bounds=, Expr=, NExpr=,
-              MI=, MI2=, nu0=, tau0=, eps=, fixCH=)
-        -> (params, errors, chi2_red, covariance)
+              MI=, MI2=, nu0=, tau0=, eps=, fixCH=, n_reg=, batch_eval=, weights=,
+              chi2_correction=)
+        -> (params, errors, chi2_red, covariance, chi2_pearson)
 Damped Gauss-Newton (Levenberg-Marquardt) fit of ``model_func(x_exp, params)`` to
 ``y_exp``, with support for fixed parameters (``fix``), linear parameter coupling
 (``confu``), box ``bounds`` and linked expressions (``Expr`` evaluated into the
 ``NExpr`` indices).
 
 Implementation notes:
-  * The numba linear-algebra kernels (``solution``, ``sim_inv``) are
-    ``@njit(cache=True)``, so their one-time compilation is cached on disk and
-    reused across launches / multiprocessing workers; ``warmup()`` lets the
-    application trigger that compile at a predictable moment.
+  * The numba linear-algebra kernel ``solution`` is ``@njit(cache=True)``, so
+    its one-time compilation is cached on disk and reused across launches /
+    multiprocessing workers; ``warmup()`` lets the application trigger that
+    compile at a predictable moment.
   * The gradient, the damped normal-equation assembly, the chi-square sums and the
-    Jacobian assembly are vectorised; the parameter covariance is formed by the
-    broadcast ``(jac / model) . jac_T`` rather than a dense (N_data x N_data)
-    weight matrix.
+    Jacobian assembly are vectorised.
+  * The parameter covariance is that of the UNWEIGHTED fit (the sandwich, see
+    step 5 of ``minimi_hi``), so no variance can come out negative; a parameter
+    that the others reproduce is reported like a fixed one (``_determined_rows``).
   * A trial step whose model output is non-finite is rejected (damping increased)
     rather than crashing the fit.
   * Variable names are descriptive; the textbook LM symbols map as
@@ -99,36 +101,8 @@ def solution(aug):
     return (x)
 
 
-@njit(cache=True)
-def sim_inv(matrix):
-    """Matrix inverse by Gauss-Jordan reduction of ``[matrix | I]``. Used for the
-    parameter covariance. (Original kernel; faster than numpy.linalg.inv for the
-    small matrices here, with a numpy fallback at the call site.)"""
-    reduced = np.copy(matrix)
-    pivot = 0
-    identity = np.identity(len(matrix))
-    reduced = np.concatenate((reduced, identity), axis=-1)
-    for col in range(0, len(matrix)):
-        nz = np.nonzero(reduced[pivot:, col])[0]
-        if nz.size == 0:
-            continue
-        row = pivot + nz[0]
-        tmp = reduced[pivot, :]
-        reduced[pivot, :] = reduced[row, :]
-        reduced[row, :] = tmp
-        reduced[pivot, :] = reduced[pivot, :] / reduced[pivot, col]
-        nz = np.nonzero(reduced[:, col])[0].flatten()
-        nz = np.delete(nz, pivot)
-        for r in range(0, len(nz)):
-            reduced[nz[r], :] -= reduced[nz[r], col] * reduced[pivot, :]
-        pivot += 1
-        if pivot == reduced.shape[0]:
-            break
-    return reduced[:, -len(matrix):]
-
-
 def warmup():
-    """Trigger (or load from cache) the JIT compilation of the kernels above.
+    """Trigger (or load from cache) the JIT compilation of the kernel above.
 
     Call this ONCE at application start (e.g. while a splash screen is up) so the
     one-time numba compile happens at a predictable moment instead of inside the
@@ -136,11 +110,9 @@ def warmup():
     later launch and in every pool worker, so this becomes a fast cache-load
     rather than a recompile. Safe to call multiple times.
     """
-    # Use a dense, well-conditioned system (like a real LM/covariance matrix);
-    # a purely diagonal matrix would hit an edge case in sim_inv's pivoting.
+    # A dense, well-conditioned system, like a real LM step.
     aug = np.array([[2.0, 1.0, 3.0], [1.0, 2.0, 3.0]], dtype=np.float64)
     solution(np.copy(aug))
-    sim_inv(np.array([[2.0, 1.0], [1.0, 2.0]], dtype=np.float64))
 
 
 def _solve_lm(hessian, damping, grad):
@@ -170,9 +142,37 @@ def norm(values):
     return np.sqrt(np.sum((np.array([values]) / len(values)) ** 2))
 
 
+def poisson_deviance(y, m):
+    """The Poisson deviance 2 sum [m - y + y ln(y/m)] (y ln y = 0 at y = 0):
+    -2 ln of the likelihood ratio against a model through every point; inf
+    where the model is not positive and finite (such a step is rejected).
+    ln y - ln m rather than ln(y/m): y/m overflows for a tiny m."""
+    if not np.all(np.isfinite(m) & (m > 0)):
+        return np.inf
+    counted = y > 0
+    return 2 * np.sum(m - y + np.where(counted, y * (np.log(np.where(counted, y, 1.0)) - np.log(m)), 0.0))
+
+
+def chi2_spread(n_points, n_free):
+    """The 1-sigma spread a reduced chi-square (or deviance) has when the
+    model is RIGHT.
+
+    ``sqrt(2/dof)``. Without it a user cannot tell whether 1.3 is a bad fit or
+    an ordinary fluctuation: on 40 degrees of freedom 1.3 is one sigma and
+    means nothing, on 4000 it is nine sigma and means the model is wrong.
+    """
+    dof = max(int(n_points) - int(n_free), 1)
+    return float(np.sqrt(2.0 / dof))
+
+
 # =============================================================================
 # Jacobian by forward finite differences
 # =============================================================================
+# The relative step of the finite differences is 1/JACOBIAN_STEP_DIVISOR; it
+# is also the resolution of the Jacobian that _determined_rows works to.
+JACOBIAN_STEP_DIVISOR = 10 ** 6
+
+
 def _bump_parameter(params, k, perturbation, confu, Expr, NExpr):
     """``params`` with parameter *k* stepped by *perturbation*, coupling honoured.
 
@@ -256,7 +256,7 @@ def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
         #   column may read as all-zero -> the parameter is reported inactive). A
         #   per-parameter "typical scale" would be the principled fix but needs
         #   problem-specific input the API does not currently take.
-        perturbation = np.maximum(10 ** -12, np.abs(params[k]) / 10 ** 6)
+        perturbation = np.maximum(10 ** -12, np.abs(params[k]) / JACOBIAN_STEP_DIVISOR)
         plan.append((k, perturbation,
                      _bump_parameter(params, k, perturbation, confu, Expr, NExpr)))
 
@@ -294,13 +294,49 @@ Jac = compute_jacobian
 
 
 # =============================================================================
+# Parameter covariance
+# =============================================================================
+def _jacobian_parameters(n_params, fix, inactive):
+    """The parameter of each row of ``compute_jacobian``'s ``jac``, in order."""
+    return np.array([k for k in range(n_params)
+                     if not np.any(fix == k) and not np.any(inactive == k)], dtype=int)
+
+
+def _determined_rows(normal):
+    """The rows of the normal matrix ``normal`` (= J.J^T) whose parameter the
+    data determine.
+
+    Cholesky of its unit-diagonal form, row by row in index order: a pivot is
+    the share of a parameter's effect that the rows kept before it do not
+    reproduce (1 = independent, 0 = a combination of them). A share below the
+    Jacobian's resolution -- its relative step 1/JACOBIAN_STEP_DIVISOR, squared,
+    as the pivot is a squared quantity -- means the parameter only repeats the
+    others (two parameters entering as a product, an offset added to the
+    baseline). It is left out: its error is nan as for a fixed one, so Take
+    result fixes it, and the earlier ones keep the combination free.
+    """
+    scale = np.sqrt(np.diag(normal))
+    unit = normal / np.outer(scale, scale)
+    factor = np.zeros_like(unit)
+    rows = []
+    for i in range(len(unit)):
+        pivot = unit[i, i] - np.dot(factor[i, :i], factor[i, :i])
+        if pivot > 1 / JACOBIAN_STEP_DIVISOR ** 2:
+            factor[i, i] = np.sqrt(pivot)
+            factor[i + 1:, i] = (unit[i + 1:, i] - np.matmul(factor[i + 1:, :i], factor[i, :i])) / factor[i, i]
+            rows.append(i)
+    return rows
+
+
+# =============================================================================
 # Levenberg-Marquardt least-squares fit  (public API — unchanged)
 # =============================================================================
 def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
               confu=np.array([[-1], [-1], [0]], dtype=float),
               bounds=np.array([[], []], dtype=float), Expr=[],
               NExpr=np.array([], dtype=int), MI=10, MI2=20, nu0=2.618,
-              tau0=0.001, eps=10 ** -10, fixCH=0, n_reg=0, batch_eval=None):
+              tau0=0.001, eps=10 ** -10, fixCH=0, n_reg=0, batch_eval=None, weights='U',
+              chi2_correction=True):
     """Levenberg-Marquardt least-squares fit of ``model_func(x_exp, params)`` to ``y_exp``.
 
     Optimised twin of the previous ``minimi_lib_old.minimi_hi`` — identical signature
@@ -321,16 +357,37 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     pseudo-observations rather than real data (used by the ``Recon`` distribution
     reconstruction). Those rows participate normally in the LM step, gradient and
     Hessian (that is how the penalty pulls the fit), but are EXCLUDED from the
-    reported reduced chi-square, the degrees of freedom and the parameter
-    covariance — the latter also avoids a divide-by-≈0 in the ``jac / model``
-    weighting when a penalty residual is driven to zero.
+    reported reduced chi-square, the degrees of freedom and the data part of the
+    parameter covariance (they carry no noise; in H they act as in the fit).
+
+    ``weights`` is how the data rows weigh in the fit (docs/minimization.md);
+    the variance it implies is the one of the chi-square and of the errors:
+      * ``'U'`` (default; ``None`` too) -- unweighted, variance |y|+1;
+      * ``'W'`` -- weights 1/(|y|+1), the chi-square it reports is the sum it
+        minimises; biased when a point has fewer counts than there are points;
+      * ``'P'`` -- the Poisson likelihood, minimised directly: every step is
+        its Fisher-scoring step (weights 1/m of the model where the fit stands,
+        from the start on) and is kept only if the deviance drops; variance m,
+        the chi-square returned the reduced deviance; data and model must be
+        counts (>= 0, model > 0);
+      * one positive weight per data row -- fixed weights, variance 1/weight.
+    Penalty rows (``n_reg``) keep the weight 1.
+
+    ``chi2_correction`` (default True) multiplies the covariance -- so the
+    errors -- by Pearson's reduced chi-square, the last value returned, for
+    every ``weights``; where that is nan (a model that is not positive: not
+    counts) nothing multiplies it. False: the errors the variances alone give
+    (for 'P' the Cramer-Rao ones).
 
     Returns:
-        tuple ``(params, errors, chi2_red, covariance)`` - fitted parameters,
-        their 1-sigma errors (``nan`` for fixed/inactive parameters), the reduced
-        chi-square, and the parameter covariance matrix.
+        tuple ``(params, errors, chi2_red, covariance, chi2_pearson)`` - fitted
+        parameters, their 1-sigma errors (``nan`` for fixed, inactive and
+        undetermined parameters), the reduced chi-square the fit minimised (for
+        'P' the deviance per degree of freedom), the parameter covariance: one
+        row per parameter whose error is not nan, in index order, scaled like
+        the errors (errors = sqrt of its diagonal) -- and Pearson's reduced
+        chi-square, sum (y-m)^2/m, ``nan`` where the model is not positive.
     """
-
     # ----------------------------------------------------------------------- #
     # 0) Set-up: coerce inputs, initialise the LM state machine                #
     # ----------------------------------------------------------------------- #
@@ -342,20 +399,56 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     # step itself still uses all rows. n_reg == 0 reproduces the original path.
     n_data = len(y_exp) - int(n_reg)
 
+    # A weighted fit is the unweighted fit of y*sqrt(w) by model*sqrt(w): every
+    # step, the chi-square and the covariance below then work on scaled rows,
+    # whose variance is 1. Unweighted, nothing is scaled and the variance of a
+    # point is |y|+1 (the estimate of the reported chi-square). 'P' takes 1/m
+    # of the model wherever the fit stands: at the start (step 1) and after
+    # every accepted step (step 3).
+    poisson = isinstance(weights, str) and weights == 'P'
+    if poisson and np.any(y_exp[:n_data] < 0):
+        raise ValueError("weights='P' needs counts: the data are negative somewhere")
+    if weights is None or (isinstance(weights, str) and weights == 'U'):
+        scale = None
+    elif isinstance(weights, str) and weights == 'W':
+        scale = 1 / np.sqrt(np.abs(y_exp[:n_data]) + 1)
+    elif poisson:
+        scale = np.ones(n_data)                 # set from the start model in step 1
+    elif isinstance(weights, str):
+        raise ValueError("weights is 'U', 'W', 'P', None or one weight per data point, not %r" % weights)
+    else:
+        given = np.asarray(weights, dtype=float)
+        if given.shape != (n_data,) or not np.all(np.isfinite(given) & (given > 0)):
+            raise ValueError('weights: one positive weight per data point (%d) expected' % n_data)
+        scale = np.sqrt(given)
+    y_raw = y_exp
+    if scale is not None:
+        scale = np.concatenate([scale, np.ones(len(y_exp) - n_data)])   # penalty rows: weight 1
+        y_exp = y_exp * scale
+    variance = np.abs(y_exp[:n_data]) + 1 if scale is None else np.ones(n_data)
+
     # Some SYNCmoss models (e.g. models.TI) return an ``object``-dtype array. The
     # numba kernels need real float64, so wrap the user model once to coerce every
-    # output to float64 (lossless — the objects are Python floats). The wrapper
-    # forwards to the raw model so any caller-side call counter still sees exactly
-    # one call per evaluation.
+    # output to float64 (lossless — the objects are Python floats), and to scale
+    # it like y_exp. The wrapper forwards to the raw model so any caller-side call
+    # counter still sees exactly one call per evaluation.
     _raw_model = model_func
 
-    def model_func(_x, _p):
-        return np.asarray(_raw_model(_x, _p), dtype=float)
+    if scale is None:
+        def model_func(_x, _p):
+            return np.asarray(_raw_model(_x, _p), dtype=float)
+    else:
+        def model_func(_x, _p):
+            return np.asarray(_raw_model(_x, _p), dtype=float) * scale
 
     _raw_batch = batch_eval
-    if _raw_batch is not None:                 # the same float64 coercion for a batch
-        def batch_eval(_plist):
-            return [np.asarray(m, dtype=float) for m in _raw_batch(_plist)]
+    if _raw_batch is not None:                 # the same coercion for a batch
+        if scale is None:
+            def batch_eval(_plist):
+                return [np.asarray(m, dtype=float) for m in _raw_batch(_plist)]
+        else:
+            def batch_eval(_plist):
+                return [np.asarray(m, dtype=float) * scale for m in _raw_batch(_plist)]
 
     # --- Levenberg-Marquardt symbol map (textbook Greek -> name used here) --- #
     #   mu   ->  damping         per-parameter damping added to the Hessian diagonal
@@ -392,9 +485,18 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     # 1) Initial model, Jacobian, Hessian approximation and gradient          #
     # ----------------------------------------------------------------------- #
     model_cur = model_func(x_exp, params)     # model at the starting point
+    if poisson:
+        # The Poisson weights from the start: 1/m at p0, so the first step is
+        # already the likelihood's (the scale is still 1: model_cur is the model)
+        if not np.all(np.isfinite(model_cur[:n_data]) & (model_cur[:n_data] > 0)):
+            raise ValueError("weights='P' needs counts: the model is not positive and finite at every point")
+        scale[:n_data] = 1 / np.sqrt(model_cur[:n_data])
+        y_exp[:n_data] *= scale[:n_data]
+        model_cur[:n_data] *= scale[:n_data]
     # (compute_jacobian copies params internally, so we can pass it directly)
     jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
                                      batch_eval=batch_eval)
+    jac_params = _jacobian_parameters(len(params), fix, inactive)   # parameter of each row
     jac_T = jac.T
     hessian = np.matmul(jac, jac_T)           # Gauss-Newton Hessian J.J^T
 
@@ -434,6 +536,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                 # --- Strategy A: refresh Jacobian, damping = scale*diag(Hessian) --
                 jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
                                                  batch_eval=batch_eval)
+                jac_params = _jacobian_parameters(len(params), fix, inactive)
                 if len(jac) == 0:
                     print('no move is found, J=0')
                     break
@@ -549,7 +652,17 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             # GUARD: if the model returned inf/NaN (a wild step into an invalid
             # region), reject the step (gain_ratio <= 0) instead of crashing. On
             # healthy fits model_trial is always finite, so this never fires.
-            if np.all(np.isfinite(model_trial)):
+            if np.all(np.isfinite(model_trial)) and poisson:
+                # The Poisson fit descends on the likelihood itself: the actual
+                # reduction is the deviance's (plus the penalty rows'). Its quadratic
+                # model at the current point is the one of the weighted sum the
+                # step was solved for, so predicted_drop is the same.
+                m_cur = model_cur[:n_data] / scale[:n_data]
+                m_try = model_trial[:n_data] / scale[:n_data]
+                actual = (poisson_deviance(y_raw[:n_data], m_cur) + np.sum(chi[n_data:] ** 2)
+                          - poisson_deviance(y_raw[:n_data], m_try) - np.sum(chi_trial[n_data:] ** 2))
+                gain_ratio = float(actual / len(chi) ** 2 / np.abs(predicted_drop))
+            elif np.all(np.isfinite(model_trial)):
                 gain_ratio = float((norm(chi) ** 2 - norm(chi_trial) ** 2) / np.abs(predicted_drop))
             else:
                 gain_ratio = -1.0
@@ -578,8 +691,8 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                 # Convergence test 4: chi-square barely changed between steps.
                 if accepted_any != 0:
                     dof = (n_data - len(params) + len(fix) + len(inactive))
-                    if np.sum(chi_old[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1)) / dof \
-                            - np.sum(chi[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1)) / dof < eps:
+                    if np.sum(chi_old[:n_data] ** 2 / variance) / dof \
+                            - np.sum(chi[:n_data] ** 2 / variance) / dof < eps:
                         stop_code = 4
                         damping_scale = tau0
                         damping_growth = nu0
@@ -594,6 +707,24 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                             params[int(confu[0][matches[c_i]])] = params[int(confu[1][matches[c_i]])] * confu[2][matches[c_i]]
 
                 model_cur = model_trial                   # accepted model becomes the base
+
+                if poisson:
+                    # The weights follow the model: 1/m at the point just accepted
+                    # (docs/minimization.md, 5.1). Rows, residual and Jacobian are
+                    # rescaled to them -- no model evaluation -- so the next step
+                    # works with the weights of where it starts.
+                    model_raw = model_cur[:n_data] / scale[:n_data]
+                    if not np.all(np.isfinite(model_raw) & (model_raw > 0)):
+                        raise ValueError("weights='P' needs counts: the model is not positive and finite at every point")
+                    ratio = 1 / (np.sqrt(model_raw) * scale[:n_data])
+                    scale[:n_data] *= ratio
+                    y_exp[:n_data] *= ratio
+                    model_cur[:n_data] *= ratio
+                    chi[:n_data] *= ratio
+                    jac[:, :n_data] *= ratio
+                    jac_T = jac.T
+                    hessian = np.matmul(jac, jac_T)
+                    grad = np.matmul(jac, chi)
 
                 # ---- Update the damping for the next inner iteration ----------
                 if mu_strategy == 2:
@@ -636,41 +767,49 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     # ----------------------------------------------------------------------- #
     # 4) Final reduced chi-square                                             #
     # ----------------------------------------------------------------------- #
-    chi2_red = np.sum(chi[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1)) / (n_data - len(params) + len(fix) + len(inactive))
+    dof = n_data - len(params) + len(fix) + len(inactive)
+    chi2_red = np.sum(chi[:n_data] ** 2 / variance) / dof
+    # Pearson's, from the unscaled model and residual at the result
+    model_end = model_cur[:n_data] if scale is None else model_cur[:n_data] / scale[:n_data]
+    resid_end = chi[:n_data] if scale is None else chi[:n_data] / scale[:n_data]
+    chi2_pearson = np.sum(resid_end ** 2 / model_end) / dof if np.all(model_end > 0) else np.nan
+    # What multiplies the covariance (step 5): Pearson's, whatever the weights
+    # -- the scale of the variances the residuals show (docs/minimization.md,
+    # 8.5). Without it (a model that is not counts) nothing does.
+    chi2_factor = chi2_pearson if chi2_correction and np.isfinite(chi2_pearson) else 1.0
+    if poisson:
+        chi2_red = poisson_deviance(y_raw[:n_data], model_end) / dof   # what it minimised
 
     # ----------------------------------------------------------------------- #
     # 5) Parameter covariance and 1-sigma errors                              #
     # ----------------------------------------------------------------------- #
-    # The (unscaled) curvature in data space is jac . diag(1/model) . jac^T.
-    # Original materialised the full N_data x N_data diagonal diag(1/model) and did
-    # two dense matmuls; (jac / model_trial) broadcasts the same weighting at
-    # O(N_data*N_param) cost and is algebraically identical.
+    # The covariance of what an UNWEIGHTED fit returns (each step solves with
+    # J.J^T) is the "sandwich"
+    #     H^-1 . J diag(V) J^T . H^-1,    H = J.J^T (penalty rows included),
+    # V = |y|+1 the variance of each data point, scaled by Pearson's reduced
+    # chi-square (chi2_factor) so the errors also reflect the fit quality --
+    # the covariance itself carries the factor, so errors =
+    # sqrt(diag(covariance)) and an error propagated through it (a %
+    # intensity, an Expression) has it too. Each variance is a
+    # sum of squares, never negative, and V does not depend on the model, which
+    # need not be counts (a velocity in Calibration). A weighted fit works on
+    # scaled rows, V = 1, and the same formula is (J W J^T)^-1. The rows are the
+    # parameters still free at the END (a bound can fix one after the last
+    # Jacobian) that the data determine (_determined_rows), in index order;
+    # every other parameter's error is nan, which is how the callers map rows.
     if stop_code != 1:
-        # Real-data rows only: the Poisson-style 1/model weighting is meaningless
-        # for regularization pseudo-observations (and a zero penalty residual would
-        # divide by ~0). jac is (n_free, n_rows); slice its data columns.
-        curvature = np.matmul(jac[:, :n_data] / model_trial[:n_data], jac_T[:n_data, :])
-        curvature = np.ascontiguousarray(curvature, dtype=np.float64)
-        try:
-            try:
-                covariance = sim_inv(curvature)          # fast for small matrices
-            except Exception:
-                print('error in fast calculation of inverse matrix')
-                covariance = np.linalg.inv(curvature)    # robust fallback (two spectra)
-            errors = np.array([float(0)] * len(params))
-            free_i = 0
-            for i in range(0, len(params)):
-                if not np.any(fix == i) and not np.any(inactive == i):
-                    errors[i] = np.sqrt(np.diag(covariance)[free_i])
-                    free_i += 1
-                else:
-                    errors[i] = None                     # fixed/inactive -> nan
-        except np.linalg.LinAlgError:
-            print('numpy error! parameters errors could not be found')
-            errors = np.array([float(0)] * len(params))
-        # Scale errors by the reduced chi-square (so they reflect fit quality).
-        errors = np.sqrt(np.sum(chi[:n_data] ** 2 / (np.abs(y_exp[:n_data]) + 1))
-                         / (n_data - len(params) + len(fix) + len(inactive))) * errors
+        free_rows = [r for r in range(len(jac_params)) if not np.any(fix == jac_params[r])]
+        normal = np.matmul(jac[free_rows], jac[free_rows].T)
+        kept = _determined_rows(normal)
+        for r in range(len(free_rows)):
+            if r not in kept:
+                print('parameter No. ' + str(jac_params[free_rows[r]])
+                      + ' is not determined by the data, reported as fixed')
+        rows = [free_rows[r] for r in kept]
+        spread = np.linalg.solve(normal[np.ix_(kept, kept)], jac[rows][:, :n_data])
+        covariance = chi2_factor * np.matmul(spread * variance, spread.T)
+        errors = np.array([np.nan] * len(params))
+        errors[jac_params[rows]] = np.sqrt(np.diag(covariance))
     else:
         errors = np.array([0])
         covariance = np.array([[0.0]])
@@ -684,6 +823,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
         print('one or more parameters fell to a boundary, rechecking')
         print('fix is ', fix)
         errors_bak = np.copy(errors)
+        covariance_bak = covariance
         params_bak = np.copy(params)
 
         nudge_failed = 0
@@ -700,11 +840,12 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                     nudge_failed = 1
 
         if nudge_failed == 0:
-            params, errors, chi2_red, covariance = minimi_hi(
-                model_func, x_exp, y_exp, params, fix_orig, confu, bounds,
+            # the caller's model and data: the re-fit scales them itself
+            params, errors, chi2_red, covariance, chi2_pearson = minimi_hi(
+                _raw_model, x_exp, y_raw, params, fix_orig, confu, bounds,
                 Expr, NExpr, np.maximum(int(MI / 2), 1), MI2, nu0, tau0, eps, 1, n_reg,
-                batch_eval)
+                _raw_batch, weights, chi2_correction)
             if np.all(params == params_bak):
-                errors = errors_bak
+                errors, covariance = errors_bak, covariance_bak   # a pair: same rows
 
-    return (params, errors, chi2_red, covariance)
+    return (params, errors, chi2_red, covariance, chi2_pearson)

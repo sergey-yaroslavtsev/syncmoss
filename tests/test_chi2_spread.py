@@ -9,7 +9,7 @@ from matplotlib.figure import Figure
 
 from syncmoss.fitting_io import chi2_spread
 from syncmoss.spectrum_plotter import (
-    _chi2_title, plot_fitting_result, plot_simultaneous_fitting_result)
+    chi2_title, plot_fitting_result, plot_simultaneous_fitting_result, with_spread)
 
 
 def test_spread_is_sqrt_two_over_dof():
@@ -18,10 +18,24 @@ def test_spread_is_sqrt_two_over_dof():
     assert chi2_spread(5, 9) == np.sqrt(2.0)
 
 
+def test_the_spread_is_in_units_of_the_last_decimal():
+    assert with_spread(0.885, 0.063) == '0.885(63)'
+    assert with_spread(1.00123, 0.00707) == '1.001(7)'
+    assert with_spread(2.3, np.sqrt(2.0)) == '2.300(1414)'     # one degree of freedom
+
+
 def test_title_carries_the_spread_only_when_given():
-    assert _chi2_title(1.02345, 0.04472) == 'χ² = 1.023 ± 0.045'
-    assert _chi2_title(1.02345) == 'χ² = 1.023'
-    assert _chi2_title(1.02345, float('nan')) == 'χ² = 1.023'
+    assert chi2_title(1.02345, 0.04472) == 'χ² = 1.023(45)'
+    assert chi2_title(1.02345) == 'χ² = 1.023'
+    assert chi2_title(1.02345, float('nan')) == 'χ² = 1.023'
+
+
+def test_title_shows_the_deviance_before_chi2():
+    assert chi2_title(1.02345, 0.04472, 0.9871) == 'D = 0.987(45), χ² = 1.023(45)'
+    assert chi2_title(1.02345, None, 0.9871) == 'D = 0.987, χ² = 1.023'
+    # a fit that did not report one (nan): only the chi-square
+    assert chi2_title(1.02345, 0.04472, float('nan')) == 'χ² = 1.023(45)'
+    assert chi2_title(None, 0.04472, 0.9871) == ''
 
 
 def _spectrum():
@@ -39,7 +53,11 @@ def test_single_fit_image_shows_the_spread(tmp_path):
     plot_fitting_result(figure, A, B, SPC_f, [], [], p, ['r'], 1.02345,
                         str(tmp_path / 'one.dat'), str(tmp_path), z_order=[],
                         chi2_spread=0.04472)
-    assert figure.get_axes()[0].get_title() == 'χ² = 1.023 ± 0.045'
+    assert figure.get_axes()[0].get_title() == 'χ² = 1.023(45)'
+    plot_fitting_result(figure, A, B, SPC_f, [], [], p, ['r'], 1.02345,
+                        str(tmp_path / 'one.dat'), str(tmp_path), z_order=[],
+                        chi2_spread=0.04472, deviance=0.9871)
+    assert figure.get_axes()[0].get_title() == 'D = 0.987(45), χ² = 1.023(45)'
 
 
 def test_simultaneous_fit_image_shows_the_spread(tmp_path):
@@ -51,4 +69,4 @@ def test_simultaneous_fit_image_shows_the_spread(tmp_path):
         [str(tmp_path / 'a.dat'), str(tmp_path / 'b.dat')], str(tmp_path),
         z_order=[], chi2_spread=0.03162)
     titles = [ax.get_title() for ax in figure.get_axes() if ax.get_title()]
-    assert titles == ['χ² = 1.023 ± 0.032']
+    assert titles == ['χ² = 1.023(32)']

@@ -28,20 +28,36 @@ def _tc(theme):
 _HIRES_DIFF_LABEL = 'Integration check (×4)'
 
 
-def _chi2_title(chi2, chi2_spread=None):
-    """The fit-quality panel title: ``χ² = 1.023 ± 0.045``.
+# D and chi2 are shown with three decimals (the user's choice), a spread in
+# units of the last one: 1.023(45) is 1.023 ± 0.045
+CHI2_DECIMALS = 3
 
-    *chi2_spread* is the 1-sigma spread of a reduced chi-square when the model
-    is right (``fitting_io.chi2_spread``); it tells a bad fit from an ordinary
-    fluctuation. Without it (a caller that has only the one number) the title
-    is the bare chi-square, as before. No chi-square (a result dropped when the
-    exclusion regions changed): no title.
+
+def with_spread(value, spread):
+    """*value* and its 1-sigma *spread* in the short notation, ``1.023(45)``:
+    CHI2_DECIMALS decimals, the spread in units of the last of them."""
+    return f'{value:.{CHI2_DECIMALS}f}({round(spread * 10 ** CHI2_DECIMALS):d})'
+
+
+def chi2_title(chi2, chi2_spread=None, deviance=None):
+    """The fit-quality text of the plot title and the status line:
+    ``D = 1.021(45), χ² = 1.023(45)``.
+
+    *deviance* (D) is the reduced Poisson deviance a fit of counts minimises,
+    *chi2* Pearson's reduced chi-square; *chi2_spread* the 1-sigma spread of
+    either when the model is right (``minimi_lib.chi2_spread``), which tells a
+    bad fit from an ordinary fluctuation -- in brackets, as in ``with_spread``.
+    A value not given (or nan) is left out. No chi-square (a result dropped
+    when the exclusion regions changed): no title.
     """
     if chi2 is None:
         return ''
-    if chi2_spread is None or not np.isfinite(chi2_spread):
-        return f'χ² = {chi2:.3f}'
-    return f'χ² = {chi2:.3f} ± {chi2_spread:.3f}'
+    spread_given = chi2_spread is not None and np.isfinite(chi2_spread)
+
+    def shown(value):
+        return with_spread(value, chi2_spread) if spread_given else f'{value:.{CHI2_DECIMALS}f}'
+    return ', '.join(f'{name} = {shown(value)}' for name, value in (('D', deviance), ('χ²', chi2))
+                     if value is not None and np.isfinite(value))
 
 
 # Exclusion regions (see exclusion_regions): grey bands over every spectrum
@@ -582,7 +598,7 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
     return all_position_artists
 
 
-def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None, chi2_spread=None, labels=None, exclusion_regions=None):
+def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list, FS_pos_list, p_all, begining_spc, model_colors, chi2, spectrum_files, dir_path, z_order=None, gridcolor='white', theme=None, model=None, hires_diff_list=None, chi2_spread=None, labels=None, exclusion_regions=None, deviance=None):
     """
     Plot simultaneous fitting results with multiple spectra in separate subplots.
 
@@ -594,6 +610,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
     - model_colors: colors for each model row
     - chi2: chi-squared value
     - chi2_spread: optional 1-sigma spread of chi2, shown as ``± value``
+    - deviance: optional reduced Poisson deviance, shown before chi2
     - spectrum_files: file paths
     - dir_path: output directory
     - z_order: optional custom z-order (flattened)
@@ -740,7 +757,7 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
         
         # Add chi2 title to middle subplot
         if spc_idx == int(num_spectra / 2):
-            ax.set_title(_chi2_title(chi2, chi2_spread), y=1, color='r').set_gid(CHI2_GID)
+            ax.set_title(chi2_title(chi2, chi2_spread, deviance), y=1, color='r').set_gid(CHI2_GID)
         
         # Formatting
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
@@ -998,7 +1015,7 @@ def plot_model_without_spectrum(figure, A, SPC_f, FS, FS_pos, p, model_colors, g
 
 def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gridcolor='gray', theme=None,
                              lengths=None, starts=None, labels=None, exclusion_regions=None,
-                             baseline_offset=0.0):
+                             baseline_offset=0.0, chi2_spread=None, deviance=None):
     """
     Plot instrumental function fitting results on the given figure and save to files.
 
@@ -1006,7 +1023,8 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
     one's points), ``starts`` (where each one's parameters -- its baseline --
     begin in p) and ``labels`` (the caption under each): every spectrum gets a
     panel of its own, side by side as a simultaneous fit shows them, with the
-    search's one chi2 over the middle one. ``exclusion_regions`` are drawn as
+    search's one chi2 over the middle one (with ``deviance`` and
+    ``chi2_spread``, as chi2_title shows them). ``exclusion_regions`` are drawn as
     grey bands: their points were not fitted. ``baseline_offset`` is what the
     search added to its model besides p's baseline (a detector's static noise).
     """
@@ -1050,7 +1068,7 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
 
         # Add chi-squared title (the spectra were fitted together: one chi2)
         if k == count // 2:
-            ax1.set_title('χ² = %.3f' % hi2, y=1, color='r').set_gid(CHI2_GID)
+            ax1.set_title(chi2_title(hi2, chi2_spread, deviance), y=1, color='r').set_gid(CHI2_GID)
 
         # Style axis
         ax1.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
@@ -1137,11 +1155,12 @@ def plot_instrumental_function(figure, curves, title, dir_path, gridcolor='gray'
     return result_svg, result_png
 
 
-def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None, chi2_spread=None, save=True, exclusion_regions=None):
+def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, filepath, dir_path, z_order=None, gridcolor='gray', theme=None, model=None, hires_diff=None, chi2_spread=None, save=True, exclusion_regions=None, deviance=None):
     """
     Plot spectrum fitting results on the given figure and save to files.
 
-    ``chi2_spread`` (optional) is shown next to the chi-square as ``± value``.
+    ``chi2_spread`` (optional) is shown next to the chi-square as ``± value``,
+    ``deviance`` (optional, the reduced Poisson deviance) before it.
     The figure goes to result.svg / result.png in *dir_path* (what "Save
     result" picks up) unless *save* is False or it is a replot (*z_order*).
     *exclusion_regions* (those of the fit) are drawn as grey bands.
@@ -1193,7 +1212,7 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
             verticalalignment='center', color='m', transform=ax1.transAxes)
     
     # Add chi-squared title
-    ax1.set_title(_chi2_title(hi2, chi2_spread), y=1, color='r').set_gid(CHI2_GID)
+    ax1.set_title(chi2_title(hi2, chi2_spread, deviance), y=1, color='r').set_gid(CHI2_GID)
 
     # Add secondary y-axis for normalized scale if baseline is non-zero
     if p[2] == 0 and p[6] == 0:

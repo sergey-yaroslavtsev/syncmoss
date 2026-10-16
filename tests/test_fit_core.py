@@ -44,7 +44,7 @@ def _capture_minimiser(monkeypatch):
         free = [i for i in range(len(p0)) if i not in fixed]
         errors = np.full(len(p0), np.nan)
         errors[free] = 0.01
-        return p0, errors, 1.0, np.eye(len(free)) * 1e-4
+        return p0, errors, 1.0, np.eye(len(free)) * 1e-4, 1.0
 
     monkeypatch.setattr(fitting_io.mi, 'minimi_hi', fake)
     return calls
@@ -103,6 +103,7 @@ def test_a_single_fit_hands_the_table_to_the_minimiser(physics_app, tmp_path, mo
     assert np.array_equal(call['bounds'], expected['bounds'])
     assert list(call['Expr']) == ['p[9]*2'] and list(call['NExpr']) == [slot]
     assert call['n_reg'] == 0
+    assert call['weights'] == 'P'                       # counts: the Poisson fit
     assert len(call['x']) == len(call['y']) == len(result['A'])
     assert result['is_simultaneous'] is False
     assert len(result['FS']) == 1 and len(result['SPC_f']) == len(result['A'])

@@ -237,7 +237,7 @@ def test_rescaling_the_gaussians_keeps_every_spectrum_s_curve(app, tmp_path, mon
         p = np.array(p0, dtype=float)
         p[mod_p_len + 2::3] *= 2
         returned.append(p.copy())
-        return p, np.zeros(len(p)), 1.0, np.eye(1)
+        return p, np.zeros(len(p)), 1.0, np.eye(1), 1.0
 
     mod_p_len = len(model_io.read_model(app)[1])
     _searches_minimize_with(monkeypatch, doubles_the_amplitudes)

@@ -109,7 +109,7 @@ def test_an_nbaseline_fit_shows_every_spectrum_without_a_correlation_matrix(phys
     table = window.table
     assert table.current_model_list == ['baseline', 'Doublet']   # its own components
     assert np.array_equal(table.current_parameters, result['parameters'][NB + SEXTET:])
-    assert '1.070' in window.figure.axes[0].get_title()           # the fit's one chi2
+    assert 'χ² = 1.070(40)' in window.figure.axes[0].get_title()  # the fit's one chi2
 
 
 def test_a_spectrum_s_formula_is_shown_as_typed_and_evaluated_with_the_whole_fit(physics_app,
@@ -179,7 +179,7 @@ def test_a_sequence_shows_every_spectrum_with_its_own_correlation_matrix(physics
     window.slider.setValue(2)
     assert window.spectrum_label.text().startswith('2 of 3')
     assert window.parameters_line.text() == 'N = 2   N1 = 20'
-    assert '2.000' in window.figure.axes[0].get_title()           # spectrum 2's own chi2
+    assert 'χ² = 2.000(50)' in window.figure.axes[0].get_title()  # spectrum 2's own chi2
     free = int(np.sum(~np.isnan(window.table.current_errors)))
     assert window.table.correlation_table.rowCount() == free + 2
     assert app.inprogress is False

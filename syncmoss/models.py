@@ -2501,8 +2501,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 delt = p[V+1] * MulCo
                 Q = p[V+2]
                 H = p[V+3]
-                WL = p[V+4] * MulCo
-                WG = p[V+5] * MulCo
+                WL = abs(p[V+4]) * MulCo
+                WG = abs(p[V+5]) * MulCo
                 eto = p[V+6]
                 tet = p[V+7]
                 phi = p[V+8]
@@ -2519,8 +2519,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Sig = p[V+1] * MulCo
                 Q = p[V+2] * MulCo
                 Hin = p[V+3] / TESLA_PER_MMS * (-1) * MulCo
-                WL = p[V+4] * MulCo
-                WG = p[V+5] * MulCo
+                WL = abs(p[V+4]) * MulCo
+                WG = abs(p[V+5]) * MulCo
                 Hex = p[V+6] / TESLA_PER_MMS * MulCo
                 K = p[V+7] * MulCo
                 J = p[V+8] * MulCo
@@ -2663,7 +2663,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 sig0 = float(p[V + 1]) * MulCo
                 eps = float(p[V + 2]) * MulCo
                 Hv = float(p[V + 3]) * MulCo / 2 / TESLA_PER_MMS
-                W = float(p[V + 4]) * MulCo / 2
+                W = abs(float(p[V + 4])) * MulCo / 2
                 th = p[V + 5]
                 ph = p[V + 6]
                 Atex = p[V + 7]              # uniaxial (fiber) texture order parameter
@@ -2694,7 +2694,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Sig2 = p[V + 4] * MulCo
                 Q2 = p[V + 5] / 3 * MulCo
                 H2 = p[V + 6] * MMS_PER_T_PER_G * MulCo
-                WL = p[V + 7] * MulCo
+                WL = abs(p[V + 7]) * MulCo
                 Atex = p[V + 10]             # uniaxial (fiber) texture order parameter
                 Am = p[V + 11]               # magnetic polar order Am in [-1,1] (S1 fraction), right after A
                 We = p[V + 12] * MulCo
@@ -2730,8 +2730,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 delt = p[V + 1] * MulCo
                 Q = p[V + 2]
                 H = p[V + 3]
-                WL = p[V + 4] * MulCo
-                WG = p[V + 5] * MulCo
+                WL = abs(p[V + 4]) * MulCo
+                WG = abs(p[V + 5]) * MulCo
                 eto = p[V + 6]
                 tet = p[V + 7]
                 phi = p[V + 8]
@@ -2769,8 +2769,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 delt = p[V + 1] * MulCo
                 Q = p[V + 2]
                 H = p[V + 3]
-                WL = p[V + 4] * MulCo
-                WG = p[V + 5] * MulCo
+                WL = abs(p[V + 4]) * MulCo
+                WG = abs(p[V + 5]) * MulCo
                 eto = p[V + 6]
                 tet = p[V + 7]
                 phi = p[V + 8]

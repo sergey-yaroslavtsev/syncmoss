@@ -43,7 +43,7 @@ def _fake_minimiser(monkeypatch):
         free = [i for i in range(len(p0)) if i not in fixed]
         errors = np.full(len(p0), np.nan)
         errors[free] = 0.01
-        return p0, errors, 1.0, np.eye(len(free)) * 1e-4
+        return p0, errors, 1.0, np.eye(len(free)) * 1e-4, 1.0
     monkeypatch.setattr(fitting_io.mi, 'minimi_hi', fake)
 
 
@@ -173,7 +173,7 @@ def test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves(physics_ap
     _apply(app, REGIONS)
     _fit(app, path, monkeypatch)
     ax = spectrum_axes_of(app.figure)[0]
-    assert _chi2_title(app)[0].startswith('χ²') and _bands(app) == [[(-3.0, -2.0), (1.0, 2.0)]]
+    assert 'χ² = ' in _chi2_title(app)[0] and _bands(app) == [[(-3.0, -2.0), (1.0, 2.0)]]
 
     _apply(app, "4:5")
 

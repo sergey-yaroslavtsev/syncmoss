@@ -13,6 +13,7 @@ from syncmoss.constants import (number_of_baseline_parameters, ALPHA_FE_FIELD,
                                 NAT_WIDTH, SMS_POL_DEFAULT)
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
+from syncmoss.minimi_lib import chi2_spread, poisson_deviance
 from syncmoss.expression_eval import eval_expr
 import syncmoss.sms_theory as smst
 from syncmoss.spectrum_io import (load_spectrum, estimate_edge_background,
@@ -334,6 +335,24 @@ def instrumental_method(app):
     to 'theory' for anything that does not carry the attribute (tests, scripts).
     """
     return getattr(app, 'instrumental_method', DEFAULT_INSTRUMENTAL_METHOD)
+
+
+# Whether a fit's errors carry sqrt(chi2) (minimi_hi's chi2_correction): Supp ->
+# "Empirical correction of errors by χ²", on unless the user turns it off.
+DEFAULT_CHI2_CORRECTION = True
+
+
+def chi2_correction(app):
+    """True when the fits multiply their covariance by the chi-square (Supp);
+    the default for anything without the attribute (tests, scripts)."""
+    return getattr(app, 'chi2_correction', DEFAULT_CHI2_CORRECTION)
+
+
+def deviance_per_point(B, model):
+    """The Poisson deviance of *model* against the counts *B*, per point: what
+    the searches' fits minimise (weights='P'), so it is also what their grid,
+    line-count and start choices compare."""
+    return float(poisson_deviance(np.asarray(B, dtype=float), np.asarray(model, dtype=float)) / len(B))
 
 
 def get_sms_instrumental_from_global_files(app):
@@ -1630,17 +1649,21 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
     print(f"[Instrumental function] Starting minimization: JN={JN}, len(p)={len(p)}, len(fix)={len(fix)}")
     
     start_time = time.time()
-    
+    # Counts: every fit is the Poisson one, hi2 its reduced deviance (the
+    # comparisons below use the deviance per point); the errors carry sqrt(chi2)
+    # unless the user turned that off (Supp)
+    counts = {'weights': 'P', 'chi2_correction': chi2_correction(app)}
+
     # Preliminary minimization
     print(f"[Instrumental function] Calling minimization procedure - preliminary step...")
-    p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1, **links)
+    p, er, hi2, covariance_matrix, _ = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1, **links, **counts)
     print(f"[Instrumental function] Preliminary minimization complete, hi2={hi2}")
     if CMS_ch == 0:
-        p = INS_norm(p)        
+        p = INS_norm(p)
         x0t, MulCot = np.copy(x0), np.copy(MulCo)
-        hi2t = np.sum((B - INSSS(A, p)) ** 2 / (abs(B) + 1) / (len(B)))
+        hi2t = deviance_per_point(B, INSSS(A, p))
         x0, MulCo = m5.limits(pool, int(JN), p[mod_p_len:])
-        hi2 = np.sum((B - INSSS(A, p)) ** 2 / (abs(B) + 1) / (len(B)))
+        hi2 = deviance_per_point(B, INSSS(A, p))
         if hi2 - hi2t > 0.01:
             x0, MulCo = x0t, MulCot
             hi2 = np.copy(hi2t)
@@ -1671,12 +1694,12 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
                 boundsttt = np.array([boundst, boundstt])
                 pt = INS_norm(pt)
                 
-                pt, ert, hi2t, covariance_matrix_t = mi.minimi_hi(INSSS, A, B, pt, fix=fix, bounds=boundsttt, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1, **links)
-                
+                pt, ert, hi2t, covariance_matrix_t, _ = mi.minimi_hi(INSSS, A, B, pt, fix=fix, bounds=boundsttt, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1, **links, **counts)
+
                 x0t, MulCot = np.copy(x0), np.copy(MulCo)
-                hi2tt = np.sum((B - INSSS(A, pt)) ** 2 / (abs(B) + 1) / (len(B)))
+                hi2tt = deviance_per_point(B, INSSS(A, pt))
                 x0, MulCo = m5.limits(pool, int(JN), pt[mod_p_len:])
-                hi2t = np.sum((B - INSSS(A, pt)) ** 2 / (abs(B) + 1) / (len(B)))
+                hi2t = deviance_per_point(B, INSSS(A, pt))
                 if hi2t - hi2tt > 0.01:
                     x0, MulCo = x0t, MulCot
                     hi2t = hi2tt
@@ -1691,16 +1714,16 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
                     x0, MulCo = x0t, MulCot
                     J += 1
         
-        p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1, **links)
+        p, er, hi2, covariance_matrix, _ = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=10, eps=10**-6, fixCH=1, **links, **counts)
         print(f"[Instrumental Function] chi-squared after reducing number of lines: {hi2}")
         p = INS_norm(p)
         print(f"[Instrumental Function] parameters after reducing number of lines:")
         print(p)
-        
+
         x0t, MulCot = np.copy(x0), np.copy(MulCo)
-        hi2t = np.sum((B - INSSS(A, p)) ** 2 / (abs(B) + 1) / (len(B)))
+        hi2t = deviance_per_point(B, INSSS(A, p))
         x0, MulCo = m5.limits(pool, int(JN), p[mod_p_len:])
-        hi2 = np.sum((B - INSSS(A, p)) ** 2 / (abs(B) + 1) / (len(B)))
+        hi2 = deviance_per_point(B, INSSS(A, p))
         if hi2 - hi2t > 0.01:
             x0, MulCo = x0t, MulCot
             hi2 = hi2t
@@ -1710,12 +1733,12 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
     
     # Final refinement
     for Nc in range(0, 3):
-        p, er, hi2, covariance_matrix = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1, **links)
+        p, er, hi2, covariance_matrix, chi2 = mi.minimi_hi(INSSS, A, B, p, fix=fix, bounds=bounds, tau0=0.0001, MI=20, MI2=20, eps=10**-6, fixCH=1, **links, **counts)
         if CMS_ch == 0:
             p = INS_norm(p)
             x0, MulCo = m5.limits(pool, int(JN), p[mod_p_len:])
 
-    print(f"[Instrumental function] Final chi-squared: {hi2}")
+    print(f"[Instrumental function] Final deviance: {hi2}, chi-squared: {chi2}")
     print(f"[Instrumental function] Final parameters after refinement:")
     print(p)
     print(f"[Instrumental function] x0: {x0}, MulCo: {MulCo}")
@@ -1783,11 +1806,14 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
         # D as they are
         write_gcms_file(app.params_dir, g_out, dtheta_out, *get_cms_diameters(app))
 
-    # Return results (plotting will be done in main thread)
+    # Return results (plotting will be done in main thread): Pearson's chi2 as
+    # 'hi2', the reduced deviance the fit minimised as 'deviance'
     return {
         'p': p,
         'er': er,
-        'hi2': hi2,
+        'hi2': chi2,
+        'deviance': hi2,
+        'chi2_spread': chi2_spread(len(B), len(p) - len(np.unique(fix))),
         'mod_p_len': mod_p_len,
         'x0': x0 if CMS_ch == 0 else None,
         'MulCo': MulCo if CMS_ch == 0 else None,
@@ -2268,7 +2294,12 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
                      lengths=lengths)
 
     def chi2_of(pp):
-        return float(np.sum((B - INSSS(A, pp)) ** 2 / (abs(B) + 1) / len(B)))
+        # the deviance per point: what the passes minimise (weights='P')
+        return deviance_per_point(B, INSSS(A, pp))
+
+    # Counts: every pass is the Poisson fit, hi2 its reduced deviance and chi2
+    # Pearson's; the errors carry sqrt(chi2) unless the user turned that off
+    counts = {'weights': 'P', 'chi2_correction': chi2_correction(app)}
 
     def fix_for(released):
         """Absolute fix indices: the reference model's, plus every physical
@@ -2302,6 +2333,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     er = np.array([np.nan] * len(p))
     covariance_matrix = None
     hi2 = chi2_of(p)
+    chi2 = np.nan          # Pearson's, from the first pass on
     print(f"[Instrumental function: theory] chi2 at the starting point: {hi2:.4f}")
 
     passes = tuple(THEORY_PASSES) if free_fields is None else (
@@ -2377,7 +2409,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
 
     def run_passes(p_start, quiet=False, scan=True):
         """The whole annealing schedule from one starting point."""
-        nonlocal p, er, hi2, covariance_matrix
+        nonlocal p, er, hi2, covariance_matrix, chi2
         p = np.array(p_start, dtype=float)
         # THE MAP COMES FIRST, before any pass. It used to run at the moment
         # B_s was released, i.e. after pass 1 had already fitted the shift --
@@ -2389,10 +2421,10 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         if scan:
             scan_Bs()
         for n_pass, pass_free in enumerate(passes, start=1):
-            p, er, hi2, covariance_matrix = mi.minimi_hi(
+            p, er, hi2, covariance_matrix, chi2 = mi.minimi_hi(
                 INSSS, A, B, p, fix=fix_for(pass_free), bounds=bounds,
                 tau0=0.0001, MI=THEORY_PASS_MI, MI2=THEORY_PASS_MI,
-                eps=10 ** -6, fixCH=1, **links)
+                eps=10 ** -6, fixCH=1, **links, **counts)
             if not quiet:
                 print(f"[Instrumental function: theory] pass {n_pass} "
                       f"(free: {', '.join(pass_free)}): chi2 = {hi2:.4f}")
@@ -2400,7 +2432,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
                     held = '' if k in pass_free else '   (held)'
                     print(f"    {k:12s} = {p[mod_p_len + i]:+.5f}{held}")
             refresh_grid()
-        return np.array(p), np.array(er), hi2, covariance_matrix
+        return np.array(p), np.array(er), hi2, covariance_matrix, chi2
 
     # The B_s scan is a FIND tool. Find starts from built-in values that may be
     # a long way from this source, and one cheap 1-D map over the field is what
@@ -2433,7 +2465,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     if p[i_B] < lo_B * 1.5 or p[i_B] < 0.05:
         print(f"[Instrumental function: theory] B_s came back at its lower bound "
               f"({p[i_B]:.4f} T); restarting from a wide source")
-        keep = (np.array(p), np.array(er), hi2, covariance_matrix)
+        keep = (np.array(p), np.array(er), hi2, covariance_matrix, chi2)
         p2 = np.array(keep[0])
         p2[i_B] = 0.90
         # no scan on the restart either: p2 already carries the deliberate wide
@@ -2443,7 +2475,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
             print(f"    restart wins: chi2 {keep[2]:.4f} -> {r[2]:.4f}, "
                   f"B_s {keep[0][i_B]:.4f} -> {r[0][i_B]:.4f} T")
         else:
-            p, er, hi2, covariance_matrix = keep
+            p, er, hi2, covariance_matrix, chi2 = keep
             print(f"    restart rejected (chi2 {r[2]:.4f} vs {keep[2]:.4f})")
 
     # ESCALATION. The default schedule holds the angle deviation and the nuclear
@@ -2464,7 +2496,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
             r = mi.minimi_hi(INSSS, A, B, np.array(p),
                              fix=fix_for(trial_free), bounds=bounds,
                              tau0=0.0001, MI=20, MI2=20, eps=10 ** -6, fixCH=1,
-                             **links)
+                             **links, **counts)
             gain = hi2 - r[2]
             val = r[0][mod_p_len + THEORY_FREE_FIELDS.index(extra)]
             lo_x, hi_x = THEORY_BOUNDS[extra]
@@ -2478,7 +2510,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
             elif gain > THEORY_ESCALATION_GAIN:
                 print(f"    kept: chi2 {hi2:.4f} -> {r[2]:.4f}, "
                       f"{extra} = {val:+.4f}")
-                p, er, hi2, covariance_matrix = r
+                p, er, hi2, covariance_matrix, chi2 = r
                 final_free = trial_free
             else:
                 print(f"    rejected: chi2 {hi2:.4f} -> {r[2]:.4f}, gain "
@@ -2493,9 +2525,9 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     JN = int(JN0)
     if not interrupted:
         try:
-            p, er, hi2, covariance_matrix = mi.minimi_hi(
+            p, er, hi2, covariance_matrix, chi2 = mi.minimi_hi(
                 INSSS, A, B, p, fix=fix_for(final_free), bounds=bounds,
-                tau0=0.0001, MI=20, MI2=20, eps=10 ** -6, fixCH=1, **links)
+                tau0=0.0001, MI=20, MI2=20, eps=10 ** -6, fixCH=1, **links, **counts)
         except FitInterrupted:
             interrupted = True
             print("[Instrumental function: theory] INTERRUPTED during the "
@@ -2512,7 +2544,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
                   for i, k in enumerate(THEORY_FREE_FIELDS)}
 
     fwhm, centre, area = smst.ins_metrics(INS)
-    print(f"[Instrumental function: theory] final chi2 = {hi2:.4f} "
+    print(f"[Instrumental function: theory] final deviance = {hi2:.4f}, chi2 = {chi2:.4f} "
           f"({time.time() - start_time:.1f} s)")
     print("[Instrumental function: theory] physical parameters:")
     for k in THEORY_FREE_FIELDS:
@@ -2634,10 +2666,14 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         f.write(str(x0) + ' ')
     print(f"[Instrumental function: theory] {smst.describe_ins(INS)}")
 
+    # Pearson's chi2 as 'hi2' (nan when no pass finished), the reduced deviance
+    # the fit minimised as 'deviance'
     return {
         'p': p,
         'er': er,
-        'hi2': hi2,
+        'hi2': chi2,
+        'deviance': hi2,
+        'chi2_spread': chi2_spread(len(B), len(p) - len(fix_for(final_free))),
         'mod_p_len': mod_p_len,
         'x0': x0,
         'MulCo': MulCo,

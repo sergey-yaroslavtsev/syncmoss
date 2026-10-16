@@ -43,7 +43,7 @@ def _capture_minimiser(monkeypatch):
         free = [i for i in range(len(p0)) if i not in fixed]
         errors = np.full(len(p0), np.nan)
         errors[free] = 0.01
-        return p0, errors, 1.0, np.eye(len(free)) * 1e-4
+        return p0, errors, 1.0, np.eye(len(free)) * 1e-4, 1.0
 
     monkeypatch.setattr(fitting_io.mi, 'minimi_hi', fake)
     return calls

@@ -63,8 +63,8 @@ def test_a_fit_follows_a_chain_written_in_reverse_order():
 
     con1 = [1, 2]
     con2, con3, _looped = resolve_link_chains(con1, [2, 0], [1.0, 2.0])
-    p, _er, _chi2, _cov = mi.minimi_hi(model, x, y, np.array([1.0, 2.0, 2.0, 0.5]),
-                                      fix=np.array(con1), confu=np.array([con1, con2, con3]))
+    p, _er, _chi2, _cov, _pearson = mi.minimi_hi(model, x, y, np.array([1.0, 2.0, 2.0, 0.5]),
+                                                fix=np.array(con1), confu=np.array([con1, con2, con3]))
     assert p[0] == pytest.approx(1.5, rel=1e-6)
     assert p[1] == pytest.approx(3.0, rel=1e-6)
     assert p[2] == pytest.approx(3.0, rel=1e-6)

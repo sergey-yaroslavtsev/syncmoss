@@ -183,7 +183,7 @@ def test_a_spectrum_of_the_path_box_brings_its_n_and_n1_into_the_formulas(physic
         free = [i for i in range(len(p0)) if i not in fixed]
         errors = np.full(len(p0), np.nan)
         errors[free] = 0.01
-        return p0, errors, 1.0, np.eye(len(free)) * 1e-4
+        return p0, errors, 1.0, np.eye(len(free)) * 1e-4, 1.0
 
     monkeypatch.setattr(sm.fitting_io.mi, 'minimi_hi', recording_minimiser)
     monkeypatch.setattr(sm.FittingThread, 'start', lambda thread: thread.run())

@@ -40,7 +40,7 @@ def test_a_parameter_ends_on_the_bound_it_is_pushed_against(case, b_start):
     b0 = 90.0 if b_start == 'b far off' else 100.0 + slope * np.mean(X)   # a starts at 0
     bounds = np.array([[low, -INF], [high, INF]])
 
-    p, errors, chi2, covariance = mi.minimi_hi(_line, X, y, np.array([0.0, b0]), bounds=bounds)
+    p, errors, chi2, covariance, _pearson = mi.minimi_hi(_line, X, y, np.array([0.0, b0]), bounds=bounds)
 
     assert p[0] == pytest.approx(best_a, abs=1e-9)
     assert p[1] == pytest.approx(best_b, abs=1e-6)
@@ -60,8 +60,8 @@ def test_a_step_crossing_the_lower_of_two_bounds_is_shortened_not_frozen():
     y = design @ np.array([-2.086, 114.854, -0.014])
     bounds = np.array([[-1.0, -INF, -INF], [0.5, INF, INF]])
 
-    p, errors, chi2, covariance = mi.minimi_hi(_parabola, X, y, np.array([-0.122, 73.555, -0.022]),
-                                               bounds=bounds)
+    p, errors, chi2, covariance, _pearson = mi.minimi_hi(_parabola, X, y, np.array([-0.122, 73.555, -0.022]),
+                                                         bounds=bounds)
 
     rest, *_ = np.linalg.lstsq(design[:, 1:], y + X, rcond=None)     # best b, c with a = -1
     assert p[0] == pytest.approx(-1.0, abs=1e-9)

@@ -464,7 +464,33 @@ the plot toolbar; a bar appears above the plot.
 - The background (`Ns`) a sequence starts from is still estimated from the
   whole spectrum.
 
-## 9. Saving
+## 9. Errors, χ² and the correlation matrix
+
+- Every fit of counts — a spectrum, the calibration, the instrumental-function
+  searches — maximises the **Poisson likelihood**: every channel counts with the
+  inverse of the counts the model expects there. For counts that is the most
+  precise fit there is, and an unbiased one.
+- The result shows two numbers, both divided by ν = points − free parameters:
+  **D**, the Poisson deviance (what the fit minimises), and **χ²**, Pearson's
+  Σ (y − m)²/m. With a right model and Poisson counts both are about 1, within
+  ±√(2/ν), written in brackets in units of the last decimal:
+  `D = 0.884(63), χ² = 0.885(63)` means ±0.063 (500 points). D and χ² differ only
+  when a channel has few counts.
+- An error is the statistical 1σ of the fit times √χ², so it follows the noise
+  the spectrum really has: a χ² of 0.88 makes the errors 6 % smaller, one of 2
+  makes them 41 % larger. **Supp → Empirical correction of errors by χ²**
+  turns the factor off (ON by default): the errors are then those of exactly
+  Poisson counts.
+- The % intensities and the Expression rows get their errors from the same
+  covariance, with the same factor; the correlation matrix does not depend on it.
+- A parameter the other free ones reproduce exactly — two that enter only as a
+  product, an offset added to the baseline — gets no error, as if fixed, and the
+  log names it. *Take result* fixes it; the earlier one keeps their combination
+  free.
+- The errors are statistical only: the calibration, the instrumental function
+  and the choice of model are not in them.
+
+## 10. Saving
 
 **Save result** writes several files next to the save path, not one. `<base>` is the
 save path without the spectrum's extension: `Fe_4.2K.dat` gives
@@ -520,7 +546,7 @@ of all the spectra, and every spectrum's curves and pictures under its own name.
 `<base>_result_model.mdl` is the model for one spectrum, the independent `=(X)`
 values with the X they started from — ready for another fit.
 
-## 10. Other
+## 11. Other
 
 - **Interrupt** does not just stop the fit: it terminates the worker pool and
   builds a fresh one. Use it if a calculation is stuck — the fit in progress dies
@@ -551,7 +577,7 @@ values with the X they started from — ready for another fit.
 - Distributions are drawn in the plot area: the **Distribution / Spectrum**
   button toggles the view once a model with `Distr`/`Recon` has been shown.
 
-## 11. When something goes wrong
+## 12. When something goes wrong
 
 Any error that reaches the terminal — whether SYNCmoss caught it or not — also
 opens a **report a bug** window with the message in it and a *Copy the error

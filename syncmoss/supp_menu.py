@@ -3,6 +3,7 @@ The "Supp" (support) button menu and its actions.
 
 Everything reachable from the Supp button in the main window lives here:
 the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
+the χ² correction of the errors (on/off),
 and the handlers for the small settings dialogs (integral points, instrumental
 lines, polarization, the CMS source and aperture diameters, the Be / KB impurity
 presets), the Library export/import,
@@ -40,7 +41,7 @@ from syncmoss.models_description_window import (
 from syncmoss.license_window import LicenseWindow
 import syncmoss.sms_theory as smst
 from syncmoss.instrumental_io import (
-    DEFAULT_INSTRUMENTAL_METHOD,
+    DEFAULT_INSTRUMENTAL_METHOD, chi2_correction,
     get_cms_diameters, get_internal_dtheta, get_internal_gcms, get_sms_instrumental_from_global_files,
     read_accurate_instrumental, read_gcms_file, resolve_instrumental_for_file, write_gcms_file,
 )
@@ -70,6 +71,20 @@ CONTACT_ACCENT_LIGHT = '#0b57d0'
 def theme_action_text(is_dark_mode):
     """Label for the theme entry: it names the mode the click switches TO."""
     return "Switch to light mode" if is_dark_mode else "Switch to dark mode"
+
+
+def chi2_correction_text(on):
+    """Label for the χ² error-correction entry: the state it is in."""
+    return f"Empirical correction of errors by χ² ({'ON' if on else 'OFF'})"
+
+
+def toggle_chi2_correction(main_window, action):
+    """Turn the multiplication of the fits' covariance (so of their errors) by
+    the chi-square on or off; *action* is relabelled with the new state."""
+    main_window.chi2_correction = not chi2_correction(main_window)
+    action.setText(chi2_correction_text(main_window.chi2_correction))
+    main_window.set_status("Errors of the next fits: multiplied by √χ²" if main_window.chi2_correction
+                           else "Errors of the next fits: not multiplied by √χ²", "blue")
 
 
 def contact_accent_color(is_dark_mode):
@@ -122,6 +137,9 @@ def build_supp_menu(main_window):
     ham_guess_action.triggered.connect(lambda: open_hamiltonian_helper(main_window))
     set_integral_points_action = QAction("Set number of points for full transmission integral", main_window)
     set_integral_points_action.triggered.connect(lambda: open_integral_points_dialog(main_window))
+    chi2_correction_action = QAction(chi2_correction_text(chi2_correction(main_window)), main_window)
+    chi2_correction_action.triggered.connect(
+        lambda: toggle_chi2_correction(main_window, chi2_correction_action))
     set_polarization_action = QAction("Set polarization", main_window)
     set_polarization_action.triggered.connect(lambda: open_polarization_dialog(main_window))
     cms_diameters_action = QAction("Set CMS source and aperture diameters", main_window)
@@ -167,6 +185,7 @@ def build_supp_menu(main_window):
     menu.addSeparator()
     menu.addAction(ham_guess_action)
     menu.addAction(set_integral_points_action)
+    menu.addAction(chi2_correction_action)
     # "Set number of lines to reconstruct the instrumental function" used to be
     # its own entry here. It is the number of GAUSSIANS, i.e. a property of one
     # of the two approximations, so it now lives beside that button inside the

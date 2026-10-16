@@ -112,6 +112,7 @@ class ResultsTable(QWidget):
         self.current_model_colors = []
         self.current_parameter_names = []
         self.current_chi2 = 0.0
+        self.current_deviance = None              # the reduced deviance a fit of counts minimised
         self.current_spectrum_parameters = None   # N, N1, ... the fit used
         self.current_exclusion_regions = ()       # the regions the fit left out
         self.current_links = {}
@@ -316,6 +317,7 @@ class ResultsTable(QWidget):
         self.current_model_colors = model_colors
         self.current_parameter_names = parameter_names
         self.current_chi2 = 0.0  # Will be set separately by main window
+        self.current_deviance = None  # so is this
         self.current_spectrum_parameters = spectrum_parameters
 
         # Store expression texts

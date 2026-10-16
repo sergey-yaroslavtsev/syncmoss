@@ -228,14 +228,15 @@ def start_vector(details, line_counts, line_folded, source, G, dtheta, r_ratio, 
     def line_alone(trial):
         return raw_counts(trial, details['velocity'], n_ch, source, r_ratio, JN, pool, line_only=True)
 
-    def chi2_at(t):
+    def deviance_at(t):
+        # the Poisson deviance: what the fits here minimise (weights='P')
         trial = np.copy(q)
         trial[LINE_T] = t
-        return float(np.sum((line_counts - line_alone(trial)) ** 2 / np.maximum(line_counts, 1)))
-    q[LINE_T] = min(THICKNESS_SCAN, key=chi2_at)
+        return float(mi.poisson_deviance(line_counts, line_alone(trial)))
+    q[LINE_T] = min(THICKNESS_SCAN, key=deviance_at)
     fix = np.setdiff1d(np.arange(N_FIT), LINE_ONLY)
     q = mi.minimi_hi(lambda _x, trial: line_alone(trial), np.arange(n_ch), line_counts, q, fix=fix,
-                     bounds=_bounds(x_f), MI=20, MI2=10, tau0=1e-4, eps=1e-6)[0]
+                     bounds=_bounds(x_f), MI=20, MI2=10, tau0=1e-4, eps=1e-6, weights='P')[0]
     return np.array(q, dtype=float)
 
 
@@ -252,20 +253,23 @@ def _bounds(line_axis):
     return bounds
 
 
-def fit_together(q, data, velocity, n_ch, line_axis, source, r_ratio, JN, pool):
+def fit_together(q, data, velocity, n_ch, line_axis, source, r_ratio, JN, pool, chi2_correction=True):
     """Everything fitted together on both raw spectra (*data*: alpha-Fe's
-    counts, then the single line's). Returns (q, errors, chi2)."""
+    counts, then the single line's), by the Poisson likelihood; the errors
+    carry sqrt(chi2) unless *chi2_correction* is False. Returns (q, errors,
+    deviance, chi2): the reduced deviance it minimised and Pearson's chi2."""
     def f(_x, trial):
         return raw_counts(trial, velocity, n_ch, source, r_ratio, JN, pool)
     x, bounds = np.arange(2 * n_ch), _bounds(line_axis)
-    q, errors, chi2 = np.array(q, dtype=float), None, np.inf
-    # until a pass no longer lowers chi2, as the instrumental-function searches refine
+    q, errors, deviance, chi2 = np.array(q, dtype=float), None, np.inf, np.nan
+    # until a pass no longer lowers the deviance, as the instrumental-function searches refine
     for _ in range(3):
-        p, er, c2, _cov = mi.minimi_hi(f, x, data, q, bounds=bounds, MI=20, MI2=20, tau0=1e-4, eps=1e-6)
-        if errors is not None and not c2 < chi2:
+        p, er, d, _cov, c2 = mi.minimi_hi(f, x, data, q, bounds=bounds, MI=20, MI2=20, tau0=1e-4, eps=1e-6,
+                                          weights='P', chi2_correction=chi2_correction)
+        if errors is not None and not d < deviance:
             break
-        q, errors, chi2 = np.array(p, dtype=float), np.array(er, dtype=float), float(c2)
-    return q, errors, chi2
+        q, errors, deviance, chi2 = np.array(p, dtype=float), np.array(er, dtype=float), float(d), float(c2)
+    return q, errors, deviance, chi2
 
 
 def _fold(method, v_axis, raw, fit, drive):
@@ -276,7 +280,7 @@ def _fold(method, v_axis, raw, fit, drive):
 
 
 def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameters, source, report=None,
-                     cancelled=None):
+                     cancelled=None, chi2_correction=True):
     """Calibrate the drive on the alpha-Fe and find G, Δθ and f_LM, in one fit
     with the single line (see the module docstring). *files*: the alpha-Fe and
     the single-line raw spectra; *diameters*: the source's and the aperture's
@@ -286,12 +290,14 @@ def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameter
 
     *report*, when given, takes a progress line; *cancelled* (a callable, the
     window's Interrupt) stops it between steps -- TI stops it inside them.
+    *chi2_correction*: the errors carry sqrt(chi2) (Supp).
 
     Returns 'G', 'dtheta' and 'f_LM' with their 'errors', the 'start' G and Δθ,
     the 'drive' found, and the fit folded for the plot: 'A' (the folded axis,
     once per spectrum), 'B', 'F' (the model), 'F2' (the model at 4 JN, the cyan
-    line), 'p' (each spectrum's model, its baseline as folded), 'hi2',
-    'lengths', 'starts', 'files', 'calibration_path'.
+    line), 'p' (each spectrum's model, its baseline as folded), 'hi2'
+    (Pearson's chi2), 'deviance' (the reduced deviance the fit minimised),
+    'chi2_spread', 'lengths', 'starts', 'files', 'calibration_path'.
     """
     def check():
         if cancelled is not None and cancelled():
@@ -322,8 +328,8 @@ def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameter
     check()
     report("Calibration, G, Δθ and f_LM together...")
     n_ch, velocity = len(alpha_raw), details['velocity']
-    q, errors, chi2 = fit_together(q, np.concatenate((alpha_raw, line_raw)), velocity, n_ch, A_f[0], source,
-                                   r_ratio, JN, pool)
+    q, errors, deviance, chi2 = fit_together(q, np.concatenate((alpha_raw, line_raw)), velocity, n_ch, A_f[0],
+                                             source, r_ratio, JN, pool, chi2_correction)
     check()
 
     G, dtheta, f_lm = float(q[G_I]), float(np.arccos(1 - q[U_I])), float(q[F_I])
@@ -352,6 +358,7 @@ def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameter
         'errors': (float(errors[G_I]), dtheta_error, float(errors[F_I])), 'start': start,
         'drive': np.array(q[DRIVE]), 'method': details['method'], 'A': np.concatenate((v_f, line[0])),
         'B': np.concatenate((alpha[1], line[1])), 'F': np.concatenate((alpha[2], line[2])),
-        'F2': np.concatenate((fine[0][2], fine[1][2])), 'p': shown, 'hi2': chi2, 'lengths': [len(v_f), len(line[0])],
+        'F2': np.concatenate((fine[0][2], fine[1][2])), 'p': shown, 'hi2': chi2, 'deviance': deviance,
+        'chi2_spread': mi.chi2_spread(2 * n_ch, N_FIT), 'lengths': [len(v_f), len(line[0])],
         'starts': [0, LINE_START], 'files': files, 'calibration_path': calibration_path,
     }

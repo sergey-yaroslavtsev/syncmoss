@@ -223,8 +223,8 @@ def test_recon_regularized_reconstruction_via_minimizer():
     w0 = np.full(num, 1.0 / num)
     bounds = np.array([[0.0] * num, [np.inf] * num], dtype=float)
 
-    w_fit, er, chi2, cov = mi.minimi_hi(model_func, x_aug, y_aug, w0,
-                                        bounds=bounds, n_reg=n_reg, MI=40, MI2=20)
+    w_fit, er, chi2, cov, _pearson = mi.minimi_hi(model_func, x_aug, y_aug, w0,
+                                                  bounds=bounds, n_reg=n_reg, MI=40, MI2=20)
 
     assert np.all(np.isfinite(cov)), "penalty rows must not poison the covariance"
     assert np.all(w_fit >= -1e-9), "weights must respect the >=0 bound"

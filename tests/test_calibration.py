@@ -30,9 +30,14 @@ import shutil
 import numpy as np
 import pytest
 
+from conftest import FROZEN_PARAMETERS
+
 pytestmark = pytest.mark.slow
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+# Be.txt and KB.txt are read as shipped (the beamline's current presets); the
+# instrumental function is the tests' frozen one -- the shipped INS files are
+# the user's working state and change with every instrumental-function search
 _SRC_PARAMS = os.path.abspath(os.path.join(_HERE, "..", "syncmoss", "parameters"))
 _SMS_MCA = os.path.join(_HERE, "data", "alpha_fe_sms_000.mca")
 _CMS_MCA = os.path.join(_HERE, "data", "synthetic_alpha_fe_cms_linear.mca")
@@ -52,7 +57,7 @@ def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ.setdefault("MPLBACKEND", "Agg")
     for required in ("INSint.txt", "INSexp.txt"):
-        if not os.path.exists(os.path.join(_SRC_PARAMS, required)):
+        if not os.path.exists(os.path.join(FROZEN_PARAMETERS, required)):
             pytest.skip(f"instrumental parameter file missing: {required}")
 
     import multiprocessing as mp
@@ -64,11 +69,11 @@ def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False):
         src = os.path.join(_SRC_PARAMS, fn)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(work, fn))
-    MulCo, x0 = np.genfromtxt(os.path.join(_SRC_PARAMS, "INSint.txt"), delimiter=" ")
-    INS = np.genfromtxt(os.path.join(_SRC_PARAMS, "INSexp.txt"), delimiter=" ")
+    MulCo, x0 = np.genfromtxt(os.path.join(FROZEN_PARAMETERS, "INSint.txt"), delimiter=" ")
+    INS = np.genfromtxt(os.path.join(FROZEN_PARAMETERS, "INSexp.txt"), delimiter=" ")
     try:
         from syncmoss.instrumental_io import read_gcms_file
-        GCMS = read_gcms_file(_SRC_PARAMS)[0]          # "G" or "G Δθ"
+        GCMS = read_gcms_file(FROZEN_PARAMETERS)[0]    # "G" or "G Δθ"
     except Exception:
         GCMS = 0.1
 

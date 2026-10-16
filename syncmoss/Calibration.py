@@ -708,8 +708,9 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
                                    * np.cos(np.pi / n_ch * (2 * ch_min1 + 1)
                                             + (np.pi / n_ch * phase0)))
             x_try = sin_cal(channels, [Vel_max_m, (np.pi / n_ch * phase0), shift_m])
+            # counts: the Poisson fit, res[2] its reduced deviance
             res = mi.minimi_hi(fit_func, x_try, counts, p00, fix=fix_coarse,
-                               bounds=bounds, MI=3, MI2=5)
+                               bounds=bounds, MI=3, MI2=5, weights='P')
             if res[2] <= chi2_sin:
                 chi2_sin = res[2]
                 Vel_max_sin = Vel_max_m
@@ -742,7 +743,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
                                            Vel_max_m - velocity_step_m * lin_phase,
                                            velocity_step_m])
                 res = mi.minimi_hi(fit_func, x_try, counts, p00, fix=fix_coarse,
-                                   bounds=bounds, MI=3, MI2=5)
+                                   bounds=bounds, MI=3, MI2=5, weights='P')
                 if res[2] <= chi2_lin:
                     chi2_lin = res[2]
                     Vel_max_lin = Vel_max_m
@@ -777,7 +778,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     print(p0)
     start_time = time.time()
     for it in range(0, 4):
-        p = mi.minimi_hi(fit_func, x, counts, p0, fix=fix_refine, MI=3, MI2=5)[0]
+        p = mi.minimi_hi(fit_func, x, counts, p0, fix=fix_refine, MI=3, MI2=5, weights='P')[0]
         # 12 reference velocities: the 6 lines, seen once per half-sweep.
         # No reversal is needed here even for Vel_start == 1: the velocity
         # direction is already encoded in the calibrated axis `x` (built from
@@ -922,7 +923,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     # STEP 10: final global fit -- drive curve + distortion + intensities.  #
     # --------------------------------------------------------------------- #
     start_time = time.time()
-    res = mi.minimi_hi(cal_fin2, channels, counts, p0=ps1, MI=20, MI2=20, eps=10 ** -6)
+    res = mi.minimi_hi(cal_fin2, channels, counts, p0=ps1, MI=20, MI2=20, eps=10 ** -6, weights='P')
     if abs(res[0][0]) < 2.95:
         print('very small velocity range - texture could not be defined')
     print('model parameters ', pCAL)

@@ -14,6 +14,7 @@ import traceback
 import numpy as np
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
+from syncmoss.minimi_lib import chi2_spread
 from syncmoss.expression_eval import eval_expr
 from syncmoss import exclusion_regions
 from syncmoss.constants import number_of_baseline_parameters, numco
@@ -28,6 +29,7 @@ from syncmoss.instrumental_io import (
     same_method_params,
     hires_model_diff,
     drive_rest_velocity,
+    chi2_correction,
 )
 
 
@@ -148,8 +150,8 @@ def _recon_penalty_rows(weight_tail, infos, reg_scale):
 
     Operates on the CHANNEL density g = w/Σw (scale-invariant) so D behaves the
     same regardless of the weight normalization; ``reg_scale`` makes the penalty
-    commensurate with the data sum-of-squares. Zero λ (D=0) yields zero rows that
-    leave the fit unconstrained.
+    commensurate with the data's (weighted) sum-of-squares. Zero λ (D=0) yields
+    zero rows that leave the fit unconstrained.
     """
     rows = []
     for info in infos:
@@ -295,17 +297,6 @@ def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_param
     return FS, FS_pos
 
 
-def chi2_spread(n_points, n_free):
-    """The 1-sigma spread a reduced chi-square has when the model is RIGHT.
-
-    ``sqrt(2/dof)``. Without it a user cannot tell whether 1.3 is a bad fit or
-    an ordinary fluctuation: on 40 degrees of freedom 1.3 is one sigma and
-    means nothing, on 4000 it is nine sigma and means the model is wrong.
-    """
-    dof = max(int(n_points) - int(n_free), 1)
-    return float(np.sqrt(2.0 / dof))
-
-
 def section_starts(model):
     """Flat index at which each spectrum's parameters start in a model with
     Nbaseline sections: 0, then the slot of every Nbaseline (the next spectrum's
@@ -388,8 +379,9 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             - 'success': bool
             - 'parameters': fitted parameter array
             - 'errors': parameter error array
-            - 'chi2': chi-squared value
-            - 'chi2_spread': 1-sigma spread of chi2 for a correct model, sqrt(2/dof)
+            - 'chi2': Pearson's reduced chi-square
+            - 'deviance': the reduced Poisson deviance (what the fit minimised)
+            - 'chi2_spread': 1-sigma spread of both for a correct model, sqrt(2/dof)
             - 'correlation_matrix': correlation matrix
             - 'model': model list
             - 'message': status message
@@ -703,7 +695,12 @@ def fit_model(app, inputs, spectrum_files, pool):
             bounds_fit = np.concatenate(
                 (bounds, np.array([[0.0] * n_weights, [np.inf] * n_weights])), axis=1)
             n_reg = _recon_penalty_length(recon_infos)
-            reg_scale = float(np.sum((np.asarray(B_data, dtype=float) - np.mean(B_data)) ** 2)) or 1.0
+            # The data rows are fitted with Poisson weights (weights='P' below), the
+            # penalty rows with weight 1: the penalty is normalised by the spread of
+            # the data weighted the way the fit starts (1/(|y|+1)), so the
+            # regularisation keeps its strength relative to the noise.
+            data = np.asarray(B_data, dtype=float)
+            reg_scale = float(np.sum((data - np.mean(data)) ** 2 / (np.abs(data) + 1))) or 1.0
             A_fit = np.concatenate([np.asarray(A_data, dtype=float), np.zeros(n_reg)])
             B_fit = np.concatenate([np.asarray(B_data, dtype=float), np.zeros(n_reg)])
 
@@ -752,7 +749,10 @@ def fit_model(app, inputs, spectrum_files, pool):
         print(f'[Fitting] Fixed parameters (indices): {fix}')
         print(f'[Fitting] Constraints (confu): {confu}')
 
-        pfit, er, hi2, covariance_matrix = mi.minimi_hi(
+        # Counts: the Poisson likelihood (docs/minimization.md). hi2 is the
+        # reduced deviance it minimises, chi2 Pearson's; the errors carry
+        # sqrt(chi2) unless the user turned that off (Supp)
+        pfit, er, hi2, covariance_matrix, chi2 = mi.minimi_hi(
             func_fit, A_fit, B_fit, p0_fit,
             fix=fix,
             confu=confu,
@@ -765,12 +765,14 @@ def fit_model(app, inputs, spectrum_files, pool):
             tau0=tau0,
             eps=eps,
             n_reg=n_reg,
-            batch_eval=batch_eval
+            batch_eval=batch_eval,
+            weights='P',
+            chi2_correction=chi2_correction(app)
         )
         if hi2 > 1.25:
             print('hi2 is too high let me try to continue')
-            pO, erO, hi2O = pfit, er, hi2
-            pfit, er, hi2, covariance_matrix = mi.minimi_hi(
+            pO, erO, hi2O, covO, chi2O = pfit, er, hi2, covariance_matrix, chi2
+            pfit, er, hi2, covariance_matrix, chi2 = mi.minimi_hi(
                 func_fit,  A_fit, B_fit, pfit,
                 fix = fix,
                 confu=confu,
@@ -783,11 +785,13 @@ def fit_model(app, inputs, spectrum_files, pool):
                 tau0=tau0,
                 eps=eps,
                 n_reg=n_reg,
-                batch_eval=batch_eval
+                batch_eval=batch_eval,
+                weights='P',
+                chi2_correction=chi2_correction(app)
             )
             if np.array_equal(pfit, pO) == True:
                 if len(er) == 1:
-                    pfit, er, hi2 = pO, erO, hi2O
+                    pfit, er, hi2, covariance_matrix, chi2 = pO, erO, hi2O, covO, chi2O
                 print('It was real end')
 
         # Map the working vector back to the canonical p (head) and write the
@@ -810,7 +814,7 @@ def fit_model(app, inputs, spectrum_files, pool):
 
         print(f'[Fitting] Fitted parameters: {p}')
         print(f'[Fitting] Errors: {er}')
-        print(f'[Fitting] Chi-squared: {hi2} ± {spread:.4f}')
+        print(f'[Fitting] Deviance: {hi2} ± {spread:.4f}, chi-squared: {chi2} ± {spread:.4f}')
         print(f'[Fitting] Covariance matrix shape: {covariance_matrix.shape}')
 
         # Calculate fitted spectrum for plotting
@@ -869,12 +873,13 @@ def fit_model(app, inputs, spectrum_files, pool):
                 'success': True,
                 'parameters': p,
                 'errors': er,
-                'chi2': hi2,
+                'chi2': chi2,
+                'deviance': hi2,
                 'chi2_spread': spread,
                 'covariance_matrix': covariance_matrix,
                 'fix': fix,
                 'model': model,
-                'message': f'Simultaneous fit completed successfully. χ² = {hi2:.3f}',
+                'message': f'Simultaneous fit completed successfully. deviance = {hi2:.3f}, χ² = {chi2:.3f}',
                 # Plotting data for simultaneous fitting
                 'is_simultaneous': True,
                 'A_list': A_list,  # List of A arrays
@@ -908,12 +913,13 @@ def fit_model(app, inputs, spectrum_files, pool):
                 'success': True,
                 'parameters': p,
                 'errors': er,
-                'chi2': hi2,
+                'chi2': chi2,
+                'deviance': hi2,
                 'chi2_spread': spread,
                 'covariance_matrix': covariance_matrix,
                 'fix': fix,
                 'model': model,
-                'message': f'Fit completed successfully. χ² = {hi2:.3f}',
+                'message': f'Fit completed successfully. deviance = {hi2:.3f}, χ² = {chi2:.3f}',
                 # Plotting data
                 'is_simultaneous': False,
                 'A': A,
