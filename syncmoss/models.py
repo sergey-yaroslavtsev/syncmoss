@@ -499,8 +499,11 @@ def _disc_overlap(d, x):
     lens = (~inside) & (d < 1 + x)
     dl = d[lens]
     k = np.clip((-dl + x + 1) * (dl + x - 1) * (dl - x + 1) * (dl + x + 1), 0, None)
-    out[lens] = (x ** 2 * np.arccos(np.clip((dl ** 2 + x ** 2 - 1) / (2 * dl * x), -1, 1))
-                 + np.arccos(np.clip((dl ** 2 + 1 - x ** 2) / (2 * dl), -1, 1)) - 0.5 * np.sqrt(k))
+    # near the tip (d -> 1 + x) the area, ~(1 + x - d)^(3/2), is a difference of
+    # terms of order 1 and can come out at -1e-8: clipped, as a negative weight
+    # makes the Gauss rule's measure non-positive (NaN from ~400 nodes)
+    out[lens] = np.maximum(x ** 2 * np.arccos(np.clip((dl ** 2 + x ** 2 - 1) / (2 * dl * x), -1, 1))
+                           + np.arccos(np.clip((dl ** 2 + 1 - x ** 2) / (2 * dl), -1, 1)) - 0.5 * np.sqrt(k), 0.0)
     return out
 
 
