@@ -36,7 +36,9 @@ parameter 12", `=[12,0.5]` means "half of parameter 12", `=[12,-1]` means
   (`=[,1]`) stays plain until both numbers are in.
 - Links are kept in step when you insert or delete model rows: the referenced
   numbers are renumbered for you. The same holds for every `p[i]` inside an
-  `Expression`, `Distr` or `Corr` text.
+  `Expression`, `Distr` or `Corr` text — which is why a parameter there is
+  written exactly `p[12]`: no spaces, a plain number. Show model and Fit
+  refuse any other spelling (`p [12]`, `p[ 12 ]`, `p[10+2]`, `p[-1]`).
 - If the parameter a link pointed at is itself deleted, the field is emptied and
   turned **red**. Show model and Fit then refuse to start until you fill it in.
 - The link is applied both when showing the model and inside every fit
@@ -132,6 +134,13 @@ take a **different** `par`: they all write into the same parameter, so two rows
 sharing a `par` would silently overwrite each other. **Show model** and **Fit**
 refuse to start and redden the duplicate `par` fields (the first row keeps its
 target — move the ones below it).
+
+A parameter a `Distr`/`Corr`/`Recon` drives (the grey frame) holds no usable
+number, and neither does the text column of one. Nothing may read them: a link
+`=[i,Y]` to one and a `p[i]` in any `Expression`, `Distr` or `Corr` text are
+refused when **Show model** or **Fit** starts. Put a shared value (a centre, a
+width) in a `Variables` row; to make another parameter follow the distribution,
+use a `Corr`.
 
 An unparsable text, or an empty parameter field (typically left behind when a
 value referenced by `=[X,Y]` was deleted), blocks **Show model** and **Fit** with

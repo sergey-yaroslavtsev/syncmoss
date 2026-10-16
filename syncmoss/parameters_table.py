@@ -1099,33 +1099,28 @@ class ParametersTable(QWidget):
                       else mod_len_def(model_name, include_special=True))
         return starts
 
-    def get_links_to_distributions(self):
-        """Links ``=[X,Y]`` whose source X a distribution leaves without a value.
-
-        A link copies one plain number before the model is calculated, so it
-        cannot point at
+    def get_distribution_slots(self):
+        """The flat slots p[i] a distribution leaves without a usable value.
 
         * a parameter a Distr / Corr / Recon row sets -- the grey target of its
-          'par'. The distribution never reads the number left in that field:
-          the linked parameter would get that number, not the distribution,
-          and a fit would move it for the link alone. A Corr gives the
-          distribution to another parameter of the same component, a Distr of
-          its own to one of another component (a Recon cannot be shared);
+          'par'. The distribution never reads the number left in that field,
+          and a fit would move it only for whatever reads it;
         * the last column of a Distr / Corr / Recon -- the probability density
           function, the dependency function, the Recon weights -- whose flat
           slot is only a placeholder.
 
-        Show model / Fit refuse to start while there is one.
+        Nothing may read them: neither a link ``=[i,Y]``
+        (get_links_to_distributions) nor a ``p[i]`` in an Expression / Distr /
+        Corr text (model_io.validate_user_expressions).
 
         Returns:
-            list of dicts, in table order: ``{'row', 'col', 'param', 'model',
-            'text', 'factor', 'factor_text', 'reason', 'marker_row',
-            'marker_model'}`` plus, for 'reason' 'placeholder', 'column' (the
-            name of that text column) and, for 'distributed', 'base_row',
-            'base_model', 'source_col', 'source_param', 'distribution_model'
-            (the Distr or Recon whose axis X the source follows; None for a
-            Corr with none above it) and 'dependency' (the source as a function
-            of X: 'X', or the Corr's dependency function).
+            dict flat index -> ``{'reason', 'marker_row', 'marker_model'}`` plus,
+            for 'reason' 'placeholder', 'column' (the name of that text column)
+            and, for 'distributed', 'base_row', 'base_model', 'source_col',
+            'source_param', 'distribution_model' (the Distr or Recon whose axis
+            X the slot follows; None for a Corr with none above it) and
+            'dependency' (the slot as a function of X: 'X', or the Corr's
+            dependency function).
         """
         starts = self._flat_starts()
         sources = {}
@@ -1148,7 +1143,27 @@ class ParametersTable(QWidget):
                     distribution_model=distribution_model,
                     dependency=(self._value_input(row, 1).text().strip()
                                 if model_name == 'Corr' else 'X'))
+        return sources
 
+    def get_links_to_distributions(self):
+        """Links ``=[X,Y]`` whose source X is a slot of get_distribution_slots.
+
+        A link copies one plain number before the model is calculated: from a
+        distributed parameter it would get the number left in the grey field,
+        not the distribution, and a fit would move that number for the link
+        alone. A Corr gives the distribution to another parameter of the same
+        component, a Distr of its own to one of another component (a Recon
+        cannot be shared). A text column's slot holds no number at all.
+
+        Show model / Fit refuse to start while there is one.
+
+        Returns:
+            list of dicts, in table order: ``{'row', 'col', 'param', 'model',
+            'text', 'factor', 'factor_text'}`` plus the slot's entry of
+            get_distribution_slots.
+        """
+        starts = self._flat_starts()
+        sources = self.get_distribution_slots()
         links = []
         for row in starts:
             for col in range(self.row_params[row]):

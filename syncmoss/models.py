@@ -2321,17 +2321,15 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
         # nested call of a multidimensional distribution counts its entries from
         # the start of THIS model (mDk, mCk, mRk) and must add these.
         Di0, Co0, Re0 = Di, Co, Re
+        # The p a Distr/Corr text reads as p[i]: the model's own. In the nested
+        # call of a multidimensional distribution p is the copies' array, and O
+        # carries the model's down (set before the first nested call, below).
+        p_texts = O if len(O) else p
 
 
         if Met == -1:
             V = 0
             E = EE
-            # print(Distri)
-            for i in range(0, len(Distri)):
-                Distri[i] = Distri[i].replace('p[', 'O[')
-            for i in range(0, int((model=='Corr').sum())):
-                Cor[i] = Cor[i].replace('p[', 'O[')
-            # print(Distri)
         elif Met == 0:
             Mett = Met
             E = MulCo*SCR + x0*MulCo + np.log((1+EE)/(1-EE))
@@ -2992,7 +2990,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 X = np.linspace(np.array(p[V+1]), np.array(p[V+2]), Num)
                 # print(p[V+1], p[V+2], eval(str(Distri[Di])))
                 # print(Distri[Di])
-                ge = eval_expr(str(Distri[Di]), p, X, O) + 0*X
+                ge = eval_expr(str(Distri[Di]), p_texts, X) + 0*X
                 ge = ge / np.sum(ge, axis=0) #*(len(ge)!=1) + Num*ge*(len(ge)==1))
                 # print(Distri[Di])
                 # print(ge)
@@ -3035,7 +3033,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 for j in range(1, len(model)-i):
                     if model[i+j] == 'Corr':
                         # print(Co, 'Corr', str(Cor[Co]), X)
-                        pN[int(p[V])] = eval_expr(str(Cor[Co]), p, X, O) + 0*X
+                        pN[int(p[V])] = eval_expr(str(Cor[Co]), p_texts, X) + 0*X
                         V += 2
                         Co += 1
                         # Ck += 1 # CHECK!!!!!!!
@@ -3143,7 +3141,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 for j in range(1, len(model)-i):
                     if model[i+j] == 'Corr':
                         amp_scaled = amp_scaled and int(p[V]) != 0
-                        pN[int(p[V])] = eval_expr(str(Cor[Co]), p, X, O) + 0*X
+                        pN[int(p[V])] = eval_expr(str(Cor[Co]), p_texts, X) + 0*X
                         V += 2
                         Co += 1
                     else:

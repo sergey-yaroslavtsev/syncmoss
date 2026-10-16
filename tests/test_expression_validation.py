@@ -70,6 +70,31 @@ def test_distr_and_corr_take_the_bare_names_of_the_fit(physics_app):
     assert validate_user_expressions(physics_app) == []
 
 
+def test_a_parameter_must_be_written_p_number(physics_app):
+    """Every reader that finds the parameters of a text as text (renumbering on
+    insert/delete, the one-model expansion, the order check, ...) looks for
+    p[<number>]: any other spelling is refused, though Python evaluates it."""
+    pt = physics_app.params_table
+    pt.select_model(1, "Singlet")
+    pt.select_model(2, "Distr")
+    pt.select_model(3, "Corr")
+    pt.select_model(4, "Expression")
+
+    for spelling in ("p [8]", "p[ 8 ]", "p[7+1]", "p[-1]", "max(p)"):
+        _set_expression_text(physics_app, 2, f"1 + 0*X*{spelling}")
+        _set_expression_text(physics_app, 3, f"X + 0*{spelling}")
+        _set_expression_text(physics_app, 4, f"2*{spelling}")
+        problems = validate_user_expressions(physics_app)
+        assert {p["kind"]: p["row"] for p in problems} == {"Distr": 2, "Corr": 3, "Expression": 4}, spelling
+        assert all("p[<number>]" in str(p["error"]) for p in problems), spelling
+
+    # p[<number>] itself, and names that merely contain a p, pass
+    _set_expression_text(physics_app, 2, "1 + 0*X*p[8]*pi")
+    _set_expression_text(physics_app, 3, "X + 0*power(p[8], 2)")
+    _set_expression_text(physics_app, 4, "np.exp(p[8])*p[10]")      # T, L: no distribution sets them
+    assert validate_user_expressions(physics_app) == []
+
+
 def test_invalid_expression_blocks_fit_and_marks_field_red(physics_app):
     pt = physics_app.params_table
     pt.select_model(1, "Singlet")

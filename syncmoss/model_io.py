@@ -1081,6 +1081,42 @@ def read_bounds_and_fix(main_window, p_len):
     return bounds, fix
 
 
+# The one way a user text names a parameter: p[<number>]. Every reader that
+# finds the parameters in a text as text -- renumbering on row insert/delete,
+# the old .mdl upgrade, the one-model expansion, the Expression order check, the
+# error propagation, ... -- looks for exactly this, so validate_user_expressions
+# refuses any other spelling (p [3], p[ 3 ], p[1+2], p[-1], a bare p) rather
+# than let those readers skip it.
+_P_NAME = re.compile(r'(?<![\w.])p(?!\w)')
+_P_REFERENCE = re.compile(r'p\[(\d+)\]')
+
+
+def p_spelling_problem(text):
+    """None when every p in *text* is written p[<number>], else what to fix."""
+    text = str(text)
+    for match in _P_NAME.finditer(text):
+        if not _P_REFERENCE.match(text, match.start()):
+            return "write every parameter as p[<number>]: no spaces, a plain number"
+    return None
+
+
+def distribution_slot_problem(text, slots):
+    """None, or why *text* may not read one of *slots*
+    (ParametersTable.get_distribution_slots): a parameter a distribution sets
+    or the text column of one. *text* is spelled right (p_spelling_problem)."""
+    for index in map(int, _P_REFERENCE.findall(str(text))):
+        slot = slots.get(index)
+        if slot is None:
+            continue
+        if slot['reason'] == 'placeholder':
+            return (f"p[{index}] is the {slot['column']} column of {slot['marker_model']} "
+                    f"(table row {slot['marker_row']}), which holds no number")
+        return (f"p[{index}] ({slot['source_param']} of {slot['base_model']}, table row "
+                f"{slot['base_row']}) is set by {slot['marker_model']} (table row "
+                f"{slot['marker_row']}): a text cannot read it — use a Variables value")
+    return None
+
+
 def validate_user_expressions(main_window):
     """Try to evaluate every user-typed Expression/Distr/Corr text.
 
@@ -1089,6 +1125,10 @@ def validate_user_expressions(main_window):
     evaluated as the real computation does, through expression_eval.eval_expr
     (its bare numpy names + the parameter array ``p``); Distr/Corr also get the
     distribution axis ``X`` (mimicking ``eval_expr(...) + 0*X`` in models.TImod).
+    A text that writes a parameter other than as p[<number>] is a problem too
+    (p_spelling_problem), even though it evaluates, and so is one that reads a
+    parameter a Distr/Corr/Recon sets or the text column of one
+    (distribution_slot_problem) -- the same slots a link =[i,Y] may not read.
 
     The names N, N1, N2, ... are evaluated with the values of the first
     spectrum of the path box, as read_model gives them; a name that spectrum
@@ -1106,6 +1146,7 @@ def validate_user_expressions(main_window):
     parameters = first_spectrum_parameters(main_window)
     X = np.linspace(-1.0, 1.0, 8)
     rows = main_window.params_table.get_expression_rows()
+    slots = main_window.params_table.get_distribution_slots()
     problems = []
 
     def _check(kind, occurrence, text, evaluator):
@@ -1113,6 +1154,9 @@ def validate_user_expressions(main_window):
         try:
             if not str(text).strip():
                 raise ValueError("expression is empty")
+            refused = p_spelling_problem(as_typed) or distribution_slot_problem(as_typed, slots)
+            if refused:
+                raise ValueError(refused)
             if names_used([as_typed]) and 'Nbaseline' in model:
                 raise ValueError("N, N1, N2, ... work only when every spectrum is fitted "
                                  "on its own (single or sequence fit), not in a model "

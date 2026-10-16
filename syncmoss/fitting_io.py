@@ -50,7 +50,8 @@ def split_model_sections(model):
 
 def _substitute_p_refs(expr_text, p):
     """Replace every literal ``p[<idx>]`` reference in a Distr/Corr expression
-    with its current numeric value.
+    with its current numeric value, in brackets: ``p[2]**2`` with p[2] = -0.3
+    must become ``(-0.3)**2``, not ``-0.3**2`` (= -0.09).
 
     Needed because the expression is later re-evaluated inside ``models.TImod``
     where ``p`` is a *component-local* parameter slice — the global indices the
@@ -69,7 +70,7 @@ def _substitute_p_refs(expr_text, p):
                     break
     # Replace right-to-left so earlier offsets stay valid.
     for k in range(len(starts) - 1, -1, -1):
-        STR = STR[:starts[k]] + str(eval(STR[starts[k]:ends[k] + 1])) + STR[ends[k] + 1:]
+        STR = STR[:starts[k]] + '(' + str(eval(STR[starts[k]:ends[k] + 1])) + ')' + STR[ends[k] + 1:]
     return STR
 
 

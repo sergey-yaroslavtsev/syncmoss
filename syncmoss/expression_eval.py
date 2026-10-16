@@ -30,18 +30,14 @@ from numpy import (
 )
 
 
-def eval_expr(expr, p, X=None, O=None):
+def eval_expr(expr, p, X=None):
     """Evaluate a user-typed text.
 
-    ``p`` is the current parameter array, so the text may reference ``p[i]``;
+    ``p`` is the model's parameter array, so the text may reference ``p[i]``;
     bare numpy functions (``sqrt``, ``exp``, ...) resolve through this module's
     globals (the imports above). ``X`` is optional: the distribution axis,
-    given for the Distr/Corr texts. ``O`` is optional too: models.TImod's outer
-    parameter array, which the Distr/Corr texts of a nested (multidimensional)
-    call read as ``O[i]`` (TImod rewrites their ``p[`` to ``O[``)."""
+    given for the Distr/Corr texts."""
     locals_dict = {"p": p}
     if X is not None:
         locals_dict["X"] = X
-    if O is not None:
-        locals_dict["O"] = O
     return eval(expr, globals(), locals_dict)

@@ -15,8 +15,13 @@ Three things are checked here:
   distribution (and a fit moved that number for the link alone), and a text
   column's slot is a placeholder. Show model / Fit refuse, and say which Corr
   or Distr does what the link was meant to.
+* no p[i] in an Expression, Distr or Corr text may read those slots either
+  (the one registry: ParametersTable.get_distribution_slots), for the same
+  reason.
 """
 import pytest
+
+from syncmoss.model_io import validate_user_expressions
 
 pytestmark = [pytest.mark.gui]
 
@@ -278,4 +283,82 @@ def test_links_to_what_no_distribution_sets_still_work(physics_app):
     pt._value_input(3, 2).setText(f"=[{DISTR_L},1]")    # the Distr's L: a number
 
     assert pt.get_links_to_distributions() == []
+    assert physics_app.check_user_expressions("Fit") is True
+
+
+# --- texts cannot read them either -------------------------------------------
+
+SEXTET_T, H = 8, 11
+
+
+def _text(pt, row, text):
+    """Type *text* into the free-text field of an Expression/Distr/Corr row."""
+    field = pt.expression_value_input(row)
+    field.setText(text)
+    return field
+
+
+def test_a_text_reading_a_distributed_parameter_is_refused(physics_app):
+    """p[i] in a text reads the same number a link would: the one left in the
+    grey field, never the distribution -- in every kind of text, the Distr's
+    and the Corr's own included."""
+    pt = physics_app.params_table
+    pt.select_model(1, "Sextet")
+    pt.select_model(2, "Distr")                   # par 1 -> delta
+    pt.select_model(3, "Corr")
+    _par_input(pt, 3).setText("2")                # epsilon follows it
+    pt.select_model(4, "Expression")
+    _text(pt, 2, f"exp(-(X-p[{DELTA}])**2/0.01)")
+    _text(pt, 3, f"0.1*X + 0*p[{EPS}]")
+    expression = _text(pt, 4, f"2*p[{DELTA}]")
+
+    problems = validate_user_expressions(physics_app)
+    assert {p['kind']: p['row'] for p in problems} == {'Distr': 2, 'Corr': 3, 'Expression': 4}
+    errors = {p['kind']: str(p['error']) for p in problems}
+    assert f"p[{DELTA}] (δ, mm/s of Sextet, table row 1) is set by Distr (table row 2)" in errors['Distr']
+    assert f"p[{EPS}] (ε, mm/s of Sextet, table row 1) is set by Corr (table row 3)" in errors['Corr']
+    assert "is set by Distr (table row 2): a text cannot read it" in errors['Expression']
+    assert physics_app.check_user_expressions("Fit") is False
+    assert "red" in expression.styleSheet()
+
+    # The value in a Variables row instead, as it should be
+    pt.select_model(5, "Variables")               # its first slot: p[30]
+    _text(pt, 2, "exp(-(X-p[30])**2/0.01)")
+    _text(pt, 3, "0.1*X")
+    _text(pt, 4, "2*p[30]")
+    assert validate_user_expressions(physics_app) == []
+    assert physics_app.check_user_expressions("Fit") is True
+
+
+@pytest.mark.parametrize("markers, placeholder, column", [
+    (["Distr"], DISTR_PDF, "probability density function"),
+    (["Recon"], RECON_WEIGHTS, "weights"),
+    (["Distr", "Corr"], DISTR_PDF + 2, "dependency function"),
+])
+def test_a_text_reading_a_text_column_is_refused(physics_app, markers, placeholder, column):
+    pt = physics_app.params_table
+    pt.select_model(1, "Sextet")
+    for row, marker in enumerate(markers, start=2):
+        pt.select_model(row, marker)
+        _par_input(pt, row).setText(str(row - 1))    # a 'par' of its own
+    expression_row = len(markers) + 2
+    pt.select_model(expression_row, "Expression")
+    _text(pt, expression_row, f"1 + p[{placeholder}]")
+
+    [problem] = validate_user_expressions(physics_app)
+    assert (problem['kind'], problem['row']) == ('Expression', expression_row)
+    assert (f"p[{placeholder}] is the {column} column of {markers[-1]} "
+            f"(table row {expression_row - 1}), which holds no number") in str(problem['error'])
+
+
+def test_texts_reading_what_no_distribution_sets_still_work(physics_app):
+    pt = physics_app.params_table
+    pt.select_model(1, "Sextet")
+    pt.select_model(2, "Distr")                   # par 1 -> delta
+    pt.select_model(3, "Expression")
+    # epsilon and H: not distributed; the Distr's L: a number; T: the amplitude
+    _text(pt, 2, f"exp(-(X-p[{EPS}])**2/0.01)")
+    _text(pt, 3, f"p[{EPS}] + p[{H}] + p[{DISTR_L}] + p[{SEXTET_T}]")
+
+    assert validate_user_expressions(physics_app) == []
     assert physics_app.check_user_expressions("Fit") is True
