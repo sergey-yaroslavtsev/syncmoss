@@ -45,8 +45,8 @@ from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortc
 from syncmoss.constants import numco, contrast_text_color
 from syncmoss.support_math import calculate_intensity_percentage_error
 from syncmoss.spectrum_parameters import substitute
-# NOTE: the eval() calls in this module run against an explicit math_namespace
-# built from np.* — no bare ``from numpy import ...`` block is needed here.
+# Expression texts are evaluated by eval_expr, as in the fit.
+from syncmoss.expression_eval import eval_expr
 
 # How close a Doublet must be to the Be/KB preset to count as that impurity
 # (see _calculate_intensities). Rounding to four decimals moves a value by at
@@ -663,18 +663,8 @@ class ResultsTable(QWidget):
             return None, None
         
         # Evaluate expression
-        math_namespace = {
-            'p': params, 'np': np,
-            'exp': np.exp, 'log': np.log, 'log10': np.log10, 'sqrt': np.sqrt,
-            'abs': np.abs, 'sin': np.sin, 'cos': np.cos, 'tan': np.tan,
-            'arcsin': np.arcsin, 'arccos': np.arccos, 'arctan': np.arctan,
-            'sinh': np.sinh, 'cosh': np.cosh, 'tanh': np.tanh,
-            'pi': np.pi, 'e': np.e, 'power': np.power,
-            'floor': np.floor, 'ceil': np.ceil, 'round': np.round,
-            'sum': np.sum, 'mean': np.mean, 'std': np.std,
-        }
         try:
-            value = float(eval(expr_text, {"__builtins__": {}}, math_namespace))
+            value = float(eval_expr(expr_text, params))
         except Exception:
             return None, None
         
@@ -702,10 +692,8 @@ class ResultsTable(QWidget):
             p_plus[full_idx] += h
             p_minus[full_idx] -= h
             try:
-                namespace_plus = {**math_namespace, 'p': p_plus}
-                namespace_minus = {**math_namespace, 'p': p_minus}
-                f_plus = float(eval(expr_text, {"__builtins__": {}}, namespace_plus))
-                f_minus = float(eval(expr_text, {"__builtins__": {}}, namespace_minus))
+                f_plus = float(eval_expr(expr_text, p_plus))
+                f_minus = float(eval_expr(expr_text, p_minus))
                 partials[c_idx] = (f_plus - f_minus) / (2 * h)
             except Exception:
                 partials[c_idx] = 0.0

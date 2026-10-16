@@ -65,7 +65,7 @@ def _ti(x, p, model, JN, method, Norm, lengths=None):
 def _sigma(E, lines):
     """Optical thickness of natural-width lines [(position, thickness), ...],
     in the convention of TImod's Singlet."""
-    return sum(np.pi * NAT_WIDTH / 2 * t * m5.Voight(NAT_WIDTH, 0.0, E - x) for x, t in lines)
+    return sum(np.pi * NAT_WIDTH / 2 * t * m5.Voigt(NAT_WIDTH, 0.0, E - x) for x, t in lines)
 
 
 def _exact_cms(v, lines):
@@ -78,7 +78,7 @@ def _exact_cms(v, lines):
     pos = [x for x, _ in lines]
     E = np.arange(min(pos) - 40.0, max(pos) + 40.0 + h / 2, h)
     absorbed = 1 - np.exp(-_sigma(E, lines))
-    source = np.array([m5.Voight(NAT_WIDTH, _G, E - vi) for vi in v])
+    source = np.array([m5.Voigt(NAT_WIDTH, _G, E - vi) for vi in v])
     return 1 - source @ absorbed * h
 
 
@@ -205,7 +205,7 @@ def _former_map(v, lines, JN):
     e = np.linspace(-_EDGE, _EDGE, JN)
     f = c[0] * np.log((1 + e) / (1 - e)) + c[1] * np.log((2 + e) / (2 - e)) + c[2] * np.log((3 + e) / (3 - e))
     fp = c[0] * 2 / (1 - e**2) + c[1] * 4 / (4 - e**2) + c[2] * 6 / (9 - e**2)
-    w = m5.Voight(NAT_WIDTH * MulCoCMS, _G * MulCoCMS, f) * fp * (e[1] - e[0])
+    w = m5.Voigt(NAT_WIDTH * MulCoCMS, _G * MulCoCMS, f) * fp * (e[1] - e[0])
     T = np.exp(-_sigma((v[:, None] + f[None, :] / MulCoCMS).ravel(), lines)).reshape(len(v), JN)
     return (T * w).sum(axis=1) + 1 - w.sum()
 

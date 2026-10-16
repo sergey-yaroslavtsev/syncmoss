@@ -118,6 +118,16 @@ def test_every_calculation_entry_point_is_guarded(physics_app):
         assert '_reject_if_busy(' in body, f"{name} is not guarded"
 
 
+@pytest.mark.parametrize("paths", [[], ["spectrum.dat"]])
+def test_a_refused_calibration_leaves_the_app_free(physics_app, paths):
+    """No spectrum, or not a raw one: Calibration refuses, and the next
+    action is not told that Calibration is still running."""
+    physics_app.path_list = paths
+    physics_app.calibration()
+    assert not physics_app.inprogress
+    assert physics_app._reject_if_busy('Fitting') is False
+
+
 def test_interrupt_flag_is_an_event(physics_app):
     """Same mechanism and name as SYNCtime: an Event, because a thread cannot
     be killed. What interrupt() does with it: test_interrupt.py."""

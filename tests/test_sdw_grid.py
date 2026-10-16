@@ -28,13 +28,13 @@ _WAVE = dict(d0=0.1, eps0=0.05, KeH=0.005, H0=30.0,
 
 def _L_direct(num, **wave):
     v = m5.SDW_thick_terms_direct(Num=num, **wave)
-    return np.array([(m5.Voight_c(_WL, _WG, _E[:, None] - np.asarray(vk)[None, :])).sum(axis=1) / len(vk)
+    return np.array([(m5.Voigt_c(_WL, _WG, _E[:, None] - np.asarray(vk)[None, :])).sum(axis=1) / len(vk)
                      for vk in v])
 
 
 def _L_grid(num, **wave):
     grids, wts = m5.SDW_thick_terms(Num=num, WL=_WL, WG=_WG, MulCo=_MULCO, steps=_STEPS, **wave)
-    return np.array([(m5.Voight_c(_WL, _WG, _E[:, None] - g[None, :]) * w[None, :]).sum(axis=1)
+    return np.array([(m5.Voigt_c(_WL, _WG, _E[:, None] - g[None, :]) * w[None, :]).sum(axis=1)
                      for g, w in zip(grids, wts)])
 
 

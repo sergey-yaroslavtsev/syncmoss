@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 import syncmoss.models as m5
+from syncmoss.expression_eval import eval_expr
 from syncmoss.constants import number_of_baseline_parameters
 
 _E = np.linspace(-10.0, 10.0, 96)
@@ -43,7 +44,7 @@ def _c(model, params, distri=None, cor=None, recon=None, mett=0):
 
 def _eval(formula, X):
     """A Distr PDF / Corr dependency on the axis, exactly as TImod evaluates it."""
-    return eval(formula, vars(m5), {'X': X}) + 0 * X
+    return eval_expr(formula, None, X) + 0 * X
 
 
 class Level:
@@ -197,6 +198,26 @@ def test_chain_equals_hand_written_expansion(label, base_model, base_params, lev
     assert np.max(np.abs(y_chain - y_base)) / depth > 1e-2, (
         f"{label} (mett={mett}): distribution had no visible effect -- test is vacuous"
     )
+
+
+def test_distr_corr_texts_see_the_bare_names_of_eval_expr():
+    """A Distr/Corr text is evaluated by expression_eval.eval_expr, as the check
+    before a fit and the distribution plot evaluate it: its bare numpy names,
+    any other numpy function as np.<name>, and none of TImod's own variables."""
+    def spectrum(pdf, corr="0.01*X"):
+        level = Level('D', 3, 31.0, 35.0, 3, pdf, corrs=[(1, corr)])
+        markers, params, distri, cor, recon = chained(_SX, [level])
+        return _c(['Sextet'] + markers, params, distri=distri, cor=cor)
+
+    flat = spectrum("1+0*X")
+    assert np.array_equal(spectrum("np.heaviside(X, 1)"), flat)     # X > 0 on the whole axis
+    assert np.array_equal(spectrum("1+0*X", "np.multiply(0.01, X)"), flat)
+    assert np.array_equal(spectrum("np.exp(-X**2/600)"), spectrum("exp(-X**2/600)"))
+    for text in ("heaviside(X, 1)", "Num + 0*X"):
+        with pytest.raises(NameError):
+            spectrum(text)
+        with pytest.raises(NameError):
+            spectrum("1+0*X", text)
 
 
 # --- the same check driven THROUGH the parameters table ---------------------

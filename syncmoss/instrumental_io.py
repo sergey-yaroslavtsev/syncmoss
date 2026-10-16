@@ -13,6 +13,7 @@ from syncmoss.constants import (number_of_baseline_parameters, ALPHA_FE_FIELD,
                                 NAT_WIDTH, SMS_POL_DEFAULT)
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
+from syncmoss.expression_eval import eval_expr
 import syncmoss.sms_theory as smst
 from syncmoss.spectrum_io import (load_spectrum, estimate_edge_background,
                                   resolve_calibration_path, calculate_backgrounds)
@@ -370,7 +371,7 @@ GCMS_FILE = 'GCMS.txt'
 # The diameters, mm, of the CMS source's active spot (d) and of the aperture
 # that limits the rays reaching the detector (D) -- usually the sample, or a
 # lead mask on it -- as Supp -> "Set CMS source and aperture diameters" takes
-# them. Only their ratio enters: d/D, the r/R of the radii (models.Voight_disc).
+# them. Only their ratio enters: d/D, the r/R of the radii (models.Voigt_disc).
 # The defaults: the most common source, and d/D = 0.25, the least bad ratio
 # when the geometry is not known (docs/cosine_smearing.md, study part R2).
 DEFAULT_SOURCE_DIAMETER = 5.0
@@ -1139,7 +1140,7 @@ def apply_links(p, confu, Expr, NExpr):
         if matches.size:
             p[i] = p[int(confu[1][matches[0]])] * confu[2][matches[0]]
     for e_i in range(len(Expr)):
-        p[NExpr[e_i]] = mi._eval_expr(str(Expr[e_i]), p)
+        p[NExpr[e_i]] = eval_expr(str(Expr[e_i]), p)
         for c_i in np.flatnonzero(confu[1] == NExpr[e_i]):
             p[int(confu[0][c_i])] = p[int(confu[1][c_i])] * confu[2][c_i]
     return p

@@ -392,7 +392,7 @@ def _reference_transmission(ins, x, x0, MulCo, I_eff, delta, WL, WG, n_t=40001):
     S = st.ins_shape(ins, t)
     out = np.empty(len(x))
     for i, xv in enumerate(x):
-        voi = m5.Voight(WL * MulCo, WG * MulCo, (xv + t - delta) * MulCo)
+        voi = m5.Voigt(WL * MulCo, WG * MulCo, (xv + t - delta) * MulCo)
         out[i] = np.trapezoid(
             S * np.exp(-np.pi * (NAT_WIDTH / 2 * MulCo) * I_eff * voi), t)
     return out

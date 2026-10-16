@@ -1,4 +1,4 @@
-"""Cosine smearing of CMS spectra (models.Voight_disc, models.cms_smearing,
+"""Cosine smearing of CMS spectra (models.Voigt_disc, models.cms_smearing,
 which TI's callers prepare and pass as TI's ``smearing``), its storage next to
 G (#@GCMS and GCMS.txt: G, Δθ, then the diameters), the searches that fit G or
 Δθ, and models.erf.
@@ -119,11 +119,11 @@ def test_limits_keeps_its_erf():
     assert m5.erf(0.5) == 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * np.exp(-0.5 * 0.5)
 
 
-# --- the disc source: Voight averaged over the disc kernel ------------------------
+# --- the disc source: Voigt averaged over the disc kernel ------------------------
 
 _GL, _GG = NAT_WIDTH * MulCoCMS, _G * MulCoCMS
 _U = np.linspace(-3.0, 3.0, 6001)
-_PEAK = m5.Voight(_GL, _GG, np.array([0.0]))[0]
+_PEAK = m5.Voigt(_GL, _GG, np.array([0.0]))[0]
 
 def _lens(d, r1, r2):
     """Overlap area of two discs of radii r1 and r2, centres d apart."""
@@ -153,7 +153,7 @@ def _ray_density(x, dtheta, q):
 
 @pytest.mark.parametrize("x", [0.3, 1.0, 2.5])
 @pytest.mark.parametrize("U, dtheta", [(1.0, 0.2), (-3.0, 0.2), (2.0, 0.4)])
-def test_voight_disc_is_voight_averaged_over_the_rays(x, U, dtheta):
+def test_voigt_disc_is_voigt_averaged_over_the_rays(x, U, dtheta):
     """The source line averaged over the rays about their mean: a fine sum over
     q with the rays' own weights (r/R = 2.5 as it is, the aperture the smaller
     disc) against the few nodes of the Gauss rule. The point source's box at
@@ -165,8 +165,8 @@ def test_voight_disc_is_voight_averaged_over_the_rays(x, U, dtheta):
     y = (1 - c) - np.sum(w * (1 - c))
     u = _U[::10]
     keep = np.flatnonzero(w)[::8]
-    brute = sum(wi * m5.Voight(_GL, _GG, u + U * yi) for yi, wi in zip(y[keep], w[keep])) / w[keep].sum()
-    got, mean = m5.Voight_disc(_GL, _GG, u, np.full_like(u, U), dtheta, x)
+    brute = sum(wi * m5.Voigt(_GL, _GG, u + U * yi) for yi, wi in zip(y[keep], w[keep])) / w[keep].sum()
+    got, mean = m5.Voigt_disc(_GL, _GG, u, np.full_like(u, U), dtheta, x)
     assert np.abs(got - brute).max() < 1e-5 * _PEAK
     assert mean == pytest.approx(np.sum(w * (1 - c)), rel=1e-6)
 
@@ -201,8 +201,8 @@ def test_a_small_disc_is_a_point():
     for U, dtheta in ((1.0, 0.2), (3.0, 0.2), (0.3, 1.0)):
         c, w = _cosines(dtheta, 200)
         y = (1 - c) - np.sum(w * (1 - c))
-        point = sum(wi * m5.Voight(_GL, _GG, _U + U * yi) for yi, wi in zip(y, w))
-        disc, _ = m5.Voight_disc(_GL, _GG, _U, np.full_like(_U, U), dtheta, 1e-4)
+        point = sum(wi * m5.Voigt(_GL, _GG, _U + U * yi) for yi, wi in zip(y, w))
+        disc, _ = m5.Voigt_disc(_GL, _GG, _U, np.full_like(_U, U), dtheta, 1e-4)
         assert np.abs(disc - point).max() < 1e-5 * _PEAK
 
 
@@ -268,7 +268,7 @@ def test_a_smearing_prepared_for_other_points_or_nodes_is_refused():
 
 
 def _sigma(E, lines):
-    return sum(np.pi * NAT_WIDTH / 2 * t * m5.Voight(NAT_WIDTH, 0.0, E - x) for x, t in lines)
+    return sum(np.pi * NAT_WIDTH / 2 * t * m5.Voigt(NAT_WIDTH, 0.0, E - x) for x, t in lines)
 
 
 def _exact(v, lines):
@@ -278,7 +278,7 @@ def _exact(v, lines):
     pos = [x for x, _ in lines]
     E = np.arange(min(pos) - 40.0, max(pos) + 40.0 + h / 2, h)
     absorbed = 1 - np.exp(-_sigma(E, lines))
-    source = m5.Voight(NAT_WIDTH, _G, (E[None, :] - np.asarray(v)[:, None]).ravel()).reshape(len(v), len(E))
+    source = m5.Voigt(NAT_WIDTH, _G, (E[None, :] - np.asarray(v)[:, None]).ravel()).reshape(len(v), len(E))
     return 1 - source @ absorbed * h
 
 

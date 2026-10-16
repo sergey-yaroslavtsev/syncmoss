@@ -235,7 +235,10 @@ def test_canceling_the_save_dialog_writes_nothing(physics_app, pool, monkeypatch
     physics_app.create_spectrum_from_model()
     _pump_until(lambda: not physics_app.inprogress)
     physics_app.model_spectrum_thread.wait()
-    assert physics_app.log.toPlainText() == "Save canceled"
+    # the status line, and under it how long the calculation took
+    status, took = physics_app.log.toPlainText().splitlines()
+    assert status == "Save canceled"
+    assert took.startswith("Create spectrum from model took ")
     assert written == []
 
 

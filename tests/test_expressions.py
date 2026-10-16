@@ -14,7 +14,7 @@ import pytest
 from scipy.integrate import quad
 
 from syncmoss import constants
-from syncmoss import minimi_lib as mi
+from syncmoss.expression_eval import eval_expr
 from syncmoss.expressions_io import (
     expression_name_problem, list_expressions, one_line, substitutable_names,
     substitute_expression)
@@ -92,7 +92,7 @@ def _value(name, **changes):
     values = dict(SAMPLE_VALUES[name])
     for key, value in changes.items():
         values[key if key.startswith('N') and key[1:].isdigit() else f'{{{key}}}'] = str(value)
-    return mi._eval_expr(substitute_expression(_shipped(name)['expression'], values), np.zeros(1))
+    return eval_expr(substitute_expression(_shipped(name)['expression'], values), np.zeros(1))
 
 
 def test_every_shipped_expression_is_listed():

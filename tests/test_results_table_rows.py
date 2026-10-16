@@ -235,6 +235,19 @@ def test_an_expression_past_the_old_limit_is_spanned(physics_app):
     assert _cell(rt, rows[2], 1) == "±0.020"             # 2 x the error of p[8]
 
 
+def test_an_expression_takes_the_bare_names_of_the_fit(physics_app):
+    """The value and error are evaluated as the fit evaluates the Expression:
+    sign() and arcsinh() were missing from the table's own list, so it showed
+    nothing for them."""
+    rt = physics_app.results_table
+    result = _singlets(2, expression_at=2)
+    p, texts = result[0], result[4]
+    texts[2] = 'sign(p[8])*arcsinh(p[8])'
+    _fill(rt, result)
+    assert _cell(rt, 7, 1) == f"{np.sign(p[8]) * np.arcsinh(p[8]):.3f}"
+    assert _cell(rt, 8, 1) == f"±{0.01 / np.sqrt(1 + p[8] ** 2):.3f}"   # d arcsinh = 1/sqrt(1+x²)
+
+
 def test_a_smaller_result_leaves_nothing_of_a_larger_one(physics_app):
     rt = physics_app.results_table
     big = _singlets(MANY, expression_at=MANY - 3)

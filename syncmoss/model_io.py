@@ -20,6 +20,7 @@ from syncmoss.constants import (numco, number_of_baseline_parameters, mdl_color_
                                 contrast_text_color, model_colors)
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
 from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
+from syncmoss.expression_eval import eval_expr
 from syncmoss.spectrum_parameters import (
     substitute, names_used, missing_names, first_spectrum_parameters)
 
@@ -1085,10 +1086,9 @@ def validate_user_expressions(main_window):
 
     Called before a fit or show-model starts, so a meaningless expression is
     rejected up front instead of crashing mid-procedure. Each expression is
-    evaluated in the same namespace the real computation uses: Expression via
-    minimi_lib._eval_expr (bare numpy names + the parameter array ``p``),
-    Distr/Corr in the models-module namespace with the distribution axis ``X``
-    and ``p`` available (mimicking ``eval(...) + 0*X`` in models.TImod).
+    evaluated as the real computation does, through expression_eval.eval_expr
+    (its bare numpy names + the parameter array ``p``); Distr/Corr also get the
+    distribution axis ``X`` (mimicking ``eval_expr(...) + 0*X`` in models.TImod).
 
     The names N, N1, N2, ... are evaluated with the values of the first
     spectrum of the path box, as read_model gives them; a name that spectrum
@@ -1100,9 +1100,6 @@ def validate_user_expressions(main_window):
         the offending field (None if it could not be located). ``text`` is the
         text as typed.
     """
-    import syncmoss.minimi_lib as mi
-    import syncmoss.models as m5
-
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
     typed = read_model(main_window, substitute_names=False)
     typed = {'Expression': typed[7], 'Distr': typed[5], 'Corr': typed[6]}
@@ -1135,11 +1132,11 @@ def validate_user_expressions(main_window):
                              'text': as_typed, 'error': e})
 
     for k, text in enumerate(Expr):
-        _check('Expression', k, text, lambda s: float(mi._eval_expr(s, p)))
+        _check('Expression', k, text, lambda s: float(eval_expr(s, p)))
     for k, text in enumerate(Distri):
-        _check('Distr', k, text, lambda s: eval(s, vars(m5), {'X': X, 'p': p}) + 0 * X)
+        _check('Distr', k, text, lambda s: eval_expr(s, p, X) + 0 * X)
     for k, text in enumerate(Cor):
-        _check('Corr', k, text, lambda s: eval(s, vars(m5), {'X': X, 'p': p}) + 0 * X)
+        _check('Corr', k, text, lambda s: eval_expr(s, p, X) + 0 * X)
 
     return problems
 

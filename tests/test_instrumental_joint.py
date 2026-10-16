@@ -46,8 +46,7 @@ class _SerialPool:
 def _searches_minimize_with(monkeypatch, minimi_hi):
     """The searches call *minimi_hi*; everything else (models.limits, ...) keeps
     the real one."""
-    monkeypatch.setattr(iio, 'mi', types.SimpleNamespace(
-        minimi_hi=minimi_hi, _eval_expr=iio.mi._eval_expr))
+    monkeypatch.setattr(iio, 'mi', types.SimpleNamespace(minimi_hi=minimi_hi))
 
 
 @pytest.fixture

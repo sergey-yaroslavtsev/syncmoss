@@ -10,7 +10,7 @@ import re
 from syncmoss.models import TI
 from syncmoss.model_io import read_model
 from syncmoss.constants import SMS_POL_DEFAULT
-import syncmoss.minimi_lib as mi
+from syncmoss.expression_eval import eval_expr
 from syncmoss import bliss_channel
 from syncmoss.exclusion_regions import kept, format_regions
 # NOTE: instrumental_io is imported lazily inside functions below — it imports
@@ -437,10 +437,10 @@ def subtract_model_from_spectrum(main_window):
             return
 
         # Apply expressions in the same namespace the fit uses (bare numpy
-        # names + p; see minimi_lib._eval_expr)
+        # names + p; see expression_eval)
         for i in range(len(NExpr)):
             try:
-                p[NExpr[i]] = mi._eval_expr(Expr[i], p)
+                p[NExpr[i]] = eval_expr(Expr[i], p)
             except Exception as e:
                 main_window.set_status(f"Error evaluating expression: {e}", "red")
                 return
@@ -566,7 +566,7 @@ def prepare_model_spectrum(main_window):
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
         # Expressions and =[..] links, as Show model applies them
         for i in range(len(NExpr)):
-            p[NExpr[i]] = mi._eval_expr(Expr[i], p)
+            p[NExpr[i]] = eval_expr(Expr[i], p)
         for i in range(len(con1)):
             p[int(con1[i])] = p[int(con2[i])] * con3[i]
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))

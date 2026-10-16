@@ -3,7 +3,7 @@ import os
 import numpy as np
 from syncmoss.constants import model_colors, number_of_baseline_parameters
 from syncmoss.model_io import mod_len_def
-from syncmoss.minimi_lib import _eval_expr
+from syncmoss.expression_eval import eval_expr
 
 # Default theme (original dark mode colors)
 _DEFAULT_THEME = {
@@ -1328,9 +1328,9 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
             # Evaluate distribution expression
             try:
                 X = X_discrete
-                Y_discrete = _eval_expr(Distri[Di_idx], p, X) + 0 * X
+                Y_discrete = eval_expr(Distri[Di_idx], p, X) + 0 * X
                 X = X_smooth
-                Y_smooth = _eval_expr(Distri[Di_idx], p, X) + 0 * X
+                Y_smooth = eval_expr(Distri[Di_idx], p, X) + 0 * X
             except Exception as e:
                 print(f"Error evaluating distribution expression: {e}")
                 Di_idx += 1
@@ -1370,11 +1370,11 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
                 try:
                     if Y_smooth_norm is not None:
                         X = X_smooth
-                        YY_smooth = _eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
+                        YY_smooth = eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
                         ax_corr.plot(YY_smooth, Y_smooth_norm, color='red', linewidth=1.5)
 
                     X = X_discrete
-                    YY_discrete = _eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
+                    YY_discrete = eval_expr(Cor[Co_idx + Co_n], p, X) + 0 * X
                     ax_corr.plot(YY_discrete, Y_discrete_norm, marker='H', linestyle='', color=corr_dot_color, markersize=6)
                 except Exception as e:
                     print(f"Error evaluating correlation expression: {e}")
@@ -1450,7 +1450,7 @@ def distribution_curves(model, p, Distri, Cor, Recon=None):
             columns.append((f'Recon_y_{r_count}', y))
         else:
             try:
-                y = _eval_expr(Distri[Di_idx], p, X) + 0.0 * X
+                y = eval_expr(Distri[Di_idx], p, X) + 0.0 * X
                 S = np.nansum(y)
                 if S == 0:
                     S = 1.0
@@ -1467,7 +1467,7 @@ def distribution_curves(model, p, Distri, Cor, Recon=None):
             ci = int(corr_indices[k])
             if boundaries[j] < ci < boundaries[j + 1]:
                 try:
-                    xx = _eval_expr(Cor[Co_idx], p, X) + 0.0 * X
+                    xx = eval_expr(Cor[Co_idx], p, X) + 0.0 * X
                 except Exception:
                     xx = np.full(n_points, np.nan)
                 Co_idx += 1

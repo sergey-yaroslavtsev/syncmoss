@@ -46,9 +46,9 @@ import multiprocessing as mp
 # Third-party
 # ---------------------------------------------------------------------------
 # NOTE: user-typed Expression/Distr/Corr strings are evaluated through
-# minimi_lib._eval_expr, whose module namespace provides the bare numpy names
-# (sin, sqrt, ...). Do not re-introduce a ``from numpy import ...`` block here
-# for that purpose.
+# expression_eval.eval_expr, whose module namespace provides the bare numpy
+# names (sin, sqrt, ...). Do not re-introduce a ``from numpy import ...`` block
+# here for that purpose.
 import numpy as np
 import matplotlib
 matplotlib.use('QtAgg')  # select the Qt backend before importing pyplot
@@ -72,7 +72,7 @@ from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, 
 # ---------------------------------------------------------------------------
 # Local package
 # ---------------------------------------------------------------------------
-import syncmoss.minimi_lib as mi
+from syncmoss.expression_eval import eval_expr
 import syncmoss.fitting_io as fitting_io
 from syncmoss.models import TI, FIT_CANCEL, FitInterrupted
 from syncmoss.Calibration import Calibration
@@ -569,6 +569,18 @@ class SequentialFittingThread(QThread):
         })
 
 
+def _duration_text(seconds):
+    """How long a calculation took, as the log box says it: '12.3 s',
+    '4 min 05 s', '2 h 07 min'."""
+    if seconds < 60:
+        return f"{seconds:.1f} s"
+    minutes, seconds = divmod(round(seconds), 60)
+    if minutes < 60:
+        return f"{minutes} min {seconds:02d} s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d} min"
+
+
 def _write_problem(path, error):
     """'<file>: <reason>' for a result file that could not be written.
 
@@ -683,10 +695,10 @@ class ShowModelThread(QThread):
             # Allow showing just baseline (an empty model list is OK)
 
             # Apply linked expressions and =[..] constraints exactly like the
-            # fit does (same eval namespace: see minimi_lib._eval_expr)
+            # fit does (same eval namespace: see expression_eval)
             for i in range(len(NExpr)):
                 try:
-                    p[NExpr[i]] = mi._eval_expr(Expr[i], p)
+                    p[NExpr[i]] = eval_expr(Expr[i], p)
                 except Exception as e:
                     print(f"Error evaluating expression {Expr[i]}: {e}")
 
@@ -1053,6 +1065,7 @@ class PhysicsApp(QMainWindow):
         self.setGeometry(50, 50, 1600, 900)
         self.setMinimumSize(1270, 710)
         self.inprogress = False  # Flag to indicate if a process is running
+        self._calculation_started = None  # perf_counter() when a calculation thread started
         # Cooperative cancellation for a running search: the model function
         # polls it (see interrupt()). An Event rather than a bool so a worker
         # THREAD reads it without a lock. Same mechanism and same name as the
@@ -1241,7 +1254,7 @@ class PhysicsApp(QMainWindow):
         self.SMS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.SMS_fit))
 
         # The CMS source: the Gaussian width G of its line and the cosine
-        # smearing dtheta (models.Voight_disc); the source and
+        # smearing dtheta (models.Voigt_disc); the source and
         # aperture diameters d and D, whose ratio sets the smearing's shape, are
         # a Supp setting (the stores below). An SMS spectrum uses none of them.
         # All start from parameters/GCMS.txt (Δθ 0 and the default diameters
@@ -2118,7 +2131,7 @@ class PhysicsApp(QMainWindow):
         self.model_spectrum_thread = ModelSpectrumThread(job, self.pool)
         self.model_spectrum_thread.done.connect(self.on_model_spectrum_done)
         self.model_spectrum_thread.error.connect(self.on_model_spectrum_error)
-        self.model_spectrum_thread.start()
+        self._start_calculation(self.model_spectrum_thread)
 
     def on_model_spectrum_done(self, job, counts):
         """The model is calculated: ask where it goes, and save it."""
@@ -2128,12 +2141,12 @@ class PhysicsApp(QMainWindow):
             traceback.print_exc()
             self.set_status(f"Error saving the spectrum calculated from the model: {e}", "red")
         finally:
-            self.inprogress = False
+            self._calculation_ended()
 
     def on_model_spectrum_error(self, error_msg):
         """Handle a failed model calculation of Create spectrum from model"""
         self.set_status(f"Create spectrum from model failed: {error_msg}", "red")
-        self.inprogress = False
+        self._calculation_ended()
 
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
@@ -2424,8 +2437,6 @@ class PhysicsApp(QMainWindow):
         """Perform calibration on RAW spectrum files"""
         if self._reject_if_busy('Calibration'):
             return
-        self.inprogress = True
-        self.busy_with = 'Calibration'
         if not self.path_list:
             self.set_status("No spectrum selected for calibration", "orange")
             return
@@ -2452,6 +2463,9 @@ class PhysicsApp(QMainWindow):
         # Get velocity direction
         vel_start = int(self.velocity_direction)
         
+        # Busy only from here: the refusals above leave the app free
+        self.inprogress = True
+        self.busy_with = 'Calibration'
         # Disable calibration button during processing
         self.cal_btn.setEnabled(False)
         self.set_status("Calibration in progress...", "blue")
@@ -2463,7 +2477,7 @@ class PhysicsApp(QMainWindow):
         )
         self.calibration_thread.finished.connect(self.on_calibration_finished)
         self.calibration_thread.error.connect(self.on_calibration_error)
-        self.calibration_thread.start()
+        self._start_calculation(self.calibration_thread)
     
     def on_calibration_finished(self, A, B, C):
         """Handle calibration completion"""
@@ -2492,14 +2506,14 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.set_status(f"Error processing calibration results: {e}", "red")
         finally:
-            self.inprogress = False
+            self._calculation_ended()
             self.cal_btn.setEnabled(True)
             
     
     def on_calibration_error(self, error_msg):
         """Handle calibration error"""
         self.set_status(f"Calibration error: {error_msg}", "red")
-        self.inprogress = False
+        self._calculation_ended()
         self.cal_btn.setEnabled(True)
     
     def showM_pressed(self):
@@ -2580,7 +2594,7 @@ class PhysicsApp(QMainWindow):
                                                  one_model_show=self._show_one_model)
         self.show_model_thread.finished.connect(self.on_show_model_finished)
         self.show_model_thread.error.connect(self.on_show_model_error)
-        self.show_model_thread.start()
+        self._start_calculation(self.show_model_thread)
     
     def on_show_model_finished(self, A, B, SPC_f, FS, FS_pos, p, model, has_nbaseline, backgrounds, instrumental_note='', hires_diff=None, Distri=None, Cor=None, Recon=None, lengths=None):
         """Handle show model completion"""
@@ -2642,7 +2656,7 @@ class PhysicsApp(QMainWindow):
             traceback.print_exc()
             self.set_status(f"Error plotting model: {e}", "red")
         finally:
-            self.inprogress = False
+            self._calculation_ended()
 
     def _plot_show_model_data(self, data):
         """Render a show-model dataset and refresh canvas/toolbar state."""
@@ -2688,7 +2702,7 @@ class PhysicsApp(QMainWindow):
     def on_show_model_error(self, error_msg):
         """Handle show model error"""
         self.set_status(f"Error showing model: {error_msg}", "red")
-        self.inprogress = False
+        self._calculation_ended()
     
     def on_raw_to_dat_finished(self, success_msg):
         """Handle raw to dat conversion completion"""
@@ -2811,6 +2825,24 @@ class PhysicsApp(QMainWindow):
     def parse_process_path(self):
         """The spectrum paths of the path box (without their parameters)."""
         return [path for path, _ in self.parse_process_entries()]
+
+    def _start_calculation(self, thread):
+        """Start a calculation *thread* and its clock; _calculation_ended
+        reports the time."""
+        self._calculation_started = time.perf_counter()
+        thread.start()
+
+    def _calculation_ended(self):
+        """Release the app after a calculation thread -- its handlers call this
+        last, after their status line -- and say how long it took, in the
+        terminal and under that line."""
+        self.inprogress = False
+        if self._calculation_started is None:
+            return
+        took = f"{self.busy_with} took {_duration_text(time.perf_counter() - self._calculation_started)}"
+        self._calculation_started = None
+        print(took)
+        self.log.append(took)
 
     def _reject_if_busy(self, what):
         """True -- and SAYS SO -- when another calculation is already running.
@@ -3176,7 +3208,7 @@ class PhysicsApp(QMainWindow):
                                                       dtheta_search=dtheta_search)
         self.instrumental_thread.finished.connect(self.on_instrumental_finished)
         self.instrumental_thread.error.connect(self.on_instrumental_error)
-        self.instrumental_thread.start()
+        self._start_calculation(self.instrumental_thread)
 
     def dtheta_pressed(self, mode):
         """Instrumental function -> Refine Δθ: pure α-Fe (mode 2) / model (mode
@@ -3234,7 +3266,7 @@ class PhysicsApp(QMainWindow):
         self.source_calibration_thread.progress.connect(lambda line: self.set_status(line, "blue"))
         self.source_calibration_thread.done.connect(self.on_source_calibration_done)
         self.source_calibration_thread.failed.connect(self.on_source_calibration_failed)
-        self.source_calibration_thread.start()
+        self._start_calculation(self.source_calibration_thread)
 
     def on_source_calibration_done(self, result):
         """Both spectra and their fit on the new axis; that Calibration.dat in
@@ -3263,12 +3295,12 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.set_status(f"Error showing the calibration with G and Δθ: {e}", "red")
         finally:
-            self.inprogress = False
+            self._calculation_ended()
             self.cal_btn.setEnabled(True)
 
     def on_source_calibration_failed(self, message):
         self.set_status(f"Calibration with G and Δθ: {message}", "red")
-        self.inprogress = False
+        self._calculation_ended()
         self.cal_btn.setEnabled(True)
 
     def _instrumental_search_request(self, mode):
@@ -3382,7 +3414,7 @@ class PhysicsApp(QMainWindow):
         except Exception as e:
             self.set_status(f"Error plotting instrumental results: {e}\n{traceback.format_exc()}", "red")
         finally:
-            self.inprogress = False
+            self._calculation_ended()
     
     def _show_search_model(self, result):
         """The model a search with the model fitted together with the
@@ -3428,7 +3460,7 @@ class PhysicsApp(QMainWindow):
     def on_instrumental_error(self, error_msg):
         """Handle instrumental function error"""
         self.set_status(f"Instrumental function error: {error_msg}", "red")
-        self.inprogress = False
+        self._calculation_ended()
 
     def show_pressed(self):
         """Load and display the selected spectrum(s)"""
@@ -3966,7 +3998,7 @@ class PhysicsApp(QMainWindow):
         self.fitting_thread = FittingThread(self, spectrum_file, self.pool, spectrum_parameters)
         self.fitting_thread.finished.connect(self.on_fitting_finished)
         self.fitting_thread.error.connect(self.on_fitting_error)
-        self.fitting_thread.start()
+        self._start_calculation(self.fitting_thread)
 
     def fit_one_spectrum(self):
         """Multispectra settings -> Fit one spectrum: one spectrum of the path box
@@ -4090,7 +4122,7 @@ class PhysicsApp(QMainWindow):
         self.one_model_fit_thread = OneModelFitThread(self, template, spectra, self.pool)
         self.one_model_fit_thread.done.connect(self.on_one_model_fit_done)
         self.one_model_fit_thread.error.connect(self.on_fitting_error)
-        self.one_model_fit_thread.start()
+        self._start_calculation(self.one_model_fit_thread)
 
     def on_one_model_fit_done(self, result):
         """Show a finished one-model fit: the whole expanded model in the results
@@ -4119,7 +4151,7 @@ class PhysicsApp(QMainWindow):
             print(f"Error processing fit results: {e}\n{traceback.format_exc()}")
             self.set_status(f"Error processing fit results: {e}", "red")
         finally:
-            self.inprogress = False
+            self._calculation_ended()
 
     def plot_one_model_result(self, fit):
         """The first and the last spectrum of a one-model fit in the main window
@@ -4286,7 +4318,7 @@ class PhysicsApp(QMainWindow):
         self.sequential_fitting_thread.progress.connect(self._on_sequential_progress)
         self.sequential_fitting_thread.spectrum_fitted.connect(self._on_spectrum_fitted)
         self.sequential_fitting_thread.finished.connect(self._on_sequential_finished)
-        self.sequential_fitting_thread.start()
+        self._start_calculation(self.sequential_fitting_thread)
     
     def _too_few_points_after_exclusion(self, spectrum_files, spectrum_parameters, regions):
         """The spectra of *spectrum_files* that keep no more points outside
@@ -4421,7 +4453,7 @@ class PhysicsApp(QMainWindow):
                 self.show_result_window(series)
             except Exception as e:
                 print(f"Result window not shown: {e}\n{traceback.format_exc()}")
-        self.inprogress = False
+        self._calculation_ended()
     
     def _sequence_file(self, suffix):
         """A file of the whole sequence run: the save path's base + *suffix*."""
@@ -4771,12 +4803,12 @@ class PhysicsApp(QMainWindow):
             print(error_msg)
             self.set_status(f"Error processing fit results: {e}", "red")
         finally:
-            self.inprogress = False
+            self._calculation_ended()
     
     def on_fitting_error(self, error_msg):
         """Handle fitting error"""
         self.set_status(f"Fitting error: {error_msg}", "red")
-        self.inprogress = False
+        self._calculation_ended()
 
     def _result_base_path(self):
         """The base every result file is named from: the save path without the

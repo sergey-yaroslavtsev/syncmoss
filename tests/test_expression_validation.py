@@ -52,6 +52,24 @@ def test_invalid_expression_detected_per_kind(physics_app):
     assert rows == {"Distr": 2, "Corr": 3, "Expression": 4}
 
 
+def test_distr_and_corr_take_the_bare_names_of_the_fit(physics_app):
+    """Distr/Corr are checked with the bare numpy names the fit gives them: a
+    numpy function outside those is refused, the same one as np.<name> passes."""
+    pt = physics_app.params_table
+    pt.select_model(1, "Singlet")
+    pt.select_model(2, "Distr")
+    pt.select_model(3, "Corr")
+
+    _set_expression_text(physics_app, 2, "heaviside(X, 1)")
+    _set_expression_text(physics_app, 3, "hypot(X, 1)")
+    problems = validate_user_expressions(physics_app)
+    assert {p["kind"]: p["row"] for p in problems} == {"Distr": 2, "Corr": 3}
+
+    _set_expression_text(physics_app, 2, "np.heaviside(X, 1)")
+    _set_expression_text(physics_app, 3, "np.hypot(X, 1)")
+    assert validate_user_expressions(physics_app) == []
+
+
 def test_invalid_expression_blocks_fit_and_marks_field_red(physics_app):
     pt = physics_app.params_table
     pt.select_model(1, "Singlet")

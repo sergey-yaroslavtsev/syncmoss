@@ -28,7 +28,6 @@ SOFTWARE.
 
 import numpy as np
 import scipy
-from numpy import *
 import builtins as bu
 def max(*args):
     return bu.max(*args)
@@ -244,14 +243,14 @@ def sol_t(S):
 
 
 # @njit
-# def Voight(WL, WG, S):
+# def Voigt(WL, WG, S):
 #     W = np.power(WG**5 + 2.69269*WL*WG**4 + 2.42843*WL**2*WG**3 + 4.47163*WL**3*WG**2 + 0.07842*WL**4*WG + WL**5, 1/5)
 #     et = 1.36603 * WL / W - 0.47719 * WL ** 2 / W ** 2 + 0.11116 * WL ** 3 / W ** 3
 #     Voi = (et *  W / 2 / np.pi / (S ** 2 + (W / 2) ** 2) \
 #         + (1 - et) *  (np.exp((-1) * (S ** 2 / (2 * (W / 2 / np.sqrt(2 * np.log(2))) ** 2))) / (W / 2 / np.sqrt(2 * np.log(2))) / np.sqrt(2 * np.pi)))
 #     return(Voi)
 #
-# def Voight(WL, WG, S):
+# def Voigt(WL, WG, S):
 #     d = (WL-WG)/(WL+WG)
 #     W = (WL+WG)*(1 - 0.18121*(1-d**2)-(0.023665*np.exp(0.6*d)+0.00418*np.exp(-1.9*d))*np.sin(np.pi*d))
 #     cl = 0.68188+0.61293*d-0.18384*d**2-0.11568*d**3
@@ -261,7 +260,7 @@ def sol_t(S):
 #     return(Voi)
 
 @njit(cache=True)
-def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
+def Voigt(gL, gG, S): # doi.org/10.1107/S0021889800010219
     ro = gL/(gL+gG)
     WG = (1 - ro*(0.66000 + 0.15021*ro - 1.24984*ro**2 + 4.74052*ro**3 - 9.48291*ro**4 + 8.48252*ro**5 - 2.95553*ro**6)) * (gG + gL)
     WL = (1 - (1-ro)*(-0.42179 - 1.25693*ro + 10.30003*ro**2 - 23.45651*ro**3 + 29.14158*ro**4 - 16.50453*ro**5 + 3.19974*ro**6)) * (gG + gL)
@@ -494,9 +493,9 @@ def Ham_poly(Q, Hhf, etto, phi, tet):
 #     I5 = I2
 #     I4 = I3
 #
-#     spc = (I1[:, None]*Voight(L, G, S1) + I2[:, None]*Voight(L, G, S2)\
-#          + I3[:, None]*Voight(L, G, S3) + I4[:, None]*Voight(L, G, S4)\
-#          + I5[:, None]*Voight(L, G, S5) + I6[:, None]*Voight(L, G, S6)).sum(axis=0)
+#     spc = (I1[:, None]*Voigt(L, G, S1) + I2[:, None]*Voigt(L, G, S2)\
+#          + I3[:, None]*Voigt(L, G, S3) + I4[:, None]*Voigt(L, G, S4)\
+#          + I5[:, None]*Voigt(L, G, S5) + I6[:, None]*Voigt(L, G, S6)).sum(axis=0)
 #
 #     return(spc/Num*np.pi/2)
 
@@ -539,9 +538,9 @@ def Average(X, MulCo, Sig, eps, H, Ep, L, G, alf):
     I1 = 1/2 * PDF * (1-Ep) * 3/4
     I3 = 1/2 * PDF * (1-Ep) * 1/4
 
-    spc = (np.reshape(I1, (-1, 1))*Voight(L, G, S1) + np.reshape(I2, (-1, 1))*Voight(L, G, S2)\
-         + np.reshape(I3, (-1, 1))*Voight(L, G, S3) + np.reshape(I3, (-1, 1))*Voight(L, G, S4)\
-         + np.reshape(I2, (-1, 1))*Voight(L, G, S5) + np.reshape(I1, (-1, 1))*Voight(L, G, S6)).sum(axis=0)
+    spc = (np.reshape(I1, (-1, 1))*Voigt(L, G, S1) + np.reshape(I2, (-1, 1))*Voigt(L, G, S2)\
+         + np.reshape(I3, (-1, 1))*Voigt(L, G, S3) + np.reshape(I3, (-1, 1))*Voigt(L, G, S4)\
+         + np.reshape(I2, (-1, 1))*Voigt(L, G, S5) + np.reshape(I1, (-1, 1))*Voigt(L, G, S6)).sum(axis=0)
 
     return(spc/N*np.pi/2)
 
@@ -664,9 +663,9 @@ def Angles_min(tet, N, K, J, Hin, Hex, X, L, G, eps, Sig):
     I1 = 1 / 4 * PDF * (1 - Ep) * 3 / 4
     I3 = 1 / 4 * PDF * (1 - Ep) * 1 / 4
 
-    spc = (np.reshape(I1, (-1, 1)) * Voight(L, G, S1) + np.reshape(I2, (-1, 1)) * Voight(L, G, S2) \
-           + np.reshape(I3, (-1, 1)) * Voight(L, G, S3) + np.reshape(I3, (-1, 1)) * Voight(L, G, S4) \
-           + np.reshape(I2, (-1, 1)) * Voight(L, G, S5) + np.reshape(I1, (-1, 1)) * Voight(L, G, S6)).sum(axis=0)
+    spc = (np.reshape(I1, (-1, 1)) * Voigt(L, G, S1) + np.reshape(I2, (-1, 1)) * Voigt(L, G, S2) \
+           + np.reshape(I3, (-1, 1)) * Voigt(L, G, S3) + np.reshape(I3, (-1, 1)) * Voigt(L, G, S4) \
+           + np.reshape(I2, (-1, 1)) * Voigt(L, G, S5) + np.reshape(I1, (-1, 1)) * Voigt(L, G, S6)).sum(axis=0)
 
     return (spc / N * np.pi / 2)
 

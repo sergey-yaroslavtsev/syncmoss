@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 import syncmoss.models as m5
+from syncmoss.expression_eval import eval_expr
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.model_io import load_model_from_path, mod_len_def, read_model
 
@@ -62,9 +63,8 @@ def _prepare(app, path):
     con2 = np.array(con2, dtype=float)
     if len(NExpr) and len(con2) == len(NExpr):
         con2 = np.array(NExpr, dtype=float)
-    ns = vars(m5)
     for i in range(len(NExpr)):
-        p[int(NExpr[i])] = eval(Expr[i], ns, {"p": p})     # noqa: S307 - model-defined expressions
+        p[int(NExpr[i])] = eval_expr(Expr[i], p)
     for i in range(len(con1)):
         p[int(con1[i])] = p[int(con2[i])] * con3[i]
     return model, p, list(Distri), list(Cor)

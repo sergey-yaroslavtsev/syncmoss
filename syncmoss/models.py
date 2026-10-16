@@ -27,8 +27,6 @@ SOFTWARE.
 """
 
 import numpy as np
-
-from numpy import *
 import builtins as bu
 def max(*args):
     return bu.max(*args)
@@ -36,6 +34,7 @@ def min(*args):
     return bu.min(*args)
 # import dual_v3 as dn
 import syncmoss.minimi_lib as mi
+from syncmoss.expression_eval import eval_expr
 import os
 import platform
 import time
@@ -360,14 +359,14 @@ def sol_t(S):
 
 
 # @njit
-# def Voight(WL, WG, S):
+# def Voigt(WL, WG, S):
 #     W = np.power(WG**5 + 2.69269*WL*WG**4 + 2.42843*WL**2*WG**3 + 4.47163*WL**3*WG**2 + 0.07842*WL**4*WG + WL**5, 1/5)
 #     et = 1.36603 * WL / W - 0.47719 * WL ** 2 / W ** 2 + 0.11116 * WL ** 3 / W ** 3
 #     Voi = (et *  W / 2 / np.pi / (S ** 2 + (W / 2) ** 2) \
 #         + (1 - et) *  (np.exp((-1) * (S ** 2 / (2 * (W / 2 / np.sqrt(2 * np.log(2))) ** 2))) / (W / 2 / np.sqrt(2 * np.log(2))) / np.sqrt(2 * np.pi)))
 #     return(Voi)
 #
-# def Voight(WL, WG, S):
+# def Voigt(WL, WG, S):
 #     d = (WL-WG)/(WL+WG)
 #     W = (WL+WG)*(1 - 0.18121*(1-d**2)-(0.023665*np.exp(0.6*d)+0.00418*np.exp(-1.9*d))*np.sin(np.pi*d))
 #     cl = 0.68188+0.61293*d-0.18384*d**2-0.11568*d**3
@@ -377,7 +376,7 @@ def sol_t(S):
 #     return(Voi)
 
 @njit(cache=True)
-def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
+def Voigt(gL, gG, S): # doi.org/10.1107/S0021889800010219
     ro = gL/(gL+gG)
     WG = (1 - ro*(0.66000 + 0.15021*ro - 1.24984*ro**2 + 4.74052*ro**3 - 9.48291*ro**4 + 8.48252*ro**5 - 2.95553*ro**6)) * (gG + gL)
     WL = (1 - (1-ro)*(-0.42179 - 1.25693*ro + 10.30003*ro**2 - 23.45651*ro**3 + 29.14158*ro**4 - 16.50453*ro**5 + 3.19974*ro**6)) * (gG + gL)
@@ -424,7 +423,7 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 # itself, is as exact but samples the line ten times worse at JN = 32).
 #
 # The rays' cos(theta) is spread by the size of the source and of the aperture
-# that limits them: Voight_disc below, a uniform disc source in front of a
+# that limits them: Voigt_disc below, a uniform disc source in front of a
 # circular aperture, exact at any angle. (A point source, cos(theta) uniform
 # on [cos dtheta, 1], is the disc's limit d/D -> 0 and no source of its own:
 # its closed-form box was taken out on 2026-10-15 and is kept in
@@ -467,7 +466,7 @@ def Voight(gL, gG, S): # doi.org/10.1107/S0021889800010219
 #     tan(dtheta) = a*(1 + 6x^2 + x^4)^(1/4),
 # which for the point source is its geometric half-angle.
 # The average  sum_k w_k S(u + MulCo*(v - v_c)*(y_k - <y>))  is a Gauss rule for
-# this density (Stieltjes on a fine grid in y, then Golub-Welsch), one Voight
+# this density (Stieltjes on a fine grid in y, then Golub-Welsch), one Voigt
 # per node; its <y> = sum_k w_k y_k is the fine grid's to rounding. The
 # integrand is smooth however sharp the kernel's edges are, but the source line
 # must be resolved across the box: 8 nodes per width of the point source's box
@@ -545,10 +544,10 @@ def disc_rule(dtheta, r_ratio, nodes=DISC_NODES_MIN):
     return mean + std * t, weights
 
 
-def Voight_disc(gL, gG, S, U, dtheta, r_ratio):
-    """Voight(gL, gG, .) averaged over the rays of a disc source of r/R =
+def Voigt_disc(gL, gG, S, U, dtheta, r_ratio):
+    """Voigt(gL, gG, .) averaged over the rays of a disc source of r/R =
     r_ratio about their mean (see above), and that mean <y>:
-    sum_k w_k Voight(S + U*(y_k - <y>)), U = MulCo*(v - v_c) (signed; S and U
+    sum_k w_k Voigt(S + U*(y_k - <y>)), U = MulCo*(v - v_c) (signed; S and U
     broadcast) and y_k = 1 - cos(theta) at the nodes of disc_rule. The node
     count follows the widest box of the point source with the same dtheta,
     |U|*(1 - cos dtheta), in units of the line width."""
@@ -558,7 +557,7 @@ def Voight_disc(gL, gG, S, U, dtheta, r_ratio):
     S, U = np.broadcast_arrays(np.asarray(S, dtype=float), np.asarray(U, dtype=float))
     out = 0.0
     for yk, wk in zip(y - mean, weights):
-        out = out + wk * Voight(gL, gG, (S + U * yk).ravel()).reshape(S.shape)
+        out = out + wk * Voigt(gL, gG, (S + U * yk).ravel()).reshape(S.shape)
     return out, mean
 
 
@@ -579,7 +578,7 @@ def cms_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=None
     """The cosine smearing TI takes (smearing=), prepared by its caller with
     the other instrumental inputs (Norm): for the spectrum x on TI's grid of
     JN nodes, the pair (lines, shift) -- at every node the source line averaged
-    over the rays about their mean (a row per node: Voight_disc at the node's
+    over the rays about their mean (a row per node: Voigt_disc at the node's
     source offset), and MulCo*(x - v_center)*<y>, the shift that puts the
     absorber at the mean ray's velocity. None without smearing (not CMS, or
     dtheta = 0). v_center is where the drive is at rest, the middle of the
@@ -600,7 +599,7 @@ def cms_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=None
     smearings = [_smearing_of_spectrum(xi, JN, *((MulCo[i], INS[i], Met[i]) if per_section else (MulCo, INS, Met)),
                                        own(dtheta, i), own(v_center, i), own(r_ratio, i))
                  for i, xi in enumerate(pieces)]
-    return None if bu.all(s is None for s in smearings) else smearings   # bu: numpy's all is imported here
+    return None if all(s is None for s in smearings) else smearings
 
 
 def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio):
@@ -612,7 +611,7 @@ def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio):
     cof = _cms_map_coefficients(JN)
     offsets = cof[0] * np.log((1 + EE) / (1 - EE)) + cof[1] * np.log((2 + EE) / (2 - EE)) \
         + cof[2] * np.log((3 + EE) / (3 - EE))
-    lines, mean = Voight_disc(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None], U[None, :], dtheta, r_ratio)
+    lines, mean = Voigt_disc(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None], U[None, :], dtheta, r_ratio)
     return lines, U * mean
 
 
@@ -650,12 +649,12 @@ def _smearing_rows(smearing, x, JN):
 # Smat becomes complex non-Hermitian; the amplitude operator expm(-Smat/2),
 # the field-ordered layer product and the Gram readout tr[rho T^H T] are all
 # already fully general (see _expm_neg / the readout in TImod) and need no
-# change. Scalar (thin) components keep the real Voight().
+# change. Scalar (thin) components keep the real Voigt().
 #
 # DISPERSION_SIGN fixes the sign of D relative to the +/- 1j*n_z*J Faraday
 # assignment of the sigma+- matrices: every complex line shape here returns
 # Lambda = V + 1j*DISPERSION_SIGN*D, verified against a numerical Hilbert
-# transform to be the SAME convention in all three kernels (Voight_c in both its
+# transform to be the SAME convention in all three kernels (Voigt_c in both its
 # 'pseudo' and 'wofz' forms, Blume_c, _relax_MS_groups_c -- Im/H[Re] = +1.000 for
 # each at +1.0). One global value is meaningful for the whole model only since
 # the 2026-08-26 amplitude-convention fix: before it, the Hamiltonian family's
@@ -686,7 +685,7 @@ def _smearing_rows(smearing, x, JN):
 # `m5.DISPERSION_SIGN = +1.0` lines in the tests are a no-op safeguard for those
 # two components; they are only meaningful because this literal is +1.0.)
 #
-# COMPLEX_VOIGT_METHOD selects how Voight_c() builds the complex Voigt of the
+# COMPLEX_VOIGT_METHOD selects how Voigt_c() builds the complex Voigt of the
 # Voigt-shaped components. It is a DEVELOPER switch (edit here + restart to
 # compare); it is deliberately NOT exposed in the GUI -- the dispersion is
 # meant to be always on and invisible to the user. The relaxation components
@@ -697,14 +696,14 @@ def _smearing_rows(smearing, x, JN):
 #
 #   'wofz'        exact complex Voigt from scipy.special.wofz (Faddeeva). Both
 #                 the absorption AND the dispersion are exact; the absorption
-#                 then differs from the pseudo-Voigt Voight() by the
+#                 then differs from the pseudo-Voigt Voigt() by the
 #                 Ida-Ando-Toraya approximation error (~1e-3 of the peak).
-#   'pseudo'      4-term pseudo-Voigt (Voight_complex). Its REAL part is
-#                 bit-identical to Voight(), so switching dispersion on does
+#   'pseudo'      4-term pseudo-Voigt (Voigt_complex). Its REAL part is
+#                 bit-identical to Voigt(), so switching dispersion on does
 #                 NOT move any absorption-only quantity; only the KK dispersion
 #                 is added (error vs exact D <~1% of the peak). numba-jitted.
 #                 -- default: closest to "invisible to the user".
-#   'pseudo_easy' 2-term pseudo-Voigt (Voight_complex_easy). Cheapest/simplest;
+#   'pseudo_easy' 2-term pseudo-Voigt (Voigt_complex_easy). Cheapest/simplest;
 #                 absorption off by ~1%, dispersion off by up to ~7% in the
 #                 Gaussian-dominated regime. numba-jitted.
 #   'off'         real Voigt, no dispersion -- reproduces the former
@@ -716,10 +715,10 @@ COMPLEX_VOIGT_METHOD = 'pseudo'
 from scipy.special import wofz as _wofz
 
 
-def _voight_c_wofz(gL, gG, S):
+def _voigt_c_wofz(gL, gG, S):
     """Exact complex Voigt Lambda = V + 1j*DISPERSION_SIGN*D via the Faddeeva
     function w(z). Real part is the EXACT area-normalised Voigt that the
-    pseudo-Voigt Voight() approximates; imaginary part is exactly its
+    pseudo-Voigt Voigt() approximates; imaginary part is exactly its
     Kramers--Kronig partner. Not numba-jitted (scipy.wofz is a vectorised C
     call of negligible cost)."""
     S = np.asarray(S, dtype=np.float64)
@@ -733,9 +732,9 @@ def _voight_c_wofz(gL, gG, S):
 
 
 @njit(cache=True)
-def Voight_complex(gL, gG, S, C1, C2): # doi.org/10.1107/S0021889800010219
+def Voigt_complex(gL, gG, S, C1, C2): # doi.org/10.1107/S0021889800010219
     """Complex-capable 4-term pseudo-Voigt. With (C1, C2) = (1, 0) this is the
-    real Voight() bit-for-bit; with (C1, C2) = (1, 1j*DISPERSION_SIGN) it
+    real Voigt() bit-for-bit; with (C1, C2) = (1, 1j*DISPERSION_SIGN) it
     returns V + 1j*DISPERSION_SIGN*D, the absorptive profile plus its
     (approximate) Kramers--Kronig dispersive partner, in one call. The dispersive
     factor per component is C2/y * (x - <derivative-of-log-profile term>)."""
@@ -773,9 +772,9 @@ def Voight_complex(gL, gG, S, C1, C2): # doi.org/10.1107/S0021889800010219
 
 
 @njit(cache=True)
-def Voight_complex_easy(WL, WG, S, C1, C2):
+def Voigt_complex_easy(WL, WG, S, C1, C2):
     """Complex-capable 2-term (Lorentzian + Gaussian) pseudo-Voigt. Same (C1,
-    C2) convention as Voight_complex: (1, 0) is the older 2-term real Voigt,
+    C2) convention as Voigt_complex: (1, 0) is the older 2-term real Voigt,
     (1, 1j*DISPERSION_SIGN) is V + 1j*DISPERSION_SIGN*D. Cheapest of the three;
     least accurate in both parts."""
     delt = WG / 2 / np.sqrt(2 * np.log(2)) + 0.01 * (WG == 0)
@@ -794,18 +793,18 @@ def Voight_complex_easy(WL, WG, S, C1, C2):
     return(Voi)
 
 
-def Voight_c(gL, gG, S):
+def Voigt_c(gL, gG, S):
     """Complex line shape used by every THICK (matrix) component, dispatched on
     COMPLEX_VOIGT_METHOD. Returns V + 1j*DISPERSION_SIGN*D (or the real V for
-    'off'). Drop-in complex counterpart of Voight(gL, gG, S)."""
+    'off'). Drop-in complex counterpart of Voigt(gL, gG, S)."""
     if COMPLEX_VOIGT_METHOD == 'wofz':
-        return _voight_c_wofz(gL, gG, S)
+        return _voigt_c_wofz(gL, gG, S)
     S = np.asarray(S, dtype=np.float64)
     if COMPLEX_VOIGT_METHOD == 'pseudo':
-        return Voight_complex(gL, gG, S, 1.0, 1j * DISPERSION_SIGN)
+        return Voigt_complex(gL, gG, S, 1.0, 1j * DISPERSION_SIGN)
     if COMPLEX_VOIGT_METHOD == 'pseudo_easy':
-        return Voight_complex_easy(gL, gG, S, 1.0, 1j * DISPERSION_SIGN)
-    return Voight(gL, gG, S) + 0j          # 'off': real Voigt, no dispersion
+        return Voigt_complex_easy(gL, gG, S, 1.0, 1j * DISPERSION_SIGN)
+    return Voigt(gL, gG, S) + 0j          # 'off': real Voigt, no dispersion
 
 
 @njit(cache=True)
@@ -1081,9 +1080,9 @@ def Ham_poly(Q, Hhf, etto, phi, tet):
 #     I5 = I2
 #     I4 = I3
 #
-#     spc = (I1[:, None]*Voight(L, G, S1) + I2[:, None]*Voight(L, G, S2)\
-#          + I3[:, None]*Voight(L, G, S3) + I4[:, None]*Voight(L, G, S4)\
-#          + I5[:, None]*Voight(L, G, S5) + I6[:, None]*Voight(L, G, S6)).sum(axis=0)
+#     spc = (I1[:, None]*Voigt(L, G, S1) + I2[:, None]*Voigt(L, G, S2)\
+#          + I3[:, None]*Voigt(L, G, S3) + I4[:, None]*Voigt(L, G, S4)\
+#          + I5[:, None]*Voigt(L, G, S5) + I6[:, None]*Voigt(L, G, S6)).sum(axis=0)
 #
 #     return(spc/Num*np.pi/2)
 
@@ -1126,9 +1125,9 @@ def Average(X, MulCo, Sig, eps, H, Ep, L, G, alf):
     I1 = 1/2 * PDF * (1-Ep) * 3/4
     I3 = 1/2 * PDF * (1-Ep) * 1/4
 
-    spc = (np.reshape(I1, (-1, 1))*Voight(L, G, S1) + np.reshape(I2, (-1, 1))*Voight(L, G, S2)\
-         + np.reshape(I3, (-1, 1))*Voight(L, G, S3) + np.reshape(I3, (-1, 1))*Voight(L, G, S4)\
-         + np.reshape(I2, (-1, 1))*Voight(L, G, S5) + np.reshape(I1, (-1, 1))*Voight(L, G, S6)).sum(axis=0)
+    spc = (np.reshape(I1, (-1, 1))*Voigt(L, G, S1) + np.reshape(I2, (-1, 1))*Voigt(L, G, S2)\
+         + np.reshape(I3, (-1, 1))*Voigt(L, G, S3) + np.reshape(I3, (-1, 1))*Voigt(L, G, S4)\
+         + np.reshape(I2, (-1, 1))*Voigt(L, G, S5) + np.reshape(I1, (-1, 1))*Voigt(L, G, S6)).sum(axis=0)
 
     return(spc/N*np.pi/2)
 
@@ -1251,9 +1250,9 @@ def Angles_min(tet, N, K, J, Hin, Hex, X, L, G, eps, Sig):
     I1 = 1 / 4 * PDF * (1 - Ep) * 3 / 4
     I3 = 1 / 4 * PDF * (1 - Ep) * 1 / 4
 
-    spc = (np.reshape(I1, (-1, 1)) * Voight(L, G, S1) + np.reshape(I2, (-1, 1)) * Voight(L, G, S2) \
-           + np.reshape(I3, (-1, 1)) * Voight(L, G, S3) + np.reshape(I3, (-1, 1)) * Voight(L, G, S4) \
-           + np.reshape(I2, (-1, 1)) * Voight(L, G, S5) + np.reshape(I1, (-1, 1)) * Voight(L, G, S6)).sum(axis=0)
+    spc = (np.reshape(I1, (-1, 1)) * Voigt(L, G, S1) + np.reshape(I2, (-1, 1)) * Voigt(L, G, S2) \
+           + np.reshape(I3, (-1, 1)) * Voigt(L, G, S3) + np.reshape(I3, (-1, 1)) * Voigt(L, G, S4) \
+           + np.reshape(I2, (-1, 1)) * Voigt(L, G, S5) + np.reshape(I1, (-1, 1)) * Voigt(L, G, S6)).sum(axis=0)
 
     return (spc / N * np.pi / 2)
 
@@ -1356,7 +1355,7 @@ def _relax_MS_groups_c(S, x, Sig, eps, Hv, W, R, alfa):
     of its real (absorptive) part only. The (r, i)/(M33, M44) split arithmetic
     already carries the imaginary part; it is read out here at no extra cost
     as D = (r*M44 - i*M33)/(M33**2 + M44**2), the Kramers--Kronig partner in
-    the ``Voight_c`` sign convention."""
+    the ``Voigt_c`` sign convention."""
     numb = np.linspace(0, 2 * S, int(2 * S + 1))
     numb2 = np.linspace(1, 2 * S + 1, int(2 * S + 1))
 
@@ -1496,7 +1495,7 @@ def Blume_c(Sig1, Sig2, Q1, Q2, H1, H2, L, W, m0, m1, V, R):
     arithmetic), Im = DISPERSION_SIGN * its Kramers--Kronig partner. Obtained
     by simply NOT taking np.real() of the resolvent elements; the natural
     pivot 1j*(a +/- alf) + L/2 + ... carries the opposite dispersion sign to
-    ``Voight_c``, hence the conjugation for DISPERSION_SIGN = +1."""
+    ``Voigt_c``, hence the conjugation for DISPERSION_SIGN = +1."""
     alf = (ggr * m0 - gex * m1) * (H2-H1)/2 + (Q2-Q1)/2 * (3 * m1 ** 2 - 15 / 4) + (Sig2-Sig1)/2
     a = V - (Sig1+Sig2)/2 - (Q2+Q1)/2 * (3 * m1 ** 2 - 15 / 4) - (ggr * m0 - gex * m1) * (H2+H1)/2
     Line = np.zeros(len(V), dtype=np.complex128)
@@ -1613,16 +1612,16 @@ def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
     Line = np.array([float(0)] * len(E))
     # for i in range(0, 6):
     #     for j in range(0, len(X)):
-    #         Line += Voight(WL, WG, E - v[i][j]) * I[i] / len(X)
+    #         Line += Voigt(WL, WG, E - v[i][j]) * I[i] / len(X)
     for j in range(0, Num):
-        Line += Voight(WL, WG, E - v1[j]) * I1 / Num
-        Line += Voight(WL, WG, E - v6[j]) * I1 / Num
+        Line += Voigt(WL, WG, E - v1[j]) * I1 / Num
+        Line += Voigt(WL, WG, E - v6[j]) * I1 / Num
     for j in range(0, int(Num/2)+1):
-        Line += Voight(WL, WG, E - v2[j]) * I2 / int(Num/2+1)
-        Line += Voight(WL, WG, E - v5[j]) * I2 / int(Num/2+1)
+        Line += Voigt(WL, WG, E - v2[j]) * I2 / int(Num/2+1)
+        Line += Voigt(WL, WG, E - v5[j]) * I2 / int(Num/2+1)
     for j in range(0, int(Num/3)+1):
-        Line += Voight(WL, WG, E - v3[j]) * I3 / int(Num / 3 + 1)
-        Line += Voight(WL, WG, E - v4[j]) * I3 / int(Num / 3 + 1)
+        Line += Voigt(WL, WG, E - v3[j]) * I3 / int(Num / 3 + 1)
+        Line += Voigt(WL, WG, E - v4[j]) * I3 / int(Num / 3 + 1)
 
 
     return Line
@@ -2387,7 +2386,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                             + cof[2] * np.log((3 + EE) / (3 - EE))
 
             if source_line is None:
-                N += Voight(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo)
+                N += Voigt(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo)
             else:
                 # Cosine smearing, prepared by TI's caller (cms_smearing) and
                 # handed to this node by TI: the source line averaged over the
@@ -2412,7 +2411,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
 
             for i in range(0, int(len(INS)/4)):
                 S = E - (INS[i * 4 + 2] + SCR) * MulCo
-                N += Voight((abs(INS[i * 4]) + 0.0001) * MulCo,
+                N += Voigt((abs(INS[i * 4]) + 0.0001) * MulCo,
                             (abs(INS[i * 4 + 1]) + 0.0001) * MulCo,
                             S)\
                      * INS[i * 4 + 3]
@@ -2458,7 +2457,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 WL = abs(p[V + 2]) * MulCo
                 WG = abs(p[V + 3]) * MulCo
                 V += 4
-                Voi = Voight(WL, WG, S)
+                Voi = Voigt(WL, WG, S)
                 CHt = CH*np.exp((-1)*np.pi*(NAT_WIDTH/2*MulCo)*I*Voi)
             if model[i] == 'Sextet(rough)':
                 I = abs(p[V])
@@ -2481,12 +2480,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Ga16 = (WG**2 + GaH**2)** (1/2)
                 Ga25 = (WG**2 + (LINE_RATIO_25 * GaH)**2)** (1/2)
                 Ga34 = (WG**2 + (LINE_RATIO_34 * GaH)**2)** (1/2)
-                Voi1 = Voight(WL, Ga16, S1)
-                Voi2 = Voight(WL, Ga25, S2)
-                Voi3 = Voight(WL, Ga34, S3)
-                Voi4 = Voight(WL, Ga34, S4)
-                Voi5 = Voight(WL, Ga25, S5)
-                Voi6 = Voight(WL, Ga16, S6)
+                Voi1 = Voigt(WL, Ga16, S1)
+                Voi2 = Voigt(WL, Ga25, S2)
+                Voi3 = Voigt(WL, Ga34, S3)
+                Voi4 = Voigt(WL, Ga34, S4)
+                Voi5 = Voigt(WL, Ga25, S5)
+                Voi6 = Voigt(WL, Ga16, S6)
                 CHt = CH * np.exp((-1) * np.pi * (NAT_WIDTH / 2 * MulCo)\
                                   * (I1*Voi1+I6*Voi6+I2*Voi2+I5*Voi5+I3*Voi3+I4*Voi4))
                 V += 14
@@ -2514,8 +2513,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 S = S * MulCo
                 S += delt
                 CHt = CH * np.exp((-1) * np.pi * (NAT_WIDTH / 2 * MulCo)\
-                                  * (I[0]*Voight(WL,WG,E-S[0])+I[1]*Voight(WL,WG,E-S[1])+I[2]*Voight(WL,WG,E-S[2])+I[3]*Voight(WL,WG,E-S[3])\
-                                    +I[4]*Voight(WL,WG,E-S[4])+I[5]*Voight(WL,WG,E-S[5])+I[6]*Voight(WL,WG,E-S[6])+I[7]*Voight(WL,WG,E-S[7])))
+                                  * (I[0]*Voigt(WL,WG,E-S[0])+I[1]*Voigt(WL,WG,E-S[1])+I[2]*Voigt(WL,WG,E-S[2])+I[3]*Voigt(WL,WG,E-S[3])\
+                                    +I[4]*Voigt(WL,WG,E-S[4])+I[5]*Voigt(WL,WG,E-S[5])+I[6]*Voigt(WL,WG,E-S[6])+I[7]*Voigt(WL,WG,E-S[7])))
                 V += 9
             if model[i] == 'Average_H':
                 I = abs(p[V])
@@ -2545,13 +2544,13 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             # fully-magnetised single crystal.
             # (Singlet is isotropic, so it has no polarized form and stays scalar.)
             # DISPERSION: the Voigt-shaped thick components below multiply their
-            # matrices by the COMPLEX line shape Voight_c (= V + 1j*D), and the
+            # matrices by the COMPLEX line shape Voigt_c (= V + 1j*D), and the
             # relaxation ones by Blume_c / relax_MS_thick_c, so Smat carries the
             # Kramers--Kronig (dispersive) part and expm(-Smat/2) propagates the
             # nuclear Faraday rotation between non-commuting lines and layers.
             # COMPLEX_VOIGT_METHOD picks the Voigt implementation (and 'off'
             # disables dispersion everywhere for A/B tests); see DISPERSION_SIGN
-            # near Voight_c for the one sign convention.
+            # near Voigt_c for the one sign convention.
             if model[i] == 'Doublet':
                 I = abs(p[V])
                 WL = abs(p[V + 3]) * MulCo
@@ -2564,8 +2563,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 mm = _mm_perp(mx, my)
                 Mh_A = _texture_blend(1.5 * (_I2 - mm), Atex)   # line A: Delta m = +/-1 (the 3/4 sin^2 line)
                 Mh_B = _texture_blend(0.5 * _I2 + 1.5 * mm, Atex)  # line B: mixed Delta m = 0 and +/-1
-                VoiB = Voight_c(WL, WG1, S1)
-                VoiA = Voight_c(WL, WG2, S2)
+                VoiB = Voigt_c(WL, WG1, S1)
+                VoiA = Voigt_c(WL, WG2, S2)
                 add = Kpref * (0.5 * I) * (VoiA[:, None, None] * Mh_A[None, :, :]
                                                + VoiB[:, None, None] * Mh_B[None, :, :])
                 Smat_t = add if Smat is None else Smat + add
@@ -2591,12 +2590,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Ga16 = (WG ** 2 + GaH ** 2) ** (1 / 2)
                 Ga25 = (WG ** 2 + (LINE_RATIO_25 * GaH) ** 2) ** (1 / 2)
                 Ga34 = (WG ** 2 + (LINE_RATIO_34 * GaH) ** 2) ** (1 / 2)
-                Voi1 = Voight_c(WL, Ga16, S1)
-                Voi2 = Voight_c(WL, Ga25, S2)
-                Voi3 = Voight_c(WL, Ga34, S3)
-                Voi4 = Voight_c(WL, Ga34, S4)
-                Voi5 = Voight_c(WL, Ga25, S5)
-                Voi6 = Voight_c(WL, Ga16, S6)
+                Voi1 = Voigt_c(WL, Ga16, S1)
+                Voi2 = Voigt_c(WL, Ga25, S2)
+                Voi3 = Voigt_c(WL, Ga34, S3)
+                Voi4 = Voigt_c(WL, Ga34, S4)
+                Voi5 = Voigt_c(WL, Ga25, S5)
+                Voi6 = Voigt_c(WL, Ga16, S6)
                 Atex = p[V + 8]                   # uniaxial (fiber) texture order parameter
                 Am = p[V + 9]                     # magnetic polar order Am in [-1,1] (S1 fraction), right after A
                 mx, my, mz = _axis_xyz(p[V + 6], p[V + 7])
@@ -2640,12 +2639,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Gfinal = []
                 for j in range(0, 6):
                     Gfinal.append(np.sqrt(abs(Guni ** 2 + Ch[j] ** 2 * Gh ** 2 + Cd[j] * Ce[j] * Gde * Guni ** 2 * max(0, (1 - (abs(Gdh) + abs(Geh)) ** 2)) + Cd[j] * Ch[j] * 2 * Gdh * Guni * Gh + Ce[j] * Ch[j] * 2 * Geh * Guni * Gh)))
-                Voi1 = Voight_c(WL, Gfinal[0], S1)
-                Voi2 = Voight_c(WL, Gfinal[1], S2)
-                Voi3 = Voight_c(WL, Gfinal[2], S3)
-                Voi4 = Voight_c(WL, Gfinal[3], S4)
-                Voi5 = Voight_c(WL, Gfinal[4], S5)
-                Voi6 = Voight_c(WL, Gfinal[5], S6)
+                Voi1 = Voigt_c(WL, Gfinal[0], S1)
+                Voi2 = Voigt_c(WL, Gfinal[1], S2)
+                Voi3 = Voigt_c(WL, Gfinal[2], S3)
+                Voi4 = Voigt_c(WL, Gfinal[3], S4)
+                Voi5 = Voigt_c(WL, Gfinal[4], S5)
+                Voi6 = Voigt_c(WL, Gfinal[5], S6)
                 Atex = p[V + 12]                  # uniaxial (fiber) texture order parameter
                 Am = p[V + 13]                    # magnetic polar order Am in [-1,1] (S1 fraction), right after A
                 mx, my, mz = _axis_xyz(p[V + 10], p[V + 11])
@@ -2752,7 +2751,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 S = S * MulCo + delt
                 add = np.zeros((len(E), 2, 2), dtype=complex)
                 for k in range(0, 8):
-                    add += Voight_c(WL, WG, E - S[k])[:, None, None] * Pmat[k][None, :, :]
+                    add += Voigt_c(WL, WG, E - S[k])[:, None, None] * Pmat[k][None, :, :]
                 add = Kpref * I * add
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
@@ -2797,15 +2796,15 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                     # exponential and out of every layer product as exp(-s/2), and
                     # |exp(-s/2)|^2 = exp(-Re s), i.e. its dispersive part is a
                     # global phase that the Gram readout cancels -- which is also
-                    # why the real Voight() is the right line shape here.
+                    # why the real Voigt() is the right line shape here.
                     Voi = np.zeros(len(E))
                     for k in range(0, 8):
-                        Voi = Voi + Piso[k] * Voight(WL, WG, E - S[k])
+                        Voi = Voi + Piso[k] * Voigt(WL, WG, E - S[k])
                     CHt = CH * np.exp((-1) * Kpref * I * Voi)
                 else:
                     add = np.zeros((len(E), 2, 2), dtype=complex)
                     for k in range(0, 8):
-                        add += Voight_c(WL, WG, E - S[k])[:, None, None] * Pmat[k][None, :, :]
+                        add += Voigt_c(WL, WG, E - S[k])[:, None, None] * Pmat[k][None, :, :]
                     add = Kpref * I * add
                     Smat_t = add if Smat is None else Smat + add
                     CHt = CH
@@ -2879,9 +2878,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                                                 + _mhat_dm1_sym(mxb, myb)), Atex)
                     Mpi = _texture_blend(0.5 * (_mhat_dm0(mxa, mya)
                                                 + _mhat_dm0(mxb, myb)), Atex)
-                    add += (I1 * (Voight_c(WL, WG, E - v1[j]) + Voight_c(WL, WG, E - v6[j]))[:, None, None] * Md1[None, :, :]
-                            + I2 * (Voight_c(WL, WG, E - v2[j]) + Voight_c(WL, WG, E - v5[j]))[:, None, None] * Mpi[None, :, :]
-                            + I3 * (Voight_c(WL, WG, E - v3[j]) + Voight_c(WL, WG, E - v4[j]))[:, None, None] * Md1[None, :, :]) / Nn
+                    add += (I1 * (Voigt_c(WL, WG, E - v1[j]) + Voigt_c(WL, WG, E - v6[j]))[:, None, None] * Md1[None, :, :]
+                            + I2 * (Voigt_c(WL, WG, E - v2[j]) + Voigt_c(WL, WG, E - v5[j]))[:, None, None] * Mpi[None, :, :]
+                            + I3 * (Voigt_c(WL, WG, E - v3[j]) + Voigt_c(WL, WG, E - v4[j]))[:, None, None] * Md1[None, :, :]) / Nn
                 add = Kpref * add
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH
@@ -2949,7 +2948,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 # density (weights already sum to 1 -> the wave average). The
                 # Voigt count is the grid size, independent of Num.
                 def _line_shape(g, w):
-                    return (Voight_c(WL, WG, E[:, None] - g[None, :]) * w[None, :]).sum(axis=1)
+                    return (Voigt_c(WL, WG, E[:, None] - g[None, :]) * w[None, :]).sum(axis=1)
                 L1 = _line_shape(grids[0], wts[0]);  L2 = _line_shape(grids[1], wts[1])
                 L3 = _line_shape(grids[2], wts[2]);  L4 = _line_shape(grids[3], wts[3])
                 L5 = _line_shape(grids[4], wts[4]);  L6 = _line_shape(grids[5], wts[5])
@@ -2993,7 +2992,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 X = np.linspace(np.array(p[V+1]), np.array(p[V+2]), Num)
                 # print(p[V+1], p[V+2], eval(str(Distri[Di])))
                 # print(Distri[Di])
-                ge = eval(str(Distri[Di])) + 0*X
+                ge = eval_expr(str(Distri[Di]), p, X, O) + 0*X
                 ge = ge / np.sum(ge, axis=0) #*(len(ge)!=1) + Num*ge*(len(ge)==1))
                 # print(Distri[Di])
                 # print(ge)
@@ -3036,7 +3035,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 for j in range(1, len(model)-i):
                     if model[i+j] == 'Corr':
                         # print(Co, 'Corr', str(Cor[Co]), X)
-                        pN[int(p[V])] = eval(str(Cor[Co])) + 0*X
+                        pN[int(p[V])] = eval_expr(str(Cor[Co]), p, X, O) + 0*X
                         V += 2
                         Co += 1
                         # Ck += 1 # CHECK!!!!!!!
@@ -3144,7 +3143,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 for j in range(1, len(model)-i):
                     if model[i+j] == 'Corr':
                         amp_scaled = amp_scaled and int(p[V]) != 0
-                        pN[int(p[V])] = eval(str(Cor[Co])) + 0*X
+                        pN[int(p[V])] = eval_expr(str(Cor[Co]), p, X, O) + 0*X
                         V += 2
                         Co += 1
                     else:
@@ -3596,7 +3595,7 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         #
         # CMS cosine smearing averages the source line over the rays about their
         # mean, over the disc kernel that grows with |v - v_center|
-        # (Voight_disc): the source differs from velocity to velocity, and so
+        # (Voigt_disc): the source differs from velocity to velocity, and so
         # does the part of it the grid samples. The caller passes that
         # source's own Norm, an array over the velocities (compute_norm with
         # the smearing), so an empty absorber gives exactly N0 + N1. (The
@@ -3714,7 +3713,7 @@ def TI_recon_variants(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri, Cor, Me
     for i in range(n_sec):
         keys = [v[i]['key'] for v in variants]
         s = variants[0][i]
-        shared = keys[0] is not None and bu.all(k == keys[0] for k in keys)   # bu: numpy's all is imported here
+        shared = keys[0] is not None and all(k == keys[0] for k in keys)
         if shared:
             with _NODE_SUMS_LOCK:
                 H = _NODE_SUMS.get(keys[0])

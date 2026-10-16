@@ -53,46 +53,11 @@ Implementation notes:
 """
 
 import numpy as np
-from numpy import (
-    # constants
-    pi, e,
-
-    # math basics
-    exp, log, log10, sqrt, abs, power,
-
-    # trig functions (core)
-    sin, cos, tan,
-    arcsin, arccos, arctan,
-    sinh, cosh, tanh,
-    arcsinh, arccosh, arctanh,
-
-    # utility math
-    floor, ceil, round, sign,
-
-    # aggregation
-    mean, std, var,
-)
 from numba import njit
 
-# The ``from numpy import (...)`` block above (same set as syncmoss_main.py) exists
-# ONLY so that user-supplied ``Expr`` strings evaluated by ``_eval_expr`` below can
-# use bare numpy functions, e.g. "sqrt(p[3])". Our own code always calls numpy
-# explicitly as ``np.<func>``.
-
-
-def _eval_expr(expr, p, X=None):
-    """Evaluate a user parameter-linking expression string (the ``Expr`` feature).
-
-    ``p`` is the current parameter array, so the string may reference ``p[i]``;
-    bare numpy functions (``sqrt``, ``exp``, ...) resolve through this module's
-    globals (the imports above). ``X`` is optional and is used by the
-    distribution/correlation plotter, where expressions may also reference the
-    distribution axis. The expression text comes from the user, so this is the
-    one place where bare (non-``np.``) numpy names are intended."""
-    locals_dict = {"p": p}
-    if X is not None:
-        locals_dict["X"] = X
-    return eval(expr, globals(), locals_dict)
+# The user's Expr strings are evaluated by expression_eval.eval_expr (its bare
+# numpy names + p); our own code calls numpy explicitly as ``np.<func>``.
+from syncmoss.expression_eval import eval_expr
 
 
 # =============================================================================
@@ -222,7 +187,7 @@ def _bump_parameter(params, k, perturbation, confu, Expr, NExpr):
     # Re-evaluate linked expressions after the bump and propagate their change
     # through any linear constraints attached to the expression target.
     for e_i in range(0, len(Expr)):
-        bumped[NExpr[e_i]] = _eval_expr(str(Expr[e_i]), bumped)
+        bumped[NExpr[e_i]] = eval_expr(str(Expr[e_i]), bumped)
         expr_delta = bumped[NExpr[e_i]] - params[NExpr[e_i]]
         if np.any(confu[1] == NExpr[e_i]):
             matches = np.where(confu[1] == NExpr[e_i])[0]
@@ -565,7 +530,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             params_saved = np.copy(params)
             params = trial
             for e_i in range(0, len(Expr)):
-                params[NExpr[e_i]] = _eval_expr(str(Expr[e_i]), params)
+                params[NExpr[e_i]] = eval_expr(str(Expr[e_i]), params)
                 if np.any(confu[1] == NExpr[e_i]):
                     matches = np.where(confu[1] == NExpr[e_i])[0]
                     for c_i in range(0, len(matches)):
@@ -622,7 +587,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                 # Commit the trial parameters and re-apply expressions on them.
                 params = trial
                 for e_i in range(0, len(Expr)):
-                    params[NExpr[e_i]] = _eval_expr(str(Expr[e_i]), params)
+                    params[NExpr[e_i]] = eval_expr(str(Expr[e_i]), params)
                     if np.any(confu[1] == NExpr[e_i]):
                         matches = np.where(confu[1] == NExpr[e_i])[0]
                         for c_i in range(0, len(matches)):

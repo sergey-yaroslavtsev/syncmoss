@@ -14,6 +14,7 @@ import traceback
 import numpy as np
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
+from syncmoss.expression_eval import eval_expr
 from syncmoss import exclusion_regions
 from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_bounds_and_fix
@@ -667,7 +668,7 @@ def fit_model(app, inputs, spectrum_files, pool):
         # used to start at 0; when 0 fitted as well as the Expression's value the
         # fit never moved and returned the parameter as 0.
         for e_i in range(len(Expr)):
-            p0[NExpr[e_i]] = mi._eval_expr(str(Expr[e_i]), p0)
+            p0[NExpr[e_i]] = eval_expr(str(Expr[e_i]), p0)
             for c_i in np.where(confu[1] == NExpr[e_i])[0]:
                 p0[int(confu[0][c_i])] = p0[int(confu[1][c_i])] * confu[2][c_i]
 
