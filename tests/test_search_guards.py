@@ -22,7 +22,7 @@ import pytest
 
 from PySide6.QtWidgets import QDialog, QLineEdit
 
-import syncmoss.supp_menu as supp_menu
+import syncmoss.instrumental_dialogs as instrumental_dialogs
 from syncmoss.instrumental_io import THEORY_BOUNDS, THEORY_START
 
 
@@ -40,14 +40,14 @@ def _drive(monkeypatch, accept=True, edits=None):
                 else QDialog.DialogCode.Rejected)
     monkeypatch.setattr(QDialog, "exec", fake_exec)
     warned = []
-    monkeypatch.setattr(supp_menu.QMessageBox, "warning",
+    monkeypatch.setattr(instrumental_dialogs.QMessageBox, "warning",
                         lambda *a, **k: warned.append(a[-1]))
     return warned
 
 
 def test_find_dialog_is_prefilled_with_the_defaults(physics_app, monkeypatch):
     _drive(monkeypatch)
-    out = supp_menu.open_theory_find_dialog(physics_app)
+    out = instrumental_dialogs.open_theory_find_dialog(physics_app)
     assert out is not None
     assert set(out) == set(FIND_FIELDS)
     for k in FIND_FIELDS:
@@ -58,19 +58,19 @@ def test_find_dialog_does_not_ask_for_what_it_maps(physics_app, monkeypatch):
     """Find maps B_s AND shift over a grid before releasing either, so asking
     for them would be asking for the very numbers the map is there to find."""
     _drive(monkeypatch)
-    out = supp_menu.open_theory_find_dialog(physics_app)
+    out = instrumental_dialogs.open_theory_find_dialog(physics_app)
     assert 'B_s' not in out
     assert 'shift' not in out
 
 
 def test_find_dialog_cancel_returns_none(physics_app, monkeypatch):
     _drive(monkeypatch, accept=False)
-    assert supp_menu.open_theory_find_dialog(physics_app) is None
+    assert instrumental_dialogs.open_theory_find_dialog(physics_app) is None
 
 
 def test_find_dialog_accepts_an_edited_value(physics_app, monkeypatch):
     _drive(monkeypatch, edits={0: "0"})          # theta -> the rocking minimum
-    out = supp_menu.open_theory_find_dialog(physics_app)
+    out = instrumental_dialogs.open_theory_find_dialog(physics_app)
     assert out['theta_urad'] == pytest.approx(0.0)
 
 
@@ -81,7 +81,7 @@ def test_find_dialog_accepts_an_edited_value(physics_app, monkeypatch):
 ])
 def test_find_dialog_refuses_a_bad_value(physics_app, monkeypatch, index, text):
     warned = _drive(monkeypatch, edits={index: text})
-    assert supp_menu.open_theory_find_dialog(physics_app) is None
+    assert instrumental_dialogs.open_theory_find_dialog(physics_app) is None
     assert warned, "the user should have been told why"
 
 

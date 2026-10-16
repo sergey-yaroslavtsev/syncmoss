@@ -133,10 +133,11 @@ from syncmoss.instrumental_io import (
     write_gcms_file,
     drive_rest_velocity,
 )
+from syncmoss.CMS_source_geometry_calibration import calibrate_source, refusal as source_calibration_refusal
 from syncmoss.Library_window import save_to_library_via_dialog
-from syncmoss.supp_menu import (
-    build_supp_menu, contact_icon, open_dtheta_alpha_fe_dialog, open_theory_find_dialog,
-    theme_action_text,
+from syncmoss.supp_menu import build_supp_menu, contact_icon, theme_action_text
+from syncmoss.instrumental_dialogs import (
+    open_dtheta_alpha_fe_dialog, open_source_calibration_dialog, open_theory_find_dialog,
 )
 import syncmoss.one_model as one_model
 from syncmoss.one_spectrum import OneSpectrumDialog
@@ -371,6 +372,32 @@ class CalibrationThread(QThread):
         except Exception as e:
             # Emit error signal
             self.error.emit(str(e))
+
+
+class SourceCalibrationThread(QThread):
+    """The calibration and the CMS source's G and Δθ in one fit, of an alpha-Fe
+    and a single-line raw spectrum (CMS_source_geometry_calibration.calibrate_source), off the
+    UI thread. Its signals are not named finished: QThread has its own."""
+    progress = Signal(str)
+    done = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, params_dir, files, pool, JN, vel_start, source, diameters):
+        super().__init__()
+        self.params_dir, self.files, self.pool = params_dir, files, pool
+        self.JN, self.vel_start = JN, vel_start
+        self.source, self.diameters = source, diameters   # open_source_calibration_dialog's numbers
+
+    def run(self):
+        try:
+            self.done.emit(calibrate_source(self.params_dir, self.files, self.pool, self.JN, self.vel_start,
+                                            self.source['G'], self.source['dtheta'], self.diameters, self.source,
+                                            report=self.progress.emit, cancelled=FIT_CANCEL.is_set))
+        except FitInterrupted as e:
+            self.failed.emit(str(e) or "interrupted")
+        except Exception as e:
+            self.failed.emit(f"{e}\n{traceback.format_exc()}")
+
 
 class InstrumentalThread(QThread):
     """Thread for running instrumental function calculation without blocking the UI"""
@@ -1374,6 +1401,9 @@ class PhysicsApp(QMainWindow):
         refine_dtheta_aFe.triggered.connect(lambda: self.dtheta_pressed(2))
         refine_dtheta_model = QAction("Refine Δθ: model", self)
         refine_dtheta_model.triggered.connect(lambda: self.dtheta_pressed(1))
+        # The drive, G and Δθ fitted together (source_calibration_pressed)
+        calibrate_source_action = QAction("Calibrate + find G, Δθ: α-Fe + single line", self)
+        calibrate_source_action.triggered.connect(self.source_calibration_pressed)
         self.toggle_dat_ins_action = QAction(self)
         self._update_use_dat_instrumental_action_text()
         self.toggle_dat_ins_action.triggered.connect(self.toggle_use_dat_instrumental)
@@ -1393,6 +1423,7 @@ class PhysicsApp(QMainWindow):
         self.instrumental_menu.addSeparator()
         self.instrumental_menu.addAction(refine_dtheta_aFe)
         self.instrumental_menu.addAction(refine_dtheta_model)
+        self.instrumental_menu.addAction(calibrate_source_action)
         self.instrumental_menu.addSeparator()
         self.instrumental_menu.addAction(self.toggle_dat_ins_action)
         self.instrumental_menu.addAction(overwrite_dat_ins)
@@ -3167,6 +3198,78 @@ class PhysicsApp(QMainWindow):
         else:
             source = {'G': get_internal_gcms(self)}
         self.instrumental_pressed(1, mode, dtheta_search=source)
+
+    def source_calibration_pressed(self):
+        """Instrumental function -> Calibrate + find G, Δθ: α-Fe + single line
+        (CMS_source_geometry_calibration.calibrate_source): the first two raw spectra of the
+        path box, α-Fe first, measured with one source, geometry and drive; the
+        drive, G, Δθ and f_LM fitted together. The dialog takes where G, Δθ and
+        f_LM start and each spectrum's C_high and static noise
+        (open_source_calibration_dialog). The result is the calibration, the
+        fields and the defaults (GCMS.txt)."""
+        what = 'Calibration with G and Δθ'
+        if not self.MS_fit.isChecked():
+            self.set_status(f"{what}: only for CMS.", "red")
+            return
+        if self._reject_if_busy(what):
+            return
+        files = [os.path.abspath(f) for f in (self.path_list or [])[:2]]
+        refused = source_calibration_refusal(files)
+        if refused:
+            self.set_status(f"{what}: {refused}.", "red")
+            return
+        source = open_source_calibration_dialog(self)
+        if source is None:
+            self.set_status(f"{what} cancelled", "orange")
+            return
+        if not self.initialize_parameters():
+            return
+        self.inprogress = True
+        self.busy_with = what
+        self.cal_btn.setEnabled(False)
+        self.set_status(f"{what}...", "blue")
+        self.source_calibration_thread = SourceCalibrationThread(
+            self.params_dir, files, self.pool, int(self.jn0_input.text()), int(self.velocity_direction),
+            source, get_cms_diameters(self))
+        self.source_calibration_thread.progress.connect(lambda line: self.set_status(line, "blue"))
+        self.source_calibration_thread.done.connect(self.on_source_calibration_done)
+        self.source_calibration_thread.failed.connect(self.on_source_calibration_failed)
+        self.source_calibration_thread.start()
+
+    def on_source_calibration_done(self, result):
+        """Both spectra and their fit on the new axis; that Calibration.dat in
+        use, as after a calibration; G and Δθ in their fields (the procedure
+        saved them as the defaults)."""
+        try:
+            plot_instrumental_result(
+                self.figure, result['A'], result['B'], result['F'], result['F2'], result['p'], result['hi2'],
+                result['files'][0], self.dir_path, self.gridcolor, theme=self._theme, lengths=result['lengths'],
+                starts=result['starts'], labels=[os.path.basename(f) for f in result['files']])
+            self.canvas.draw()
+            self.toolbar.push_current()
+            self.calibration_path = result['calibration_path']
+            # as after a calibration (on_calibration_finished)
+            moved = recentre_instrumental_after_calibration(self)
+            self.INS, self.MulCo, self.x0 = get_sms_instrumental_from_global_files(self)
+            self.GCMS = result['G']
+            self.GCMS_input.setText(str(float(result['G'])))
+            self.dtheta_input.setText(str(float(result['dtheta'])))
+            g_error, dtheta_error, f_error = result['errors']
+            note = f" (instrumental function re-centred by {moved:+.4f} mm/s)" if moved else ""
+            self.set_status(
+                f"Calibrated with G {result['G']:.4f} ± {g_error:.4f} mm/s, Δθ {result['dtheta']:.4f} ± "
+                f"{dtheta_error:.4f} rad (saved as defaults), f_LM {result['f_LM']:.3f} ± {f_error:.3f}{note}. "
+                f"χ² = {result['hi2']:.3f}", "green")
+        except Exception as e:
+            self.set_status(f"Error showing the calibration with G and Δθ: {e}", "red")
+        finally:
+            self.inprogress = False
+            self.cal_btn.setEnabled(True)
+
+    def on_source_calibration_failed(self, message):
+        self.set_status(f"Calibration with G and Δθ: {message}", "red")
+        self.inprogress = False
+        self.cal_btn.setEnabled(True)
 
     def _instrumental_search_request(self, mode):
         """The spectra the instrumental-function search fits

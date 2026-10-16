@@ -266,6 +266,18 @@ an explicit message and reddened fields rather than failing halfway through.
   rate with a 100 µm Cu foil in the beam times the counting time of one point,
   less the static noise. *model* fits the table's model with its links as set.
   Every CMS search stores G and Δθ as the defaults.
+- *Calibrate + find G, Δθ: α-Fe + single line* (CMS) does the calibration and
+  the source in **one** fit: put the raw α-Fe and the raw single line, measured
+  with one source, geometry and drive, first and second in the path box. A
+  dialog takes where G, Δθ and f_LM start (G and Δθ from their fields) and, for
+  each spectrum, its C_high and static noise per channel — they differ when the
+  counting times do. The calibration with the start values gives the drive to
+  start from, and the single line its thickness; then the drive, its count
+  distortion, G, Δθ, f_LM and both absorbers (α-Fe: T and texture at δ 0 and
+  the α-Fe field; the single line: T and shift; both at the natural width, no
+  Gaussian of their own) are fitted together. It writes `Calibration.dat`,
+  sets the G and Δθ fields and stores them as the defaults; the plot shows
+  both spectra folded with their fit.
 - *Instrumental function -> Overwrite instrumental function in selected .dat
   files* writes the instrumental function in memory — for the CMS/SMS mode
   selected, the lines RAW → .dat conversion writes — into every `.dat` file of

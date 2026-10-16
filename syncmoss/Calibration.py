@@ -464,7 +464,7 @@ def _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve, flat_coun
 # ========================================================================= #
 
 def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, GCMS=0.1, dtheta=0.0,
-                r_ratio=0.0):
+                r_ratio=0.0, details=None):
     """Fit the velocity calibration of a standard alpha-Fe absorber spectrum.
 
     Loads the calibration spectrum ``Cal_file``, auto-detects everything about
@@ -497,6 +497,11 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
             dtheta take.
         r_ratio: d/D of the CMS source and aperture diameters (the Supp
             setting, models.cms_smearing's ``r_ratio``), above 0 when dtheta is.
+        details: a dict to receive what the fit found, for a procedure that
+            starts from it (CMS_source_geometry_calibration): 'method' (0 sinusoidal, 1
+            triangular), 'velocity' (channel -> velocity, ``velocity(x, drive)``),
+            'pS' (the final-fit vector, layout above), 'model' (the absorber's
+            parameters, pCAL) and 'counts' (the raw counts). None: nothing.
 
     Returns:
         tuple ``(v_folded, data_folded, fit_folded)`` -- the folded velocity
@@ -976,4 +981,6 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
 
     _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded)
 
+    if details is not None:
+        details.update(method=method, velocity=cal, pS=np.copy(pS), model=np.copy(pCAL), counts=np.copy(counts))
     return (v_folded, data_folded, fit_folded)

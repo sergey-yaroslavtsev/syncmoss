@@ -902,7 +902,7 @@ def test_dtheta_dialog_asks_for_the_source(physics_app, monkeypatch):
     """The "Refine Δθ: pure α-Fe" dialog, its boxes G, f_LM, C_high, static
     noise: G prefilled from its field (every digit), f_LM 0.7, C_high and the
     static noise 0; it says what to find first, and how."""
-    from syncmoss.supp_menu import open_dtheta_alpha_fe_dialog
+    from syncmoss.instrumental_dialogs import open_dtheta_alpha_fe_dialog
     physics_app.GCMS_input.setText("0.0764912345")
     shown, warned = _drive_dialog(monkeypatch)
     assert open_dtheta_alpha_fe_dialog(physics_app) == {'G': 0.0764912345, 'f_LM': 0.7, 'C_high': 0.0,
@@ -920,7 +920,7 @@ def test_dtheta_dialog_asks_for_the_source(physics_app, monkeypatch):
 @pytest.mark.gui
 @pytest.mark.parametrize("index, text", [(0, "-0.01"), (1, "1"), (1, "0"), (2, "-5"), (3, "x")])
 def test_dtheta_dialog_refuses_a_number_it_cannot_use(physics_app, monkeypatch, index, text):
-    from syncmoss.supp_menu import open_dtheta_alpha_fe_dialog
+    from syncmoss.instrumental_dialogs import open_dtheta_alpha_fe_dialog
     _, warned = _drive_dialog(monkeypatch, edits={index: text})
     assert open_dtheta_alpha_fe_dialog(physics_app) is None
     assert warned, "the user should have been told why"
