@@ -6,7 +6,8 @@ the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
 the χ² correction of the errors (on/off),
 and the handlers for the small settings dialogs (integral points, instrumental
 lines, polarization, the CMS source and aperture diameters, the Be / KB impurity
-presets), the Library export/import,
+presets), saving the settings as the defaults of the next starts (and deleting
+them), the Library export/import,
 the three markdown viewers
 (models description, help and extended help), the License window, the (parked)
 Hamiltonian initial-guess helper and the highlighted "Contact the author"
@@ -19,6 +20,7 @@ the main window (``jn0_input``, ``instrumental_number``,
 into dialogs.
 """
 
+import json
 import os
 
 import numpy as np
@@ -125,7 +127,9 @@ def build_supp_menu(main_window):
     The theme entry is kept on the window as ``main_window.theme_action`` so
     ``PhysicsApp._apply_theme`` can relabel it whenever the mode changes; the
     contact entry is kept as ``main_window.contact_action`` for the same reason
-    (its accent icon is repainted there).
+    (its accent icon is repainted there), and the χ² entry as
+    ``main_window.chi2_correction_action`` (relabelled by
+    ``PhysicsApp.apply_settings``).
     """
     menu = QMenu(main_window)
     menu.setToolTipsVisible(True)  # only the contact entry sets one
@@ -141,6 +145,7 @@ def build_supp_menu(main_window):
     chi2_correction_action = QAction(chi2_correction_text(chi2_correction(main_window)), main_window)
     chi2_correction_action.triggered.connect(
         lambda: toggle_chi2_correction(main_window, chi2_correction_action))
+    main_window.chi2_correction_action = chi2_correction_action
     set_polarization_action = QAction("Set polarization", main_window)
     set_polarization_action.triggered.connect(lambda: open_polarization_dialog(main_window))
     cms_diameters_action = QAction("Set CMS source and aperture diameters", main_window)
@@ -156,6 +161,10 @@ def build_supp_menu(main_window):
             lambda _checked=False, f=file_name, l=label:
                 open_impurity_preset_dialog(main_window, f, l))
         preset_actions.append(action)
+    save_settings_action = QAction("Save settings as default", main_window)
+    save_settings_action.triggered.connect(lambda: save_settings_as_default(main_window))
+    restore_settings_action = QAction("Restore default settings", main_window)
+    restore_settings_action.triggered.connect(lambda: restore_default_settings(main_window))
     plot_ins_memory_action = QAction("Plot instrumental function from memory", main_window)
     plot_ins_memory_action.triggered.connect(lambda: plot_instrumental_from_memory(main_window))
     plot_ins_spectrum_action = QAction("Plot instrumental function from spectrum", main_window)
@@ -199,6 +208,9 @@ def build_supp_menu(main_window):
     menu.addAction(ins_method_action)
     for action in preset_actions:
         menu.addAction(action)
+    menu.addSeparator()
+    menu.addAction(save_settings_action)
+    menu.addAction(restore_settings_action)
     menu.addSeparator()
     menu.addAction(plot_ins_memory_action)
     menu.addAction(plot_ins_spectrum_action)
@@ -703,6 +715,71 @@ def open_impurity_preset_dialog(main_window, file_name, label):
         main_window.set_status(f"Could not save the parameters of {label}: {e}", "red")
         return False
     main_window.set_status(f"Parameters of {label} saved to {path}", "blue")
+    return True
+
+
+# The settings "Save settings as default" keeps, in params_dir
+# (PhysicsApp.current_settings); main.py applies them to the window it builds
+# (apply_saved_settings), so windows built otherwise (tests, --test) have the
+# built-in ones. "Restore default settings" deletes the file. Never shipped: on
+# the frozen macOS app a shipped file the user deleted would re-seed the whole
+# parameters folder (syncmoss_main._seed_from_bundle).
+SETTINGS_FILE = 'config.json'
+
+
+def apply_saved_settings(main_window):
+    """At start: the settings saved by "Save settings as default", when there
+    are any. Returns True when they were applied."""
+    path = os.path.join(main_window.params_dir, SETTINGS_FILE)
+    if not os.path.isfile(path):
+        return False
+    try:
+        with open(path, encoding='utf-8') as f:
+            settings = json.load(f)
+        if not isinstance(settings, dict):
+            raise ValueError("no settings in it")
+    except (OSError, ValueError) as e:
+        main_window.set_status(f"Saved settings not applied, {SETTINGS_FILE} unreadable: {e}", "orange")
+        return False
+    invalid = main_window.apply_settings(settings)
+    if invalid:
+        main_window.set_status(f"Saved settings applied except {', '.join(invalid)}: "
+                               f"not valid in {SETTINGS_FILE}", "orange")
+    else:
+        main_window.set_status("Ready (saved settings applied)")
+    return True
+
+
+def save_settings_as_default(main_window):
+    """Supp -> Save settings as default: SYNCmoss starts with the window's
+    current settings from now on. Returns True when they were saved."""
+    path = os.path.join(main_window.params_dir, SETTINGS_FILE)
+    try:
+        settings = main_window.current_settings()
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(settings, f, indent=4)
+            f.write('\n')
+    except (OSError, ValueError) as e:
+        main_window.set_status(f"Settings not saved: {e}", "red")
+        return False
+    main_window.set_status(f"Settings saved as default: {path}", "green")
+    return True
+
+
+def restore_default_settings(main_window):
+    """Supp -> Restore default settings: delete the saved settings, so the next
+    start has the built-in ones; this window keeps its settings. Returns True
+    when there were saved settings."""
+    path = os.path.join(main_window.params_dir, SETTINGS_FILE)
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        main_window.set_status("No saved settings: SYNCmoss starts with the default ones.", "blue")
+        return False
+    except OSError as e:
+        main_window.set_status(f"Could not delete {path}: {e}", "red")
+        return False
+    main_window.set_status("Saved settings deleted: the next start uses the default ones.", "green")
     return True
 
 

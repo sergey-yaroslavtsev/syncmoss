@@ -137,7 +137,9 @@ from syncmoss.instrumental_io import (
 )
 from syncmoss.CMS_source_geometry_calibration import calibrate_source, refusal as source_calibration_refusal
 from syncmoss.Library_window import save_to_library_via_dialog
-from syncmoss.supp_menu import build_supp_menu, contact_icon, theme_action_text
+from syncmoss.supp_menu import (
+    INSTRUMENTAL_METHODS, build_supp_menu, chi2_correction_text, contact_icon, theme_action_text,
+)
 from syncmoss.instrumental_dialogs import (
     open_dtheta_alpha_fe_dialog, open_source_calibration_dialog, open_theory_find_dialog,
 )
@@ -1858,6 +1860,84 @@ class PhysicsApp(QMainWindow):
             self.set_status(f"Could not save the defaults: {e}", "red")
             return
         self.set_status(f"Saved as defaults: G {g:g}, Δθ {dtheta:g}, d {d:g}, D {D:g}.", "green")
+
+    def current_settings(self):
+        """The settings Supp -> "Save settings as default" keeps for the next
+        starts (supp_menu.SETTINGS_FILE): CMS/SMS, the velocity direction, the
+        theme and the choices of the Instrumental function, Multispectra and
+        Supp menus. G, Δθ, d and D have their own defaults (GCMS.txt)."""
+        return {
+            'cms': self.MS_fit.isChecked(),
+            'velocity_up_down': self.velocity_direction,
+            'dark_mode': self._is_dark_mode,
+            'use_dat_instrumental_metadata': self.use_dat_instrumental_metadata,
+            'sequence_fitting_type': self.sequence_fitting_type,
+            'instrumental_method': self.instrumental_method,
+            'instrumental_number': int(self.instrumental_number.text()),
+            'chi2_correction': self.chi2_correction,
+            'jn0_sms': int(self.jn0_sms_input.text()),
+            'jn0_cms': int(self.jn0_cms_input.text()),
+            'polarization': float(self.polarization_input.text()),
+        }
+
+    def apply_settings(self, settings):
+        """Set the window to *settings* (current_settings' form), each the way
+        its own control does. A setting *settings* does not hold keeps its
+        value, and so does one whose value is not valid: their names are
+        returned."""
+        invalid = []
+
+        def take(key, valid):
+            value = settings.get(key)
+            if value is None or valid(value):
+                return value
+            invalid.append(key)
+            return None
+
+        def switch(value):
+            return type(value) is bool
+
+        def in_range(store):
+            # a number the hidden store's own validator takes (whole for a
+            # whole-number store)
+            limits = store.validator()
+            kinds = (int,) if isinstance(limits, QIntValidator) else (int, float)
+            return lambda value: type(value) in kinds and limits.bottom() <= value <= limits.top()
+
+        for key, store in (('jn0_sms', self.jn0_sms_input), ('jn0_cms', self.jn0_cms_input),
+                           ('instrumental_number', self.instrumental_number),
+                           ('polarization', self.polarization_input)):
+            value = take(key, in_range(store))
+            if value is not None:
+                store.setText(str(value))
+        self.SMS_pol = float(self.polarization_input.text())
+        cms = take('cms', switch)
+        if cms is not None:
+            self.MS_fit.setChecked(cms)   # SMS follows (on_ms_sms_changed)
+        self.refresh_jn0_for_mode()
+        up_down = take('velocity_up_down', switch)
+        if up_down is not None:
+            self.velocity_direction = up_down
+            self.update_velocity_label()
+        use_dat = take('use_dat_instrumental_metadata', switch)
+        if use_dat is not None:
+            self.use_dat_instrumental_metadata = use_dat
+            self._update_use_dat_instrumental_action_text()
+        mode = take('sequence_fitting_type', lambda value: type(value) is int and value in _MULTISPECTRA_MODES)
+        if mode is not None:
+            self.sequence_fitting_type = mode
+            self.seq_fit_btn.setText(_multispectra_label(mode))
+        method = take('instrumental_method', lambda value: value in [k for k, _t, _b in INSTRUMENTAL_METHODS])
+        if method is not None:
+            self.instrumental_method = method
+        correction = take('chi2_correction', switch)
+        if correction is not None:
+            self.chi2_correction = correction
+            self.chi2_correction_action.setText(chi2_correction_text(correction))
+        dark = take('dark_mode', switch)
+        if dark is not None and dark != self._is_dark_mode:
+            self.toggle_theme()
+        return invalid
 
     def overwrite_dat_instrumental_pressed(self):
         """Instrumental function -> Overwrite instrumental function in selected

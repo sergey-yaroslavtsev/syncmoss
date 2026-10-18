@@ -138,6 +138,9 @@ source_code/
 bundle/build/
 bundle/Windows/
 
+# The user's saved settings (Supp -> Save settings as default): never shipped
+syncmoss/parameters/config.json
+
 # fitting results
 
 syncmoss/*.mdl

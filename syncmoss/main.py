@@ -4,6 +4,7 @@ import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
 import syncmoss.error_reporter as error_reporter
 from syncmoss.syncmoss_main import PhysicsApp
+from syncmoss.supp_menu import apply_saved_settings
 __VERSION__ = "0.5.1"
 
 
@@ -51,6 +52,9 @@ def main():
 
     try:
         window = PhysicsApp(pool=pool)
+        # Supp -> "Save settings as default"; only here, so a window built by
+        # the tests or --test has the built-in settings
+        apply_saved_settings(window)
         window.show()
     except Exception:
         # No event loop yet, so the normal deferred window would never open.

@@ -633,6 +633,17 @@ values with the X they started from — ready for another fit.
   "Integration check (×4)"** trace under every Show model and Fit is the same
   model recomputed with four times as many points, minus the one you see. A flat
   line means converged; a visible wiggle means raise the number.
+- *Supp -> Save settings as default* writes the current settings to
+  `config.json` in the parameters folder, and every later start of SYNCmoss uses
+  them: CMS or SMS, the velocity direction, the theme, where a spectrum's
+  instrumental function comes from (its `.dat` file or the global one), how the
+  SMS one is approximated (theory or Gaussians, and how many), the χ² correction
+  of the errors, the integral points for SMS and CMS, the polarization and the
+  Multispectra mode. Not among them: G, Δθ, d and D, which have their own
+  defaults (*Instrumental function -> Save G, Δθ, d and D as defaults*), and the
+  exclusion regions, off at every start. *Supp -> Restore default settings*
+  deletes the file: the open window keeps its settings, the next start has the
+  built-in ones.
 - *Change spectrum(a)* holds five destructive-looking but useful operations:
   sum all listed spectra, subtract the current model from the spectrum, create
   a spectrum from the model, halve the number of points, and save the spectra

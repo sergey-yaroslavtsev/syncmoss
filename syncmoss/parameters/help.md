@@ -168,6 +168,8 @@ when used). A sequence or one-model fit writes ONE `_param.txt` and ONE
 - *Supp → Set polarization*: SMS polarization degree (default 0.98).
 - *Supp → Set number of points for full transmission integral*: 32 SMS, 64 CMS;
   a flat cyan *Integration check (×4)* line means enough.
+- *Supp → Save settings as default*: the next starts keep the current settings
+  (`config.json` in the parameters folder); *Restore default settings* deletes it.
 - *Change spectrum(a)*: sum, subtract model, spectrum from model, half points,
   without excluded points.
 - **Distribution / Spectrum** shows the `Distr`/`Recon` curves.

@@ -2,7 +2,7 @@
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
 "measured": "2026-10-18 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
-"typical_test_mb": 75,
+"typical_test_mb": 76,
 "accumulated_mb": 640,
 "tests": {
 "tests/syncmoss_test.py::test_gui_library_round_trip": [
@@ -648,6 +648,22 @@
 "tests/test_create_spectrum_from_model.py::test_the_thread_reports_the_interrupt_quietly": [
 0.01,
 0
+],
+"tests/test_default_settings.py::test_a_new_start_has_the_saved_settings": [
+4.3,
+194
+],
+"tests/test_default_settings.py::test_a_saved_setting_not_valid_keeps_the_windows_value": [
+2.14,
+56
+],
+"tests/test_default_settings.py::test_an_unreadable_settings_file_changes_nothing": [
+1.95,
+55
+],
+"tests/test_default_settings.py::test_restore_deletes_the_saved_settings_and_the_window_keeps_its_own": [
+2.01,
+71
 ],
 "tests/test_distr_composition.py::test_distr_scalar_num1_reproduces_the_plain_scalar": [
 0.18,
