@@ -1,18 +1,23 @@
 """
-Markdown document viewer window (models description, quick help).
+Markdown document viewer window (models description, help, extended help).
 
 Opens a markdown document in a separate Qt window and renders it with Qt's
 native markdown support so content remains selectable/copyable and follows the
 active light/dark palette. The same window class serves every shipped document
-(``parameters/models_description.md``, ``parameters/help.md``); only the title
-and the resolved path differ.
+(``parameters/models_description.md``, ``parameters/help.md``,
+``parameters/help_extended.md``); only the title and the resolved path differ.
+Its find bar (:class:`FindBar`) also serves the License window.
 """
 
 import os
 import re
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox, QTextBrowser, QVBoxLayout, QWidget, QMainWindow
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QColor, QKeySequence, QShortcut, QTextCharFormat, QTextCursor
+from PySide6.QtWidgets import (
+    QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QTextBrowser,
+    QTextEdit, QToolButton, QVBoxLayout, QWidget,
+)
 
 
 _GREEK_MAP = {
@@ -168,6 +173,150 @@ def _replace_latex_math_blocks(markdown_text):
     return text
 
 
+# Every match on light yellow, the current one on orange, both with black text
+# so they read on the light and on the dark theme alike.
+FIND_MATCH_COLOR = "#fff176"
+FIND_CURRENT_COLOR = "#ff9632"
+
+
+class FindBar(QWidget):
+    """Find box of a read-only text view (a QTextBrowser or a QPlainTextEdit).
+
+    The search ignores case. Every match is highlighted, the current one in a
+    stronger colour, and "3 / 12" counts them. Enter (or F3) goes to the next
+    match, Shift+Enter (or Shift+F3) to the previous one, both wrapping round;
+    Esc empties the box; Ctrl+F anywhere in the window puts the cursor in it.
+    """
+
+    def __init__(self, view, parent=None):
+        super().__init__(parent)
+        self.view = view
+        self.matches = []   # (start, end) of every match, in document order
+        self.current = -1   # index of the current match, -1 when there is none
+
+        self.input = QLineEdit(self)
+        self.input.setPlaceholderText("Find (Ctrl+F)")
+        self.input.setClearButtonEnabled(True)
+        self.input.textChanged.connect(lambda _text: self.search())
+        self.input.installEventFilter(self)
+        previous_btn = QToolButton(self)
+        previous_btn.setArrowType(Qt.ArrowType.UpArrow)
+        previous_btn.setToolTip("Previous (Shift+Enter)")
+        previous_btn.clicked.connect(self.previous)
+        next_btn = QToolButton(self)
+        next_btn.setArrowType(Qt.ArrowType.DownArrow)
+        next_btn.setToolTip("Next (Enter)")
+        next_btn.clicked.connect(self.next)
+        self.count_label = QLabel("", self)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.input, 1)
+        layout.addWidget(previous_btn)
+        layout.addWidget(next_btn)
+        layout.addWidget(self.count_label)
+
+        for key, slot in ((QKeySequence.StandardKey.Find, self.focus_input),
+                          (QKeySequence.StandardKey.FindNext, self.next),
+                          (QKeySequence.StandardKey.FindPrevious, self.previous)):
+            QShortcut(QKeySequence(key), self).activated.connect(slot)
+
+        self.match_format = QTextCharFormat()
+        self.match_format.setBackground(QColor(FIND_MATCH_COLOR))
+        self.match_format.setForeground(QColor("black"))
+        self.current_format = QTextCharFormat(self.match_format)
+        self.current_format.setBackground(QColor(FIND_CURRENT_COLOR))
+
+    def eventFilter(self, watched, event):
+        if watched is self.input and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    self.previous()
+                else:
+                    self.next()
+                return True
+            if event.key() == Qt.Key.Key_Escape and self.input.text():
+                self.input.clear()
+                return True
+        return super().eventFilter(watched, event)
+
+    def focus_input(self):
+        self.input.setFocus()
+        self.input.selectAll()
+
+    def search(self):
+        """Find every match of the box's text. The current match stays when it
+        still matches, else the next one after it is taken -- after the text
+        cursor (the top, or where the text was clicked) when there was none."""
+        if self.current >= 0:
+            start_at = self.matches[self.current][0]
+        else:
+            start_at = self.view.textCursor().selectionStart()
+        text = self.input.text()
+        document = self.view.document()
+        self.matches = []
+        cursor = document.find(text, 0) if text else QTextCursor()
+        while not cursor.isNull():
+            self.matches.append((cursor.selectionStart(), cursor.selectionEnd()))
+            cursor = document.find(text, cursor)
+        self.current = next((k for k, (start, _end) in enumerate(self.matches) if start >= start_at),
+                            0) if self.matches else -1
+        self._show()
+
+    def restart(self):
+        """Search again from the top: the view holds a new text."""
+        self.current = -1
+        self.search()
+
+    def next(self):
+        self._step(1)
+
+    def previous(self):
+        self._step(-1)
+
+    def _step(self, step):
+        if self.matches:
+            self.current = (self.current + step) % len(self.matches)
+            self._show()
+
+    def _cursor(self, start, end):
+        cursor = QTextCursor(self.view.document())
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        return cursor
+
+    def _show(self):
+        """Highlight the matches, bring the current one into view, count them."""
+        selections = []
+        for k, (start, end) in enumerate(self.matches):
+            selection = QTextEdit.ExtraSelection()
+            selection.cursor = self._cursor(start, end)
+            selection.format = self.current_format if k == self.current else self.match_format
+            selections.append(selection)
+        self.view.setExtraSelections(selections)
+        if self.current >= 0:
+            end = self.matches[self.current][1]
+            self.view.setTextCursor(self._cursor(end, end))
+            # centred unless it is already in view, a line away from either edge
+            line = self.view.cursorRect()
+            if not self.view.viewport().rect().adjusted(0, line.height(), 0, -line.height()).contains(line):
+                self._center_cursor()
+        if not self.input.text():
+            self.count_label.setText("")
+        elif self.matches:
+            self.count_label.setText(f"{self.current + 1} / {len(self.matches)}")
+        else:
+            self.count_label.setText("not found")
+
+    def _center_cursor(self):
+        if isinstance(self.view, QPlainTextEdit):
+            self.view.centerCursor()
+            return
+        bar = self.view.verticalScrollBar()
+        bar.setValue(bar.value() + self.view.cursorRect().center().y()
+                     - self.view.viewport().height() // 2)
+
+
 class ModelsDescriptionWindow(QMainWindow):
     """Standalone window that displays a shipped markdown document."""
 
@@ -194,7 +343,9 @@ class ModelsDescriptionWindow(QMainWindow):
             | Qt.TextInteractionFlag.LinksAccessibleByMouse
         )
         self.viewer.setLineWrapMode(QTextBrowser.LineWrapMode.WidgetWidth)
+        self.find_bar = FindBar(self.viewer, self)
 
+        root_layout.addWidget(self.find_bar)
         root_layout.addWidget(self.viewer, 1)
 
         self.reload_document()
@@ -206,11 +357,13 @@ class ModelsDescriptionWindow(QMainWindow):
                 markdown_text = fh.read()
         except Exception as exc:
             self.viewer.setPlainText("")
-            QMessageBox.warning(self, "Models description", f"Could not load file:\n{self.markdown_path}\n\n{exc}")
+            self.find_bar.restart()
+            QMessageBox.warning(self, self.windowTitle(), f"Could not load file:\n{self.markdown_path}\n\n{exc}")
             return
 
         # Convert LaTeX snippets into readable selectable text and keep Qt palette styling.
         self.viewer.setMarkdown(_replace_latex_math_blocks(markdown_text))
+        self.find_bar.restart()
 
 
 def resolve_doc_path(app_dir_path, file_name):
@@ -242,3 +395,8 @@ def resolve_models_description_path(app_dir_path):
 def resolve_help_path(app_dir_path):
     """Resolve the quick-help markdown location for source and frozen runs."""
     return resolve_doc_path(app_dir_path, "help.md")
+
+
+def resolve_help_extended_path(app_dir_path):
+    """Resolve the extended-help markdown location for source and frozen runs."""
+    return resolve_doc_path(app_dir_path, "help_extended.md")

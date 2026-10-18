@@ -350,16 +350,11 @@ class BugReportDialog(QDialog):
         which_version = f" This is SYNCmoss {version}." if version else ""
         intro = QLabel(
             "<b>Something went wrong.</b> SYNCmoss may well keep working, but "
-            "this is a bug and it will not be fixed unless it is reported."
+            "the bug is fixed only if it is reported."
             "<br><br>Please send the error message below to "
             f"<b>{AUTHOR_EMAIL}</b> "
-            f'(or open an issue at <a href="{ISSUES_URL}">GitHub</a>), together with:'
-            "<ul>"
-            "<li>a description of what you were doing — which button or action "
-            "caused it, or what you were trying to get;</li>"
-            "<li>the spectrum file and the model (.mdl) you were working with;</li>"
-            "<li>anything else needed to reproduce it.</li>"
-            "</ul>"
+            f'(or open an issue at <a href="{ISSUES_URL}">GitHub</a>) with what you '
+            "were doing (which button or action), the spectrum and the .mdl file."
             f"{which_version}", self)
         intro.setWordWrap(True)
         intro.setTextFormat(Qt.TextFormat.RichText)

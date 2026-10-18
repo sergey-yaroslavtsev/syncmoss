@@ -1000,7 +1000,7 @@ def overwrite_dat_instrumental(app, paths):
     if others:
         message.append(f"{others} file(s) that are not .dat left alone")
     if not getattr(app, 'use_dat_instrumental_metadata', True):
-        message.append("'use instrumental function from .dat file' is off: fits do not read it now")
+        message.append("The global instrumental function is in use: fits do not read these headers now")
     app.set_status("\n".join(message), "orange" if refused or failed else "green")
 
 

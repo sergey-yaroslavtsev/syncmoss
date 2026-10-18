@@ -2,7 +2,7 @@
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
 "measured": "2026-10-18 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
-"typical_test_mb": 76,
+"typical_test_mb": 75,
 "accumulated_mb": 640,
 "tests": {
 "tests/syncmoss_test.py::test_gui_library_round_trip": [
@@ -1621,6 +1621,30 @@
 2.41,
 91
 ],
+"tests/test_find_bar.py::test_a_new_search_starts_at_the_text_cursor": [
+0.0,
+3
+],
+"tests/test_find_bar.py::test_a_reloaded_document_is_searched_again": [
+0.0,
+3
+],
+"tests/test_find_bar.py::test_license_window_finds_in_the_section_shown": [
+0.3,
+0
+],
+"tests/test_find_bar.py::test_matches_are_highlighted_and_walked_round": [
+0.03,
+3
+],
+"tests/test_find_bar.py::test_no_match_and_esc": [
+0.0,
+3
+],
+"tests/test_find_bar.py::test_typing_on_keeps_the_current_match": [
+0.01,
+3
+],
 "tests/test_fit_core.py::test_a_single_fit_hands_the_table_to_the_minimiser": [
 2.98,
 89
@@ -3067,107 +3091,119 @@
 ],
 "tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[['a.dat', 'b.dat']]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[data/models_6]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[model.dat]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[models_6]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[spectrum.dat]": [
 0.0,
-3
+2
 ],
-"tests/test_model_only_mode.py::test_document_viewers_open_independently[open_help_pressed-help_window]": [
-2.13,
+"tests/test_model_only_mode.py::test_document_viewers_open_independently[open_help_extended_pressed-help_extended_window]": [
+2.05,
 59
 ],
+"tests/test_model_only_mode.py::test_document_viewers_open_independently[open_help_pressed-help_window]": [
+2.17,
+61
+],
 "tests/test_model_only_mode.py::test_document_viewers_open_independently[open_models_description_pressed-models_description_window]": [
-2.18,
-74
+2.19,
+73
 ],
 "tests/test_model_only_mode.py::test_existing_file_is_accepted_whatever_it_is_called": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_-3]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_0]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_abc]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_models_description_does_not_document_unreachable_models": [
-0.44,
-118
+0.46,
+119
+],
+"tests/test_model_only_mode.py::test_short_help_sections_are_those_of_the_extended_help": [
+0.0,
+1
 ],
 "tests/test_model_only_mode.py::test_show_model_refuses_a_path_that_is_not_a_file[models_6]": [
-2.01,
-89
+2.18,
+77
 ],
 "tests/test_model_only_mode.py::test_show_model_refuses_a_path_that_is_not_a_file[not_a_real_file.dat]": [
-1.96,
-90
+2.05,
+74
 ],
 "tests/test_model_only_mode.py::test_show_spectrum_and_fit_refuse_it_too[fit_pressed]": [
-1.97,
-59
+2.2,
+60
 ],
 "tests/test_model_only_mode.py::test_show_spectrum_and_fit_refuse_it_too[show_pressed]": [
-1.91,
+2.19,
 60
+],
+"tests/test_model_only_mode.py::test_supp_menu_documents_are_shipped_and_render[resolve_help_extended_path]": [
+0.0,
+1
 ],
 "tests/test_model_only_mode.py::test_supp_menu_documents_are_shipped_and_render[resolve_help_path]": [
 0.0,
-0
+1
 ],
 "tests/test_model_only_mode.py::test_supp_menu_documents_are_shipped_and_render[resolve_models_description_path]": [
 0.0,
-0
+1
 ],
-"tests/test_model_only_mode.py::test_supp_menu_offers_both_documents": [
+"tests/test_model_only_mode.py::test_supp_menu_offers_the_documents": [
 0.0,
 0
 ],
 "tests/test_model_only_mode.py::test_valid_model_only_keyword[MODEL_15-15.0]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_valid_model_only_keyword[Model_6-6.0]": [
-2.71,
-3
+2.52,
+2
 ],
 "tests/test_model_only_mode.py::test_valid_model_only_keyword[Model_6.5-6.5]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_valid_model_only_keyword[['Model_6']-6.0]": [
 0.0,
-3
+2
 ],
 "tests/test_model_only_mode.py::test_valid_model_only_keyword[model_6-6.0]": [
 0.0,
-3
+2
 ],
 "tests/test_model_pointwise.py::test_distributions_are_computed_point_by_point_too[Distr + Corr-CMS]": [
 0.05,

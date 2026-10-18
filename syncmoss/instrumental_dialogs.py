@@ -40,13 +40,11 @@ def open_theory_find_dialog(main_window):
     """
     fields = (
         ('theta_urad', "Rocking angle θ [µrad]",
-         "The position you set on the rocking curve. Held during the search --\n"
-         "released from one spectrum it is invented, not measured."),
+         "Your rocking-curve setting; held."),
         ('dEQ', "Quadrupole splitting ΔE_Q [mm/s]",
-         "A property of FeBO3. Held; -0.3900 comes from the 83-spectrum fit."),
+         "A property of FeBO3; held (-0.3900: the 83-spectrum fit)."),
         ('f_LM', "Nuclear amplitude scale f_LM",
-         "f_LM x enrichment of the source crystal. Held; 0.7718 is both the\n"
-         "Debye value and where the 83-spectrum fit puts it."),
+         "f_LM x enrichment of the source crystal; held (0.7718: Debye value)."),
     )
     start = dict(THEORY_START)
 
@@ -54,16 +52,12 @@ def open_theory_find_dialog(main_window):
     dialog.setWindowTitle("Find the instrumental function (Theory)")
     layout = QVBoxLayout(dialog)
     warn = QLabel(
-        "<b>“Refine” is usually the better choice.</b><br>"
-        "Find discards the stored instrumental function and restarts from the "
-        "built-in values.<br>Refine continues from the shape already fitted to "
-        "this source — faster, and it cannot wander as far.")
+        "<b>“Refine” is usually the better choice:</b> Find restarts from the "
+        "built-in values.")
     warn.setWordWrap(True)
     layout.addWidget(warn)
     layout.addWidget(QLabel(
-        "\nStarting values — change them if this source was run far from "
-        "the usual settings.\nB_s and the velocity shift are not asked: Find "
-        "maps both of them."))
+        "\nStart values (B_s and the velocity shift are mapped by Find):"))
 
     editors = {}
     for key, label, blurb in fields:

@@ -7,8 +7,8 @@ the χ² correction of the errors (on/off),
 and the handlers for the small settings dialogs (integral points, instrumental
 lines, polarization, the CMS source and aperture diameters, the Be / KB impurity
 presets), the Library export/import,
-the two markdown viewers
-(models description and quick help), the License window, the (parked)
+the three markdown viewers
+(models description, help and extended help), the License window, the (parked)
 Hamiltonian initial-guess helper and the highlighted "Contact the author"
 entry that closes the menu.
 
@@ -36,7 +36,8 @@ from syncmoss.constants import AUTHOR_EMAIL, ISSUES_URL
 from syncmoss.error_reporter import app_version
 from syncmoss.Library_io import export_library, import_library
 from syncmoss.models_description_window import (
-    ModelsDescriptionWindow, resolve_help_path, resolve_models_description_path,
+    ModelsDescriptionWindow, resolve_help_extended_path, resolve_help_path,
+    resolve_models_description_path,
 )
 from syncmoss.license_window import LicenseWindow
 import syncmoss.sms_theory as smst
@@ -165,8 +166,10 @@ def build_supp_menu(main_window):
     import_lib_action.triggered.connect(lambda: import_library_pressed(main_window))
     models_description_action = QAction("Models description", main_window)
     models_description_action.triggered.connect(lambda: open_models_description_pressed(main_window))
-    help_action = QAction("Help (hidden features)", main_window)
+    help_action = QAction("Help", main_window)
     help_action.triggered.connect(lambda: open_help_pressed(main_window))
+    help_extended_action = QAction("Help (extended)", main_window)
+    help_extended_action.triggered.connect(lambda: open_help_extended_pressed(main_window))
     license_action = QAction("License", main_window)
     license_action.triggered.connect(lambda: open_license_pressed(main_window))
 
@@ -204,6 +207,7 @@ def build_supp_menu(main_window):
     menu.addAction(import_lib_action)
     menu.addAction(models_description_action)
     menu.addAction(help_action)
+    menu.addAction(help_extended_action)
     menu.addAction(license_action)
     menu.addSeparator()
     menu.addAction(contact_action)
@@ -439,15 +443,9 @@ def open_instrumental_lines_dialog(main_window):
 
 INSTRUMENTAL_METHODS = (
     ('theory', "Theory",
-     "Simulation of 57FeBO3 source.\n"
-     "A few PHYSICAL numbers instad of empirical ones\n"
-     "It keeps the proper tails that.\n"
-     "Technicaly a proper way but slower calculations"),
+     "Simulated 57FeBO3 source: physical numbers, proper tails; slower."),
     ('gauss', "Set of Gaussians (default)",
-     "The empirical description: a free sum of Gaussians. Faster and\n"
-     "always able to follow the data, but the parameters mean nothing\n"
-     "physical and a Gaussian sum has short tails.\n"
-     "So far no issue was found by using it."),
+     "Empirical sum of Gaussians: faster, short tails; no issue found so far."),
 )
 
 
@@ -470,8 +468,7 @@ def open_instrumental_method_dialog(main_window):
     dialog = QDialog(main_window)
     dialog.setWindowTitle("How to approximate the instrumental function")
     layout = QVBoxLayout(dialog)
-    layout.addWidget(QLabel(
-        "How should \"Find\" and \"Refine Instr. func.\" describe the source?"))
+    layout.addWidget(QLabel("How should Find and Refine describe the source?"))
 
     chosen = {'key': current}
     n_editor = QLineEdit(main_window.instrumental_number.text().strip(), dialog)
@@ -486,7 +483,6 @@ def open_instrumental_method_dialog(main_window):
         mark = "  ✓" if key == current else ""
         button = QPushButton(f"{title}{mark}")
         button.setMinimumHeight(34)
-        button.setToolTip(blurb)
         button.clicked.connect(lambda _checked=False, k=key: pick(k))
         if key == 'gauss':
             row = QHBoxLayout()
@@ -500,9 +496,7 @@ def open_instrumental_method_dialog(main_window):
         note.setStyleSheet("color: gray;")
         layout.addWidget(note)
 
-    layout.addWidget(QLabel(
-        "Spectra that carry their own instrumental function in the .dat file\n"
-        "are not affected by this setting."))
+    layout.addWidget(QLabel("Spectra with their own instrumental function in the .dat file keep it."))
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
     buttons.rejected.connect(dialog.reject)
     layout.addWidget(buttons)
@@ -654,9 +648,8 @@ def open_impurity_preset_dialog(main_window, file_name, label):
     dialog.setWindowTitle(title)
     layout = QVBoxLayout(dialog)
     layout.addWidget(_wrapped_label(
-        f"The Doublet the model menu puts in a row for {label} -- the current "
-        f"state of the beamline, kept in {file_name}. Rows already in the table "
-        f"keep their numbers; pick it again in a row to load the new ones.", dialog))
+        f"Current beamline state, saved in {file_name}. Rows already in the table "
+        f"keep their values: pick the entry again to load these.", dialog))
     if unreadable:
         layout.addWidget(_wrapped_label(
             f"{file_name} could not be read: enter all {len(DOUBLET_NAMES)} values.", dialog))
@@ -906,7 +899,7 @@ def _open_markdown_document(main_window, doc_path, attribute, label):
     """Show *doc_path* in the markdown viewer kept on ``main_window.<attribute>``.
 
     One viewer window per document (created on first use, reloaded from disk on
-    every later call) so the models description and the quick help can be open
+    every later call) so the models description and the two helps can be open
     side by side. ``label`` is both the window title suffix and the wording used
     in the not-found messages.
     """
@@ -949,6 +942,13 @@ def open_help_pressed(main_window):
     _open_markdown_document(main_window,
                             resolve_help_path(main_window.dir_path),
                             'help_window', "Help")
+
+
+def open_help_extended_pressed(main_window):
+    """Open the extended help: every detail, and the longer notes on the models."""
+    _open_markdown_document(main_window,
+                            resolve_help_extended_path(main_window.dir_path),
+                            'help_extended_window', "Help (extended)")
 
 
 def open_license_pressed(main_window):

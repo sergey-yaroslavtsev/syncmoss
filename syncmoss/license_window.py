@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QLabel, QListWidget, QMainWindow, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget,
 )
 
+from syncmoss.models_description_window import FindBar
+
 MISSING = "(not found in this installation)"
 # The libraries NOTICE.txt names: title -> their distributions
 NOTICE_LIBRARIES = {
@@ -184,6 +186,8 @@ class LicenseWindow(QMainWindow):
         self.viewer.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([260, 840])
+        self.find_bar = FindBar(self.viewer, self)  # searches the text shown
+        layout.addWidget(self.find_bar)
         layout.addWidget(splitter, 1)
 
         self.index.currentRowChanged.connect(self._show_section)
@@ -199,3 +203,4 @@ class LicenseWindow(QMainWindow):
     def _show_section(self, row):
         if 0 <= row < len(self.sections):
             self.viewer.setPlainText(self.sections[row][1])
+            self.find_bar.restart()

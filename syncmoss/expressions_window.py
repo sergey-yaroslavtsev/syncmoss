@@ -125,8 +125,7 @@ class ExpressionsDialog(QDialog):
         self.comment_input = QPlainTextEdit(self)
         self.comment_input.setVisible(False)
         self.comment_input.setPlaceholderText(
-            "What the expression does and what each {X} stands for "
-            "(recommended). Formulas between $ signs are shown rendered.")
+            "What it does, what each {X} is. $formula$ is shown rendered.")
         self.comment_input.setMaximumHeight(110)
         self.comment_view = QTextBrowser(self)
         self.comment_view.setMaximumHeight(170)
@@ -135,8 +134,8 @@ class ExpressionsDialog(QDialog):
         self.expression_input.setMaximumHeight(80)
         self.substitution_form = QFormLayout()
         self.substitution_hint = QLabel(
-            "Substitute: a box left empty keeps its name, to be replaced in the table "
-            "(N1, N2, ... left as they are take each spectrum's own numbers in a sequence).", self)
+            "Substitute (an empty box keeps the name; N1, N2, ... take each spectrum's own values):",
+            self)
         self.substitution_hint.setWordWrap(True)
         self.result_label = QLabel(self)
         self.result_label.setWordWrap(True)

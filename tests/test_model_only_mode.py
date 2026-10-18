@@ -12,8 +12,9 @@ else in that box is a spectrum path. Two things are pinned here:
     bug this file was written for: such a path used to reach the loader inside
     the show-model thread and take the application down.
 
-Plus a check that both markdown documents reachable from the Supp menu are
-shipped and resolvable, since they are data files that packaging can drop.
+Plus a check that the markdown documents reachable from the Supp menu are
+shipped and resolvable, since they are data files that packaging can drop, and
+that the short help keeps the section numbers of the extended one.
 
 The tests that only read the window (the parser, the menu, the documents) share
 ONE window (``shared_physics_app``); the ones that press a button get their own.
@@ -23,7 +24,8 @@ import os
 import pytest
 
 from syncmoss.models_description_window import (
-    _replace_latex_math_blocks, resolve_help_path, resolve_models_description_path,
+    _replace_latex_math_blocks, resolve_help_extended_path, resolve_help_path,
+    resolve_models_description_path,
 )
 
 pytestmark = pytest.mark.gui
@@ -119,15 +121,16 @@ def test_show_spectrum_and_fit_refuse_it_too(physics_app, action):
 # --- the documents behind the Supp menu ------------------------------------
 
 @_SHARED
-def test_supp_menu_offers_both_documents(shared_physics_app):
+def test_supp_menu_offers_the_documents(shared_physics_app):
     texts = [a.text() for a in shared_physics_app.supp_menu.actions()]
-    assert any('Models description' in t for t in texts)
-    assert any('Help' in t for t in texts)
+    for entry in ('Models description', 'Help', 'Help (extended)'):
+        assert entry in texts
 
 
 @pytest.mark.parametrize("opener,attribute", [
     ('open_models_description_pressed', 'models_description_window'),
     ('open_help_pressed', 'help_window'),
+    ('open_help_extended_pressed', 'help_extended_window'),
 ])
 def test_document_viewers_open_independently(physics_app, opener, attribute):
     """Each document gets its own window, so both can be open at once, and a
@@ -159,7 +162,8 @@ def test_document_viewers_open_independently(physics_app, opener, attribute):
 
 
 @_SHARED
-@pytest.mark.parametrize("resolve", [resolve_models_description_path, resolve_help_path])
+@pytest.mark.parametrize("resolve", [resolve_models_description_path, resolve_help_path,
+                                     resolve_help_extended_path])
 def test_supp_menu_documents_are_shipped_and_render(shared_physics_app, resolve):
     path = resolve(shared_physics_app.dir_path)
     assert os.path.isfile(path), f"missing shipped document: {path}"
@@ -170,6 +174,21 @@ def test_supp_menu_documents_are_shipped_and_render(shared_physics_app, resolve)
     # No LaTeX math delimiter may survive the conversion: a leftover '$' means a
     # span the viewer could not read (e.g. one wrapped over a line break).
     assert '$' not in rendered
+
+
+@_SHARED
+def test_short_help_sections_are_those_of_the_extended_help(shared_physics_app):
+    """The short help sends the reader to the same section of the extended one,
+    so each of its headings must be one of the extended help's, in the same
+    order -- and the extended one must not be the shorter of the two."""
+    texts = []
+    for resolve in (resolve_help_path, resolve_help_extended_path):
+        with open(resolve(shared_physics_app.dir_path), encoding="utf-8") as fh:
+            texts.append(fh.read())
+    short, extended = ([ln.strip() for ln in text.splitlines() if ln.startswith(('## ', '### '))]
+                       for text in texts)
+    assert short and [h for h in extended if h in short] == short
+    assert len(texts[0]) < len(texts[1])
 
 
 @_SHARED

@@ -44,8 +44,7 @@ class ExclusionBar(QWidget):
         self.text = QLineEdit()
         self.text.setFont(font)
         self.text.setPlaceholderText("-3:-2; 1:2")
-        self.text.setToolTip("Velocity regions whose points are not fitted: lo:hi; lo:hi\n"
-                             "Enter or leaving the box applies them.")
+        self.text.setToolTip("Regions not fitted: lo:hi; lo:hi (Enter applies)")
         self.text.installEventFilter(self)
         self.text.editingFinished.connect(self.commit)
         self.text.textEdited.connect(lambda _text: self._mark_invalid(False))

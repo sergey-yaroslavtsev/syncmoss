@@ -1058,6 +1058,7 @@ class PhysicsApp(QMainWindow):
         self.last_fitting_data = None
         self.models_description_window = None
         self.help_window = None
+        self.help_extended_window = None
         self.license_window = None
         self.result_window = None         # the spectra of a fit of several spectra
         self._sequence_series = None      # what a running sequence gives that window
@@ -2370,12 +2371,11 @@ class PhysicsApp(QMainWindow):
             tag = '#@GCMS' if resolved['method'] == 'CMS' else '#@INSexp or #@INSth, with #@INSint'
             lines.append(f"• {os.path.basename(spectrum_file)} → {resolved['method']} mode (file contains {tag})")
         message = (
-            f"{ui_method} mode is selected, but the .dat metadata of the following "
-            f"spectrum(a) selects a different method, which will be used instead:\n\n"
+            f"{ui_method} mode is selected, but the .dat header of these spectra "
+            f"selects the other mode, which will be used:\n\n"
             + "\n".join(lines)
-            + f"\n\nTo fit in {ui_method} mode, either disable \"use instrumental "
-              f"function from .dat file\" in the Instrumental function menu, or remove "
-              f"the metadata from the file(s).\n\nProceed anyway?"
+            + f"\n\nTo fit in {ui_method} mode: Instrumental function → Switch to the "
+              f"global instrumental function.\n\nProceed anyway?"
         )
         reply = QMessageBox.warning(
             self, "Instrumental method from .dat file", message,
@@ -3945,13 +3945,10 @@ class PhysicsApp(QMainWindow):
                 # Sequential fitting - ask user
                 reply = QMessageBox.question(
                     self, 'Sequential Fitting',
-                    f"Do you want to start sequential fitting of {len(spectrum_files)} spectra?\n\n"
-                    f"Please check the save path:\n{self.save_path.text() or 'NOT SET'}\n\n"
-                    f"The parameters of all spectra go into ONE <save path>_param.txt "
-                    f"(a line per spectrum) and their pictures into "
-                    f"<save path>_result_table_PNG.html -- both extended if they exist, "
-                    f"so a large batch can be fitted group by group. Curves, pictures and "
-                    f"the fitted model of each spectrum are saved under its own name.",
+                    f"Start sequential fitting of {len(spectrum_files)} spectra?\n\n"
+                    f"Save path:\n{self.save_path.text() or 'NOT SET'}\n\n"
+                    f"ONE _param.txt and ONE _result_table_PNG.html for all "
+                    f"(extended if they exist), plus each spectrum's own files.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
                 

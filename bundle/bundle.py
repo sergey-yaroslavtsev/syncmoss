@@ -117,6 +117,7 @@ def verify():
         "parameters/INSint.txt",
         "parameters/models_description.md",
         "parameters/help.md",
+        "parameters/help_extended.md",
         "theme_dark.json",
         "theme_light.json",
         "parameters/Calibration.dat",
