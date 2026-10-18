@@ -17,18 +17,11 @@ import pytest
 from syncmoss import fitting_io, model_io
 from syncmoss.constants import number_of_baseline_parameters as NB
 
-from conftest import redirect_params_dir_to_tmp
+from conftest import redirect_params_dir_to_tmp, SerialPool
 
 pytestmark = [pytest.mark.gui]
 
 SEXTET, DOUBLET = 14, 9
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _capture_minimiser(monkeypatch):
@@ -92,7 +85,7 @@ def test_a_single_fit_hands_the_table_to_the_minimiser(physics_app, tmp_path, mo
     expected = _expected_start(app)
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, app.calibration_path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, app.calibration_path, SerialPool())
 
     assert result['success'], result.get('message')
     call = calls[0]
@@ -129,7 +122,7 @@ def _ti_inputs(app, tmp_path):
     pt.select_model(2, 'Nbaseline')
     pt.select_model(3, 'Doublet')
     model, p = model_io.read_model(app)[:2]
-    pool = _SerialPool()
+    pool = SerialPool()
     method = resolve_instrumental_for_file(app, paths[0], use_dat_metadata=True)
     method['Norm'] = compute_norm(pool, JN, method)
     A = fitting_io.load_spectrum(app, paths[0], calibration_path=app.calibration_path)[0][0]
@@ -207,7 +200,7 @@ def test_a_spectrum_running_the_other_way_fits_like_one_running_forward(physics_
     app.initialize_parameters()
     start = model_io.read_model(app)[1]
 
-    forward = fitting_io.fit_single_spectrum(app, paths[0], _SerialPool())
+    forward = fitting_io.fit_single_spectrum(app, paths[0], SerialPool())
     real_load = fitting_io.load_spectrum
 
     def second_reversed(app_, path, **kwargs):
@@ -215,7 +208,7 @@ def test_a_spectrum_running_the_other_way_fits_like_one_running_forward(physics_
         return ([a[::-1] for a in A], [b[::-1] for b in B]) if path == paths[1] else (A, B)
 
     monkeypatch.setattr(fitting_io, 'load_spectrum', second_reversed)
-    backward = fitting_io.fit_single_spectrum(app, paths[0], _SerialPool())
+    backward = fitting_io.fit_single_spectrum(app, paths[0], SerialPool())
 
     assert forward['success'] and backward['success'], backward.get('message')
     assert np.allclose(backward['parameters'], forward['parameters'], rtol=1e-6, atol=1e-9)
@@ -238,7 +231,7 @@ def test_show_model_draws_a_spectrum_running_the_other_way_as_one(physics_app, t
     pt.select_model(2, 'Nbaseline')
     pt.select_model(3, 'Sextet')
     app.jn0_input.setText(str(JN))
-    app.pool = _SerialPool()
+    app.pool = SerialPool()
     backwards = os.path.abspath(paths[1])
     real_load = sm.load_spectrum
 
@@ -269,7 +262,7 @@ def test_an_nbaseline_fit_hands_every_section(physics_app, tmp_path, monkeypatch
     expected = _expected_start(app)
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, paths[0], _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, paths[0], SerialPool())
 
     assert result['success'], result.get('message')
     call = calls[0]

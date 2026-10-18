@@ -29,6 +29,8 @@ import syncmoss.models as m5
 import syncmoss.syncmoss_main as sm
 from syncmoss.models import FIT_CANCEL, FitInterrupted, _pool_starmap
 
+from conftest import SerialPool
+
 
 @pytest.fixture(autouse=True)
 def _clear_flag():
@@ -43,11 +45,6 @@ def thread_pool():
     yield pool
     pool.terminate()
     pool.join()
-
-
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _mul(x, y):
@@ -82,7 +79,7 @@ def _in_thread(func):
 def test_helper_gives_the_same_results_as_starmap(thread_pool):
     args = [(i, i + 0.5) for i in range(20)]
     assert _pool_starmap(thread_pool, _mul, args) == thread_pool.starmap(_mul, args)
-    assert _pool_starmap(_SerialPool(), _mul, args) == thread_pool.starmap(_mul, args)
+    assert _pool_starmap(SerialPool(), _mul, args) == thread_pool.starmap(_mul, args)
 
 
 def test_helper_passes_worker_errors_through(thread_pool):
@@ -95,7 +92,7 @@ def test_helper_refuses_new_work_when_the_flag_is_set(thread_pool):
     with pytest.raises(FitInterrupted):
         _pool_starmap(thread_pool, _mul, [(1, 2)])
     with pytest.raises(FitInterrupted):
-        _pool_starmap(_SerialPool(), _mul, [(1, 2)])
+        _pool_starmap(SerialPool(), _mul, [(1, 2)])
     assert not thread_pool._cache, "nothing was handed to the workers"
 
 

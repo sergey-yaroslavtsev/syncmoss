@@ -34,6 +34,13 @@ from conftest import FROZEN_PARAMETERS
 
 pytestmark = pytest.mark.slow
 
+# Each module fixture below runs whole calibrations (20-70 s). In a parallel run
+# (--dist loadgroup) the tests sharing one go to the same worker, so it runs
+# once instead of once per worker that gets one of them.
+_SMS_GROUP = pytest.mark.xdist_group("calibration_sms")
+_CMS_GROUP = pytest.mark.xdist_group("calibration_cms")
+_CMS_SINUS_GROUP = pytest.mark.xdist_group("calibration_cms_sinus")
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 # Be.txt and KB.txt are read as shipped (the beamline's current presets); the
 # instrumental function is the tests' frozen one -- the shipped INS files are
@@ -105,6 +112,7 @@ def golden():
         return json.load(f)
 
 
+@_SMS_GROUP
 @pytest.mark.parametrize("vel_start", [0, 1])
 def test_sms_velocity_axis_is_finite(sms_results, vel_start):
     v = sms_results[vel_start][0]
@@ -112,6 +120,7 @@ def test_sms_velocity_axis_is_finite(sms_results, vel_start):
     assert np.all(np.isfinite(v))
 
 
+@_SMS_GROUP
 @pytest.mark.parametrize("vel_start", [0, 1])
 def test_sms_folded_spectrum_and_fit(sms_results, vel_start):
     """The folded data (B) and folded fit (C) must be consistent: same length
@@ -123,6 +132,7 @@ def test_sms_folded_spectrum_and_fit(sms_results, vel_start):
     assert float(np.max(np.abs(data - fit))) < 0.10 * float(np.max(data))
 
 
+@_SMS_GROUP
 @pytest.mark.parametrize("vel_start", [0, 1])
 def test_sms_matches_golden(sms_results, golden, vel_start):
     """The recovered velocity axis must reproduce the committed calibration.
@@ -140,6 +150,7 @@ def test_sms_matches_golden(sms_results, golden, vel_start):
     assert v.min() < -4.5 and v.max() > 4.5
 
 
+@_SMS_GROUP
 def test_sms_velocity_direction_reverses(sms_results):
     """Vel_start flips the sweep direction, so the two axes are mirror-like:
     the span matches but the (min, max) endpoints swap sign roughly.
@@ -164,12 +175,14 @@ def cms_result():
 _CMS_TRUE_VMAX = 6.0
 
 
+@_CMS_GROUP
 def test_cms_velocity_axis_is_finite(cms_result):
     v = cms_result[0]
     assert v.size > 0
     assert np.all(np.isfinite(v))
 
 
+@_CMS_GROUP
 def test_cms_folded_spectrum_and_fit(cms_result):
     """Folded data (B) and fit (C) consistency for the CMS/linear path."""
     v, data, fit = cms_result
@@ -178,6 +191,7 @@ def test_cms_folded_spectrum_and_fit(cms_result):
     assert float(np.max(np.abs(data - fit))) < 0.10 * float(np.max(data))
 
 
+@_CMS_GROUP
 def test_cms_recovers_linear_drive_amplitude(cms_result):
     """CMS uses a single Gaussian instrumental width (GCMS); the linear-drive
     spectrum must be calibrated to ~2 * vmax, guarding both the CMS instrumental
@@ -204,12 +218,14 @@ _CMS_SINUS_SHIFT = -0.12
 _CMS_SINUS_CHANNELS = 512
 
 
+@_CMS_SINUS_GROUP
 def test_cms_sinus_detected_as_sinusoidal(cms_sinus_result):
     """CMS tries both waveforms; this spectrum must be recognised as sinusoidal,
     otherwise the remaining tests would not exercise the sinusoidal path."""
     assert cms_sinus_result[3] == "sin"
 
 
+@_CMS_SINUS_GROUP
 def test_cms_sinus_recovers_drive(cms_sinus_result):
     """The folded axis must run from shift - vmax to shift + vmax, to within
     the velocity a channel spans where the drive is fastest."""
@@ -219,6 +235,7 @@ def test_cms_sinus_recovers_drive(cms_sinus_result):
     assert float(v.max()) == pytest.approx(_CMS_SINUS_SHIFT + _CMS_SINUS_VMAX, abs=channel_step)
 
 
+@_CMS_SINUS_GROUP
 def test_cms_sinus_fit_sits_on_data(cms_sinus_result):
     """The fit curve returned to the GUI must sit on the data, not merely follow
     its shape. Its count rates are free, so off the noise the folded fit and

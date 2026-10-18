@@ -22,7 +22,7 @@ from syncmoss import exclusion_regions as er
 from syncmoss.Calibration import MulCoCMS
 from syncmoss.constants import number_of_baseline_parameters as NB
 
-from conftest import FROZEN_PARAMETERS
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 with open(os.path.join(os.path.dirname(__file__), "golden_models.json")) as _f:
     _GOLDEN = json.load(_f)
@@ -32,13 +32,6 @@ _A = np.linspace(-10.0, 10.0, 256)
 _KEEP = er.kept(_A, er.parse("-12:-8; -3:-2; 1:2"))
 _BASELINE = np.zeros(NB)
 _BASELINE[0] = 1.0e4
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _frozen(name, delimiter=' '):
@@ -64,7 +57,7 @@ _METHODS = _methods()
 
 def _ti(x, p, model, method, Distri=(0,), Cor=(0,), **kwargs):
     mp = _METHODS[method]
-    return np.asarray(m5.TI(np.asarray(x, dtype=float), p, list(model), JN, _SerialPool(),
+    return np.asarray(m5.TI(np.asarray(x, dtype=float), p, list(model), JN, SerialPool(),
                             mp['x0'], mp['MulCo'], mp['INS'], list(Distri), list(Cor),
                             Met=mp['Met'], Norm=1, **kwargs), dtype=float)
 

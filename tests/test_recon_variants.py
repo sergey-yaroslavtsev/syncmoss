@@ -19,7 +19,7 @@ import syncmoss.models as m5
 from syncmoss.Calibration import MulCoCMS
 from syncmoss.constants import NAT_WIDTH, number_of_baseline_parameters as NB
 
-from conftest import FROZEN_PARAMETERS
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 with open(os.path.join(os.path.dirname(__file__), "golden_models.json")) as _f:
     _SEXTET = list(json.load(_f)["cases"]["Sextet"]["params"])
@@ -38,11 +38,6 @@ _W = [np.array([0.1, 0.3, 0.4, 0.15, 0.05]),
       np.array([0.2, 0.2, 0.2, 0.2, 0.2])]
 _W2 = [np.array([0.3, 0.3, 0.2, 0.1, 0.1]), np.array([0.05, 0.1, 0.2, 0.3, 0.35]),
        np.array([0.3, 0.3, 0.2, 0.1, 0.1 * (1 + 1e-6)])]
-
-
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*a) for a in iterable]
 
 
 def _case(name):
@@ -82,11 +77,11 @@ def test_every_weight_list_gives_the_spectrum_ti_gives(name):
     model, p, Distri, recons, lengths = _case(name)
     x = np.concatenate([_X] * (len(lengths) if lengths else 1))
     p = np.array(p, dtype=float)
-    got = m5.TI_recon_variants(x, p, model, JN, _SerialPool(), 0.0, MulCoCMS, _G, list(Distri), [0], 1, 1,
+    got = m5.TI_recon_variants(x, p, model, JN, SerialPool(), 0.0, MulCoCMS, _G, list(Distri), [0], 1, 1,
                                m5.SMS_POL_DEFAULT, recons, lengths)
     assert len(got) == len(recons)
     for R, spectrum in zip(recons, got):
         m5._NODE_SUMS.clear()
-        expected = np.asarray(m5.TI(x, p, model, JN, _SerialPool(), 0.0, MulCoCMS, _G, list(Distri), [0],
+        expected = np.asarray(m5.TI(x, p, model, JN, SerialPool(), 0.0, MulCoCMS, _G, list(Distri), [0],
                                     Met=1, Norm=1, Recon=R, lengths=lengths), dtype=float)
         np.testing.assert_allclose(np.asarray(spectrum, dtype=float), expected, rtol=1e-12, atol=0)

@@ -158,11 +158,6 @@ verify_minimi.py
 bench_coldstart.py
 minimi_optimization_notes.txt
 
-# SCDW grid-vs-direct / physics-invariant checks: kept local-only. The tracked
-# suite still covers the model end-to-end via the SCDW golden case, plus its
-# param-count and locked-angle checks (test_model_io / test_thick_gui).
-tests/test_sdw_grid.py
-
 # SMS instrumental-function study against the ESRF (temperature, angle) dataset
 # on N:\SL_studies: analysis scripts, cached intermediate fits and the figures
 # they produce. Local-only -- it needs a network share that is not part of the

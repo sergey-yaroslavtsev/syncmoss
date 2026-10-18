@@ -26,8 +26,9 @@ from syncmoss.constants import number_of_baseline_parameters
 
 _E = np.linspace(-10.0, 10.0, 96)
 
-# Same fixtures as test_distr_composition: two distinct thick, anisotropic
-# sextets, plus a thin singlet for the scalar (multiplicative) path.
+# Two distinct thick, anisotropic sextets (their 2x2 amplitude operators differ
+# and couple through the sample), plus a thin singlet for the scalar
+# (multiplicative) path.
 _SX = [20.0, 0.0, 0.0, 33.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0, 0.0, 0.0, 0.0, 3.0]
 _SY = [15.0, 0.3, 0.1, 28.0, 0.098, 0.15, 40.0, 70.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0]
 _SG = [10.0, 0.1, 0.098, 0.12]                       # Singlet: T, delta, L, G

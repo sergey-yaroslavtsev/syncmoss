@@ -23,14 +23,7 @@ from syncmoss.Calibration import MulCoCMS
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.spectrum_plotter import calculate_baseline
 
-from conftest import FROZEN_PARAMETERS
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 
 def _frozen(name, delimiter=' '):
@@ -60,9 +53,9 @@ def _expected(p, v):
 
 def _ti(x, p, model, method, lengths=None):
     mp = METHODS[method]
-    norm = iio.compute_norm(_SerialPool(), JN, mp)
+    norm = iio.compute_norm(SerialPool(), JN, mp)
     return np.asarray(m5.TI(np.asarray(x, dtype=float), np.asarray(p, dtype=float), list(model),
-                            JN, _SerialPool(), mp['x0'], mp['MulCo'], mp['INS'], [0], [0],
+                            JN, SerialPool(), mp['x0'], mp['MulCo'], mp['INS'], [0], [0],
                             Met=mp['Met'], Norm=norm, lengths=lengths), dtype=float)
 
 

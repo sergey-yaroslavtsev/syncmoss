@@ -23,14 +23,7 @@ from syncmoss.Calibration import MulCoCMS
 from syncmoss.constants import (NAT_WIDTH, number_of_baseline_parameters as NB,
                                 ALPHA_FE_V_OUTER, LINE_RATIO_25, LINE_RATIO_34)
 
-from conftest import FROZEN_PARAMETERS
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 
 def _frozen(name, delimiter=' '):
@@ -55,7 +48,7 @@ def _singlet(thickness, N0=1.0, N1=0.0):
 
 def _ti(x, p, model, JN, method, Norm, lengths=None):
     mp = METHODS[method]
-    return np.asarray(m5.TI(np.asarray(x, dtype=float), p, list(model), JN, _SerialPool(),
+    return np.asarray(m5.TI(np.asarray(x, dtype=float), p, list(model), JN, SerialPool(),
                             mp['x0'], mp['MulCo'], mp['INS'], [0], [0], Met=mp['Met'],
                             Norm=Norm, lengths=lengths), dtype=float)
 
@@ -90,7 +83,7 @@ def test_cms_line_depth_follows_the_exact_integral():
     JN = 64                                              # the CMS default
     v = np.linspace(-3.0, 3.0, 61)
     thickness = 8.0                                      # deep: depth ~0.77
-    Norm = iio.compute_norm(_SerialPool(), JN, METHODS["CMS"])
+    Norm = iio.compute_norm(SerialPool(), JN, METHODS["CMS"])
     model = _ti(v, _singlet(thickness), ['Singlet'], JN, "CMS", Norm)
     exact = _exact_cms(v, [(0.0, thickness)])
 
@@ -146,7 +139,7 @@ def test_a_cms_and_an_sms_section_each_keep_their_own_form():
     cms, sms = METHODS["CMS"], METHODS["SMS"]
 
     def mixed(norms):
-        return np.asarray(m5.TI(np.concatenate([x, x]), p, model, 16, _SerialPool(),
+        return np.asarray(m5.TI(np.concatenate([x, x]), p, model, 16, SerialPool(),
                                 [cms['x0'], sms['x0']], [cms['MulCo'], sms['MulCo']],
                                 [cms['INS'], sms['INS']], [0], [0], Met=[1, 0],
                                 Norm=norms, lengths=[n, n]), dtype=float)
@@ -169,10 +162,10 @@ def test_cms_search_norm_follows_g_and_jn(monkeypatch):
         return real(pool, JN, method_params)
 
     monkeypatch.setattr(iio, 'compute_norm', counted)
-    norm = iio.cms_norm_following_g(_SerialPool(), MulCoCMS)
+    norm = iio.cms_norm_following_g(SerialPool(), MulCoCMS)
 
     first = norm(64, _G)
-    assert first == real(_SerialPool(), 64, METHODS["CMS"])    # compute_norm's own value
+    assert first == real(SerialPool(), 64, METHODS["CMS"])    # compute_norm's own value
     assert norm(64, _G) == first and len(calls) == 1           # same G and JN: kept
     assert norm(64, 2 * _G) != first and len(calls) == 2       # G moved: recomputed
     assert norm(128, 2 * _G) != norm(64, 2 * _G)               # JN too
@@ -195,7 +188,7 @@ def test_cms_map_gives_every_node_a_positive_weight(JN):
                            Met=1, JN=JN)[0] for EE in E])
     assert (w > 0).all()
     assert w.sum() * (E[1] - E[0]) == pytest.approx(
-        iio.compute_norm(_SerialPool(), JN, METHODS["CMS"]), rel=1e-12)
+        iio.compute_norm(SerialPool(), JN, METHODS["CMS"]), rel=1e-12)
 
 
 def _former_map(v, lines, JN):
@@ -222,7 +215,7 @@ def test_cms_map_is_closer_to_the_exact_integral_than_the_former_one(name, JN):
     lines = _ABSORBERS[name]
     v = np.linspace(-8.0, 8.0, 161)
     p = np.concatenate([np.eye(1, NB, 0)[0]] + [[t, x, NAT_WIDTH, 0.0] for x, t in lines])
-    Norm = iio.compute_norm(_SerialPool(), JN, METHODS["CMS"])
+    Norm = iio.compute_norm(SerialPool(), JN, METHODS["CMS"])
     new = _ti(v, p, ['Singlet'] * len(lines), JN, "CMS", Norm)
     exact = _exact_cms(v, lines)
     assert np.abs(new - exact).max() < np.abs(_former_map(v, lines, JN) - exact).max()

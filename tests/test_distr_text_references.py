@@ -41,7 +41,7 @@ from syncmoss.expression_eval import eval_expr
 from syncmoss.fitting_io import compute_component_curves, create_subspectra
 from syncmoss.instrumental_io import source_for
 
-from conftest import FROZEN_PARAMETERS
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 with open(os.path.join(os.path.dirname(__file__), "golden_models.json")) as _f:
     _SEXTET = list(json.load(_f)["cases"]["Sextet"]["params"])
@@ -122,11 +122,6 @@ _CASES = {
     "Recon inside a Distr": [Level('R', DELTA, [0.6, 0.4]),
                              Level('D', H, 3, _PDF_H, corrs=[(EPS, _CORR_EPS_H)])],
 }
-
-
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 @pytest.fixture(autouse=True)
@@ -216,7 +211,7 @@ def brute_force_copies(levels, case):
 
 def _ti(model, p, distri=(), cor=(), recon=(), norm=1, lengths=None):
     x = np.concatenate([_X] * len(lengths)) if lengths else _X
-    return np.asarray(m5.TI(x, np.asarray(p, dtype=float), list(model), JN, _SerialPool(), 0.0, MulCoCMS,
+    return np.asarray(m5.TI(x, np.asarray(p, dtype=float), list(model), JN, SerialPool(), 0.0, MulCoCMS,
                             _G, list(distri) or [0], list(cor) or [0], Met=1, Norm=norm,
                             Recon=list(recon) or [0], lengths=lengths), dtype=float)
 
@@ -259,9 +254,9 @@ def test_the_component_curve_is_the_brute_force_component(label):
     levels = _CASES[label]
     case = build(levels)
     Ps, Psm, Distri_t, Cor_t, _, _ = create_subspectra(case['model'], case['Distri'], case['Cor'], case['p'])
-    curves, _ = compute_component_curves(_X, Ps, Psm, Distri_t, Cor_t, JN, _SerialPool(), _METHOD,
+    curves, _ = compute_component_curves(_X, Ps, Psm, Distri_t, Cor_t, JN, SerialPool(), _METHOD,
                                          m5.SMS_POL_DEFAULT, Recon=case['Recon'])
-    norm, _ = source_for(_SerialPool(), _X, JN, _METHOD)
+    norm, _ = source_for(SerialPool(), _X, JN, _METHOD)
     rows, copies = brute_force_copies(levels, case)
     expected = _ti(rows, list(case['p'][:NB]) + copies, norm=norm)
     _assert_same(np.asarray(curves[1], dtype=float), expected, label)
@@ -302,7 +297,7 @@ def test_every_recon_weight_list_reads_the_texts_as_ti():
     must read the model's p."""
     case = build(_CASES["Distr inside a Recon"])
     weight_lists = [np.array([0.2, 0.5, 0.3]), np.array([0.5, 0.3, 0.2])]
-    got = m5.TI_recon_variants(_X, case['p'], case['model'], JN, _SerialPool(), 0.0, MulCoCMS, _G,
+    got = m5.TI_recon_variants(_X, case['p'], case['model'], JN, SerialPool(), 0.0, MulCoCMS, _G,
                                case['Distri'], case['Cor'], 1, 1, m5.SMS_POL_DEFAULT,
                                [[w] for w in weight_lists])
     for weights, spectrum in zip(weight_lists, got):

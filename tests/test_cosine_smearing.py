@@ -35,12 +35,7 @@ from syncmoss.Calibration import MulCoCMS
 from syncmoss.constants import (NAT_WIDTH, number_of_baseline_parameters as NB,
                                 ALPHA_FE_V_OUTER, LINE_RATIO_25, LINE_RATIO_34)
 
-from conftest import FROZEN_PARAMETERS
-
-
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*a) for a in iterable]
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 
 def _frozen(name, delimiter=' '):
@@ -67,9 +62,9 @@ def _norm(x, JN, smearing, G=_G, lengths=None):
     source = dict(x0=0.0, MulCo=MulCoCMS, INS=G, Met=1)
     x = np.asarray(x, dtype=float)
     if lengths is None:
-        return iio.compute_norm(_SerialPool(), JN, source, x, smearing)
+        return iio.compute_norm(SerialPool(), JN, source, x, smearing)
     pieces = np.split(x, np.cumsum(lengths)[:-1])
-    return [iio.compute_norm(_SerialPool(), JN, source, x_i, s_i)
+    return [iio.compute_norm(SerialPool(), JN, source, x_i, s_i)
             for x_i, s_i in zip(pieces, smearing or [None] * len(pieces))]
 
 
@@ -80,7 +75,7 @@ def _cms(x, p, model, JN, dtheta=0.0, Norm=1.0, lengths=None, Recon=[0], v_cente
     smearing = m5.cms_smearing(x, JN, MulCoCMS, _G, 1, dtheta, v_center, r_ratio, lengths)
     if Norm is None:
         Norm = _norm(x, JN, smearing, lengths=lengths)
-    return np.asarray(m5.TI(x, np.asarray(p, dtype=float), list(model), JN, _SerialPool(), 0.0, MulCoCMS, _G,
+    return np.asarray(m5.TI(x, np.asarray(p, dtype=float), list(model), JN, SerialPool(), 0.0, MulCoCMS, _G,
                             [0], [0], Met=1, Norm=Norm, lengths=lengths, Recon=Recon, smearing=smearing),
                       dtype=float)
 
@@ -216,7 +211,7 @@ _ALPHA_FE = {"thin": list(zip(_FE, 1.0 * np.array([3, 2, 1, 1, 2, 3]) / 12)),
 def test_zero_dtheta_is_the_former_model():
     x = np.linspace(-8.0, 8.0, 41)
     p = _singlets(_ALPHA_FE["thick"], 2.0)
-    former = np.asarray(m5.TI(x, p, ['Singlet'] * 6, 32, _SerialPool(), 0.0, MulCoCMS, _G, [0], [0],
+    former = np.asarray(m5.TI(x, p, ['Singlet'] * 6, 32, SerialPool(), 0.0, MulCoCMS, _G, [0], [0],
                               Met=1, Norm=0.99), dtype=float)
     assert np.array_equal(_cms(x, p, ['Singlet'] * 6, 32, dtheta=0.0, Norm=0.99, v_center=0.37), former)
     assert np.array_equal(_cms(x, p, ['Singlet'] * 6, 32, dtheta=0.0, Norm=0.99, v_center=0.37, r_ratio=0.5),
@@ -250,7 +245,7 @@ def test_the_smeared_source_s_own_norm_leaves_nothing_absorbed_flat():
         both = _cms(np.concatenate([v, v + 1.0]), np.concatenate([p, p]), ['Singlet', 'Nbaseline', 'Singlet'], JN,
                     dtheta, None, lengths=[len(v), len(v)], v_center=[0.0, 1.0])
         np.testing.assert_allclose(both, 2.5, rtol=0, atol=1e-12)
-    plain = iio.compute_norm(_SerialPool(), 32, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
+    plain = iio.compute_norm(SerialPool(), 32, dict(x0=0.0, MulCo=MulCoCMS, INS=_G, Met=1))
     assert np.abs(_cms(v, p, ['Singlet'], 32, 0.8, plain) - 2.5).max() > 1e-3
 
 
@@ -261,10 +256,10 @@ def test_a_smearing_prepared_for_other_points_or_nodes_is_refused():
     smearing = m5.cms_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, 0.3, _RATIO)
     for xs, JN in ((x[:-1], 16), (x, 32)):
         with pytest.raises(ValueError, match="cosine smearing prepared for"):
-            m5.TI(xs, p, ['Singlet'], JN, _SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, smearing=smearing)
+            m5.TI(xs, p, ['Singlet'], JN, SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, smearing=smearing)
     with pytest.raises(ValueError, match="cosine smearing given for 1 spectra, the model has 2"):
         m5.TI(np.concatenate([x, x]), np.concatenate([p, p]), ['Singlet', 'Nbaseline', 'Singlet'], 16,
-              _SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, lengths=[41, 41], smearing=[smearing])
+              SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, lengths=[41, 41], smearing=[smearing])
 
 
 def _sigma(E, lines):
@@ -403,12 +398,12 @@ def test_a_cms_section_is_smeared_and_an_sms_section_is_not():
         smearing = m5.cms_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
                                    dtheta, v_center, _RATIO, [n, n])
         mixed = np.asarray(m5.TI(np.concatenate([x, x]), np.concatenate([p_cms, p_sms]),
-                                 ['Singlet', 'Nbaseline', 'Singlet'], 16, _SerialPool(),
+                                 ['Singlet', 'Nbaseline', 'Singlet'], 16, SerialPool(),
                                  [0.0, _X0_SMS], [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [0], [0],
                                  Met=[1, 0], Norm=[1, 1], lengths=[n, n], smearing=smearing), dtype=float)
         np.testing.assert_allclose(mixed[:n], _cms(x, p_cms, ['Singlet'], 16, _DTHETA, v_center=0.3),
                                    rtol=1e-12, atol=0)
-        sms = np.asarray(m5.TI(x, p_sms, ['Singlet'], 16, _SerialPool(), _X0_SMS, _MULCO_SMS, _INS_SMS,
+        sms = np.asarray(m5.TI(x, p_sms, ['Singlet'], 16, SerialPool(), _X0_SMS, _MULCO_SMS, _INS_SMS,
                                [0], [0], Met=0), dtype=float)
         np.testing.assert_allclose(mixed[n:], sms, rtol=1e-12, atol=0)
     assert not np.allclose(_cms(x, p_cms, ['Singlet'], 16, _DTHETA), _cms(x, p_cms, ['Singlet'], 16, 0.0))
@@ -469,7 +464,7 @@ def test_recon_variants_carry_dtheta_v_center_and_r_over_r(sections):
         vc, rr = [0.3, -0.2], [0.5, 1.0]
     p = np.array(p, dtype=float)
     recons = [[w] for w in _W]
-    got = m5.TI_recon_variants(x, p, model, 16, _SerialPool(), 0.0, MulCoCMS, _G, [0], [0], 1, 1,
+    got = m5.TI_recon_variants(x, p, model, 16, SerialPool(), 0.0, MulCoCMS, _G, [0], [0], 1, 1,
                                m5.SMS_POL_DEFAULT, recons, lengths,
                                smearing=m5.cms_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, vc, rr, lengths))
     for R, spectrum in zip(recons, got):
@@ -500,16 +495,16 @@ def test_component_curves_hires_check_and_model_spectrum_use_the_smearing(r_rati
     p = _singlets([(5.0, 3.0)])
     mp = _mp(_DTHETA, 0.3, r_ratio)
     smeared = _cms(x, p, ['Singlet'], 16, _DTHETA, None, v_center=0.3, r_ratio=r_ratio)
-    FS, _ = fitting_io.compute_component_curves(x, [p], [['Singlet']], [], [], 16, _SerialPool(), mp,
+    FS, _ = fitting_io.compute_component_curves(x, [p], [['Singlet']], [], [], 16, SerialPool(), mp,
                                                 m5.SMS_POL_DEFAULT)
     np.testing.assert_allclose(np.asarray(FS[0], dtype=float), smeared, rtol=1e-12, atol=0)
-    hires = np.asarray(iio.hires_model_diff(_SerialPool(), 16, x, p, ['Singlet'], mp, smeared), dtype=float)
+    hires = np.asarray(iio.hires_model_diff(SerialPool(), 16, x, p, ['Singlet'], mp, smeared), dtype=float)
     hi = _cms(x, p, ['Singlet'], 16 * iio.HIRES_INTEGRATION_FACTOR, _DTHETA, None, v_center=0.3,
               r_ratio=r_ratio)
     np.testing.assert_allclose(hires, hi - smeared, rtol=0, atol=1e-12)
     job = dict(A=x, p=p, model=['Singlet'], JN=16, method_params=mp, Distri=[0], Cor=[0], Recon=[0],
                pol=m5.SMS_POL_DEFAULT)
-    np.testing.assert_allclose(compute_model_spectrum(job, _SerialPool()), smeared, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(compute_model_spectrum(job, SerialPool()), smeared, rtol=1e-12, atol=0)
 
 
 def test_same_method_params_tells_dtheta_and_r_over_r_apart():
@@ -931,7 +926,7 @@ def _synthetic_cms(tmp_path, model, p, v, G, dtheta, r_ratio, JN, offset=0.0, ax
     *offset*), written as a plain two-column .dat (no #@GCMS: the fields decide)
     on its axis times *axis_scale* (a calibration that much off)."""
     smearing = m5.cms_smearing(v, JN, MulCoCMS, G, 1, dtheta, iio.drive_rest_velocity(v), r_ratio)
-    counts = np.asarray(m5.TI(v, p, model, JN, _SerialPool(), 0.0, MulCoCMS, G, [0], [0], Met=1,
+    counts = np.asarray(m5.TI(v, p, model, JN, SerialPool(), 0.0, MulCoCMS, G, [0], [0], Met=1,
                               Norm=_norm(v, JN, smearing, G), smearing=smearing), dtype=float)
     path = os.path.join(str(tmp_path), "synthetic.dat")
     np.savetxt(path, np.column_stack([v * axis_scale, counts + offset]))
@@ -963,7 +958,7 @@ def test_refine_single_line_in_cms_finds_g(physics_app, tmp_path):
     path = _synthetic_cms(tmp_path, ['Singlet'], p, v, 0.09, 0.1, _RATIO, 32)
     app = _cms_search_app(physics_app, path, 0.12, 0.1, _RATIO)
     try:
-        result = iio.instrumental(app, 1, 0, pool=_SerialPool())
+        result = iio.instrumental(app, 1, 0, pool=SerialPool())
         assert result['fitted'] == 'G' and result['dtheta'] == 0.1
         assert result['G'] == pytest.approx(0.09, rel=1e-3)          # the minimiser's stop, not the model
         assert result['p'][NB:NB + 2] == pytest.approx([3.0, -0.12], rel=1e-3)
@@ -1009,7 +1004,7 @@ def test_cms_searches_with_the_model_over_nbaseline_spectra(physics_app, tmp_pat
     v = np.concatenate(axes)
     smearing = m5.cms_smearing(v, app.JN0, MulCoCMS, G, 1, dtheta, [iio.drive_rest_velocity(a) for a in axes],
                                r_ratio, [64, 64])
-    counts = np.asarray(m5.TI(v, p, model, app.JN0, _SerialPool(), 0.0, MulCoCMS, G, Distri, Cor, Met=1,
+    counts = np.asarray(m5.TI(v, p, model, app.JN0, SerialPool(), 0.0, MulCoCMS, G, Distri, Cor, Met=1,
                               Norm=_norm(v, app.JN0, smearing, G, [64, 64]), Recon=Recon, lengths=[64, 64],
                               smearing=smearing), dtype=float)
     for path, a, c in zip(paths, axes, np.split(counts, 2)):
@@ -1017,12 +1012,12 @@ def test_cms_searches_with_the_model_over_nbaseline_spectra(physics_app, tmp_pat
     try:
         request = app._instrumental_search_request(1)
         assert request['kind'] == 'nbaseline'
-        result = iio.instrumental(app, 1, 1, pool=_SerialPool(), request=request, dtheta_search={'G': G})
+        result = iio.instrumental(app, 1, 1, pool=SerialPool(), request=request, dtheta_search={'G': G})
         assert result['model'] == ['Sextet', 'Nbaseline', 'Sextet'] and result['lengths'] == [64, 64]
         assert result['fitted'] == 'dtheta' and result['dtheta'] == pytest.approx(dtheta, rel=1e-3)
         app.dtheta_input.setText(repr(dtheta))
         app.GCMS_input.setText("0.1")
-        result = iio.instrumental(app, 1, 1, pool=_SerialPool(), request=app._instrumental_search_request(1))
+        result = iio.instrumental(app, 1, 1, pool=SerialPool(), request=app._instrumental_search_request(1))
         assert result['fitted'] == 'G' and result['G'] == pytest.approx(G, rel=1e-3)
     finally:
         app.SMS_fit.setChecked(True)
@@ -1040,7 +1035,7 @@ def test_refine_dtheta_without_smearing(physics_app, tmp_path):
     path = _synthetic_cms(tmp_path, model, p, v, _SOURCE['G'], 0.0, 0.5, 32, offset=_SOURCE['C_static'])
     app = _cms_search_app(physics_app, path, 0.1, 0.0, 0.5)
     try:
-        result = iio.instrumental(app, 1, 2, pool=_SerialPool(), dtheta_search=_SOURCE)
+        result = iio.instrumental(app, 1, 2, pool=SerialPool(), dtheta_search=_SOURCE)
         dip = result['B'].max() - result['B'].min()
         assert result['dtheta'] < 0.05                     # below that the spectrum cannot tell
         assert np.abs(result['B'] - result['F']).max() < 1e-4 * dip
@@ -1065,7 +1060,7 @@ def test_refine_dtheta_from_pure_alpha_fe_finds_it(physics_app, tmp_path, axis_s
                           axis_scale=axis_scale)
     app = _cms_search_app(physics_app, path, 0.1, 0.0, 0.5)
     try:
-        result = iio.instrumental(app, 1, 2, pool=_SerialPool(), dtheta_search=_SOURCE)
+        result = iio.instrumental(app, 1, 2, pool=SerialPool(), dtheta_search=_SOURCE)
         assert result['fitted'] == 'dtheta' and result['G'] == _SOURCE['G']
         assert result['field'] == pytest.approx(ALPHA_FE_FIELD * axis_scale, rel=1e-4)
         if axis_scale == 1:

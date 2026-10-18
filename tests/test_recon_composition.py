@@ -5,10 +5,11 @@ A Recon reuses the exact replication machinery of Distr, but its per-channel
 density is a vector of FREE fit weights (carried in the parallel ``Recon`` list)
 instead of an evaluated PDF expression. These tests pin:
 
-* the forward-model contract — a Recon behaves exactly like a Distr with the same
-  density, composes with Distr/Corr and Layer, and reproduces the undistributed
-  component when Num=1 with a single weight (regression guard mirroring
-  test_distr_composition), and
+* the forward-model contract — a Recon joins the current layer like a Distr, a
+  'Layer' marker separates it, and every ordering with Distr/Corr reproduces the
+  undistributed component when Num=1 with a single weight (genuine multi-point
+  Recon chains are checked against the hand-written model in
+  test_distr_expansion), and
 * the fit-side regularization helpers (pure math, no numba / no pool): the
   D->lambda map, and that the first/second-difference penalties vanish for a flat
   density and for D=0, and grow with roughness / D.
@@ -26,7 +27,7 @@ from syncmoss.fitting_io import (
 
 _E = np.linspace(-10.0, 10.0, 96)
 
-# Two distinct thick, anisotropic sextets (same fixtures as test_distr_composition).
+# Two distinct thick, anisotropic sextets (the same as in test_distr_expansion).
 _SX = [20.0, 0.0, 0.0, 33.0, 0.098, 0.15, 50.0, 30.0, 1.0, 1.0, 0.0, 0.0, 0.0, 3.0]
 _SY = [15.0, 0.3, 0.1, 28.0, 0.098, 0.15, 40.0, 70.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0]
 
@@ -47,39 +48,6 @@ def _R1(idx, base):
 
 
 # --- forward-model contract -------------------------------------------------
-
-def test_recon_num1_reproduces_undistributed():
-    """A Num=1 Recon whose single weight sits at the base value reproduces the
-    undistributed component bit-for-bit (both SMS and CMS)."""
-    for mett in (0, 1):
-        y_plain = _c(["Sextet"], _SX, mett=mett)
-        y_recon = _c(["Sextet", "Recon"], _SX + _R1(3, _SX),
-                     recon=[np.array([1.0])], mett=mett)
-        assert np.allclose(y_recon, y_plain, rtol=1e-12, atol=1e-14), (
-            f"Num=1 Recon must equal the undistributed component (mett={mett})"
-        )
-
-
-def test_recon_matches_equivalent_distr():
-    """A Recon with a given weight vector must produce EXACTLY the same spectrum as
-    a Distr whose (normalised) PDF equals that weight vector on the grid — the two
-    differ only in how the density is supplied."""
-    weights = np.array([0.1, 0.3, 0.4, 0.15, 0.05])
-    L, R, num = _SX[3] - 3.0, _SX[3] + 3.0, len(weights)
-    distr = [3.0, L, R, float(num), 0.0]
-    recon = [3.0, L, R, float(num), 0.0, 0.0, 0.0]
-    # A Distr PDF that returns the exact weights per grid node (index via argmin of X):
-    #   simplest equivalent: pass the weights through a piecewise expression is awkward,
-    #   so instead compare against a Distr whose PDF is a python list evaluated on X.
-    # Distri strings are eval'd with X in scope; build one that indexes the weights.
-    w_repr = "np.array([" + ",".join(repr(float(w)) for w in weights) + "])"
-    for mett in (0, 1):
-        y_distr = _c(["Sextet", "Distr"], _SX + distr, distri=[w_repr], mett=mett)
-        y_recon = _c(["Sextet", "Recon"], _SX + recon, recon=[weights.copy()], mett=mett)
-        assert np.allclose(y_recon, y_distr, rtol=1e-10, atol=1e-12), (
-            f"Recon must match the equivalent Distr density (mett={mett})"
-        )
-
 
 def test_recon_thick_joins_current_layer():
     """A Recon wrapping a thick component in the SAME layer as another thick
@@ -140,16 +108,6 @@ def test_recon_num1_ordering_reproduces_base(label, markers, make_params, distri
         assert np.allclose(y, base, rtol=1e-11, atol=1e-13), (
             f"ordering {label!r} (mett={mett}) did not reproduce the base component"
         )
-
-
-def test_recon_num_gt1_stays_finite_and_physical():
-    """A genuine Num>1 reconstruction (and a Recon+Corr) must stay finite and in (0,1]."""
-    w = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
-    recon_block = [3.0, _SX[3] - 3.0, _SX[3] + 3.0, float(w.size), 0.4, 0.2, 0.0]
-    for mett in (0, 1):
-        y = _c(["Sextet", "Recon"], _SX + recon_block, recon=[w.copy()], mett=mett)
-        assert np.all(np.isfinite(y)), f"mett={mett}: non-finite"
-        assert np.all((0 < y) & (y <= 1 + 1e-9)), f"mett={mett}: out of (0,1]"
 
 
 # --- regularization helpers (pure math, no numba / no pool) -----------------

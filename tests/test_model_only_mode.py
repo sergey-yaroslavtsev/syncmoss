@@ -14,6 +14,9 @@ else in that box is a spectrum path. Two things are pinned here:
 
 Plus a check that both markdown documents reachable from the Supp menu are
 shipped and resolvable, since they are data files that packaging can drop.
+
+The tests that only read the window (the parser, the menu, the documents) share
+ONE window (``shared_physics_app``); the ones that press a button get their own.
 """
 import os
 
@@ -25,6 +28,9 @@ from syncmoss.models_description_window import (
 
 pytestmark = pytest.mark.gui
 
+# Keeps the shared-window tests on one worker in a parallel run (one window).
+_SHARED = pytest.mark.xdist_group("model_only_mode_shared_window")
+
 
 def _parse(window, text):
     window.process_path.setPlainText(text)
@@ -33,6 +39,7 @@ def _parse(window, text):
 
 # --- the keyword itself -----------------------------------------------------
 
+@_SHARED
 @pytest.mark.parametrize("text,expected", [
     ("Model_6", 6.0),
     ("model_6", 6.0),
@@ -40,21 +47,23 @@ def _parse(window, text):
     ("Model_6.5", 6.5),
     ("['Model_6']", 6.0),
 ])
-def test_valid_model_only_keyword(physics_app, text, expected):
-    is_model_only, velocity_range, error = _parse(physics_app, text)
+def test_valid_model_only_keyword(shared_physics_app, text, expected):
+    is_model_only, velocity_range, error = _parse(shared_physics_app, text)
     assert is_model_only is True
     assert velocity_range == pytest.approx(expected)
     assert error is None
 
 
+@_SHARED
 @pytest.mark.parametrize("text", ["Model_abc", "Model_", "Model_0", "Model_-3"])
-def test_malformed_range_is_reported_not_silently_accepted(physics_app, text):
-    is_model_only, velocity_range, error = _parse(physics_app, text)
+def test_malformed_range_is_reported_not_silently_accepted(shared_physics_app, text):
+    is_model_only, velocity_range, error = _parse(shared_physics_app, text)
     assert is_model_only is True
     assert velocity_range is None
     assert error
 
 
+@_SHARED
 @pytest.mark.parametrize("text", [
     "models_6",                         # the typo that used to crash the app
     "spectrum.dat",                     # ordinary name
@@ -63,17 +72,18 @@ def test_malformed_range_is_reported_not_silently_accepted(physics_app, text):
     "['a.dat', 'b.dat']",
     "",
 ])
-def test_anything_else_is_a_spectrum_path(physics_app, text):
+def test_anything_else_is_a_spectrum_path(shared_physics_app, text):
     """Only the exact keyword is model-only; everything else is a path, and a
     bad one is caught by the existence check rather than by guessing at typos."""
-    assert _parse(physics_app, text) == (False, None, None)
+    assert _parse(shared_physics_app, text) == (False, None, None)
 
 
-def test_existing_file_is_accepted_whatever_it_is_called(physics_app, tmp_path):
+@_SHARED
+def test_existing_file_is_accepted_whatever_it_is_called(shared_physics_app, tmp_path):
     """A file that really is called 'models_6' must still be treated as a file."""
     real = tmp_path / "models_6"
     real.write_text("-1 100\n0 90\n1 100\n", encoding="utf-8")
-    assert physics_app.check_spectrum_paths_exist([str(real)]) is None
+    assert shared_physics_app.check_spectrum_paths_exist([str(real)]) is None
 
 
 # --- one message for "neither a file nor the keyword" -----------------------
@@ -108,8 +118,9 @@ def test_show_spectrum_and_fit_refuse_it_too(physics_app, action):
 
 # --- the documents behind the Supp menu ------------------------------------
 
-def test_supp_menu_offers_both_documents(physics_app):
-    texts = [a.text() for a in physics_app.supp_menu.actions()]
+@_SHARED
+def test_supp_menu_offers_both_documents(shared_physics_app):
+    texts = [a.text() for a in shared_physics_app.supp_menu.actions()]
     assert any('Models description' in t for t in texts)
     assert any('Help' in t for t in texts)
 
@@ -147,9 +158,10 @@ def test_document_viewers_open_independently(physics_app, opener, attribute):
         QApplication.processEvents()
 
 
+@_SHARED
 @pytest.mark.parametrize("resolve", [resolve_models_description_path, resolve_help_path])
-def test_supp_menu_documents_are_shipped_and_render(physics_app, resolve):
-    path = resolve(physics_app.dir_path)
+def test_supp_menu_documents_are_shipped_and_render(shared_physics_app, resolve):
+    path = resolve(shared_physics_app.dir_path)
     assert os.path.isfile(path), f"missing shipped document: {path}"
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
@@ -160,12 +172,13 @@ def test_supp_menu_documents_are_shipped_and_render(physics_app, resolve):
     assert '$' not in rendered
 
 
-def test_models_description_does_not_document_unreachable_models(physics_app):
+@_SHARED
+def test_models_description_does_not_document_unreachable_models(shared_physics_app):
     """Only models offered in the dropdown may have a section (bar the two
     explicitly-labelled deprecated ones)."""
     from syncmoss.parameters_table import MODEL_OPTIONS
 
-    path = resolve_models_description_path(physics_app.dir_path)
+    path = resolve_models_description_path(shared_physics_app.dir_path)
     with open(path, encoding="utf-8") as fh:
         headings = [ln[4:].strip() for ln in fh if ln.startswith('### ')]
 

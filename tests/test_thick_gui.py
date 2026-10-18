@@ -30,13 +30,6 @@ def test_layer_selection_has_no_parameters(physics_app):
     assert model.count('Layer') == 1
 
 
-def test_thick_model_selection_param_count(physics_app):
-    pt = physics_app.params_table
-    pt.select_model(1, 'Sextet')
-    assert _model_name(pt, 1) == 'Sextet'
-    assert pt.row_params[1] == 14  # T,d,e,H,L,G,theta_k,phi_h,A,a+,a-,GH,I1/I3,Am
-
-
 def test_distr_after_baseline_is_blocked(physics_app):
     pt = physics_app.params_table
     btn = _model_btn(pt, 1)             # row 1, previous row is the baseline

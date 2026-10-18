@@ -27,19 +27,14 @@ from syncmoss.expression_eval import eval_expr
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.model_io import load_model_from_path, mod_len_def, read_model
 
+from conftest import SerialPool
+
 # Builds the PySide6 GUI (physics_app) and runs the real forward pipeline (TI).
 pytestmark = pytest.mark.gui
 
 _DATA = os.path.join(os.path.dirname(__file__), "data")
 _X = np.linspace(-12.0, 12.0, 400)
 _INS = np.array([0.1, 0.0, 1.0])     # one narrow source line (Met=0 instrumental triple)
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _prepare(app, path):
@@ -72,7 +67,7 @@ def _prepare(app, path):
 
 def _ti(model, p, Distri, Cor):
     return np.asarray(
-        m5.TI(_X, p, model, 30, _SerialPool(), 0.0, 1.0, _INS, Distri, Cor, Met=0, Norm=1),
+        m5.TI(_X, p, model, 30, SerialPool(), 0.0, 1.0, _INS, Distri, Cor, Met=0, Norm=1),
         dtype=float,
     )
 

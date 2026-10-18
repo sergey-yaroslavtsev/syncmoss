@@ -23,19 +23,12 @@ from syncmoss import fitting_io, model_io, one_model
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.models import FitInterrupted
 
-from conftest import redirect_params_dir_to_tmp
+from conftest import redirect_params_dir_to_tmp, SerialPool
 
 pytestmark = [pytest.mark.gui]
 
 SEXTET = 14
 DELTA = NB + 1           # the Sextet's delta in row 1
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _value_input(pt, row, col):
@@ -452,7 +445,7 @@ def test_show_model_draws_the_first_and_the_last_spectrum(physics_app, tmp_path,
     _spectra(app, tmp_path, 3)
     _sextet_with_independent_delta(app)
     app.jn0_input.setText("16")
-    app.pool = _SerialPool()
+    app.pool = SerialPool()
     monkeypatch.setattr(sm.ShowModelThread, 'start', lambda thread: thread.run())
 
     app.showM_pressed()
@@ -474,7 +467,7 @@ def test_show_model_of_a_sequence_draws_the_first_and_the_last_spectrum(physics_
     app.params_table.select_model(1, 'Sextet')
     app.set_sequence_fitting_type(0)
     app.jn0_input.setText("16")
-    app.pool = _SerialPool()
+    app.pool = SerialPool()
     monkeypatch.setattr(sm.ShowModelThread, 'start', lambda thread: thread.run())
 
     app.showM_pressed()
@@ -498,7 +491,7 @@ def test_two_identical_spectra_fit_like_one_of_them(physics_app, tmp_path):
         _fix_box(pt, 1, col).setChecked(True)
     app.jn0_input.setText("16")
     app.initialize_parameters()
-    pool = _SerialPool()
+    pool = SerialPool()
 
     template = one_model.read_template(app)
     spectra = one_model.spectra_of(app.parse_process_entries())

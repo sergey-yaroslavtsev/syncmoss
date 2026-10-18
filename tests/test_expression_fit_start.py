@@ -9,26 +9,21 @@ against a start no consistent point can reach: the fit never moved and handed
 the parameter back as 0 -- the forced value silently lost.
 
 The spectrum is the bundled alpha-Fe calibration spectrum (a temp copy, see
-conftest), whose delta is near 0, and the Expression forces delta = 0.3.
+conftest), whose delta is near 0, and the Expression forces delta = 0.3. That
+the start vector carries the evaluated Expression and its links is pinned in
+test_fit_core.test_a_single_fit_hands_the_table_to_the_minimiser; here a real
+fit must keep the forced value.
 """
-import numpy as np
 import pytest
 
 from syncmoss import fitting_io, model_io
 from syncmoss.constants import number_of_baseline_parameters as NB
 
-from conftest import redirect_params_dir_to_tmp
+from conftest import redirect_params_dir_to_tmp, SerialPool
 
 pytestmark = [pytest.mark.gui]
 
 DELTA = NB + 1      # flat index of the Sextet's delta (row 1, column 1)
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _forced_delta_model(app, tmp_path, text='0.3'):
@@ -47,27 +42,6 @@ def _forced_delta_model(app, tmp_path, text='0.3'):
     return slot
 
 
-class _Captured(Exception):
-    pass
-
-
-def test_the_fit_starts_from_the_evaluated_expression(physics_app, tmp_path, monkeypatch):
-    app = physics_app
-    slot = _forced_delta_model(app, tmp_path)
-    received = {}
-
-    def capture(func, x, y, p0, **kwargs):
-        received['p0'] = np.array(p0, dtype=float)
-        raise _Captured()
-
-    monkeypatch.setattr(fitting_io.mi, 'minimi_hi', capture)
-    fitting_io.fit_single_spectrum(app, app.calibration_path, _SerialPool())
-
-    p0 = received['p0']
-    assert p0[slot] == pytest.approx(0.3)
-    assert p0[DELTA] == pytest.approx(0.3)     # not the slot's placeholder 0
-
-
 def test_a_forced_value_survives_the_fit(physics_app, tmp_path):
     """Only the baseline Ns is free: before the fix this fit froze at delta = 0."""
     app = physics_app
@@ -80,7 +54,7 @@ def test_a_forced_value_survives_the_fit(physics_app, tmp_path):
         param_widget.layout().itemAt(0).layout().itemAt(1).widget().setChecked(True)
     start_ns = model_io.read_model(app)[1][0]
 
-    result = fitting_io.fit_single_spectrum(app, app.calibration_path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, app.calibration_path, SerialPool())
 
     assert result['success'], result.get('message')
     p = result['parameters']

@@ -6,15 +6,26 @@ PySide6 is imported anywhere, so the suite works on CI machines without a displa
 import hashlib
 import os
 import shutil
+import threading
 
 # Must be set before the very first PySide6 import (including the imports that
 # happen transitively when a syncmoss GUI module is imported by a test).
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# Temporary files of the tests go under syncmoss/.pytest_tmp, in numbered run
+# folders (pytest-of-<user>/pytest-<N>; pytest keeps the last three). A fixed
+# --basetemp is wiped whenever a run starts, so it broke any run going on at
+# the same time, e.g. from another chat; numbered folders are locked while used.
+_TEMP_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".pytest_tmp")
+os.makedirs(_TEMP_ROOT, exist_ok=True)
+os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", _TEMP_ROOT)
+
 import sys
 
 import numpy as np
 import pytest
+
+from worker_plan import order_for_workers, plan_workers
 
 # The calibration spectrum and the instrumental function the tests compute with:
 # frozen copies of syncmoss/parameters/ (as committed), kept with the tests. The
@@ -23,6 +34,13 @@ import pytest
 # typed in -- so a test must never depend on what is in them.
 FROZEN_PARAMETERS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "parameters")
 FROZEN_FILES = ("Calibration.dat", "INSexp.txt", "INSint.txt", "INSth.txt", "GCMS.txt")
+
+
+class SerialPool:
+    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
+
+    def starmap(self, func, iterable):
+        return [func(*args) for args in iterable]
 
 
 def redirect_calibration_to_tmp(window, tmp_dir):
@@ -84,6 +102,98 @@ def redirect_params_dir_to_tmp(window, tmp_dir):
 # force-exit hook here did exactly that; it was the "Segmentation fault" after
 # a fully passing Windows run on the release lane (it had been hidden locally
 # by a faulthandler.disable() and by xdist, whose workers exit normally).
+
+
+# --- parallel runs (pytest-xdist) ----------------------------------------------
+# pyproject.toml asks for "-n auto --dist loadgroup --no-loadscope-reorder";
+# worker_plan.py says how the number of workers and the order are chosen.
+
+_PLAN = pytest.StashKey[str]()
+_WATCH = pytest.StashKey[object]()
+
+
+class _MemoryWatch:
+    """Peak resident memory of this process and its children (the xdist
+    workers), sampled every half second and reported at the end of the run."""
+
+    def __init__(self):
+        self.thread = None
+        try:
+            import psutil
+        except ImportError:
+            return
+        self.error = psutil.Error
+        self.me = psutil.Process()
+        self.peak = 0
+        self.children = 0
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self.run, name="memory-watch", daemon=True)
+        self.thread.start()
+
+    def run(self):
+        while not self.done.wait(0.5):
+            try:
+                procs = [self.me] + self.me.children(recursive=True)
+            except self.error:
+                continue
+            total = 0
+            for p in procs:
+                try:
+                    total += p.memory_info().rss
+                except self.error:
+                    pass
+            if total > self.peak:
+                self.peak, self.children = total, len(procs) - 1
+
+    def stop(self):
+        if self.thread is None:
+            return ""
+        self.done.set()
+        self.thread.join()
+        return (f"peak memory of the test processes: {self.peak / 2**30:.1f} GB "
+                f"(this one and {self.children} child processes)")
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_xdist_auto_num_workers(config):
+    """The number of workers for -n auto (worker_plan.plan_workers);
+    PYTEST_XDIST_AUTO_NUM_WORKERS still overrides it."""
+    if os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        return None
+    n, why = plan_workers(config)
+    config.stash[_PLAN] = why
+    return n
+
+
+def pytest_configure(config):
+    if hasattr(config, "workerinput"):
+        return
+    if (getattr(config.option, "numprocesses", 0) or 0) > 0:
+        # A worker runs one test at a time; an OpenBLAS thread per processor
+        # in every worker only oversubscribes the machine (and reserves ~0.7 GB
+        # of buffers each). The workers inherit this.
+        os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    config.stash[_WATCH] = _MemoryWatch()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config, items):
+    if hasattr(config, "workerinput"):
+        order_for_workers(items)
+
+
+def pytest_sessionstart(session):
+    why = session.config.stash.get(_PLAN, None)
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if why and reporter is not None:
+        reporter.write_line(why)
+
+
+def pytest_terminal_summary(terminalreporter, config):
+    watch = config.stash.get(_WATCH, None)
+    line = watch.stop() if watch is not None else ""
+    if line:
+        terminalreporter.write_line(line)
 
 
 def _parameters_dir():
@@ -185,29 +295,53 @@ def physics_app(qapp, tmp_path):
     what made the late GUI tests take 20-27 s each. shiboken6.delete() destroys the
     object immediately with no queue scan and stays flat (0.69s -> 0.90s).
     """
-    from syncmoss.syncmoss_main import PhysicsApp
-
-    window = PhysicsApp(pool=None)
-    redirect_calibration_to_tmp(window, tmp_path)
-    redirect_params_dir_to_tmp(window, tmp_path)
+    window = _new_window(tmp_path)
     try:
         yield window
     finally:
-        # Run what the window still has queued while it exists. matplotlib's
-        # canvas posts its idle redraw with a bare QTimer.singleShot -- showing
-        # or resizing a canvas does it, and so does drawing a tall results
-        # table -- so left pending it fires on the deleted canvas in whichever
-        # LATER test processes events, failing that test with "Internal C++
-        # object (FigureCanvasQTAgg) already deleted".
-        from PySide6.QtWidgets import QApplication
-        QApplication.processEvents()
-        window.close()
-        window.setParent(None)
-        try:
-            import shiboken6
-            shiboken6.delete(window)
-        except Exception:  # pragma: no cover - shiboken6 ships with PySide6
-            from PySide6.QtCore import QEvent
-            from PySide6.QtWidgets import QApplication
-            window.deleteLater()
-            QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        _destroy_window(window)
+
+
+@pytest.fixture(scope="module")
+def shared_physics_app(qapp, tmp_path_factory):
+    """ONE window for all the tests of a module that only READ it -- a parser
+    fed through the path box, the menus, the shipped documents. A window takes
+    ~2 s to build and destroy, so 20 parametrized cases on their own windows
+    cost 40 s. Mark those tests ``pytest.mark.xdist_group("<name>")`` as well,
+    or a parallel run hands them to many workers and each builds its own.
+    A test that presses a button, logs, or changes the table needs its own
+    ``physics_app``."""
+    window = _new_window(tmp_path_factory.mktemp("shared_window"))
+    try:
+        yield window
+    finally:
+        _destroy_window(window)
+
+
+def _new_window(tmp_dir):
+    from syncmoss.syncmoss_main import PhysicsApp
+
+    window = PhysicsApp(pool=None)
+    redirect_calibration_to_tmp(window, tmp_dir)
+    redirect_params_dir_to_tmp(window, tmp_dir)
+    return window
+
+
+def _destroy_window(window):
+    # Run what the window still has queued while it exists. matplotlib's
+    # canvas posts its idle redraw with a bare QTimer.singleShot -- showing
+    # or resizing a canvas does it, and so does drawing a tall results
+    # table -- so left pending it fires on the deleted canvas in whichever
+    # LATER test processes events, failing that test with "Internal C++
+    # object (FigureCanvasQTAgg) already deleted".
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    window.close()
+    window.setParent(None)
+    try:
+        import shiboken6
+        shiboken6.delete(window)
+    except Exception:  # pragma: no cover - shiboken6 ships with PySide6
+        from PySide6.QtCore import QEvent
+        window.deleteLater()
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

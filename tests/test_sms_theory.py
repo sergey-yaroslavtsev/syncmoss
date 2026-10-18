@@ -25,12 +25,7 @@ from syncmoss.constants import (MMPS_TO_NEV, NAT_WIDTH, ALPHA_FE_FIELD,
                                 LINE_SHIFT_16, LINE_SHIFT_34,
                                 number_of_baseline_parameters as NB)
 
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
+from conftest import SerialPool
 
 
 _LEGACY_INS = np.array([
@@ -172,11 +167,12 @@ def test_quadrupole_convention_is_the_doublet_splitting():
         assert abs(np.ptp(lines) - abs(dEQ)) < 1e-12
 
 
-@pytest.mark.slow
 def test_sms_theory_selftest():
-    """The module's full validation suite (filter theorem, dynamical solver,
-    sum rules, tail exponents, rational reduction, absorber-area invariance)."""
-    assert st.selftest(verbose=False)
+    """The module's validation suite (filter theorem, dynamical solver, sum
+    rules, tail exponents, rational reduction, absorber-area invariance), every
+    check, on the coarser grids of quick mode. The dense grids give the same
+    results; ``python -m syncmoss.sms_theory`` runs them."""
+    assert st.selftest(verbose=False, quick=True)
 
 
 # ======================================================================
@@ -337,7 +333,7 @@ def test_gaussian_stand_in_follows_the_core_but_not_the_tails():
 # ======================================================================
 
 def _ti(ins, x0, MulCo, JN=40):
-    pool = _SerialPool()
+    pool = SerialPool()
     x = np.linspace(-2.0, 2.0, 41)
     p = np.array([1.0e6, 0, 0, 0, 0, 0, 0, 0] + [5.0, 0.0, NAT_WIDTH, 0.0])
     return np.asarray(m5.TI(x, p, ['Singlet'], JN, pool, x0, MulCo, ins), float)
@@ -348,7 +344,7 @@ def test_legacy_transmission_integral_is_untouched():
     dispatch is a new `elif`, not a change to the old expression."""
     F = _ti(_LEGACY_INS, _LEGACY_X0, _LEGACY_MULCO)
     # recompute the legacy expression straight from the formula, node by node
-    pool = _SerialPool()
+    pool = SerialPool()
     x = np.linspace(-2.0, 2.0, 41)
     p = np.array([1.0e6, 0, 0, 0, 0, 0, 0, 0] + [5.0, 0.0, NAT_WIDTH, 0.0])
     JN = 40
@@ -417,7 +413,7 @@ def test_transmission_integral_matches_the_convolution_it_stands_for(make):
     I_eff, delta, WL, WG = 5.0, 0.0, NAT_WIDTH, 0.0
     p0 = 1.0e6
 
-    pool = _SerialPool()
+    pool = SerialPool()
     x = np.linspace(-1.5, 1.5, 21)
     p = np.array([p0, 0, 0, 0, 0, 0, 0, 0] + [I_eff, delta, WL, WG])
     got = np.asarray(m5.TI(x, p, ['Singlet'], JN, pool, x0, MulCo, ins), float)
@@ -448,7 +444,7 @@ def test_shifted_source_moves_the_dip_the_same_way_as_the_legacy_form():
     lambda: st.encode_physical(theta_urad=70.0, B_s=0.5, dEQ=-0.2),
 ])
 def test_limits_returns_a_usable_grid(make):
-    x0, MulCo = m5.limits(_SerialPool(), 32, make())
+    x0, MulCo = m5.limits(SerialPool(), 32, make())
     assert np.isfinite(x0) and np.isfinite(MulCo)
     assert abs(x0) <= 0.5
     assert 1.0 < MulCo < 6.0

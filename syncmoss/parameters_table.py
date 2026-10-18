@@ -49,6 +49,9 @@ _CBL2 = f"{_ICONS_DIR}/CheckBox_L2.png"
 # left without a number at all ('=[3,.]', '=(-.)') is refused like '=[3,]'.
 _VALUE_INPUT_PATTERN = r'^(-?\d+(\.\d+)?|=\[\d*,-?\d*(\.\d*)?\]|=\(-?\d*(\.\d*)?\))$'
 
+# A lower / upper bound field: a plain number.
+_BOUND_INPUT_PATTERN = r'^-?\d+(\.\d+)?$'
+
 # Prefilled by the "link to another parameter" context-menu entry, with the
 # cursor parked on the empty source-index half (before the comma).
 _EMPTY_LINK = '=[,1]'
@@ -82,10 +85,6 @@ def nonresonant_shape_links(start):
     parameter *start*: links to its Os, c²s, lins (``=[start+1,1]``, ...)."""
     return [f'=[{start + col - _NNR_COL},1]' for col in _NONRESONANT_SHAPE_COLS]
 
-
-def _make_value_validator():
-    """Validator of a numeric parameter value field (number or =[X,Y] link)."""
-    return QRegularExpressionValidator(QRegularExpression(_VALUE_INPUT_PATTERN))
 
 
 def style_value_field(value_input):
@@ -297,6 +296,11 @@ class ParametersTable(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        # One validator of each kind, shared by every field: a QLineEdit does not
+        # own its validator, so one per field was never freed (~4000 per window,
+        # and more at every model change).
+        self._value_validator = QRegularExpressionValidator(QRegularExpression(_VALUE_INPUT_PATTERN), self)
+        self._bound_validator = QRegularExpressionValidator(QRegularExpression(_BOUND_INPUT_PATTERN), self)
         self.copied_model_name = str("None")
         self.copied_values = []
         self.copied_fixes = []
@@ -373,8 +377,7 @@ class ParametersTable(QWidget):
             value_input = ValueLineEdit("")
             value_input.setFont(QFont('Arial', 10))
             value_input.setFixedWidth(80)
-            validator_value = _make_value_validator()
-            value_input.setValidator(validator_value)
+            value_input.setValidator(self._value_validator)
             self._install_value_context_menu(value_input)
             value_input.textChanged.connect(lambda text, inp=value_input, r=0, c=col: self.on_value_changed(inp, r, c))
             # Bounds layout
@@ -383,13 +386,11 @@ class ParametersTable(QWidget):
             lower_input = QLineEdit("")
             lower_input.setFont(QFont('Arial', 10))
             lower_input.setFixedWidth(40)
-            validator = QRegularExpressionValidator(QRegularExpression(r'^-?\d+(\.\d+)?$'))
-            lower_input.setValidator(validator)
+            lower_input.setValidator(self._bound_validator)
             upper_input = QLineEdit("")
             upper_input.setFont(QFont('Arial', 10))
             upper_input.setFixedWidth(40)
-            validator2 = QRegularExpressionValidator(QRegularExpression(r'^-?\d+(\.\d+)?$'))
-            upper_input.setValidator(validator2)
+            upper_input.setValidator(self._bound_validator)
             bounds_layout.addWidget(lower_input)
             bounds_layout.addWidget(upper_input)
             param_layout.addLayout(top_layout)
@@ -411,8 +412,7 @@ class ParametersTable(QWidget):
             name_label.setText(name_labels[i])
             name_label.original_text = name_labels[i]
             value_input.setText(str(initial_values[i]))
-            validator_value = _make_value_validator()
-            value_input.setValidator(validator_value)
+            value_input.setValidator(self._value_validator)
             if i in [1,2,3,4,5,6,7]:
                 fix_cb.setChecked(True)
             if i == 0:
@@ -524,8 +524,7 @@ class ParametersTable(QWidget):
             value_input = ValueLineEdit("")
             value_input.setFont(QFont('Arial', 10))
             value_input.setFixedWidth(80)
-            validator_value = _make_value_validator()
-            value_input.setValidator(validator_value)
+            value_input.setValidator(self._value_validator)
             self._install_value_context_menu(value_input)
             value_input.textChanged.connect(lambda text, inp=value_input, r=row, c=col: self.on_value_changed(inp, r, c))
             # Bounds layout
@@ -534,13 +533,11 @@ class ParametersTable(QWidget):
             lower_input = QLineEdit("")
             lower_input.setFont(QFont('Arial', 10))
             lower_input.setFixedWidth(40)
-            validator = QRegularExpressionValidator(QRegularExpression(r'^-?\d+(\.\d+)?$'))
-            lower_input.setValidator(validator)
+            lower_input.setValidator(self._bound_validator)
             upper_input = QLineEdit("")
             upper_input.setFont(QFont('Arial', 10))
             upper_input.setFixedWidth(40)
-            validator2 = QRegularExpressionValidator(QRegularExpression(r'^-?\d+(\.\d+)?$'))
-            upper_input.setValidator(validator2)
+            upper_input.setValidator(self._bound_validator)
             bounds_layout.addWidget(lower_input)
             bounds_layout.addWidget(upper_input)
             if name_label.text() == "":
@@ -909,8 +906,7 @@ class ParametersTable(QWidget):
                         # right-click menu (see _show_value_context_menu).
                         value_input.setProperty('free_text', True)
                     else:
-                        validator_value = _make_value_validator()
-                        value_input.setValidator(validator_value)
+                        value_input.setValidator(self._value_validator)
                         value_input.setProperty('free_text', False)
                     name_label = param_widget.layout().itemAt(0).layout().itemAt(0).widget()
                     lower_input = param_widget.layout().itemAt(2).layout().itemAt(0).widget()

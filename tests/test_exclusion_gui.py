@@ -24,16 +24,11 @@ from syncmoss.spectrum_plotter import (
     EXCLUSION_GID, CHI2_GID, SPECTRUM_AXES_GID, plot_model, spectrum_axes_of,
 )
 
-from conftest import FROZEN_PARAMETERS
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 pytestmark = [pytest.mark.gui]
 
 REGIONS = "-3:-2; 1:2"
-
-
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _fake_minimiser(monkeypatch):
@@ -75,7 +70,7 @@ def _fit(app, path, monkeypatch):
     _fake_minimiser(monkeypatch)
     app._fit_links_snapshot = app.params_table.get_link_snapshot()
     app._fit_model_snapshot = model_file_rows(app)
-    result = fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, path, SerialPool())
     assert result['success'], result.get('message')
     app.on_fitting_finished(result)
     return result

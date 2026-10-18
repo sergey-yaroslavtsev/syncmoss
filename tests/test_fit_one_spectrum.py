@@ -21,6 +21,8 @@ from syncmoss import model_io
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.one_spectrum import OneSpectrumDialog, find_spectrum
 
+from conftest import SerialPool
+
 pytestmark = [pytest.mark.gui]
 
 DELTA = NB + 1           # the Sextet's delta in row 1
@@ -154,13 +156,6 @@ def test_one_spectrum_only_gets_a_message(physics_app, tmp_path, monkeypatch):
     assert 'only one spectrum' in app.log.toPlainText()
 
 
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
-
-
 def test_a_spectrum_of_the_path_box_brings_its_n_and_n1_into_the_formulas(physics_app, tmp_path,
                                                                          monkeypatch):
     """Spectrum 2 of 3 (N1 = 20): the minimiser gets its formula with N = 2 and
@@ -172,7 +167,7 @@ def test_a_spectrum_of_the_path_box_brings_its_n_and_n1_into_the_formulas(physic
     pt.select_model(2, 'Expression')
     model_io._set_row_param(pt.row_widgets[2], 0, 'N*1000+N1', '', '', 'False')
     app.jn0_input.setText("16")
-    app.pool = _SerialPool()
+    app.pool = SerialPool()
     _choose(monkeypatch, (2, (20.0,), paths[1]))
     seen = []
 

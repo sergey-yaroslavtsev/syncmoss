@@ -1,0 +1,5365 @@
+{
+"about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
+"measured": "2026-10-18 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"worker_mb": 370,
+"typical_test_mb": 76,
+"accumulated_mb": 640,
+"tests": {
+"tests/syncmoss_test.py::test_gui_library_round_trip": [
+5.58,
+0
+],
+"tests/syncmoss_test.py::test_gui_open_and_fit": [
+28.55,
+1
+],
+"tests/test_baseline_polynomial.py::test_a_new_table_links_the_nonresonant_shape_to_the_resonant_one": [
+2.25,
+95
+],
+"tests/test_baseline_polynomial.py::test_an_nbaseline_links_its_own_shape_through_every_edit": [
+2.34,
+65
+],
+"tests/test_baseline_polynomial.py::test_cms_and_sms_keep_the_shape_links": [
+2.05,
+69
+],
+"tests/test_baseline_polynomial.py::test_moving_the_centres_moves_the_whole_baseline[CMS]": [
+0.01,
+5
+],
+"tests/test_baseline_polynomial.py::test_moving_the_centres_moves_the_whole_baseline[SMS]": [
+0.0,
+5
+],
+"tests/test_baseline_polynomial.py::test_nbaseline_sections_each_have_their_own_centred_polynomial": [
+0.0,
+5
+],
+"tests/test_baseline_polynomial.py::test_the_plotted_baseline_is_the_same_polynomial": [
+0.0,
+5
+],
+"tests/test_baseline_polynomial.py::test_ti_baseline_is_the_centred_polynomial[CMS]": [
+0.24,
+5
+],
+"tests/test_baseline_polynomial.py::test_ti_baseline_is_the_centred_polynomial[SMS]": [
+0.0,
+5
+],
+"tests/test_bliss_channel.py::test_a_channel_is_folded_like_the_same_counts_in_an_mca_file": [
+0.01,
+4
+],
+"tests/test_bliss_channel.py::test_a_channel_without_a_value_is_refused_by_name": [
+0.0,
+1
+],
+"tests/test_bliss_channel.py::test_a_throw_away_channel_is_read_first": [
+0.0,
+4
+],
+"tests/test_bliss_channel.py::test_a_worker_thread_never_reads_bliss_itself": [
+0.0,
+6
+],
+"tests/test_bliss_channel.py::test_channels_and_files_are_checked_together": [
+0.01,
+1
+],
+"tests/test_bliss_channel.py::test_every_refresh_reads_the_channel_again": [
+0.0,
+4
+],
+"tests/test_bliss_channel.py::test_the_path_check_reads_the_channel": [
+0.1,
+1
+],
+"tests/test_bliss_channel.py::test_the_show_model_thread_keeps_a_channel_name_as_it_is": [
+0.0,
+6
+],
+"tests/test_bliss_channel.py::test_with_bliss_the_beacon_host_defaults_to_id14[None-id14:25000]": [
+0.0,
+1
+],
+"tests/test_bliss_channel.py::test_with_bliss_the_beacon_host_defaults_to_id14[id99:25000-id99:25000]": [
+0.0,
+1
+],
+"tests/test_bliss_channel.py::test_without_bliss_a_channel_name_is_just_a_missing_file": [
+0.0,
+1
+],
+"tests/test_bliss_channel.py::test_without_bliss_nothing_happens": [
+0.0,
+1
+],
+"tests/test_bliss_channel.py::test_worker_threads_get_the_counts_read_on_the_main_thread": [
+0.01,
+6
+],
+"tests/test_calculation_time.py::test_duration_text": [
+0.0,
+9
+],
+"tests/test_calculation_time.py::test_the_time_follows_the_status_line": [
+1.86,
+97
+],
+"tests/test_calibration.py::test_cms_folded_spectrum_and_fit": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_cms_recovers_linear_drive_amplitude": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_cms_sinus_detected_as_sinusoidal": [
+24.92,
+6
+],
+"tests/test_calibration.py::test_cms_sinus_fit_sits_on_data": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_cms_sinus_recovers_drive": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_cms_velocity_axis_is_finite": [
+19.41,
+4
+],
+"tests/test_calibration.py::test_sms_folded_spectrum_and_fit[0]": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_sms_folded_spectrum_and_fit[1]": [
+0.01,
+0
+],
+"tests/test_calibration.py::test_sms_matches_golden[0]": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_sms_matches_golden[1]": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_sms_velocity_axis_is_finite[0]": [
+70.9,
+13
+],
+"tests/test_calibration.py::test_sms_velocity_axis_is_finite[1]": [
+0.0,
+0
+],
+"tests/test_calibration.py::test_sms_velocity_direction_reverses": [
+0.0,
+0
+],
+"tests/test_calibration_helpers.py::test_deepest_line_channels": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_deepest_line_channels_prefers_first_occurrence_inside_quarter": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_fold_sinusoidal_symmetric": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_fold_triangular_symmetric": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_load_m1_skips_first_data_row": [
+0.01,
+1
+],
+"tests/test_calibration_helpers.py::test_load_mca_real_fixture": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_load_mca_synthetic_fixture": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_load_mcs_binary": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_load_moe_skips_float_header_lines": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_load_unknown_extension_raises": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_load_ws5": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_phase_detects_known_shift": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_phase_zero_for_perfect_mirror": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_subtract_distortion_recovers_flat_signal": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_write_calibration_dat[0-sin]": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_write_calibration_dat[1-lin]": [
+0.0,
+0
+],
+"tests/test_calibration_path.py::test_an_explicit_absolute_path_wins": [
+1.97,
+62
+],
+"tests/test_calibration_path.py::test_an_explicit_relative_name_is_still_window_relative": [
+2.13,
+60
+],
+"tests/test_calibration_path.py::test_calibration_is_written_where_it_is_read": [
+0.04,
+22
+],
+"tests/test_calibration_path.py::test_default_is_not_the_working_folder": [
+1.96,
+80
+],
+"tests/test_calibration_path.py::test_default_is_the_windows_own_path": [
+2.69,
+95
+],
+"tests/test_calibration_path.py::test_fitting_passes_the_path_explicitly": [
+0.0,
+3
+],
+"tests/test_calibration_path.py::test_no_module_hardcodes_the_bare_name[fitting_io]": [
+0.0,
+3
+],
+"tests/test_calibration_path.py::test_no_module_hardcodes_the_bare_name[instrumental_io]": [
+0.0,
+3
+],
+"tests/test_calibration_path.py::test_no_module_hardcodes_the_bare_name[parameters_table]": [
+0.0,
+3
+],
+"tests/test_calibration_path.py::test_no_module_hardcodes_the_bare_name[spectrum_io]": [
+0.0,
+3
+],
+"tests/test_calibration_path.py::test_no_module_hardcodes_the_bare_name[syncmoss_main]": [
+0.0,
+3
+],
+"tests/test_calibration_path.py::test_without_a_window_it_falls_back_to_the_spectrum_folder": [
+0.01,
+0
+],
+"tests/test_chi2_spread.py::test_simultaneous_fit_image_shows_the_spread": [
+0.11,
+1
+],
+"tests/test_chi2_spread.py::test_single_fit_image_shows_the_spread": [
+0.14,
+0
+],
+"tests/test_chi2_spread.py::test_spread_is_sqrt_two_over_dof": [
+0.0,
+6
+],
+"tests/test_chi2_spread.py::test_the_spread_is_in_units_of_the_last_decimal": [
+0.0,
+6
+],
+"tests/test_chi2_spread.py::test_title_carries_the_spread_only_when_given": [
+0.0,
+6
+],
+"tests/test_chi2_spread.py::test_title_shows_the_deviance_before_chi2": [
+0.0,
+6
+],
+"tests/test_cms_source_geometry_calibration.py::test_both_spectra_together_are_each_on_its_own": [
+0.28,
+1
+],
+"tests/test_cms_source_geometry_calibration.py::test_it_needs_two_raw_spectra_of_one_drive": [
+0.01,
+16
+],
+"tests/test_cms_source_geometry_calibration.py::test_the_distortion_is_one_parabola_per_half_sweep": [
+0.0,
+16
+],
+"tests/test_cms_source_geometry_calibration.py::test_the_drive_g_dtheta_and_f_lm_come_back_together": [
+70.28,
+0
+],
+"tests/test_cms_source_geometry_calibration.py::test_the_source_needs_f_lm_and_both_spectra_s_counts": [
+0.0,
+16
+],
+"tests/test_cms_source_geometry_calibration.py::test_unusable_fields_start_from_the_usual_source": [
+0.0,
+9
+],
+"tests/test_contact_author.py::test_accent_differs_between_the_two_modes": [
+0.0,
+6
+],
+"tests/test_contact_author.py::test_contact_dialog_shows_the_address_and_the_issue_tracker": [
+0.0,
+0
+],
+"tests/test_contact_author.py::test_contact_entry_is_last_and_highlighted": [
+2.29,
+86
+],
+"tests/test_contact_author.py::test_contact_icon_follows_the_theme": [
+2.2,
+83
+],
+"tests/test_contact_author.py::test_no_mail_client_is_ever_launched": [
+0.0,
+6
+],
+"tests/test_contact_author.py::test_pressing_the_entry_reports_the_address": [
+2.11,
+81
+],
+"tests/test_cosine_smearing.py::test_a_cms_section_is_smeared_and_an_sms_section_is_not": [
+0.02,
+4
+],
+"tests/test_cosine_smearing.py::test_a_part_of_the_points_gives_the_same_values": [
+0.01,
+18
+],
+"tests/test_cosine_smearing.py::test_a_small_disc_is_a_point": [
+0.13,
+1
+],
+"tests/test_cosine_smearing.py::test_a_smearing_prepared_for_other_points_or_nodes_is_refused": [
+0.0,
+29
+],
+"tests/test_cosine_smearing.py::test_cms_has_refine_only": [
+1.83,
+45
+],
+"tests/test_cosine_smearing.py::test_cms_searches_with_the_model_over_nbaseline_spectra": [
+5.42,
+36
+],
+"tests/test_cosine_smearing.py::test_cms_single_line_reference": [
+0.0,
+0
+],
+"tests/test_cosine_smearing.py::test_cms_source_fields_show_four_decimals_and_keep_every_digit": [
+1.75,
+97
+],
+"tests/test_cosine_smearing.py::test_component_curves_hires_check_and_model_spectrum_use_the_smearing[0.25]": [
+0.03,
+0
+],
+"tests/test_cosine_smearing.py::test_component_curves_hires_check_and_model_spectrum_use_the_smearing[1.0]": [
+0.02,
+4
+],
+"tests/test_cosine_smearing.py::test_disc_model_follows_the_exact_disc_integral": [
+1.81,
+24
+],
+"tests/test_cosine_smearing.py::test_disc_rule_is_the_point_box_for_a_tiny_disc_and_at_small_angles": [
+0.02,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_alpha_fe_reference_refuses_numbers_it_cannot_use[change0-between 0 and 1]": [
+0.0,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_alpha_fe_reference_refuses_numbers_it_cannot_use[change1-between 0 and 1]": [
+0.0,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_alpha_fe_reference_refuses_numbers_it_cannot_use[change2-negative]": [
+0.0,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_alpha_fe_reference_refuses_numbers_it_cannot_use[change3-not below]": [
+0.0,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_alpha_fe_reference_takes_the_non_resonant_baseline_from_the_source": [
+0.0,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_dialog_asks_for_the_source": [
+1.73,
+21
+],
+"tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[0--0.01]": [
+2.03,
+54
+],
+"tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[1-0]": [
+1.82,
+4
+],
+"tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[1-1]": [
+1.96,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[2--5]": [
+1.81,
+2
+],
+"tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[3-x]": [
+1.84,
+0
+],
+"tests/test_cosine_smearing.py::test_dtheta_entries": [
+1.84,
+44
+],
+"tests/test_cosine_smearing.py::test_dtheta_field_takes_the_aps_place_next_to_g": [
+1.93,
+100
+],
+"tests/test_cosine_smearing.py::test_each_section_has_its_own_r_over_r": [
+0.01,
+0
+],
+"tests/test_cosine_smearing.py::test_erf_takes_arrays_element_by_element": [
+0.02,
+2
+],
+"tests/test_cosine_smearing.py::test_gcms_file_keeps_g_the_smearing_and_the_diameters": [
+0.01,
+4
+],
+"tests/test_cosine_smearing.py::test_gcms_header_numbers_are_g_the_smearing_and_the_diameters": [
+0.01,
+4
+],
+"tests/test_cosine_smearing.py::test_limits_keeps_its_erf": [
+0.0,
+2
+],
+"tests/test_cosine_smearing.py::test_lines_move_out_and_grow_as_the_rays_have_it": [
+0.21,
+3
+],
+"tests/test_cosine_smearing.py::test_r_over_r_is_the_supp_setting_of_two_diameters": [
+1.76,
+69
+],
+"tests/test_cosine_smearing.py::test_recon_variants_carry_dtheta_v_center_and_r_over_r[1]": [
+0.06,
+0
+],
+"tests/test_cosine_smearing.py::test_recon_variants_carry_dtheta_v_center_and_r_over_r[2]": [
+0.07,
+0
+],
+"tests/test_cosine_smearing.py::test_refine_dtheta_from_pure_alpha_fe_finds_it[1.001]": [
+4.31,
+15
+],
+"tests/test_cosine_smearing.py::test_refine_dtheta_from_pure_alpha_fe_finds_it[1.0]": [
+4.05,
+32
+],
+"tests/test_cosine_smearing.py::test_refine_dtheta_without_smearing": [
+5.41,
+14
+],
+"tests/test_cosine_smearing.py::test_refine_single_line_in_cms_finds_g": [
+2.47,
+62
+],
+"tests/test_cosine_smearing.py::test_reset_in_cms_restores_the_cms_defaults": [
+1.92,
+90
+],
+"tests/test_cosine_smearing.py::test_resolved_cms_carries_the_smearing_and_sms_none": [
+1.78,
+22
+],
+"tests/test_cosine_smearing.py::test_same_method_params_tells_dtheta_and_r_over_r_apart": [
+0.0,
+4
+],
+"tests/test_cosine_smearing.py::test_save_g_and_dtheta_as_defaults": [
+1.76,
+77
+],
+"tests/test_cosine_smearing.py::test_smeared_model_follows_the_exact_smeared_integral[thick]": [
+3.59,
+3
+],
+"tests/test_cosine_smearing.py::test_smeared_model_follows_the_exact_smeared_integral[thin]": [
+3.57,
+8
+],
+"tests/test_cosine_smearing.py::test_smearing_starts_where_the_drive_is_at_rest": [
+3.59,
+4
+],
+"tests/test_cosine_smearing.py::test_sms_and_zero_dtheta_have_no_smearing": [
+0.0,
+1
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[0--1]": [
+1.68,
+61
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[0-0]": [
+1.85,
+45
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[1-0]": [
+1.76,
+63
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[1-x]": [
+1.9,
+37
+],
+"tests/test_cosine_smearing.py::test_the_node_sum_store_tells_dtheta_v_center_and_r_over_r_apart": [
+0.02,
+0
+],
+"tests/test_cosine_smearing.py::test_the_smeared_source_s_own_norm_leaves_nothing_absorbed_flat": [
+0.24,
+29
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[-3.0-0.2-0.3]": [
+0.13,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[-3.0-0.2-1.0]": [
+0.11,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[-3.0-0.2-2.5]": [
+0.11,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[1.0-0.2-0.3]": [
+0.12,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[1.0-0.2-1.0]": [
+0.11,
+1
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[1.0-0.2-2.5]": [
+0.11,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[2.0-0.4-0.3]": [
+0.12,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[2.0-0.4-1.0]": [
+0.13,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[2.0-0.4-2.5]": [
+0.12,
+0
+],
+"tests/test_cosine_smearing.py::test_zero_dtheta_is_the_former_model": [
+0.01,
+1
+],
+"tests/test_create_spectrum_from_model.py::test_a_dat_gives_its_velocities_and_its_own_header": [
+2.12,
+92
+],
+"tests/test_create_spectrum_from_model.py::test_a_missing_first_spectrum": [
+2.02,
+44
+],
+"tests/test_create_spectrum_from_model.py::test_a_model_with_nbaseline": [
+2.16,
+24
+],
+"tests/test_create_spectrum_from_model.py::test_canceling_the_save_dialog_writes_nothing": [
+2.07,
+36
+],
+"tests/test_create_spectrum_from_model.py::test_create_spectrum_from_model_end_to_end": [
+2.19,
+46
+],
+"tests/test_create_spectrum_from_model.py::test_model_only_takes_the_show_model_grid": [
+2.04,
+67
+],
+"tests/test_create_spectrum_from_model.py::test_no_spectrum": [
+2.14,
+52
+],
+"tests/test_create_spectrum_from_model.py::test_otherwise_the_header_is_the_one_in_memory[header not used]": [
+2.23,
+60
+],
+"tests/test_create_spectrum_from_model.py::test_otherwise_the_header_is_the_one_in_memory[no header]": [
+2.29,
+67
+],
+"tests/test_create_spectrum_from_model.py::test_raw_counts_take_the_velocities_of_the_calibration": [
+2.13,
+106
+],
+"tests/test_create_spectrum_from_model.py::test_refused_while_a_calculation_runs": [
+2.15,
+50
+],
+"tests/test_create_spectrum_from_model.py::test_the_counts_are_the_show_model_curve": [
+2.3,
+34
+],
+"tests/test_create_spectrum_from_model.py::test_the_first_of_several_spectra_is_used": [
+2.13,
+68
+],
+"tests/test_create_spectrum_from_model.py::test_the_thread_reports_the_interrupt_quietly": [
+0.01,
+0
+],
+"tests/test_distr_composition.py::test_distr_scalar_num1_reproduces_the_plain_scalar": [
+0.18,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[D-markers0-<lambda>-distri0-_0]": [
+0.01,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[DC-markers3-<lambda>-distri3-None]": [
+0.0,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[DCC-markers4-<lambda>-distri4-None]": [
+0.0,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[DCD-markers5-<lambda>-distri5-None]": [
+0.0,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[DCDC-markers7-<lambda>-distri7-None]": [
+0.01,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[DD-markers1-<lambda>-distri1-_1]": [
+0.01,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[DDC-markers6-<lambda>-distri6-None]": [
+0.0,
+1
+],
+"tests/test_distr_composition.py::test_num1_ordering_reproduces_base[DDD-markers2-<lambda>-distri2-_2]": [
+0.0,
+1
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-D-in-shared-layer]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-D-scalar]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DC-after-Layer]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DC-scalar]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DCC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DCDC]": [
+0.01,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DCD]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DDC]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DD]": [
+0.01,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DRD]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-DR]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-D]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-RCR]": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-RC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-RD]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-RR]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[CMS-R]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-D-in-shared-layer]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-D-scalar]": [
+0.01,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DC-after-Layer]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DC-scalar]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DCC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DCDC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DCD]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DDC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DD]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DRD]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-DR]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-D]": [
+0.16,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-RCR]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-RC]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-RD]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-RR]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_chain_equals_hand_written_expansion[SMS-R]": [
+0.0,
+0
+],
+"tests/test_distr_expansion.py::test_distr_corr_texts_see_the_bare_names_of_eval_expr": [
+0.0,
+3
+],
+"tests/test_distr_expansion.py::test_duplicate_par_silently_discards_a_whole_distribution": [
+8.15,
+54
+],
+"tests/test_distr_expansion.py::test_gui_chain_equals_hand_written_expansion[CMS]": [
+5.35,
+69
+],
+"tests/test_distr_expansion.py::test_gui_chain_equals_hand_written_expansion[SMS]": [
+5.95,
+101
+],
+"tests/test_distr_mdl.py::test_distributed_twin_matches_analytical_component[Distr_corr.mdl-0.004]": [
+4.57,
+68
+],
+"tests/test_distr_mdl.py::test_distributed_twin_matches_analytical_component[Distr_distr.mdl-0.001]": [
+15.6,
+72
+],
+"tests/test_distr_targets.py::test_a_link_from_another_component_to_a_distributed_parameter_is_refused": [
+2.08,
+25
+],
+"tests/test_distr_targets.py::test_a_link_to_a_text_column_is_refused[markers0-26-probability density function]": [
+1.99,
+0
+],
+"tests/test_distr_targets.py::test_a_link_to_a_text_column_is_refused[markers1-28-weights]": [
+2.02,
+32
+],
+"tests/test_distr_targets.py::test_a_link_to_a_text_column_is_refused[markers2-28-dependency function]": [
+2.18,
+68
+],
+"tests/test_distr_targets.py::test_a_link_to_what_a_corr_sets_carries_its_dependency": [
+2.12,
+41
+],
+"tests/test_distr_targets.py::test_a_link_within_the_component_is_refused_and_the_corr_offered_works": [
+2.18,
+78
+],
+"tests/test_distr_targets.py::test_a_recon_is_never_shared_with_another_component": [
+2.13,
+40
+],
+"tests/test_distr_targets.py::test_a_text_reading_a_distributed_parameter_is_refused": [
+2.17,
+0
+],
+"tests/test_distr_targets.py::test_a_text_reading_a_text_column_is_refused[markers0-26-probability density function]": [
+2.09,
+1
+],
+"tests/test_distr_targets.py::test_a_text_reading_a_text_column_is_refused[markers1-28-weights]": [
+2.09,
+0
+],
+"tests/test_distr_targets.py::test_a_text_reading_a_text_column_is_refused[markers2-28-dependency function]": [
+2.21,
+26
+],
+"tests/test_distr_targets.py::test_chain_groups_by_base_component_across_none_rows": [
+2.37,
+52
+],
+"tests/test_distr_targets.py::test_duplicate_par_in_one_chain_blocks_run_and_marks_red": [
+2.48,
+107
+],
+"tests/test_distr_targets.py::test_links_to_what_no_distribution_sets_still_work": [
+2.1,
+0
+],
+"tests/test_distr_targets.py::test_only_the_later_duplicates_are_marked": [
+2.25,
+87
+],
+"tests/test_distr_targets.py::test_par_edit_moves_grey_frame_immediately": [
+3.3,
+103
+],
+"tests/test_distr_targets.py::test_par_edit_still_live_after_delete_moves_the_row": [
+2.27,
+68
+],
+"tests/test_distr_targets.py::test_par_edit_still_live_after_insert_moves_the_row": [
+2.2,
+95
+],
+"tests/test_distr_targets.py::test_par_written_as_float_is_the_same_target": [
+2.14,
+25
+],
+"tests/test_distr_targets.py::test_same_par_in_separate_chains_is_allowed": [
+2.12,
+34
+],
+"tests/test_distr_targets.py::test_texts_reading_what_no_distribution_sets_still_work": [
+2.17,
+4
+],
+"tests/test_distr_text_references.py::test_a_second_spectrum_reads_the_first_spectrums_parameters": [
+0.04,
+0
+],
+"tests/test_distr_text_references.py::test_every_recon_weight_list_reads_the_texts_as_ti": [
+0.06,
+0
+],
+"tests/test_distr_text_references.py::test_every_text_here_is_one_the_check_lets_through": [
+0.0,
+16
+],
+"tests/test_distr_text_references.py::test_the_component_curve_is_the_brute_force_component[Distr inside a Recon]": [
+0.04,
+0
+],
+"tests/test_distr_text_references.py::test_the_component_curve_is_the_brute_force_component[Recon inside a Distr]": [
+0.03,
+0
+],
+"tests/test_distr_text_references.py::test_the_component_curve_is_the_brute_force_component[inner + outer]": [
+0.04,
+0
+],
+"tests/test_distr_text_references.py::test_the_component_curve_is_the_brute_force_component[inner and outer with Corr]": [
+0.05,
+0
+],
+"tests/test_distr_text_references.py::test_the_component_curve_is_the_brute_force_component[outer Distr + Corr]": [
+0.01,
+0
+],
+"tests/test_distr_text_references.py::test_the_component_curve_is_the_brute_force_component[three levels]": [
+0.07,
+0
+],
+"tests/test_distr_text_references.py::test_the_model_is_the_brute_force_model[Distr inside a Recon]": [
+0.06,
+0
+],
+"tests/test_distr_text_references.py::test_the_model_is_the_brute_force_model[Recon inside a Distr]": [
+0.04,
+0
+],
+"tests/test_distr_text_references.py::test_the_model_is_the_brute_force_model[inner + outer]": [
+0.04,
+0
+],
+"tests/test_distr_text_references.py::test_the_model_is_the_brute_force_model[inner and outer with Corr]": [
+0.04,
+0
+],
+"tests/test_distr_text_references.py::test_the_model_is_the_brute_force_model[outer Distr + Corr]": [
+0.28,
+0
+],
+"tests/test_distr_text_references.py::test_the_model_is_the_brute_force_model[three levels]": [
+0.08,
+0
+],
+"tests/test_distr_text_references.py::test_the_numbers_go_into_a_text_with_their_value[-p[3]**2*X + p[0]]": [
+0.0,
+0
+],
+"tests/test_distr_text_references.py::test_the_numbers_go_into_a_text_with_their_value[X**2*p[4] - p[5]*X]": [
+0.0,
+0
+],
+"tests/test_distr_text_references.py::test_the_numbers_go_into_a_text_with_their_value[exp(-(X-p[1])**2/2/p[2]**2)]": [
+0.0,
+0
+],
+"tests/test_distr_text_references.py::test_the_numbers_go_into_a_text_with_their_value[p[2]**p[0]*X]": [
+0.0,
+0
+],
+"tests/test_distr_text_references.py::test_the_numbers_go_into_a_text_with_their_value[p[6]*X + p[3]]": [
+0.0,
+0
+],
+"tests/test_error_reporter.py::test_a_caught_and_printed_traceback_is_captured": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_a_destroyed_report_window_does_not_switch_reporting_off": [
+0.01,
+7
+],
+"tests/test_error_reporter.py::test_a_traceback_split_over_many_writes_is_collected_whole": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_bug_report_dialog_shows_the_error_and_copies_it": [
+1.05,
+7
+],
+"tests/test_error_reporter.py::test_capture_is_bounded": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_disabled_reporter_captures_nothing_but_still_prints": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_do_not_show_again_switches_reporting_off_for_the_run": [
+0.0,
+7
+],
+"tests/test_error_reporter.py::test_drain_re_arms_the_capture": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_install_and_uninstall_restore_the_original_streams": [
+0.01,
+11
+],
+"tests/test_error_reporter.py::test_show_error_report_appends_to_an_open_window": [
+0.01,
+7
+],
+"tests/test_error_reporter.py::test_show_error_report_ignores_empty_text": [
+0.0,
+7
+],
+"tests/test_error_reporter.py::test_tee_captures_a_traceback_and_still_prints_it": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_tee_survives_a_missing_stream": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_tee_writes_everything_through_and_captures_nothing_ordinary": [
+0.0,
+11
+],
+"tests/test_error_reporter.py::test_the_report_belongs_to_the_main_window_not_a_passing_one": [
+0.0,
+7
+],
+"tests/test_error_reporter.py::test_the_window_never_launches_a_mail_client": [
+0.0,
+5
+],
+"tests/test_exclusion_fit.py::test_a_fit_with_more_free_parameters_than_points_left_is_not_started": [
+2.07,
+76
+],
+"tests/test_exclusion_fit.py::test_a_one_model_fit_uses_the_regions": [
+2.42,
+35
+],
+"tests/test_exclusion_fit.py::test_a_recon_adds_its_smoothness_rows_after_the_fitted_points": [
+2.69,
+53
+],
+"tests/test_exclusion_fit.py::test_a_sequence_whose_spectrum_keeps_too_few_points_is_not_started": [
+2.1,
+47
+],
+"tests/test_exclusion_fit.py::test_a_spectrum_with_every_point_excluded_is_named": [
+2.1,
+53
+],
+"tests/test_exclusion_fit.py::test_nbaseline_spectra_each_keep_their_own_points": [
+2.47,
+35
+],
+"tests/test_exclusion_fit.py::test_the_free_parameters_counted_are_those_the_fit_varies": [
+2.23,
+54
+],
+"tests/test_exclusion_fit.py::test_the_minimiser_gets_only_the_points_outside_the_regions": [
+2.93,
+106
+],
+"tests/test_exclusion_fit.py::test_the_model_at_the_fitted_points_is_the_full_model_there": [
+2.47,
+84
+],
+"tests/test_exclusion_fit.py::test_the_regions_fit_like_the_spectrum_saved_without_their_points": [
+2.44,
+100
+],
+"tests/test_exclusion_fit.py::test_without_regions_every_point_is_fitted": [
+2.19,
+70
+],
+"tests/test_exclusion_gui.py::test_apply_exclusion_shows_the_bar_and_puts_the_regions_in_use": [
+2.78,
+108
+],
+"tests/test_exclusion_gui.py::test_bands_are_drawn_only_while_applied_and_never_widen_the_axis": [
+2.39,
+45
+],
+"tests/test_exclusion_gui.py::test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves": [
+2.99,
+77
+],
+"tests/test_exclusion_gui.py::test_changing_the_regions_on_a_show_model_image_keeps_the_model": [
+2.8,
+71
+],
+"tests/test_exclusion_gui.py::test_clean_is_refused_while_a_calculation_runs": [
+2.0,
+25
+],
+"tests/test_exclusion_gui.py::test_clean_removes_every_region_and_drops_the_fit_result": [
+2.84,
+60
+],
+"tests/test_exclusion_gui.py::test_clicks_in_pan_mode_or_off_a_spectrum_are_ignored_and_esc_cancels": [
+2.24,
+18
+],
+"tests/test_exclusion_gui.py::test_cutting_an_end_of_a_cms_spectrum_warns[CMS, an end cut]": [
+2.42,
+12
+],
+"tests/test_exclusion_gui.py::test_cutting_an_end_of_a_cms_spectrum_warns[CMS, inside only]": [
+2.07,
+0
+],
+"tests/test_exclusion_gui.py::test_cutting_an_end_of_a_cms_spectrum_warns[SMS, an end cut]": [
+1.96,
+1
+],
+"tests/test_exclusion_gui.py::test_enter_in_the_box_applies_the_regions_and_not_show_model": [
+2.45,
+63
+],
+"tests/test_exclusion_gui.py::test_every_selected_spectrum_is_saved_without_its_excluded_points": [
+2.15,
+0
+],
+"tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[CMS]": [
+1.91,
+57
+],
+"tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[SMS]": [
+1.84,
+0
+],
+"tests/test_exclusion_gui.py::test_save_and_load_and_load_replaces": [
+2.07,
+51
+],
+"tests/test_exclusion_gui.py::test_save_result_writes_the_regions_only_when_applied": [
+3.62,
+134
+],
+"tests/test_exclusion_gui.py::test_saving_without_excluded_points_needs_applied_regions": [
+2.01,
+0
+],
+"tests/test_exclusion_gui.py::test_the_bar_takes_only_its_own_two_lines": [
+2.63,
+101
+],
+"tests/test_exclusion_gui.py::test_the_regions_do_not_change_while_a_calculation_runs": [
+2.07,
+1
+],
+"tests/test_exclusion_gui.py::test_the_text_is_cleaned_and_bad_text_is_refused": [
+2.26,
+61
+],
+"tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[fit]": [
+2.81,
+59
+],
+"tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[spectrum]": [
+2.31,
+46
+],
+"tests/test_exclusion_regions.py::test_a_bad_file_is_refused": [
+0.0,
+0
+],
+"tests/test_exclusion_regions.py::test_a_boundary_clicked_beyond_the_spectrum_stays_within_one_step_of_it": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_a_boundary_has_the_decimals_the_point_spacing_needs[grid0--2.2--2.2]": [
+0.01,
+47
+],
+"tests/test_exclusion_regions.py::test_a_boundary_has_the_decimals_the_point_spacing_needs[grid1--2.01734--2.0]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_a_boundary_has_the_decimals_the_point_spacing_needs[grid2-0.1234-0.123]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_a_file_of_several_lines_and_comments_is_read_as_one_list": [
+0.0,
+0
+],
+"tests/test_exclusion_regions.py::test_a_grid_of_one_point_gives_no_boundary": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_a_reversed_grid_gives_the_same_boundary": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_blank_text_and_empty_pieces_mean_no_regions": [
+0.01,
+47
+],
+"tests/test_exclusion_regions.py::test_both_ends_of_a_region_are_excluded": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_no_regions_keep_every_point": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_numbers_are_written_in_full_not_rounded": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_overlapping_and_touching_regions_become_one": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_regions_are_read_sorted_whatever_order_the_ends_are_typed_in": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[-3,5:-2]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[1-2]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[1:2, 3:4]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[1:2:3]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[1:]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[1:nan]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[2:2]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[a:2]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_text_that_is_not_regions_is_refused[inf:2]": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_the_direction_of_the_velocity_axis_does_not_matter": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_the_ends_themselves_are_never_the_answer": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_the_fewest_decimals_strictly_inside_closest_to_the_target": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_the_file_reads_back_the_regions_it_was_written_with": [
+0.01,
+0
+],
+"tests/test_exclusion_regions.py::test_the_written_text_reads_back_the_same_regions": [
+0.0,
+47
+],
+"tests/test_exclusion_regions.py::test_without_points_a_boundary_is_within_half_a_pixel": [
+0.0,
+47
+],
+"tests/test_expression_fit_start.py::test_a_forced_value_survives_the_fit": [
+3.12,
+96
+],
+"tests/test_expression_validation.py::test_a_parameter_must_be_written_p_number": [
+2.28,
+52
+],
+"tests/test_expression_validation.py::test_distr_and_corr_take_the_bare_names_of_the_fit": [
+2.31,
+59
+],
+"tests/test_expression_validation.py::test_fit_pressed_does_not_start_with_invalid_expression": [
+2.17,
+59
+],
+"tests/test_expression_validation.py::test_invalid_expression_blocks_fit_and_marks_field_red": [
+2.16,
+88
+],
+"tests/test_expression_validation.py::test_invalid_expression_detected_per_kind": [
+2.35,
+67
+],
+"tests/test_expression_validation.py::test_show_model_does_not_start_with_invalid_expression": [
+2.27,
+75
+],
+"tests/test_expression_validation.py::test_valid_expressions_pass": [
+3.26,
+93
+],
+"tests/test_expressions.py::test_a_compound_value_goes_in_parentheses": [
+0.0,
+2
+],
+"tests/test_expressions.py::test_a_field_holds_one_line": [
+0.0,
+2
+],
+"tests/test_expressions.py::test_a_missing_folder_holds_no_expressions": [
+0.0,
+3
+],
+"tests/test_expressions.py::test_a_model_without_expression_row_is_reported": [
+0.02,
+3
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Central shift vs temperature]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Hyperfine field in applied field, Langevin]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Hyperfine field vs temperature, Bloch]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Hyperfine field vs temperature, critical]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Hyperfine field vs temperature, empirical]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Lamb-Mossbauer factor vs temperature]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Lifetime from line width]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Neel relaxation time vs temperature]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Paramagnetic quadrupole shift from Hamiltonian]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Quadrupole splitting, doublet]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Quadrupole splitting, sextet]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_an_unsubstituted_placeholder_is_named_in_the_log": [
+2.73,
+56
+],
+"tests/test_expressions.py::test_bloch_law_vanishes_above_the_transition": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_central_shift_adds_the_isomer_shift_at_room_temperature": [
+0.01,
+7
+],
+"tests/test_expressions.py::test_central_shift_at_high_temperature_is_the_classical_law": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_at_low_temperature_is_the_zero_point_plus_the_t4_law": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_follows_the_debye_model[1000-100]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_follows_the_debye_model[1000-400]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_follows_the_debye_model[1500-100]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_follows_the_debye_model[300-400]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_follows_the_debye_model[3000-50]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_follows_the_debye_model[4.2-400]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_central_shift_follows_the_debye_model[77-400]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_comment_formulas_are_rendered_and_a_broken_one_shown_as_typed": [
+0.02,
+24
+],
+"tests/test_expressions.py::test_critical_field_vanishes_above_the_transition": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_doublet_quadrupole_splitting_is_twice_the_shift": [
+0.0,
+7
+],
+"tests/test_expressions.py::test_empirical_field_with_alpha_3_2_and_beta_1_is_blochs_law": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_every_shipped_expression_is_listed": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_insert_renumbers_only_what_moves": [
+2.37,
+64
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_at_high_temperature_is_the_classical_law": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_at_low_temperature_is_the_zero_point_plus_the_t2_law": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[10-50]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[1000-100]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[1000-400]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[300-400]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[3000-50]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[4.2-400]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[77-400]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_langevin_field": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_langevin_field_limits": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_lifetime_of_the_natural_width": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_load_substitutes_and_renumbers_with_the_insert": [
+2.79,
+76
+],
+"tests/test_expressions.py::test_n_itself_and_names_inside_other_names_are_not_offered": [
+0.0,
+2
+],
+"tests/test_expressions.py::test_names_a_file_cannot_hold_are_refused": [
+0.0,
+2
+],
+"tests/test_expressions.py::test_names_are_offered_in_order_of_appearance_once_each": [
+0.0,
+2
+],
+"tests/test_expressions.py::test_neel_relaxation_time": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_paramagnetic_shift_is_where_the_hamiltonian_puts_the_lines[0.8-1.0]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_paramagnetic_shift_is_where_the_hamiltonian_puts_the_lines[1.2-0.0]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_paramagnetic_shift_is_where_the_hamiltonian_puts_the_lines[1.2-0.4]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_save_refuses_a_name_a_file_cannot_hold": [
+2.51,
+47
+],
+"tests/test_expressions.py::test_save_writes_a_model_file_the_window_and_load_model_read": [
+2.67,
+81
+],
+"tests/test_expressions.py::test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift[0.0-0.0-0.0]": [
+0.44,
+0
+],
+"tests/test_expressions.py::test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift[0.0-90.0-0.0]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift[0.5-30.0-40.0]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift[0.8-70.0-60.0]": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_substitution_is_one_pass_and_keeps_empty_boxes": [
+0.0,
+2
+],
+"tests/test_expressions.py::test_the_menu_offers_load_expression_after_expression": [
+0.56,
+6
+],
+"tests/test_expressions.py::test_the_new_constants_are_the_sourced_values": [
+0.0,
+0
+],
+"tests/test_expressions.py::test_the_numbers_are_those_of_constants": [
+0.02,
+0
+],
+"tests/test_expressions.py::test_the_typed_comment_is_folded_until_asked_for": [
+2.44,
+86
+],
+"tests/test_expressions.py::test_the_window_reads_the_folder_next_to_the_library": [
+2.41,
+91
+],
+"tests/test_fit_core.py::test_a_single_fit_hands_the_table_to_the_minimiser": [
+2.98,
+89
+],
+"tests/test_fit_core.py::test_a_spectrum_running_the_other_way_fits_like_one_running_forward": [
+3.62,
+62
+],
+"tests/test_fit_core.py::test_an_nbaseline_fit_hands_every_section": [
+2.45,
+26
+],
+"tests/test_fit_core.py::test_cut_at_the_lengths_ti_gives_the_same_for_spectra_in_one_direction": [
+2.17,
+85
+],
+"tests/test_fit_core.py::test_lengths_that_do_not_fit_are_refused": [
+2.34,
+62
+],
+"tests/test_fit_core.py::test_per_spectrum_instrumental_functions_take_the_lengths_too": [
+2.71,
+61
+],
+"tests/test_fit_core.py::test_show_model_draws_a_spectrum_running_the_other_way_as_one": [
+2.6,
+40
+],
+"tests/test_fit_core.py::test_ti_takes_a_spectrum_running_the_other_way": [
+2.52,
+61
+],
+"tests/test_fit_one_spectrum.py::test_a_file_next_to_the_spectra_is_fitted_unless_the_formulas_need_its_values": [
+2.33,
+50
+],
+"tests/test_fit_one_spectrum.py::test_a_model_with_nbaseline_is_refused": [
+2.06,
+67
+],
+"tests/test_fit_one_spectrum.py::test_a_name_finds_a_spectrum_of_the_path_box_or_a_file_next_to_them": [
+0.01,
+6
+],
+"tests/test_fit_one_spectrum.py::test_a_spectrum_of_the_path_box_brings_its_n_and_n1_into_the_formulas": [
+2.85,
+92
+],
+"tests/test_fit_one_spectrum.py::test_ok_does_not_close_the_dialog_on_a_spectrum_that_is_nowhere": [
+1.94,
+86
+],
+"tests/test_fit_one_spectrum.py::test_one_spectrum_only_gets_a_message": [
+2.06,
+68
+],
+"tests/test_fit_one_spectrum.py::test_the_chosen_spectrum_is_fitted_with_its_own_values_and_nothing_is_saved": [
+2.66,
+98
+],
+"tests/test_fit_one_spectrum.py::test_the_dialog_starts_at_the_first_spectrum_and_each_field_follows_the_other": [
+2.13,
+85
+],
+"tests/test_golden_models.py::test_model_matches_golden[ASM]": [
+0.21,
+6
+],
+"tests/test_golden_models.py::test_model_matches_golden[Doublet]": [
+0.0,
+6
+],
+"tests/test_golden_models.py::test_model_matches_golden[Hamilton_mc]": [
+0.02,
+6
+],
+"tests/test_golden_models.py::test_model_matches_golden[Hamilton_pc]": [
+0.03,
+4
+],
+"tests/test_golden_models.py::test_model_matches_golden[Hamiltonian_crystal]": [
+0.03,
+4
+],
+"tests/test_golden_models.py::test_model_matches_golden[Hamiltonian_layered]": [
+0.0,
+4
+],
+"tests/test_golden_models.py::test_model_matches_golden[Hamiltonian_mosaic]": [
+0.0,
+9
+],
+"tests/test_golden_models.py::test_model_matches_golden[Hamiltonian_powder]": [
+0.0,
+9
+],
+"tests/test_golden_models.py::test_model_matches_golden[MDGD]": [
+0.0,
+9
+],
+"tests/test_golden_models.py::test_model_matches_golden[Relax_2S]": [
+0.01,
+9
+],
+"tests/test_golden_models.py::test_model_matches_golden[Relax_MS]": [
+0.07,
+2
+],
+"tests/test_golden_models.py::test_model_matches_golden[SCDW]": [
+0.03,
+2
+],
+"tests/test_golden_models.py::test_model_matches_golden[Sextet(rough)]": [
+0.0,
+0
+],
+"tests/test_golden_models.py::test_model_matches_golden[Sextet]": [
+0.0,
+0
+],
+"tests/test_golden_models.py::test_model_matches_golden[Singlet]": [
+0.0,
+0
+],
+"tests/test_golden_models.py::test_model_matches_golden[layered]": [
+0.0,
+0
+],
+"tests/test_golden_models.py::test_model_matches_golden[mix_doublet_sextet]": [
+0.0,
+0
+],
+"tests/test_gui_smoke.py::test_a_new_window_starts_empty": [
+2.22,
+112
+],
+"tests/test_gui_smoke.py::test_fields_share_the_tables_two_validators": [
+2.18,
+75
+],
+"tests/test_gui_smoke.py::test_save_model_drops_empty_rows_and_reloads": [
+3.73,
+67
+],
+"tests/test_gui_smoke.py::test_select_model_then_read_model": [
+2.09,
+66
+],
+"tests/test_gui_smoke.py::test_show_spectrum_calibration_dat": [
+2.1,
+66
+],
+"tests/test_gui_smoke.py::test_theme_toggle_lives_in_the_supp_menu": [
+2.11,
+52
+],
+"tests/test_hamiltonian_texture.py::test_alfak_drops_out_when_the_azimuth_is_disordered": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_alfak_is_redundant_under_cms_but_observable_under_sms[order0]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_alfak_is_redundant_under_cms_but_observable_under_sms[order1]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[False--0.4-0.1-0.9]": [
+0.03,
+1
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[False-0.0-0.0-0.5]": [
+0.03,
+1
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[False-0.3--0.4-0.2]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[False-0.55-0.0-0.0]": [
+0.04,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[False-0.7-0.5-0.6]": [
+0.03,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[False-1.0-0.0-0.35]": [
+0.02,
+1
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[True--0.4-0.1-0.9]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[True-0.0-0.0-0.5]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[True-0.3--0.4-0.2]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[True-0.55-0.0-0.0]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[True-0.7-0.5-0.6]": [
+0.03,
+1
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force[True-1.0-0.0-0.35]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force_cms[0.2--0.3-0.4]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_closed_form_average_matches_brute_force_cms[0.7-0.5-0.6]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_cms_blocks_match_first_principles": [
+0.02,
+6
+],
+"tests/test_hamiltonian_texture.py::test_disordered_azimuth_and_axis_is_isotropic_whatever_am_is": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_distribution_bookkeeping": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_fiber_texture_limit_equals_the_textured_sextet[-0.3]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_fiber_texture_limit_equals_the_textured_sextet[0.5]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_fiber_texture_limit_equals_the_textured_sextet[1.0]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_hamiltonian_layer_equals_the_sextet_it_reduces_to[stack0]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_hamiltonian_layer_equals_the_sextet_it_reduces_to[stack1]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_isotropic_shortcut_is_exact_inside_a_stack[stack0]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_isotropic_shortcut_is_exact_inside_a_stack[stack1]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_isotropic_shortcut_is_exact_inside_a_stack[stack2]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_layer_order_still_matters": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_line_position_markers_match_the_single_crystal": [
+0.03,
+2
+],
+"tests/test_hamiltonian_texture.py::test_parameter_block_is_fifteen_slots_wide": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_powder_blocks_are_isotropic_and_match_ham_poly": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_powder_limit_ignores_the_reference_orientation": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_powder_limit_reproduces_hamilton_pc[0-0.98]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_powder_limit_reproduces_hamilton_pc[0-1.0]": [
+0.02,
+0
+],
+"tests/test_hamiltonian_texture.py::test_powder_limit_reproduces_hamilton_pc[1-1.0]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_pure_zeeman_blocks_equal_the_sextet_building_blocks": [
+0.02,
+1
+],
+"tests/test_hamiltonian_texture.py::test_single_crystal_blocks_match_first_principles": [
+0.15,
+5
+],
+"tests/test_hamiltonian_texture.py::test_single_crystal_limit_reproduces_hamilton_mc[0-0.4]": [
+0.0,
+1
+],
+"tests/test_hamiltonian_texture.py::test_single_crystal_limit_reproduces_hamilton_mc[0-0.98]": [
+0.0,
+1
+],
+"tests/test_hamiltonian_texture.py::test_single_crystal_limit_reproduces_hamilton_mc[0-1.0]": [
+0.01,
+1
+],
+"tests/test_hamiltonian_texture.py::test_single_crystal_limit_reproduces_hamilton_mc[1-1.0]": [
+0.0,
+1
+],
+"tests/test_hamiltonian_texture.py::test_thin_intensities_are_convention_independent": [
+0.01,
+6
+],
+"tests/test_hamiltonian_texture.py::test_zeeman_single_crystal_spectrum_equals_magnetised_sextet[0.98]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_zeeman_single_crystal_spectrum_equals_magnetised_sextet[1.0]": [
+0.0,
+0
+],
+"tests/test_hamiltonian_texture.py::test_zeeman_single_crystal_spectrum_equals_sextet_under_cms": [
+0.0,
+0
+],
+"tests/test_impurity_presets.py::test_a_field_that_is_not_a_number_is_refused": [
+2.0,
+14
+],
+"tests/test_impurity_presets.py::test_cancel_leaves_the_file_alone[Be]": [
+2.03,
+68
+],
+"tests/test_impurity_presets.py::test_cancel_leaves_the_file_alone[KB_nano]": [
+2.06,
+53
+],
+"tests/test_impurity_presets.py::test_each_preset_file_is_nine_numbers[Be.txt]": [
+0.01,
+6
+],
+"tests/test_impurity_presets.py::test_each_preset_file_is_nine_numbers[KB.txt]": [
+0.0,
+6
+],
+"tests/test_impurity_presets.py::test_ok_without_a_change_writes_the_same_numbers": [
+1.88,
+34
+],
+"tests/test_impurity_presets.py::test_ok_writes_the_file_and_the_preset_follows[Be]": [
+2.16,
+75
+],
+"tests/test_impurity_presets.py::test_ok_writes_the_file_and_the_preset_follows[KB_nano]": [
+2.01,
+61
+],
+"tests/test_impurity_presets.py::test_preset_row_is_the_impurity[Be]": [
+2.24,
+83
+],
+"tests/test_impurity_presets.py::test_preset_row_is_the_impurity[KB_nano]": [
+2.32,
+91
+],
+"tests/test_impurity_presets.py::test_supp_menu_opens_each_preset": [
+2.02,
+67
+],
+"tests/test_instrumental_joint.py::test_a_link_follows_its_free_source[gaussians]": [
+8.81,
+126
+],
+"tests/test_instrumental_joint.py::test_a_link_follows_its_free_source[theory]": [
+12.05,
+117
+],
+"tests/test_instrumental_joint.py::test_after_a_search_with_the_model": [
+9.03,
+93
+],
+"tests/test_instrumental_joint.py::test_an_expression_follows_its_free_source": [
+7.08,
+104
+],
+"tests/test_instrumental_joint.py::test_one_spectrum_takes_an_independent_value_as_its_value": [
+2.03,
+71
+],
+"tests/test_instrumental_joint.py::test_rescaling_the_gaussians_keeps_every_spectrum_s_curve": [
+6.79,
+68
+],
+"tests/test_instrumental_joint.py::test_several_spectra_without_nbaseline_are_one_model": [
+2.11,
+63
+],
+"tests/test_instrumental_joint.py::test_the_search_fits_only_the_points_outside_the_regions": [
+2.02,
+27
+],
+"tests/test_instrumental_joint.py::test_the_theoretical_search_returns_its_spectra_after_an_escalation": [
+19.33,
+93
+],
+"tests/test_instrumental_joint.py::test_two_spectra_one_model_share_the_free_parameters": [
+7.89,
+94
+],
+"tests/test_instrumental_joint.py::test_what_the_search_with_the_model_refuses[nbaseline_and_independent-independent =(X)]": [
+2.2,
+55
+],
+"tests/test_instrumental_joint.py::test_what_the_search_with_the_model_refuses[nbaseline_count-fitted to 2 spectra, but the path box has 3]": [
+2.19,
+37
+],
+"tests/test_instrumental_joint.py::test_what_the_search_with_the_model_refuses[recon-Recon]": [
+2.24,
+45
+],
+"tests/test_instrumental_metadata.py::test_a_file_written_before_with_both_follows_the_setting[gauss]": [
+2.12,
+0
+],
+"tests/test_instrumental_metadata.py::test_a_file_written_before_with_both_follows_the_setting[theory]": [
+2.07,
+0
+],
+"tests/test_instrumental_metadata.py::test_analyze_detects_method_override_both_directions": [
+1.75,
+1
+],
+"tests/test_instrumental_metadata.py::test_analyze_detects_nonuniform": [
+1.84,
+31
+],
+"tests/test_instrumental_metadata.py::test_analyze_disabled_resolves_uniform_internal": [
+1.91,
+55
+],
+"tests/test_instrumental_metadata.py::test_batch_fits_each_spectrum_with_own_metadata": [
+8.17,
+43
+],
+"tests/test_instrumental_metadata.py::test_confirm_aborts_when_override_declined": [
+1.85,
+32
+],
+"tests/test_instrumental_metadata.py::test_confirm_mixed_warning_and_do_not_ask_again": [
+1.83,
+0
+],
+"tests/test_instrumental_metadata.py::test_confirm_mixed_warning_decline_aborts": [
+1.88,
+0
+],
+"tests/test_instrumental_metadata.py::test_confirm_single_no_mixed_warning": [
+1.76,
+0
+],
+"tests/test_instrumental_metadata.py::test_conversion_without_a_stored_theory_writes_the_gaussians": [
+1.99,
+0
+],
+"tests/test_instrumental_metadata.py::test_conversion_writes_only_the_description_in_use[gauss-#@INSexp]": [
+1.98,
+0
+],
+"tests/test_instrumental_metadata.py::test_conversion_writes_only_the_description_in_use[theory-#@INSth]": [
+1.94,
+1
+],
+"tests/test_instrumental_metadata.py::test_fit_linked_parameter_across_mixed_spectra": [
+4.78,
+54
+],
+"tests/test_instrumental_metadata.py::test_fit_mixed_cms_and_sms_spectra": [
+4.52,
+53
+],
+"tests/test_instrumental_metadata.py::test_fit_two_sms_spectra_with_dedicated_metadata": [
+5.77,
+54
+],
+"tests/test_instrumental_metadata.py::test_force_method_cms_ignores_sms_file": [
+2.03,
+16
+],
+"tests/test_instrumental_metadata.py::test_force_method_sms_ignores_gcms_file": [
+1.87,
+1
+],
+"tests/test_instrumental_metadata.py::test_gcms_wins_when_file_has_both": [
+1.78,
+60
+],
+"tests/test_instrumental_metadata.py::test_half_points_preserves_metadata": [
+1.81,
+17
+],
+"tests/test_instrumental_metadata.py::test_legacy_reference_model_is_unchanged": [
+2.17,
+0
+],
+"tests/test_instrumental_metadata.py::test_overwrite_replaces_the_legacy_theory_line": [
+0.01,
+0
+],
+"tests/test_instrumental_metadata.py::test_parse_gcms_metadata": [
+0.02,
+5
+],
+"tests/test_instrumental_metadata.py::test_parse_sms_metadata": [
+0.0,
+5
+],
+"tests/test_instrumental_metadata.py::test_raw_to_dat_embeds_method_metadata[CMS]": [
+1.81,
+43
+],
+"tests/test_instrumental_metadata.py::test_raw_to_dat_embeds_method_metadata[SMS]": [
+1.77,
+75
+],
+"tests/test_instrumental_metadata.py::test_resolve_fallback_without_metadata": [
+1.75,
+81
+],
+"tests/test_instrumental_metadata.py::test_resolve_internal_when_disabled": [
+1.84,
+66
+],
+"tests/test_instrumental_metadata.py::test_resolve_prefers_file_metadata": [
+2.43,
+86
+],
+"tests/test_instrumental_metadata.py::test_save_spectrum_with_metadata_roundtrip": [
+0.0,
+0
+],
+"tests/test_instrumental_metadata.py::test_shared_metadata_keep_clean_and_ignore_missing": [
+1.85,
+62
+],
+"tests/test_instrumental_metadata.py::test_subtract_model_preserves_metadata": [
+1.83,
+28
+],
+"tests/test_instrumental_metadata.py::test_sum_keeps_matching_and_drops_conflicting_metadata": [
+1.77,
+27
+],
+"tests/test_instrumental_metadata.py::test_the_file_decides_whatever_the_setting[gauss]": [
+2.07,
+40
+],
+"tests/test_instrumental_metadata.py::test_the_file_decides_whatever_the_setting[theory]": [
+2.33,
+48
+],
+"tests/test_instrumental_metadata.py::test_theoretical_search_releases_the_reference_absorber_width": [
+2.37,
+70
+],
+"tests/test_instrumental_metadata.py::test_theory_and_gaussian_spectra_are_computed_together": [
+2.28,
+1
+],
+"tests/test_instrumental_method_choice.py::test_cancel_does_not_store_the_count": [
+1.93,
+59
+],
+"tests/test_instrumental_method_choice.py::test_cancel_leaves_the_setting_alone": [
+2.25,
+34
+],
+"tests/test_instrumental_method_choice.py::test_choice_is_independent_of_the_dat_file_toggle": [
+2.21,
+87
+],
+"tests/test_instrumental_method_choice.py::test_default_method_is_the_shipped_one": [
+2.11,
+86
+],
+"tests/test_instrumental_method_choice.py::test_dialog_selects_gaussians": [
+1.94,
+43
+],
+"tests/test_instrumental_method_choice.py::test_dialog_selects_theory": [
+1.97,
+43
+],
+"tests/test_instrumental_method_choice.py::test_gaussian_count_is_edited_in_the_dialog": [
+2.02,
+74
+],
+"tests/test_instrumental_method_choice.py::test_one_button_refine_first_and_the_mode_in_its_caption": [
+2.05,
+60
+],
+"tests/test_instrumental_method_choice.py::test_ref_codes_follow_the_setting[gauss-0-1]": [
+1.92,
+74
+],
+"tests/test_instrumental_method_choice.py::test_ref_codes_follow_the_setting[theory-2-3]": [
+2.14,
+81
+],
+"tests/test_instrumental_method_choice.py::test_supp_menu_has_the_entry": [
+2.01,
+62
+],
+"tests/test_instrumental_recentre.py::test_a_gaussian_sum_is_recentred_too": [
+2.05,
+81
+],
+"tests/test_instrumental_recentre.py::test_gaussian_recentring_is_a_fixed_point": [
+2.09,
+66
+],
+"tests/test_instrumental_recentre.py::test_it_is_a_fixed_point": [
+2.03,
+61
+],
+"tests/test_instrumental_recentre.py::test_it_moves_only_the_shift": [
+1.93,
+59
+],
+"tests/test_instrumental_recentre.py::test_recentring_zeroes_the_gravity_centre": [
+2.04,
+92
+],
+"tests/test_instrumental_recentre.py::test_the_fixture_is_off_centre": [
+2.86,
+91
+],
+"tests/test_instrumental_recentre.py::test_the_shape_is_only_translated": [
+2.06,
+83
+],
+"tests/test_instrumental_window.py::test_cms_mode_reports_instead_of_plotting": [
+2.15,
+70
+],
+"tests/test_instrumental_window.py::test_plot_from_memory_opens_a_separate_window": [
+3.42,
+108
+],
+"tests/test_instrumental_window.py::test_the_plot_follows_the_selected_method": [
+4.25,
+89
+],
+"tests/test_instrumental_window.py::test_the_window_is_reused_not_recreated": [
+4.06,
+119
+],
+"tests/test_instrumental_window.py::test_theory_falls_back_when_nothing_is_stored": [
+3.13,
+84
+],
+"tests/test_integral_points.py::test_a_bad_value_leaves_the_pair_untouched[40-0]": [
+2.11,
+81
+],
+"tests/test_integral_points.py::test_a_bad_value_leaves_the_pair_untouched[40-2000000]": [
+2.01,
+43
+],
+"tests/test_integral_points.py::test_a_bad_value_leaves_the_pair_untouched[abc-80]": [
+2.08,
+80
+],
+"tests/test_integral_points.py::test_cancel_changes_nothing": [
+2.16,
+52
+],
+"tests/test_integral_points.py::test_defaults_are_32_and_64": [
+2.15,
+116
+],
+"tests/test_integral_points.py::test_dialog_stores_both_and_refreshes": [
+2.01,
+67
+],
+"tests/test_integral_points.py::test_mode_selects_the_matching_value": [
+2.09,
+98
+],
+"tests/test_integral_points.py::test_no_doubling_of_an_edited_value": [
+1.9,
+74
+],
+"tests/test_interrupt.py::test_a_latched_busy_flag_is_released": [
+2.99,
+34
+],
+"tests/test_interrupt.py::test_a_real_fit_is_interrupted_and_the_next_one_works": [
+4.28,
+62
+],
+"tests/test_interrupt.py::test_a_terminated_pool_does_not_leave_the_thread_stuck": [
+0.38,
+18
+],
+"tests/test_interrupt.py::test_calibration_thread_reports_the_interrupt_quietly": [
+0.0,
+0
+],
+"tests/test_interrupt.py::test_fit_single_spectrum_does_not_swallow_the_interrupt": [
+2.14,
+60
+],
+"tests/test_interrupt.py::test_fitting_thread_reports_the_interrupt_quietly": [
+2.58,
+86
+],
+"tests/test_interrupt.py::test_gentle_interrupt_multi_click_and_further_work": [
+3.23,
+43
+],
+"tests/test_interrupt.py::test_helper_gives_the_same_results_as_starmap": [
+0.01,
+2
+],
+"tests/test_interrupt.py::test_helper_passes_worker_errors_through": [
+0.0,
+2
+],
+"tests/test_interrupt.py::test_helper_refuses_new_work_when_the_flag_is_set": [
+0.0,
+2
+],
+"tests/test_interrupt.py::test_instrumental_thread_reports_the_interrupt_quietly": [
+2.39,
+73
+],
+"tests/test_interrupt.py::test_interrupt_with_nothing_running_touches_nothing": [
+2.22,
+73
+],
+"tests/test_interrupt.py::test_sequential_fit_stops_at_the_interrupt": [
+2.04,
+61
+],
+"tests/test_interrupt.py::test_show_model_thread_reports_the_interrupt_quietly": [
+2.07,
+68
+],
+"tests/test_interrupt.py::test_the_button_during_a_real_fit_in_the_app": [
+5.49,
+52
+],
+"tests/test_interrupt.py::test_the_flag_releases_a_waiting_thread_at_once": [
+0.5,
+1
+],
+"tests/test_interrupt.py::test_workers_still_busy_after_a_second_are_replaced": [
+4.26,
+33
+],
+"tests/test_legacy.py::test_a_transform_anchor_points": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_a_transform_monotonic_and_bounded_on_unit_interval": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Doublet-Doublet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Doublet\\r-Doublet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Doublet_(thick)-Doublet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Hamilton_mc-Hamiltonian]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Hamilton_mc_(thick)-Hamiltonian]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Hamilton_pc-Hamiltonian]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Sextet_(thick)-Sextet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_normalize_legacy_model_name[Singlet-Singlet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_asm_is_noop_for_new_layout": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_asm_pre_omega_polarized_appends_omega0": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_asm_scalar_appends_omega_at_degenerate_default": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_hamiltonian_is_noop_for_new_layout": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_hamiltonian_row[11-tail1]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_hamiltonian_row[12-tail2]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_hamiltonian_row[9-tail0]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_grows_to_new_layout[ASM]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_grows_to_new_layout[Doublet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_grows_to_new_layout[MDGD]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_grows_to_new_layout[Relax_2S]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_grows_to_new_layout[Relax_MS]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_grows_to_new_layout[Sextet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_handles_column_padding[ASM]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_handles_column_padding[Doublet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_handles_column_padding[MDGD]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_handles_column_padding[Relax_2S]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_handles_column_padding[Relax_MS]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_handles_column_padding[Sextet]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_is_noop_for_new_layout": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_is_noop_for_unmerged_model": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_mdl_row_preserves_constraint_reference_in_A": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_pre_am_polarized_inserts_am_after_a[MDGD]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_pre_am_polarized_inserts_am_after_a[Relax_2S]": [
+0.0,
+1
+],
+"tests/test_legacy.py::test_upgrade_pre_am_polarized_inserts_am_after_a[Sextet]": [
+0.0,
+1
+],
+"tests/test_library_dir.py::test_a_model_with_nbaseline_is_not_saved": [
+2.18,
+87
+],
+"tests/test_library_dir.py::test_changes_are_kept_until_the_bundle_gains_a_file[Expressions-_resolve_expressions_dir-Central shift vs temperature.mdl-Mine.mdl-Linear in N1.mdl]": [
+0.01,
+3
+],
+"tests/test_library_dir.py::test_changes_are_kept_until_the_bundle_gains_a_file[Library-_resolve_library_dir-Hematite.mdl-My sample.mdl-Wuestite.mdl]": [
+0.01,
+3
+],
+"tests/test_library_dir.py::test_changes_are_kept_until_the_bundle_gains_a_file[parameters-_resolve_params_dir-Calibration.dat-notes.txt-INSnew.txt]": [
+0.01,
+3
+],
+"tests/test_library_dir.py::test_export_copies_the_library_dir": [
+0.01,
+3
+],
+"tests/test_library_dir.py::test_frozen_macos_moves_both_folders_to_app_data": [
+0.01,
+1
+],
+"tests/test_library_dir.py::test_frozen_macos_moves_the_expressions_to_app_data": [
+0.01,
+3
+],
+"tests/test_library_dir.py::test_import_writes_into_the_library_dir": [
+0.01,
+3
+],
+"tests/test_library_dir.py::test_no_module_builds_the_library_path_from_dir_path[Library_window]": [
+0.0,
+0
+],
+"tests/test_library_dir.py::test_no_module_builds_the_library_path_from_dir_path[model_io]": [
+0.0,
+0
+],
+"tests/test_library_dir.py::test_no_module_builds_the_library_path_from_dir_path[parameters_table]": [
+0.0,
+0
+],
+"tests/test_library_dir.py::test_no_module_builds_the_library_path_from_dir_path[supp_menu]": [
+0.0,
+0
+],
+"tests/test_library_dir.py::test_no_module_builds_the_library_path_from_dir_path[syncmoss_main]": [
+0.0,
+0
+],
+"tests/test_library_dir.py::test_only_a_frozen_macos_app_is_redirected": [
+0.0,
+1
+],
+"tests/test_library_dir.py::test_source_and_windows_runs_use_the_folders_in_place": [
+0.01,
+1
+],
+"tests/test_library_dir.py::test_the_browser_reads_the_library_dir": [
+0.0,
+3
+],
+"tests/test_library_dir.py::test_the_window_saves_into_its_library_dir": [
+2.13,
+92
+],
+"tests/test_library_io.py::test_compute_versioned_title_empty_title": [
+0.0,
+0
+],
+"tests/test_library_io.py::test_compute_versioned_title_no_collision": [
+0.0,
+0
+],
+"tests/test_library_io.py::test_compute_versioned_title_with_collisions": [
+0.0,
+0
+],
+"tests/test_library_io.py::test_library_model_sort_key_ignores_extension": [
+0.0,
+0
+],
+"tests/test_library_io.py::test_library_model_sort_key_orders_versions": [
+0.0,
+0
+],
+"tests/test_library_io.py::test_parse_library_model_file_metadata_and_models": [
+0.01,
+1
+],
+"tests/test_license_window.py::test_from_a_source_checkout_it_shows_the_notice_libraries": [
+0.3,
+5
+],
+"tests/test_license_window.py::test_in_a_bundle_it_shows_every_license_text": [
+0.01,
+5
+],
+"tests/test_license_window.py::test_supp_license_opens_the_window": [
+3.76,
+103
+],
+"tests/test_license_window.py::test_the_build_collects_the_texts_of_what_is_bundled": [
+0.65,
+3
+],
+"tests/test_license_window.py::test_the_gnu_texts_are_the_official_ones[GPL-3.0.txt-3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986]": [
+0.0,
+0
+],
+"tests/test_license_window.py::test_the_gnu_texts_are_the_official_ones[LGPL-3.0.txt-e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118]": [
+0.0,
+0
+],
+"tests/test_link_chains.py::test_a_chain_is_handed_on_to_its_end_with_the_factors_multiplied": [
+0.0,
+6
+],
+"tests/test_link_chains.py::test_a_chain_that_comes_back_round_is_a_loop[con10-con20-paths0]": [
+0.0,
+6
+],
+"tests/test_link_chains.py::test_a_chain_that_comes_back_round_is_a_loop[con11-con21-paths1]": [
+0.0,
+6
+],
+"tests/test_link_chains.py::test_a_chain_that_comes_back_round_is_a_loop[con12-con22-paths2]": [
+0.0,
+6
+],
+"tests/test_link_chains.py::test_a_fit_follows_a_chain_written_in_reverse_order": [
+0.35,
+8
+],
+"tests/test_link_chains.py::test_a_link_to_itself_is_a_loop": [
+1.93,
+62
+],
+"tests/test_link_chains.py::test_an_expression_using_itself_or_one_below_through_a_link_is_refused[=[12,1]-p[10] + 1-uses its own value]": [
+2.03,
+69
+],
+"tests/test_link_chains.py::test_an_expression_using_itself_or_one_below_through_a_link_is_refused[=[13,1]-p[10] * 2-uses the Expression of table row 3]": [
+1.97,
+34
+],
+"tests/test_link_chains.py::test_an_expression_using_itself_or_one_below_through_a_link_is_refused[None-p[12] + 1-uses its own value]": [
+2.07,
+69
+],
+"tests/test_link_chains.py::test_an_expression_using_one_below_it_is_refused": [
+2.13,
+107
+],
+"tests/test_link_chains.py::test_links_round_a_loop_are_refused_and_marked_red": [
+2.22,
+69
+],
+"tests/test_link_chains.py::test_links_without_a_chain_are_untouched": [
+0.0,
+6
+],
+"tests/test_link_chains.py::test_read_model_hands_a_chain_on_and_the_fit_may_start": [
+2.67,
+101
+],
+"tests/test_minimi_batch_eval.py::test_a_batched_jacobian_gives_the_same_fit_bit_for_bit": [
+0.38,
+0
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[bounds not reached-b adjusted]": [
+0.0,
+0
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[bounds not reached-b far off]": [
+0.0,
+0
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[lower bound-b adjusted]": [
+0.01,
+0
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[lower bound-b far off]": [
+0.01,
+0
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[lower of two bounds-b adjusted]": [
+0.01,
+0
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[lower of two bounds-b far off]": [
+0.01,
+0
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[upper bound-b adjusted]": [
+0.01,
+1
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[upper bound-b far off]": [
+0.37,
+1
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[upper of two bounds-b adjusted]": [
+0.01,
+1
+],
+"tests/test_minimi_bounds.py::test_a_parameter_ends_on_the_bound_it_is_pushed_against[upper of two bounds-b far off]": [
+0.01,
+1
+],
+"tests/test_minimi_bounds.py::test_a_step_crossing_the_lower_of_two_bounds_is_shortened_not_frozen": [
+0.01,
+0
+],
+"tests/test_minimi_covariance.py::test_a_bound_hit_after_the_last_jacobian_keeps_the_rows": [
+0.0,
+0
+],
+"tests/test_minimi_covariance.py::test_a_fit_of_velocities_has_errors_and_no_warning": [
+0.36,
+3
+],
+"tests/test_minimi_covariance.py::test_a_parameter_the_others_reproduce_is_reported_like_a_fixed_one": [
+0.02,
+0
+],
+"tests/test_minimi_covariance.py::test_an_array_of_data_weights_is_W": [
+0.02,
+0
+],
+"tests/test_minimi_covariance.py::test_an_expression_of_one_parameter_has_its_error[P]": [
+0.01,
+0
+],
+"tests/test_minimi_covariance.py::test_an_expression_of_one_parameter_has_its_error[U]": [
+0.01,
+0
+],
+"tests/test_minimi_covariance.py::test_errors_match_the_scatter_of_repeated_fits": [
+6.99,
+1
+],
+"tests/test_minimi_covariance.py::test_poisson_weights_maximise_the_likelihood": [
+0.02,
+0
+],
+"tests/test_minimi_covariance.py::test_poisson_weights_with_penalty_rows": [
+0.01,
+0
+],
+"tests/test_minimi_covariance.py::test_spectra_that_share_no_parameter": [
+0.01,
+0
+],
+"tests/test_minimi_covariance.py::test_the_chi2_correction_can_be_turned_off[P]": [
+0.02,
+0
+],
+"tests/test_minimi_covariance.py::test_the_chi2_correction_can_be_turned_off[U]": [
+0.01,
+0
+],
+"tests/test_minimi_covariance.py::test_the_chi2_correction_can_be_turned_off[W]": [
+0.02,
+0
+],
+"tests/test_minimi_covariance.py::test_the_chi_squares_returned_by_each_weighting": [
+0.03,
+0
+],
+"tests/test_minimi_covariance.py::test_the_level_of_a_flat_spectrum": [
+0.01,
+0
+],
+"tests/test_minimi_covariance.py::test_weights_that_cannot_be_used_are_refused": [
+0.0,
+0
+],
+"tests/test_model_append.py::test_append_directly_after_baseline_leaves_all_links_alone": [
+2.19,
+76
+],
+"tests/test_model_append.py::test_append_keeps_baseline_link_and_shifts_component_link": [
+2.35,
+95
+],
+"tests/test_model_append.py::test_append_keeps_the_current_baseline": [
+2.27,
+61
+],
+"tests/test_model_append.py::test_append_repeated_at_same_row_preserves_order_and_links": [
+2.63,
+83
+],
+"tests/test_model_append.py::test_load_model_dropdown_entry_appends_via_file_dialog": [
+2.33,
+60
+],
+"tests/test_model_append.py::test_load_model_dropdown_entry_cancel_is_a_no_op": [
+2.16,
+43
+],
+"tests/test_model_append.py::test_load_model_is_offered_next_to_library": [
+0.0,
+4
+],
+"tests/test_model_append.py::test_load_model_menu_item_is_clickable": [
+2.2,
+69
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[ASM-15]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Average_H-11]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Doublet-9]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Hamilton_mc-12]": [
+0.01,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Hamilton_pc-9]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Hamiltonian-15]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Layer-0]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[MDGD-17]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Nbaseline-8]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Relax_2S-14]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Relax_MS-11]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[SCDW-27]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Sextet(rough)-14]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Sextet-14]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Singlet-4]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_base_models[Variables-27]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_special_models[Corr-2]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_special_models[Distr-5]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_special_models[Expression-1]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_special_models[Recon-7]": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_mod_len_def_unknown_model_is_zero": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_remap_reference_text_append_after_baseline_is_identity": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_combined_expression": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_remap_reference_text_constraint": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_remap_reference_text_first_component_param_is_the_boundary": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_formula_is_consistent_with_constant": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[0-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[0-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[0-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[1-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[1-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[1-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[2-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[2-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[2-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[3-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[3-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[3-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[4-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[4-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[4-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[5-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[5-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[5-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[6-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[6-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[6-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[7-100]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[7-21]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_keeps_baseline_links[7-7]": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_mixes_baseline_and_component_links": [
+0.0,
+0
+],
+"tests/test_model_io.py::test_remap_reference_text_non_string_returns_input": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_remap_reference_text_p_reference": [
+0.0,
+2
+],
+"tests/test_model_io.py::test_remap_reference_text_passthrough_for_plain_text": [
+0.0,
+2
+],
+"tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[['a.dat', 'b.dat']]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[data/models_6]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[model.dat]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[models_6]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_anything_else_is_a_spectrum_path[spectrum.dat]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_document_viewers_open_independently[open_help_pressed-help_window]": [
+2.13,
+59
+],
+"tests/test_model_only_mode.py::test_document_viewers_open_independently[open_models_description_pressed-models_description_window]": [
+2.18,
+74
+],
+"tests/test_model_only_mode.py::test_existing_file_is_accepted_whatever_it_is_called": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_-3]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_0]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_malformed_range_is_reported_not_silently_accepted[Model_abc]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_models_description_does_not_document_unreachable_models": [
+0.44,
+118
+],
+"tests/test_model_only_mode.py::test_show_model_refuses_a_path_that_is_not_a_file[models_6]": [
+2.01,
+89
+],
+"tests/test_model_only_mode.py::test_show_model_refuses_a_path_that_is_not_a_file[not_a_real_file.dat]": [
+1.96,
+90
+],
+"tests/test_model_only_mode.py::test_show_spectrum_and_fit_refuse_it_too[fit_pressed]": [
+1.97,
+59
+],
+"tests/test_model_only_mode.py::test_show_spectrum_and_fit_refuse_it_too[show_pressed]": [
+1.91,
+60
+],
+"tests/test_model_only_mode.py::test_supp_menu_documents_are_shipped_and_render[resolve_help_path]": [
+0.0,
+0
+],
+"tests/test_model_only_mode.py::test_supp_menu_documents_are_shipped_and_render[resolve_models_description_path]": [
+0.0,
+0
+],
+"tests/test_model_only_mode.py::test_supp_menu_offers_both_documents": [
+0.0,
+0
+],
+"tests/test_model_only_mode.py::test_valid_model_only_keyword[MODEL_15-15.0]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_valid_model_only_keyword[Model_6-6.0]": [
+2.71,
+3
+],
+"tests/test_model_only_mode.py::test_valid_model_only_keyword[Model_6.5-6.5]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_valid_model_only_keyword[['Model_6']-6.0]": [
+0.0,
+3
+],
+"tests/test_model_only_mode.py::test_valid_model_only_keyword[model_6-6.0]": [
+0.0,
+3
+],
+"tests/test_model_pointwise.py::test_distributions_are_computed_point_by_point_too[Distr + Corr-CMS]": [
+0.05,
+0
+],
+"tests/test_model_pointwise.py::test_distributions_are_computed_point_by_point_too[Distr + Corr-SMS Gaussians]": [
+0.05,
+0
+],
+"tests/test_model_pointwise.py::test_distributions_are_computed_point_by_point_too[Distr + Corr-SMS theory]": [
+0.05,
+0
+],
+"tests/test_model_pointwise.py::test_distributions_are_computed_point_by_point_too[Recon-CMS]": [
+0.04,
+0
+],
+"tests/test_model_pointwise.py::test_distributions_are_computed_point_by_point_too[Recon-SMS Gaussians]": [
+0.05,
+0
+],
+"tests/test_model_pointwise.py::test_distributions_are_computed_point_by_point_too[Recon-SMS theory]": [
+0.04,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[ASM-CMS]": [
+0.37,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[ASM-SMS Gaussians]": [
+0.13,
+10
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[ASM-SMS theory]": [
+0.25,
+12
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Doublet-CMS]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Doublet-SMS Gaussians]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Doublet-SMS theory]": [
+0.01,
+3
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamilton_mc-CMS]": [
+0.03,
+3
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamilton_mc-SMS Gaussians]": [
+0.03,
+1
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamilton_mc-SMS theory]": [
+0.01,
+1
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamilton_pc-CMS]": [
+0.02,
+3
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamilton_pc-SMS Gaussians]": [
+0.01,
+3
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamilton_pc-SMS theory]": [
+0.01,
+3
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_crystal-CMS]": [
+0.05,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_crystal-SMS Gaussians]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_crystal-SMS theory]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_layered-CMS]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_layered-SMS Gaussians]": [
+0.03,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_layered-SMS theory]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_mosaic-CMS]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_mosaic-SMS Gaussians]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_mosaic-SMS theory]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_powder-CMS]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_powder-SMS Gaussians]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Hamiltonian_powder-SMS theory]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[MDGD-CMS]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[MDGD-SMS Gaussians]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[MDGD-SMS theory]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Relax_2S-CMS]": [
+0.02,
+9
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Relax_2S-SMS Gaussians]": [
+0.01,
+9
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Relax_2S-SMS theory]": [
+0.01,
+9
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Relax_MS-CMS]": [
+0.08,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Relax_MS-SMS Gaussians]": [
+0.02,
+1
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Relax_MS-SMS theory]": [
+0.02,
+1
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[SCDW-CMS]": [
+0.16,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[SCDW-SMS Gaussians]": [
+0.14,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[SCDW-SMS theory]": [
+0.12,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Sextet(rough)-CMS]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Sextet(rough)-SMS Gaussians]": [
+0.0,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Sextet(rough)-SMS theory]": [
+0.0,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Sextet-CMS]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Sextet-SMS Gaussians]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Sextet-SMS theory]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Singlet-CMS]": [
+0.0,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Singlet-SMS Gaussians]": [
+0.0,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[Singlet-SMS theory]": [
+0.0,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[layered-CMS]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[layered-SMS Gaussians]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[layered-SMS theory]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[mix_doublet_sextet-CMS]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[mix_doublet_sextet-SMS Gaussians]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_the_model_at_the_kept_points_does_not_change[mix_doublet_sextet-SMS theory]": [
+0.01,
+0
+],
+"tests/test_model_pointwise.py::test_two_spectra_of_an_nbaseline_model_too[CMS]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_two_spectra_of_an_nbaseline_model_too[SMS Gaussians]": [
+0.02,
+0
+],
+"tests/test_model_pointwise.py::test_two_spectra_of_an_nbaseline_model_too[SMS theory]": [
+0.02,
+0
+],
+"tests/test_nbaseline_multidistr.py::test_the_second_spectrum_reads_its_own_entries[Distr x Distr]": [
+0.41,
+0
+],
+"tests/test_nbaseline_multidistr.py::test_the_second_spectrum_reads_its_own_entries[Distr x Recon]": [
+0.17,
+0
+],
+"tests/test_nbaseline_multidistr.py::test_the_second_spectrum_reads_its_own_entries[Recon x Distr]": [
+0.14,
+0
+],
+"tests/test_nbaseline_results.py::test_graf_baselines_use_each_section_own_parameters": [
+2.04,
+73
+],
+"tests/test_nbaseline_results.py::test_graf_file_has_a_block_per_spectrum": [
+3.04,
+91
+],
+"tests/test_nbaseline_results.py::test_param_file_names_every_simultaneous_spectrum": [
+2.24,
+119
+],
+"tests/test_nbaseline_results.py::test_single_spectrum_graf_header_unchanged": [
+1.99,
+59
+],
+"tests/test_node_sum_reuse.py::test_a_baseline_move_needs_no_integration": [
+0.04,
+0
+],
+"tests/test_node_sum_reuse.py::test_a_parameter_named_in_another_spectrums_expression_recomputes_it_too": [
+0.05,
+0
+],
+"tests/test_node_sum_reuse.py::test_a_parameter_of_one_spectrum_recomputes_that_spectrum_only": [
+0.03,
+0
+],
+"tests/test_node_sum_reuse.py::test_a_repeated_call_reuses_every_spectrum_bit_for_bit": [
+0.25,
+1
+],
+"tests/test_node_sum_reuse.py::test_an_index_that_cannot_be_read_off_is_never_reused": [
+0.03,
+0
+],
+"tests/test_node_sum_reuse.py::test_another_instrumental_function_is_never_reused": [
+0.04,
+0
+],
+"tests/test_node_sum_reuse.py::test_changed_recon_weights_are_never_reused": [
+0.04,
+0
+],
+"tests/test_one_model_expand.py::test_a_recon_shares_the_first_spectrum_s_weights": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_a_shared_parameter_has_spectrum_1s_error_in_every_spectrum": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_a_spectrum_s_texts_are_those_of_the_whole_model": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_after_the_links_every_copy_of_a_shared_parameter_is_spectrum_1s": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_each_spectrum_is_its_section_of_the_result": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_fitted_rows_keep_or_refit_an_independent_value": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_formulas_take_each_spectrum_own_values_and_renumbered_slots": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_independent_and_fixed_parameters_are_copied": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_links_stay_inside_their_spectrum_unless_they_point_at_a_shared_parameter": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_one_section_per_spectrum_each_as_long_as_the_template": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_recon_layout_without_sharing_is_as_before": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_shared_slots_are_the_free_ones_outside_the_baseline": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[ =(12.25) -12.25]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[0.5-None]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[=()-None]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[=(-3)--3.0]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[=(-None]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[=(0.5)-0.5]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[=(1-None]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_split_independent_field[=[3,1]-None]": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_the_covariance_of_a_spectrum_is_the_matching_block": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_the_expanded_lists_follow_the_sections": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_the_first_spectrum_keeps_the_table_and_the_others_their_own_counts": [
+0.0,
+0
+],
+"tests/test_one_model_expand.py::test_the_template_view_is_spectrum_1_with_the_snapshot_links": [
+0.0,
+0
+],
+"tests/test_one_model_gui.py::test_a_click_on_a_shown_spectrum_brings_its_component_up": [
+3.75,
+22
+],
+"tests/test_one_model_gui.py::test_a_click_on_a_spectrum_not_shown_offers_the_result_window": [
+3.5,
+0
+],
+"tests/test_one_model_gui.py::test_a_finished_independent_value_is_light_green": [
+2.07,
+99
+],
+"tests/test_one_model_gui.py::test_a_result_fills_the_whole_expanded_model_and_shows_two_spectra": [
+3.24,
+17
+],
+"tests/test_one_model_gui.py::test_an_interrupted_one_model_fit_releases_the_window": [
+2.06,
+2
+],
+"tests/test_one_model_gui.py::test_an_unfinished_independent_value_blocks_the_start[=()]": [
+2.04,
+67
+],
+"tests/test_one_model_gui.py::test_an_unfinished_independent_value_blocks_the_start[=(-.)]": [
+2.01,
+60
+],
+"tests/test_one_model_gui.py::test_an_unfinished_independent_value_blocks_the_start[=(.)]": [
+1.91,
+53
+],
+"tests/test_one_model_gui.py::test_make_it_independent_is_offered_with_several_spectra_and_no_nbaseline": [
+1.89,
+75
+],
+"tests/test_one_model_gui.py::test_make_it_independent_puts_empty_brackets_with_the_cursor_inside": [
+1.9,
+68
+],
+"tests/test_one_model_gui.py::test_one_model_request[False-0-False-2-expected2]": [
+1.93,
+46
+],
+"tests/test_one_model_gui.py::test_one_model_request[False-1-True-2-expected6]": [
+2.25,
+39
+],
+"tests/test_one_model_gui.py::test_one_model_request[False-2-False-2-expected1]": [
+1.95,
+36
+],
+"tests/test_one_model_gui.py::test_one_model_request[False-2-True-2-expected5]": [
+2.43,
+81
+],
+"tests/test_one_model_gui.py::test_one_model_request[True-0-False-1-expected3]": [
+2.12,
+19
+],
+"tests/test_one_model_gui.py::test_one_model_request[True-0-False-2-expected0]": [
+2.06,
+69
+],
+"tests/test_one_model_gui.py::test_one_model_request[True-0-True-2-expected4]": [
+2.16,
+38
+],
+"tests/test_one_model_gui.py::test_read_model_reads_x_and_the_table_knows_the_independent_slots": [
+1.95,
+84
+],
+"tests/test_one_model_gui.py::test_save_writes_a_line_per_spectrum_and_the_model_the_fit_started_from": [
+4.83,
+179
+],
+"tests/test_one_model_gui.py::test_show_model_draws_the_first_and_the_last_spectrum": [
+2.65,
+25
+],
+"tests/test_one_model_gui.py::test_show_model_of_a_sequence_draws_the_first_and_the_last_spectrum": [
+2.38,
+27
+],
+"tests/test_one_model_gui.py::test_take_result_of_a_single_fit_keeps_the_brackets_around_the_fitted_value": [
+2.67,
+44
+],
+"tests/test_one_model_gui.py::test_take_result_writes_the_model_the_fit_started_from": [
+3.49,
+5
+],
+"tests/test_one_model_gui.py::test_the_field_takes_an_independent_value": [
+2.09,
+92
+],
+"tests/test_one_model_gui.py::test_the_instrumental_search_with_independent_values_is_a_one_model_search": [
+2.34,
+2
+],
+"tests/test_one_model_gui.py::test_the_menu_shows_the_mode_on_the_button": [
+2.11,
+0
+],
+"tests/test_one_model_gui.py::test_the_result_crosses_from_the_fitting_thread_intact": [
+2.86,
+6
+],
+"tests/test_one_model_gui.py::test_the_result_window_shows_a_spectrum_s_formula_as_the_whole_model_has_it": [
+3.38,
+14
+],
+"tests/test_one_model_gui.py::test_the_result_window_shows_every_spectrum_with_its_own_part": [
+3.43,
+2
+],
+"tests/test_one_model_gui.py::test_the_start_value_must_be_inside_the_bounds": [
+2.0,
+35
+],
+"tests/test_one_model_gui.py::test_two_identical_spectra_fit_like_one_of_them": [
+3.89,
+17
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_cms_file_becomes_sms": [
+1.89,
+45
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[# comment-False]": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[#@GCMS 0.1-False]": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[+0.25 7-True]": [
+0.01,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[-10.5\\t12345-True]": [
+0.0,
+3
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[.5 1-True]": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[1e3 5-True]": [
+0.0,
+3
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[< note-False]": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_data_line_starts_with_a_number[Velocity Counts-False]": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_file_that_already_has_them_is_left_alone": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_file_without_data_is_refused": [
+0.0,
+7
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_line_below_the_first_data_line_is_not_header": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_read_only_file_is_refused": [
+0.0,
+7
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_theory_file_takes_any_instrumental_function[cms]": [
+2.01,
+34
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_theory_file_takes_any_instrumental_function[gauss]": [
+1.93,
+67
+],
+"tests/test_overwrite_dat_instrumental.py::test_a_theory_file_takes_any_instrumental_function[theory]": [
+2.0,
+94
+],
+"tests/test_overwrite_dat_instrumental.py::test_an_old_cms_line_is_replaced_by_the_four_numbers": [
+1.97,
+73
+],
+"tests/test_overwrite_dat_instrumental.py::test_declining_writes_nothing": [
+2.03,
+56
+],
+"tests/test_overwrite_dat_instrumental.py::test_every_other_byte_and_line_ending_is_kept": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_new_lines_go_just_above_the_data": [
+0.01,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_old_lines_are_replaced_where_they_were": [
+0.01,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_only_the_dat_files_get_the_one_in_memory": [
+1.92,
+52
+],
+"tests/test_overwrite_dat_instrumental.py::test_refused_while_a_calculation_runs": [
+2.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_the_calibration_file_is_never_written": [
+2.07,
+4
+],
+"tests/test_overwrite_dat_instrumental.py::test_the_menu_offers_it": [
+2.65,
+103
+],
+"tests/test_overwrite_dat_instrumental.py::test_the_question_writes_only_on_overwrite[Cancel-False]": [
+1.89,
+87
+],
+"tests/test_overwrite_dat_instrumental.py::test_the_question_writes_only_on_overwrite[None-False]": [
+1.87,
+51
+],
+"tests/test_overwrite_dat_instrumental.py::test_the_question_writes_only_on_overwrite[Overwrite-True]": [
+1.98,
+75
+],
+"tests/test_overwrite_dat_instrumental.py::test_the_whole_header_is_read_however_long": [
+0.0,
+0
+],
+"tests/test_overwrite_dat_instrumental.py::test_without_a_dat_file_nothing_is_asked[Model_6]": [
+1.91,
+45
+],
+"tests/test_overwrite_dat_instrumental.py::test_without_a_dat_file_nothing_is_asked[folder]": [
+1.94,
+26
+],
+"tests/test_overwrite_dat_instrumental.py::test_without_a_dat_file_nothing_is_asked[mca]": [
+2.05,
+68
+],
+"tests/test_parameter_links.py::test_a_factor_decimal_can_be_retyped": [
+2.09,
+74
+],
+"tests/test_parameter_links.py::test_a_factor_integer_part_can_be_retyped": [
+2.14,
+67
+],
+"tests/test_parameter_links.py::test_context_menu_entry_prefills_link_with_cursor_before_comma": [
+2.02,
+62
+],
+"tests/test_parameter_links.py::test_context_menu_offers_only_the_link_entry": [
+2.13,
+89
+],
+"tests/test_parameter_links.py::test_finished_link_passes": [
+1.98,
+15
+],
+"tests/test_parameter_links.py::test_free_text_field_keeps_the_standard_menu": [
+2.0,
+4
+],
+"tests/test_parameter_links.py::test_half_written_links_can_be_typed": [
+3.07,
+113
+],
+"tests/test_parameter_links.py::test_letters_are_still_rejected": [
+2.19,
+74
+],
+"tests/test_parameter_links.py::test_missing_factor_blocks_run[=[9,-.]]": [
+1.99,
+35
+],
+"tests/test_parameter_links.py::test_missing_factor_blocks_run[=[9,.]]": [
+2.09,
+43
+],
+"tests/test_parameter_links.py::test_missing_factor_blocks_run[=[9,]]": [
+2.0,
+59
+],
+"tests/test_parameter_links.py::test_readonly_field_cannot_start_a_link": [
+2.18,
+37
+],
+"tests/test_parameter_links.py::test_split_link_field[ =[9,1] -expected3]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[1.0-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[,1]-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[,]-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,-.]-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,-0.5]-expected2]": [
+0.0,
+6
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,-]-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,.5]-expected9]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,.]-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,0.]-expected8]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,1.0]-expected1]": [
+0.0,
+6
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,1]-expected0]": [
+0.01,
+6
+],
+"tests/test_parameter_links.py::test_split_link_field[=[9,]-None]": [
+0.0,
+7
+],
+"tests/test_parameter_links.py::test_starting_a_link_keeps_the_undo_history": [
+2.11,
+48
+],
+"tests/test_parameter_links.py::test_unfinished_link_blocks_run_and_marks_field_red": [
+2.19,
+89
+],
+"tests/test_polarization.py::test_cms_hamilton_independent_of_alfak": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_cms_is_fixed_half_trace[Doublet]": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_cms_is_fixed_half_trace[Hamiltonian]": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_cms_is_fixed_half_trace[Sextet]": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_cms_readout_independent_of_azimuth": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_layer_order_visible_to_sms_not_cms": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_same_layer_order_is_invisible": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_scalar_model_unaffected_by_polarization": [
+0.01,
+0
+],
+"tests/test_polarization.py::test_sms_default_polarization_reads_11_element[Doublet]": [
+0.16,
+5
+],
+"tests/test_polarization.py::test_sms_default_polarization_reads_11_element[Hamiltonian]": [
+0.03,
+5
+],
+"tests/test_polarization.py::test_sms_default_polarization_reads_11_element[Sextet]": [
+0.0,
+5
+],
+"tests/test_polarization.py::test_sms_partial_polarization_is_density_matrix_mix[Doublet]": [
+0.0,
+5
+],
+"tests/test_polarization.py::test_sms_partial_polarization_is_density_matrix_mix[Hamiltonian]": [
+0.0,
+0
+],
+"tests/test_polarization.py::test_sms_partial_polarization_is_density_matrix_mix[Sextet]": [
+0.0,
+0
+],
+"tests/test_recon_composition.py::test_recon_fit_layout": [
+0.0,
+0
+],
+"tests/test_recon_composition.py::test_recon_lambda_endpoints": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_num1_ordering_reproduces_base[DR-markers2-<lambda>-distri2-_c_unused2-recon2]": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_num1_ordering_reproduces_base[R-markers0-<lambda>-distri0-_c_unused0-recon0]": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_num1_ordering_reproduces_base[RC-markers4-<lambda>-distri4-None-recon4]": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_num1_ordering_reproduces_base[RCR-markers5-<lambda>-distri5-None-recon5]": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_num1_ordering_reproduces_base[RD-markers3-<lambda>-distri3-_c_unused3-recon3]": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_num1_ordering_reproduces_base[RR-markers1-<lambda>-distri1-_c_unused1-recon1]": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_penalty_flat_and_zero_D": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_penalty_grows_with_D": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_penalty_length": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_regularized_reconstruction_via_minimizer": [
+0.03,
+0
+],
+"tests/test_recon_composition.py::test_recon_respects_layer_marker": [
+0.0,
+1
+],
+"tests/test_recon_composition.py::test_recon_thick_joins_current_layer": [
+0.19,
+1
+],
+"tests/test_recon_mdl.py::test_recon_empty_weights_default_uniform": [
+2.2,
+74
+],
+"tests/test_recon_mdl.py::test_recon_mdl_save_load_roundtrip": [
+4.0,
+59
+],
+"tests/test_recon_mdl.py::test_recon_read_model_layout": [
+3.44,
+97
+],
+"tests/test_recon_results.py::test_distribution_curves_column_order": [
+0.0,
+10
+],
+"tests/test_recon_results.py::test_distribution_curves_empty_without_distributions": [
+0.0,
+10
+],
+"tests/test_recon_results.py::test_graf_and_distributions_png_for_recon": [
+2.23,
+66
+],
+"tests/test_recon_results.py::test_param_file_writes_placeholder_for_recon_weights": [
+3.07,
+108
+],
+"tests/test_recon_variants.py::test_every_weight_list_gives_the_spectrum_ti_gives[Distr x Recon]": [
+0.21,
+0
+],
+"tests/test_recon_variants.py::test_every_weight_list_gives_the_spectrum_ti_gives[Recon over the amplitude]": [
+0.06,
+0
+],
+"tests/test_recon_variants.py::test_every_weight_list_gives_the_spectrum_ti_gives[both spectra vary]": [
+0.09,
+0
+],
+"tests/test_recon_variants.py::test_every_weight_list_gives_the_spectrum_ti_gives[one thick spectrum]": [
+0.28,
+0
+],
+"tests/test_recon_variants.py::test_every_weight_list_gives_the_spectrum_ti_gives[one thin spectrum]": [
+0.01,
+0
+],
+"tests/test_recon_variants.py::test_every_weight_list_gives_the_spectrum_ti_gives[second spectrum varies]": [
+0.06,
+0
+],
+"tests/test_reference_shift.py::test_clean_model_leaves_no_stale_param_counts": [
+2.28,
+60
+],
+"tests/test_reference_shift.py::test_delete_of_referenced_param_leaves_dangling_ref_intact": [
+2.11,
+61
+],
+"tests/test_reference_shift.py::test_delete_shifts_and_flags_p_references": [
+2.17,
+68
+],
+"tests/test_reference_shift.py::test_deleting_referenced_param_empties_slot_and_blocks_run": [
+2.17,
+61
+],
+"tests/test_reference_shift.py::test_full_model_has_no_empty_slots": [
+2.13,
+96
+],
+"tests/test_reference_shift.py::test_insert_shifts_p_references": [
+3.73,
+75
+],
+"tests/test_reference_shift.py::test_swap_shifts_p_references": [
+2.18,
+74
+],
+"tests/test_replaced_component_skip.py::test_skipping_the_replaced_component_changes_nothing[Doublet + Distr, then a Sextet]": [
+0.26,
+1
+],
+"tests/test_replaced_component_skip.py::test_skipping_the_replaced_component_changes_nothing[Nbaseline: Sextet + Recon | Sextet + Distr]": [
+0.05,
+2
+],
+"tests/test_replaced_component_skip.py::test_skipping_the_replaced_component_changes_nothing[Relax_MS + Recon]": [
+0.07,
+0
+],
+"tests/test_replaced_component_skip.py::test_skipping_the_replaced_component_changes_nothing[Sextet + Distr + Corr]": [
+0.03,
+0
+],
+"tests/test_replaced_component_skip.py::test_skipping_the_replaced_component_changes_nothing[Sextet + Distr x Distr]": [
+0.09,
+0
+],
+"tests/test_replaced_component_skip.py::test_skipping_the_replaced_component_changes_nothing[Sextet + Recon]": [
+0.02,
+0
+],
+"tests/test_result_window.py::test_a_sequence_shows_every_spectrum_with_its_own_correlation_matrix": [
+3.62,
+121
+],
+"tests/test_result_window.py::test_a_spectrum_s_formula_is_shown_as_typed_and_evaluated_with_the_whole_fit": [
+2.79,
+57
+],
+"tests/test_result_window.py::test_an_nbaseline_fit_shows_every_spectrum_without_a_correlation_matrix": [
+2.72,
+85
+],
+"tests/test_result_window.py::test_selecting_nbaseline_greys_the_row": [
+2.22,
+81
+],
+"tests/test_results_table_image.py::test_all_three_rows_of_an_expression_are_in_the_picture": [
+3.42,
+83
+],
+"tests/test_results_table_image.py::test_no_swapped_out_label_is_left_under_an_expression": [
+2.24,
+54
+],
+"tests/test_results_table_image.py::test_the_picture_is_as_tall_as_the_rows_it_shows": [
+2.35,
+60
+],
+"tests/test_results_table_rows.py::test_a_click_on_any_row_reaches_replot": [
+3.91,
+114
+],
+"tests/test_results_table_rows.py::test_a_result_larger_than_the_parameters_table_is_refused": [
+3.56,
+29
+],
+"tests/test_results_table_rows.py::test_a_smaller_result_leaves_nothing_of_a_larger_one": [
+5.66,
+164
+],
+"tests/test_results_table_rows.py::test_an_expression_past_the_old_limit_is_spanned": [
+3.58,
+95
+],
+"tests/test_results_table_rows.py::test_an_expression_takes_the_bare_names_of_the_fit": [
+1.91,
+50
+],
+"tests/test_results_table_rows.py::test_clear_removes_every_row": [
+1.87,
+46
+],
+"tests/test_results_table_rows.py::test_correlation_matrix_has_every_free_parameter": [
+3.55,
+76
+],
+"tests/test_results_table_rows.py::test_more_components_than_the_parameters_table_has_rows": [
+4.04,
+119
+],
+"tests/test_results_table_rows.py::test_no_rows_before_a_result": [
+2.18,
+92
+],
+"tests/test_results_table_rows.py::test_show_model_empties_the_results_table": [
+1.99,
+20
+],
+"tests/test_results_table_rows.py::test_take_result_after_show_model_changes_nothing": [
+1.99,
+0
+],
+"tests/test_results_table_rows.py::test_take_result_after_the_model_was_changed_asks_first[Cancel-Doublet]": [
+2.01,
+0
+],
+"tests/test_results_table_rows.py::test_take_result_after_the_model_was_changed_asks_first[Continue-Sextet]": [
+2.35,
+13
+],
+"tests/test_results_table_rows.py::test_take_result_fills_the_largest_model_the_table_holds": [
+6.79,
+49
+],
+"tests/test_results_table_rows.py::test_take_result_keeps_expression_and_link": [
+2.38,
+0
+],
+"tests/test_results_table_rows.py::test_take_result_puts_back_every_section_of_an_nbaseline_result": [
+2.54,
+48
+],
+"tests/test_results_table_rows.py::test_three_rows_per_component_with_its_names_values_and_errors": [
+2.01,
+100
+],
+"tests/test_save_result_model.py::test_a_dotted_save_path_keeps_its_full_name": [
+2.7,
+138
+],
+"tests/test_save_result_model.py::test_a_picture_that_cannot_be_written_costs_neither_the_row_nor_the_rest": [
+2.34,
+64
+],
+"tests/test_save_result_model.py::test_a_result_without_a_fitted_model_saves_the_results_only": [
+2.33,
+91
+],
+"tests/test_save_result_model.py::test_a_sequence_continues_its_page_of_pictures": [
+3.04,
+110
+],
+"tests/test_save_result_model.py::test_a_sequence_extends_its_param_file_with_a_line_per_spectrum": [
+2.98,
+67
+],
+"tests/test_save_result_model.py::test_a_sequence_saves_every_spectrum_s_fitted_model": [
+2.7,
+74
+],
+"tests/test_save_result_model.py::test_declining_the_model_overwrite_keeps_the_result_files": [
+2.64,
+93
+],
+"tests/test_save_result_model.py::test_editing_the_table_after_the_fit_does_not_reach_the_saved_model": [
+4.29,
+87
+],
+"tests/test_save_result_model.py::test_fitted_values_are_written_to_full_precision": [
+0.0,
+10
+],
+"tests/test_save_result_model.py::test_free_numbers_take_the_fitted_values_everything_else_stays": [
+0.0,
+10
+],
+"tests/test_save_result_model.py::test_model_path_falls_back_to_the_workfolder": [
+0.0,
+10
+],
+"tests/test_save_result_model.py::test_model_path_keeps_a_dot_in_a_directory_name": [
+0.0,
+6
+],
+"tests/test_save_result_model.py::test_model_path_keeps_the_dot_of_a_sample_name": [
+0.0,
+10
+],
+"tests/test_save_result_model.py::test_model_path_replaces_the_extension_of_the_save_path": [
+0.0,
+6
+],
+"tests/test_save_result_model.py::test_no_snapshot_means_no_fitted_model": [
+0.0,
+10
+],
+"tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[Fe_4.2K-Fe_4.2K]": [
+0.0,
+6
+],
+"tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[Fe_4.2K.dat-Fe_4.2K]": [
+0.0,
+6
+],
+"tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[my.data\\\\run1-my.data\\\\run1]": [
+0.0,
+6
+],
+"tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[run1.TXT-run1]": [
+0.0,
+6
+],
+"tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[sample.001-sample.001]": [
+0.0,
+6
+],
+"tests/test_save_result_model.py::test_save_result_as_keeps_a_dotted_name[Fe_4.2K.txt]": [
+2.73,
+112
+],
+"tests/test_save_result_model.py::test_save_result_as_keeps_a_dotted_name[Fe_4.2K]": [
+2.55,
+79
+],
+"tests/test_save_result_model.py::test_the_result_model_never_overwrites_a_hand_saved_model": [
+2.37,
+79
+],
+"tests/test_save_result_model.py::test_the_result_model_shares_the_base_of_the_result_files": [
+0.0,
+10
+],
+"tests/test_save_result_model.py::test_the_saved_model_is_the_fitted_one": [
+3.98,
+132
+],
+"tests/test_save_result_model.py::test_the_spectrum_extension_is_not_part_of_the_result_names": [
+2.65,
+107
+],
+"tests/test_sdw_grid.py::test_grid_balanced_wave_faraday_cancellation": [
+0.02,
+1
+],
+"tests/test_sdw_grid.py::test_grid_edge_case_is_single_sextet": [
+0.0,
+1
+],
+"tests/test_sdw_grid.py::test_grid_matches_direct_reference": [
+1.54,
+86
+],
+"tests/test_sdw_grid.py::test_grid_weights_are_normalised": [
+0.0,
+1
+],
+"tests/test_search_guards.py::test_a_refused_calibration_leaves_the_app_free[paths0]": [
+2.04,
+62
+],
+"tests/test_search_guards.py::test_a_refused_calibration_leaves_the_app_free[paths1]": [
+1.98,
+46
+],
+"tests/test_search_guards.py::test_busy_guard_refuses_and_explains": [
+2.01,
+43
+],
+"tests/test_search_guards.py::test_every_calculation_entry_point_is_guarded": [
+2.01,
+43
+],
+"tests/test_search_guards.py::test_find_dialog_accepts_an_edited_value": [
+2.06,
+61
+],
+"tests/test_search_guards.py::test_find_dialog_bounds_match_the_search": [
+2.1,
+42
+],
+"tests/test_search_guards.py::test_find_dialog_cancel_returns_none": [
+1.97,
+67
+],
+"tests/test_search_guards.py::test_find_dialog_does_not_ask_for_what_it_maps": [
+1.98,
+88
+],
+"tests/test_search_guards.py::test_find_dialog_is_prefilled_with_the_defaults": [
+2.17,
+92
+],
+"tests/test_search_guards.py::test_find_dialog_refuses_a_bad_value[0-99999]": [
+2.06,
+74
+],
+"tests/test_search_guards.py::test_find_dialog_refuses_a_bad_value[0-not a number]": [
+2.01,
+60
+],
+"tests/test_search_guards.py::test_find_dialog_refuses_a_bad_value[2-0.01]": [
+2.0,
+60
+],
+"tests/test_search_guards.py::test_interrupt_flag_is_an_event": [
+1.96,
+46
+],
+"tests/test_sms_theory.py::test_a_gaussian_payload_on_the_accurate_marker_is_ignored": [
+0.01,
+7
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_is_monotone_and_clamped": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[75.675-2.393]": [
+0.0,
+0
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[75.725-1.547]": [
+0.0,
+0
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[75.775-1.089]": [
+0.0,
+0
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[75.825-0.812]": [
+0.0,
+0
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[75.875-0.631]": [
+0.0,
+0
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[75.925-0.505]": [
+0.0,
+0
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[76.025-0.347]": [
+0.01,
+61
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[76.12-0.258]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_bs_from_temperature_reproduces_the_calibration[76.23-0.193]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_bs_law_covers_the_operating_range": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_centroid_is_the_first_moment[<lambda>0]": [
+0.02,
+8
+],
+"tests/test_sms_theory.py::test_centroid_is_the_first_moment[<lambda>1]": [
+0.01,
+7
+],
+"tests/test_sms_theory.py::test_centroid_is_the_first_moment[<lambda>2]": [
+0.0,
+7
+],
+"tests/test_sms_theory.py::test_dat_metadata_reads_the_accurate_marker": [
+0.07,
+7
+],
+"tests/test_sms_theory.py::test_dat_without_accurate_marker_is_unchanged": [
+0.0,
+7
+],
+"tests/test_sms_theory.py::test_efg_asymmetry_matches_hamiltonian_model[-0.4-0.5-90-0-90-90-0.2]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_efg_asymmetry_matches_hamiltonian_model[-0.9-17.0-71-13-29-47-1.0]": [
+0.0,
+13
+],
+"tests/test_sms_theory.py::test_efg_asymmetry_matches_hamiltonian_model[0.37-2.3-41-27-63-111-0.6]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_efg_asymmetry_matches_hamiltonian_model[0.5-0.0-0-0-55-33-0.35]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_eta_changes_the_zero_field_splitting_as_it_should": [
+0.0,
+13
+],
+"tests/test_sms_theory.py::test_gaussian_stand_in_follows_the_core_but_not_the_tails": [
+0.25,
+1
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[-0.2-1.0-90-0-90-0]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[-0.4-0.5-90-0-90-90]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[-0.9-17.0-71-13-29-47]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[0.0-33.04-0-0-0-0]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[0.0-33.04-0-0-90-0]": [
+0.16,
+3
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[0.31-0.02-90-0-90-90]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[0.37-2.3-41-27-63-111]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_hyperfine_site_matches_hamiltonian_model[0.5-0.0-0-0-55-33]": [
+0.01,
+3
+],
+"tests/test_sms_theory.py::test_legacy_centroid_matches_the_formula_it_replaces": [
+0.0,
+7
+],
+"tests/test_sms_theory.py::test_legacy_ins_is_recognised_as_legacy": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_legacy_transmission_integral_is_untouched": [
+0.02,
+0
+],
+"tests/test_sms_theory.py::test_limits_returns_a_usable_grid[<lambda>0]": [
+0.92,
+24
+],
+"tests/test_sms_theory.py::test_limits_returns_a_usable_grid[<lambda>1]": [
+1.58,
+7
+],
+"tests/test_sms_theory.py::test_limits_returns_a_usable_grid[<lambda>2]": [
+1.83,
+46
+],
+"tests/test_sms_theory.py::test_physical_ins_round_trip": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_pos_ac_shifts_lines_by_the_instrumental_centroid": [
+0.0,
+2
+],
+"tests/test_sms_theory.py::test_quadrupole_convention_is_the_doublet_splitting": [
+0.0,
+13
+],
+"tests/test_sms_theory.py::test_rational_ins_round_trip": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_sextet_reproduces_syncmoss_line_positions": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_shape_is_a_unit_area_density[<lambda>0]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_shape_is_a_unit_area_density[<lambda>1]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_shape_is_a_unit_area_density[<lambda>2]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_shifted_source_moves_the_dip_the_same_way_as_the_legacy_form": [
+0.01,
+0
+],
+"tests/test_sms_theory.py::test_sms_theory_selftest": [
+5.75,
+83
+],
+"tests/test_sms_theory.py::test_tail_integral_is_the_primitive_of_the_shape[<lambda>0]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_tail_integral_is_the_primitive_of_the_shape[<lambda>1]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_tail_integral_is_the_primitive_of_the_shape[<lambda>2]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[75.675-2.393]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[75.725-1.547]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[75.775-1.089]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[75.825-0.812]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[75.875-0.631]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[75.925-0.505]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[76.025-0.347]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[76.12-0.258]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_temperature_from_bs_round_trips[76.23-0.193]": [
+0.0,
+8
+],
+"tests/test_sms_theory.py::test_theoretical_tails_go_as_v_minus_4": [
+0.36,
+19
+],
+"tests/test_sms_theory.py::test_theoretical_transmission_integral_runs_and_is_sane[<lambda>0]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_theoretical_transmission_integral_runs_and_is_sane[<lambda>1]": [
+0.0,
+3
+],
+"tests/test_sms_theory.py::test_transmission_integral_matches_the_convolution_it_stands_for[<lambda>0]": [
+0.06,
+0
+],
+"tests/test_sms_theory.py::test_transmission_integral_matches_the_convolution_it_stands_for[<lambda>1]": [
+0.05,
+0
+],
+"tests/test_sms_theory.py::test_transmission_integral_matches_the_convolution_it_stands_for[<lambda>2]": [
+0.05,
+0
+],
+"tests/test_source_norm.py::test_a_cms_and_an_sms_section_each_keep_their_own_form": [
+0.0,
+0
+],
+"tests/test_source_norm.py::test_cms_line_depth_follows_the_exact_integral": [
+0.32,
+0
+],
+"tests/test_source_norm.py::test_cms_map_gives_every_node_a_positive_weight[32]": [
+0.0,
+0
+],
+"tests/test_source_norm.py::test_cms_map_gives_every_node_a_positive_weight[64]": [
+0.0,
+0
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[deep singlet-32]": [
+0.13,
+0
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[deep singlet-48]": [
+0.11,
+3
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[deep singlet-56]": [
+0.11,
+12
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[deep singlet-64]": [
+0.12,
+0
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[thick alpha-Fe-32]": [
+0.14,
+0
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[thick alpha-Fe-48]": [
+0.14,
+5
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[thick alpha-Fe-56]": [
+0.14,
+18
+],
+"tests/test_source_norm.py::test_cms_map_is_closer_to_the_exact_integral_than_the_former_one[thick alpha-Fe-64]": [
+0.15,
+0
+],
+"tests/test_source_norm.py::test_cms_search_norm_follows_g_and_jn": [
+0.01,
+0
+],
+"tests/test_source_norm.py::test_nbaseline_sections_cms_adds_and_sms_divides[CMS]": [
+0.0,
+0
+],
+"tests/test_source_norm.py::test_nbaseline_sections_cms_adds_and_sms_divides[SMS]": [
+0.0,
+0
+],
+"tests/test_source_norm.py::test_single_spectrum_cms_adds_and_sms_divides[CMS]": [
+0.0,
+0
+],
+"tests/test_source_norm.py::test_single_spectrum_cms_adds_and_sms_divides[SMS]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_bad_file_is_refused_with_the_line[#N1\\n4,2 77\\n-line 2: '4,2' is not a number .*decimal point]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_bad_file_is_refused_with_the_line[#N1\\n4.2 inf\\n-line 2: 'inf' is not a finite number]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_bad_file_is_refused_with_the_line[#basename\\n#N1\\n4.2\\n-line 2: the line after #basename is missing]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_bad_file_is_refused_with_the_line[#basename\\n-the line after #basename is missing]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_bad_file_is_refused_with_the_line[#basename\\na.dat\\n#basename\\na.dat\\n-#basename appears twice]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_bare_path_with_parentheses_is_still_a_path": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_a_broken_entry_is_refused_not_cut_into_fragments[['C:\\\\Users\\\\yaroslav\\\\PycharmProjects\\\\SYNCmoss\\\\syncmoss\\\\syncmoss\\\\parameters\\\\Calibration.dat', 0.5), ('C:\\\\Users\\\\yaroslav\\\\PycharmProjects\\\\SYNCmoss\\\\syncmoss\\\\syncmoss\\\\parameters\\\\Calibration.dat', 2)]]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_a_broken_entry_is_refused_not_cut_into_fragments[[('C:\\\\Users\\\\yaroslav\\\\PycharmProjects\\\\SYNCmoss\\\\syncmoss\\\\syncmoss\\\\parameters\\\\Calibration.dat' 0.5)]]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_a_broken_entry_is_refused_not_cut_into_fragments[[('C:\\\\Users\\\\yaroslav\\\\PycharmProjects\\\\SYNCmoss\\\\syncmoss\\\\syncmoss\\\\parameters\\\\Calibration.dat', 0.5), ('C:\\\\Users\\\\yaroslav\\\\PycharmProjects\\\\SYNCmoss\\\\syncmoss\\\\syncmoss\\\\parameters\\\\Calibration.dat', 2]]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_a_broken_path_box_is_reported_as_such": [
+2.66,
+86
+],
+"tests/test_spectrum_parameters.py::test_a_file_is_saved_only_when_it_can_be_read_back": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_missing_value_is_reported_before_the_start": [
+2.35,
+63
+],
+"tests/test_spectrum_parameters.py::test_a_name_without_a_value_is_left_for_the_evaluation_to_report": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_path_box_item_that_is_neither_is_refused[[('a.dat', 'x')]]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_path_box_item_that_is_neither_is_refused[[('a.dat', 1e999)]]": [
+0.0,
+26
+],
+"tests/test_spectrum_parameters.py::test_a_path_box_item_that_is_neither_is_refused[[('a.dat', True)]]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_path_box_item_that_is_neither_is_refused[[4.2]]": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_a_sequence_records_the_values_it_used": [
+5.14,
+93
+],
+"tests/test_spectrum_parameters.py::test_a_sequence_spectrum_is_fitted_with_its_own_values": [
+2.11,
+86
+],
+"tests/test_spectrum_parameters.py::test_backslashes_in_the_path_box_are_path_separators[C:\\\\data\\\\new\\\\a.dat-entries2]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_backslashes_in_the_path_box_are_path_separators[['C:\\\\data\\\\new\\\\a.dat']-entries1]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_backslashes_in_the_path_box_are_path_separators[['C:\\\\data\\\\run1\\\\']-entries3]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_backslashes_in_the_path_box_are_path_separators[['\\\\\\\\\\\\\\\\server\\\\\\\\share\\\\\\\\a.dat']-entries6]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_backslashes_in_the_path_box_are_path_separators[[('C:\\\\Users\\\\yaroslav\\\\PycharmProjects\\\\SYNCmoss\\\\syncmoss\\\\syncmoss\\\\parameters\\\\Calibration.dat', 0.5), ('C:\\\\Users\\\\yaroslav\\\\PycharmProjects\\\\SYNCmoss\\\\syncmoss\\\\syncmoss\\\\parameters\\\\Calibration.dat', 2)]-entries0]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_backslashes_in_the_path_box_are_path_separators[[('C:\\\\\\\\data\\\\\\\\a.dat', 1)]-entries4]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_backslashes_in_the_path_box_are_path_separators[[('\\\\\\\\server\\\\share\\\\a.dat', 1)]-entries5]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_by_basename_each_spectrum_takes_its_own_column": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_by_basename_refusals": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_by_order_every_line_needs_one_number_per_spectrum": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_comments_are_skipped_and_spaces_and_tabs_both_separate": [
+0.01,
+0
+],
+"tests/test_spectrum_parameters.py::test_every_spectrum_of_a_sequence_is_checked": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_loading_a_file_rewrites_the_path_box": [
+2.07,
+52
+],
+"tests/test_spectrum_parameters.py::test_n_stays_the_position_when_the_numbers_are_not_1_to_n": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_number_needs_basename": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_number_reorders_the_spectra": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_only_whole_names_are_replaced": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_plain_paths_are_written_exactly_as_choose_file_writes_them": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_read_model_uses_the_first_spectrum_of_the_path_box": [
+2.2,
+74
+],
+"tests/test_spectrum_parameters.py::test_the_names_are_refused_with_nbaseline": [
+2.08,
+69
+],
+"tests/test_spectrum_parameters.py::test_the_names_are_replaced_by_the_values_in_parentheses": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples['a.dat', 'b.dat'-entries3]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[('a.dat', 4.2)-entries2]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[-entries8]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[C:/data/a.dat-entries5]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[Model_6-entries7]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[['a.dat',\\n'b.dat']-entries0]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[[('a.dat', 4.2, 0), 'b.dat']-entries1]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[[('a.dat',)]-entries4]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_path_box_takes_paths_and_tuples[a.dat, b.dat-entries6]": [
+0.0,
+4
+],
+"tests/test_spectrum_parameters.py::test_the_saved_file_has_basename_number_and_named_lines": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_tuples_round_trip_through_the_path_box": [
+0.0,
+0
+],
+"tests/test_spectrum_parameters.py::test_windows_paths_round_trip_through_the_path_box": [
+0.0,
+0
+],
+"tests/test_support_math.py::test_expression_error_all_fixed_is_zero": [
+0.0,
+1
+],
+"tests/test_support_math.py::test_expression_error_ignores_fixed_parameters": [
+0.0,
+1
+],
+"tests/test_support_math.py::test_expression_error_is_unchanged[False-1-0.0]": [
+0.02,
+2
+],
+"tests/test_support_math.py::test_expression_error_is_unchanged[False-2-0.3]": [
+0.0,
+2
+],
+"tests/test_support_math.py::test_expression_error_is_unchanged[False-3-0.7]": [
+0.0,
+2
+],
+"tests/test_support_math.py::test_expression_error_is_unchanged[True-1-0.0]": [
+0.01,
+2
+],
+"tests/test_support_math.py::test_expression_error_is_unchanged[True-2-0.3]": [
+0.0,
+2
+],
+"tests/test_support_math.py::test_expression_error_is_unchanged[True-3-0.7]": [
+0.0,
+2
+],
+"tests/test_support_math.py::test_expression_error_scales_with_coefficient": [
+0.0,
+1
+],
+"tests/test_support_math.py::test_expression_error_sum_of_two_free_params": [
+0.0,
+1
+],
+"tests/test_support_math.py::test_intensity_errors_are_unchanged": [
+0.18,
+0
+],
+"tests/test_support_math.py::test_intensity_errors_of_many_components_are_quick": [
+1.38,
+0
+],
+"tests/test_support_math.py::test_intensity_percentage_basic_split": [
+0.0,
+1
+],
+"tests/test_support_math.py::test_intensity_percentage_empty_indices": [
+0.0,
+1
+],
+"tests/test_support_math.py::test_intensity_percentage_zero_total_returns_zeros": [
+0.0,
+1
+],
+"tests/test_support_math.py::test_partial_derivative_of_quadratic": [
+0.0,
+1
+],
+"tests/test_table_marks.py::test_bounds_are_inclusive_and_an_empty_bound_is_none": [
+1.98,
+74
+],
+"tests/test_table_marks.py::test_finished_link_is_highlighted": [
+2.05,
+25
+],
+"tests/test_table_marks.py::test_fit_button_refuses_to_start": [
+1.88,
+51
+],
+"tests/test_table_marks.py::test_fixed_and_baseline_values_are_checked_too": [
+1.98,
+59
+],
+"tests/test_table_marks.py::test_highlight_survives_table_refreshes": [
+2.11,
+36
+],
+"tests/test_table_marks.py::test_links_and_distribution_targets_are_not_checked": [
+2.18,
+60
+],
+"tests/test_table_marks.py::test_nnr_follows_the_mode": [
+1.97,
+70
+],
+"tests/test_table_marks.py::test_no_model_starts_out_of_its_own_bounds[False]": [
+2.89,
+96
+],
+"tests/test_table_marks.py::test_no_model_starts_out_of_its_own_bounds[True]": [
+2.8,
+43
+],
+"tests/test_table_marks.py::test_other_nnr_values_are_kept[False-=[0,0.5]]": [
+1.96,
+59
+],
+"tests/test_table_marks.py::test_other_nnr_values_are_kept[True-5]": [
+2.09,
+47
+],
+"tests/test_table_marks.py::test_theme_switch_rewrites_the_log_box": [
+2.13,
+50
+],
+"tests/test_table_marks.py::test_value_outside_its_bounds_blocks_the_fit": [
+3.21,
+93
+],
+"tests/test_take_result.py::test_a_preset_keeps_its_exact_digits": [
+2.42,
+60
+],
+"tests/test_take_result.py::test_a_saved_model_loads_back_with_every_digit": [
+3.54,
+74
+],
+"tests/test_take_result.py::test_a_value_field_keeps_every_digit_and_shows_three_decimals": [
+2.24,
+112
+],
+"tests/test_take_result.py::test_an_edit_makes_the_typed_text_the_value_and_undo_brings_the_digits_back": [
+2.02,
+87
+],
+"tests/test_take_result.py::test_every_digit_is_kept_on_request_still_without_exponent": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_fitted_recon_weights_go_back_with_every_digit": [
+0.0,
+0
+],
+"tests/test_take_result.py::test_fitted_values_keep_every_digit_and_show_three_decimals": [
+2.34,
+90
+],
+"tests/test_take_result.py::test_three_decimals_and_never_an_exponent[-1.5e-05-0]": [
+0.01,
+7
+],
+"tests/test_take_result.py::test_three_decimals_and_never_an_exponent[0.098-0.098]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_three_decimals_and_never_an_exponent[0.123456789-0.123]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_three_decimals_and_never_an_exponent[1.5e-05-0]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_three_decimals_and_never_an_exponent[1234567.891234-1234567.891]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_three_decimals_and_never_an_exponent[1e+16-10000000000000000]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_three_decimals_and_never_an_exponent[33.0-33]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_user_bounds_survive_a_parameter_stopping_on_them": [
+2.33,
+52
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[-]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[0.123456789-0.123]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[1.0-1.0]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[1.5e-05-0]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[=(0.05)-=(0.05)]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[=(0.123456)-=(0.123)]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[=[,1]-=[,1]]": [
+0.0,
+7
+],
+"tests/test_take_result.py::test_what_a_value_field_shows[=[9,0.123456]-=[9,0.123456]]": [
+0.0,
+7
+],
+"tests/test_texture_s1.py::test_am_changes_offaxis_thick_spectrum[MDGD]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_changes_offaxis_thick_spectrum[Relax_2S]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_changes_offaxis_thick_spectrum[Sextet]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_has_no_effect_when_axis_in_polarization_plane[MDGD]": [
+0.16,
+2
+],
+"tests/test_texture_s1.py::test_am_has_no_effect_when_axis_in_polarization_plane[Relax_2S]": [
+0.02,
+2
+],
+"tests/test_texture_s1.py::test_am_has_no_effect_when_axis_in_polarization_plane[Sextet]": [
+0.0,
+2
+],
+"tests/test_texture_s1.py::test_am_sign_observable_for_sms_not_cms[MDGD]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_sign_observable_for_sms_not_cms[Relax_2S]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_sign_observable_for_sms_not_cms[Sextet]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_vanishes_in_thin_limit[MDGD]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_vanishes_in_thin_limit[Relax_2S]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_am_vanishes_in_thin_limit[Sextet]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_powder_limit_is_orientation_independent[MDGD]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_powder_limit_is_orientation_independent[Relax_2S]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_powder_limit_is_orientation_independent[Sextet]": [
+0.0,
+0
+],
+"tests/test_texture_s1.py::test_s1_clamped_at_planar_texture": [
+0.0,
+16
+],
+"tests/test_texture_s1.py::test_s1_is_fraction_of_cauchy_schwarz_bound[-0.25]": [
+0.0,
+16
+],
+"tests/test_texture_s1.py::test_s1_is_fraction_of_cauchy_schwarz_bound[-0.5]": [
+0.0,
+16
+],
+"tests/test_texture_s1.py::test_s1_is_fraction_of_cauchy_schwarz_bound[0.0]": [
+0.0,
+16
+],
+"tests/test_texture_s1.py::test_s1_is_fraction_of_cauchy_schwarz_bound[0.3]": [
+0.0,
+16
+],
+"tests/test_texture_s1.py::test_s1_is_fraction_of_cauchy_schwarz_bound[0.5]": [
+0.0,
+16
+],
+"tests/test_texture_s1.py::test_s1_is_fraction_of_cauchy_schwarz_bound[1.0]": [
+0.0,
+16
+],
+"tests/test_texture_s1.py::test_s1_single_crystal_is_unity": [
+0.0,
+16
+],
+"tests/test_theory_search.py::test_find_ignores_what_is_stored": [
+20.03,
+117
+],
+"tests/test_theory_search.py::test_find_stores_a_usable_physical_shape": [
+22.13,
+132
+],
+"tests/test_theory_search.py::test_refine_continues_from_what_is_stored": [
+16.37,
+110
+],
+"tests/test_theory_search.py::test_refine_without_anything_stored_uses_the_defaults": [
+15.79,
+118
+],
+"tests/test_theory_search.py::test_the_conventional_search_leaves_the_theory_alone": [
+0.01,
+0
+],
+"tests/test_theory_search.py::test_the_theory_search_leaves_the_gaussians_alone": [
+20.73,
+108
+],
+"tests/test_thick_gui.py::test_corr_after_recon_is_allowed": [
+2.09,
+24
+],
+"tests/test_thick_gui.py::test_corr_requires_distr_or_corr": [
+2.24,
+67
+],
+"tests/test_thick_gui.py::test_distr_after_baseline_is_blocked": [
+2.03,
+74
+],
+"tests/test_thick_gui.py::test_distr_after_component_is_allowed": [
+2.21,
+61
+],
+"tests/test_thick_gui.py::test_distr_after_expression_is_blocked": [
+1.99,
+83
+],
+"tests/test_thick_gui.py::test_distr_after_layer_is_blocked": [
+2.01,
+59
+],
+"tests/test_thick_gui.py::test_layer_selection_has_no_parameters": [
+3.33,
+89
+],
+"tests/test_thick_gui.py::test_loading_an_old_hamiltonian_model_file_upgrades_it[Hamilton_mc-values1-tail1]": [
+3.47,
+40
+],
+"tests/test_thick_gui.py::test_loading_an_old_hamiltonian_model_file_upgrades_it[Hamilton_mc-values2-tail2]": [
+3.59,
+0
+],
+"tests/test_thick_gui.py::test_loading_an_old_hamiltonian_model_file_upgrades_it[Hamilton_pc-values0-tail0]": [
+3.58,
+10
+],
+"tests/test_thick_gui.py::test_recon_after_baseline_is_blocked": [
+2.05,
+51
+],
+"tests/test_thick_gui.py::test_recon_after_component_is_allowed": [
+2.06,
+60
+],
+"tests/test_thick_gui.py::test_recon_num_and_reg_locked_by_default": [
+2.06,
+46
+],
+"tests/test_thick_gui.py::test_recon_weight_column_hidden": [
+2.16,
+92
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[ASM]": [
+2.07,
+28
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Doublet]": [
+2.09,
+49
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Hamiltonian]": [
+1.99,
+39
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[MDGD]": [
+2.15,
+5
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Relax_2S]": [
+2.21,
+39
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Relax_MS]": [
+2.18,
+4
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[SCDW]": [
+2.05,
+0
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Sextet]": [
+1.91,
+1
+],
+"tests/test_thick_gui.py::test_thick_non_angle_param_not_force_locked": [
+2.1,
+0
+]
+}
+}

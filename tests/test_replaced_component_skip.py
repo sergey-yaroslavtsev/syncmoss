@@ -14,7 +14,7 @@ import syncmoss.models as m5
 from syncmoss.Calibration import MulCoCMS
 from syncmoss.constants import number_of_baseline_parameters as NB
 
-from conftest import FROZEN_PARAMETERS
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 with open(os.path.join(os.path.dirname(__file__), "golden_models.json")) as _f:
     _GOLDEN = json.load(_f)["cases"]
@@ -46,11 +46,6 @@ CASES = {
 }
 
 
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*a) for a in iterable]
-
-
 @pytest.mark.parametrize("name", sorted(CASES))
 def test_skipping_the_replaced_component_changes_nothing(name, monkeypatch):
     model, comp, Distri, Cor, Recon, lengths = CASES[name]
@@ -59,7 +54,7 @@ def test_skipping_the_replaced_component_changes_nothing(name, monkeypatch):
 
     def ti():
         m5._NODE_SUMS.clear()
-        return np.asarray(m5.TI(x, p, model, JN, _SerialPool(), 0.0, MulCoCMS, _G, list(Distri), list(Cor),
+        return np.asarray(m5.TI(x, p, model, JN, SerialPool(), 0.0, MulCoCMS, _G, list(Distri), list(Cor),
                                 Met=1, Norm=1, Recon=list(Recon), lengths=lengths), dtype=float)
 
     monkeypatch.setattr(m5, 'SKIP_REPLACED_COMPONENT', False)

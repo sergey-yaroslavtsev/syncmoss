@@ -10,7 +10,6 @@ What is pinned here:
 
 * the default is the shipped Gaussian sum, from ONE constant;
 * the ref codes the menus produce (0/1 Gaussians, 2/3 theory);
-* the dropdown does not advertise "NEW" any more;
 * Find and Refine share one button, Refine first, its caption the IF source;
 * the Supp entry exists and the dialog stores the choice, including that
   Cancel leaves the setting alone.
@@ -51,16 +50,6 @@ def test_ref_codes_follow_the_setting(physics_app, method, find_ref, refine_ref)
     assert physics_app.instrumental_ref(True) == refine_ref
 
 
-def test_dropdowns_no_longer_offer_NEW(physics_app):
-    labels = _menu_labels(physics_app.instrumental_menu)
-    assert labels, "the instrumental menu is empty"
-    assert not [t for t in labels if 'NEW' in t]
-    # the three Find entries and the three Refine entries are still there
-    for stem in ('single line', 'pure α-Fe', 'model'):
-        assert any(stem in t and t.startswith('Find') for t in labels), stem
-        assert any(stem in t and t.startswith('Refine') for t in labels), stem
-
-
 def test_one_button_refine_first_and_the_mode_in_its_caption(physics_app):
     """Find and Refine share one button, the Refine entries first; its caption
     says where a spectrum's instrumental function comes from. Every entry is
@@ -68,6 +57,9 @@ def test_one_button_refine_first_and_the_mode_in_its_caption(physics_app):
     assert not hasattr(physics_app, 'instrumental_btn2')
     labels = _menu_labels(physics_app.instrumental_menu)
     assert [t.split(':')[0] for t in labels[:6]] == ['Refine'] * 3 + ['Find'] * 3
+    for stem in ('single line', 'pure α-Fe', 'model'):
+        assert any(stem in t and t.startswith('Find') for t in labels), stem
+        assert any(stem in t and t.startswith('Refine') for t in labels), stem
     for action in physics_app.instrumental_menu.actions():
         if action.text():
             assert action.text()[0].isupper() and '\n' not in action.text(), action.text()

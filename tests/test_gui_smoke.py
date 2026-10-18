@@ -1,58 +1,42 @@
 """Head-less smoke tests for the SYNCmoss GUI.
 
-These build the real :class:`PhysicsApp` main window (offscreen) and exercise the
-GUI-facing paths that the refactor touched: lazy-attribute initialisation, the
-parameters table -> ``read_model`` bridge, the ``resizeEvent`` guard, the results
-table guards, and synchronous spectrum display. They intentionally avoid the
-asynchronous fit, which needs a multiprocessing pool and is covered by the manual
-smoke test (``python -m syncmoss.main --test``).
+These build the real :class:`PhysicsApp` main window (offscreen) and check what a
+new window holds, the parameters table -> ``read_model`` bridge, saving and
+reloading a model, the theme switch and synchronous spectrum display. The
+asynchronous fit is covered by ``syncmoss_test.py`` (the ``--test`` flow).
 """
-import os
-
-import numpy as np
 import pytest
 
-from syncmoss.constants import number_of_baseline_parameters
+from syncmoss.constants import number_of_baseline_parameters, numro
 from syncmoss.model_io import read_model, _save_model_to_file, load_model_from_path
 from syncmoss.supp_menu import theme_action_text
 
 pytestmark = pytest.mark.gui
 
 
-def test_window_builds_with_expected_widgets(physics_app):
+def test_a_new_window_starts_empty(physics_app):
+    """Every row of the parameters table, nothing plotted or fitted yet, an
+    empty results table, a model of the baseline alone -- and it resizes
+    (resizeEvent reads the splitter). One window for all: each costs ~2 s."""
     w = physics_app
-    # Parameters table has numro (50) rows incl. the baseline row.
-    assert len(w.params_table.row_widgets) == 50
-    assert w.results_table is not None
-
-
-def test_lazy_attributes_initialised(physics_app):
-    """The getattr/hasattr -> attribute refactor must initialise these up-front."""
-    w = physics_app
-    assert w.last_plot_data is None
-    assert w.last_fitting_data is None
-    assert w._main_splitter is not None
-    assert w._left_panel_ideal_width is not None
+    assert len(w.params_table.row_widgets) == numro           # incl. the baseline row
+    assert w.last_plot_data is None and w.last_fitting_data is None
+    assert w._main_splitter is not None and w._left_panel_ideal_width is not None
     assert w.toggle_dat_ins_action is not None
     assert isinstance(w.gridcolor, str) and w.gridcolor
 
+    rt = w.results_table
+    assert rt.parameter_names == [] and rt.covariance_matrix is None
+    assert rt.errors is None and rt.fit_parameters is None
+    intensities, errors = rt._calculate_intensities()        # nothing to compute yet
+    assert intensities.size == 0 and errors.size == 0
 
-def test_results_table_attributes_initialised(physics_app):
-    rt = physics_app.results_table
-    assert rt.parameter_names == []
-    assert rt.covariance_matrix is None
-    assert rt.errors is None
-    assert rt.fit_parameters is None
-    # Guard converted from hasattr -> attribute: must early-return cleanly.
-    intensities, errors = rt._calculate_intensities()
-    assert intensities.size == 0
-    assert errors.size == 0
-
-
-def test_read_model_empty_state_returns_only_baseline(physics_app):
-    model, p, *_ = read_model(physics_app)
+    model, p, *_ = read_model(w)
     assert model == []
-    assert len(p) == number_of_baseline_parameters  # 8
+    assert len(p) == number_of_baseline_parameters
+
+    w.resize(1700, 950)
+    w.resize(1300, 720)
 
 
 def test_select_model_then_read_model(physics_app):
@@ -68,6 +52,20 @@ def test_select_model_then_read_model(physics_app):
     assert model == ["Sextet"]
     # baseline (8) + polarized Sextet (14) parameters.
     assert len(p) == number_of_baseline_parameters + 14
+
+
+def test_fields_share_the_tables_two_validators(physics_app):
+    """Every value and bound field uses one of two validators owned by the
+    table. One validator per field was never freed: ~4000 per window, more at
+    every model change -- the memory a parallel test run ran out of."""
+    from PySide6.QtGui import QValidator
+    from PySide6.QtWidgets import QLineEdit
+    pt = physics_app.params_table
+    for model in ("Sextet", "Distr", "Doublet"):
+        pt.select_model(1, model)
+    assert len(pt.findChildren(QValidator)) == 2
+    used = {f.validator() for f in pt.findChildren(QLineEdit) if f.validator() is not None}
+    assert used == {pt._value_validator, pt._bound_validator}
 
 
 def test_save_model_drops_empty_rows_and_reloads(physics_app, tmp_path):
@@ -99,21 +97,6 @@ def test_save_model_drops_empty_rows_and_reloads(physics_app, tmp_path):
     assert len(p) == number_of_baseline_parameters + 14 + 9
 
 
-def test_resize_event_does_not_crash(physics_app):
-    # resizeEvent reads _main_splitter / _left_panel_ideal_width (now plain attrs).
-    physics_app.resize(1700, 950)
-    physics_app.resize(1300, 720)
-
-
-def test_toggle_use_dat_instrumental_action_text(physics_app):
-    w = physics_app
-    # Exercises the converted `if self.toggle_dat_ins_action is None` guard.
-    before = w.use_dat_instrumental_metadata
-    w.toggle_use_dat_instrumental()
-    assert w.use_dat_instrumental_metadata is (not before)
-    assert w.toggle_dat_ins_action.text()  # text was updated, not crashed
-
-
 def test_theme_toggle_lives_in_the_supp_menu(physics_app):
     """The light/dark switch is a Supp-menu entry, not a top-row button."""
     w = physics_app
@@ -136,13 +119,9 @@ def test_theme_toggle_lives_in_the_supp_menu(physics_app):
 
 
 def test_show_spectrum_calibration_dat(physics_app):
-    """Showing the bundled Calibration.dat must not raise or log an error."""
+    """Showing the tests' Calibration.dat must not raise or log an error."""
     w = physics_app
-    cal_path = w.calibration_path
-    if not os.path.exists(cal_path):
-        pytest.skip(f"Calibration.dat not found at {cal_path}")
-
-    w.process_path.setPlainText(repr([cal_path]))
+    w.process_path.setPlainText(repr([w.calibration_path]))
     w.show_pressed()  # synchronous
 
     # The log turns red on error; success leaves it non-red.

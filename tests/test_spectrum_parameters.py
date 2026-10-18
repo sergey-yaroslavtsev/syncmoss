@@ -20,7 +20,7 @@ from syncmoss.spectrum_parameters import (
     write_parameters_file, sequence_problems,
 )
 
-from conftest import redirect_params_dir_to_tmp
+from conftest import redirect_params_dir_to_tmp, SerialPool
 
 DELTA = NB + 1      # flat index of the Sextet's delta (row 1, column 1)
 
@@ -243,12 +243,6 @@ def test_a_file_is_saved_only_when_it_can_be_read_back():
 
 # --- through the application ------------------------------------------------------
 
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
-
 
 def _linked_delta(app, tmp_path, text):
     """Sextet with its delta linked to an Expression row holding *text*; returns its slot."""
@@ -328,7 +322,7 @@ def test_a_sequence_spectrum_is_fitted_with_its_own_values(physics_app, tmp_path
 
     monkeypatch.setattr(fitting_io.mi, 'minimi_hi', capture)
     fitting_io.fit_single_spectrum(
-        app, app.calibration_path, _SerialPool(),
+        app, app.calibration_path, SerialPool(),
         spectrum_parameters=SpectrumParameters(2, (0.25,), app.calibration_path))
     assert received['p0'][slot] == pytest.approx(0.45)
     assert received['p0'][DELTA] == pytest.approx(0.45)
@@ -353,7 +347,7 @@ def test_a_sequence_records_the_values_it_used(physics_app, tmp_path):
     app.process_path.setPlainText(format_path_box(entries))
     save_base = os.path.join(str(tmp_path), 'result', 'result')
     app.save_path.setText(save_base)
-    app.pool = _SerialPool()
+    app.pool = SerialPool()
     app.inprogress = True
     delta_name = app.params_table.get_parameter_names()[1][1]
     os.makedirs(os.path.dirname(save_base))

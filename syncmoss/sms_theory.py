@@ -1817,9 +1817,17 @@ def describe_ins(INS):
 # 13.  SELF-TESTS
 # ======================================================================
 
-def selftest(verbose=True):
-    """Validation suite.  Returns True when every check passes."""
+def selftest(verbose=True, quick=False):
+    """Validation suite.  Returns True when every check passes.
+
+    quick: the same checks on coarser grids where they allow it -- the
+    absorber-area invariance gives the same A/A_delta to 1e-5 on a 10 times
+    coarser grid; the closed-form primitive grids take 5 times fewer points
+    and stay over 10 times inside their tolerances. About 7 s and 0.25 GB
+    instead of 45 s and 1.3 GB; the test-suite runs this.
+    """
     ok = [True]
+    thin = 5 if quick else 1
 
     def chk(name, cond, extra=""):
         cond = bool(cond)
@@ -2045,7 +2053,7 @@ def selftest(verbose=True):
 
     print("\n--- rational primitive ------------------------------------------")
     v1, g1, v2, g2 = 4.8, 2.9, 23.0, 9.1
-    Eg2 = np.linspace(-4.0e4, 4.0e4, 4_000_001)
+    Eg2 = np.linspace(-4.0e4, 4.0e4, 4_000_000 // thin + 1)
     Sr = rational_if(Eg2, v1, g1, v2, g2)
     area = float(_trapz(Sr, Eg2))
     cen = float(_trapz(Eg2 * Sr, Eg2) / area)
@@ -2058,7 +2066,7 @@ def selftest(verbose=True):
         f"{var:.4f} vs {var_f:.4f}")
 
     # tail integral must be the exact antiderivative
-    Ec = np.linspace(-3.0e4, 3.0e4, 3_000_001)
+    Ec = np.linspace(-3.0e4, 3.0e4, 3_000_000 // thin + 1)
     Sc = rational_if(Ec, v1, g1, v2, g2)
     for Ex in (-40.0, -5.0, 0.0, 7.0, 55.0):
         num = float(_trapz(Sc[Ec >= Ex], Ec[Ec >= Ex]))
@@ -2074,7 +2082,7 @@ def selftest(verbose=True):
     chk("tail integral at the symmetry point of a squared Lorentzian",
         abs(float(rational_tail_integral(3.0, 3.0, 2.0, 3.0, 2.0)) - 0.5) < 1e-14,
         f"{float(rational_tail_integral(3.0, 3.0, 2.0, 3.0, 2.0)):.15f}")
-    Ed = np.linspace(-6000.0, 6000.0, 6_000_001)
+    Ed = np.linspace(-6000.0, 6000.0, 6_000_000 // thin + 1)
     Sd = rational_if(Ed, 3.0, 2.0, 3.0, 2.0)
     for Ex in (-4.0, 0.0, 3.0, 9.0):
         chk(f"    degenerate branch vs quadrature at E={Ex:+.0f}",
@@ -2193,8 +2201,8 @@ def selftest(verbose=True):
 
     print("\n--- absorber-area invariance ------------------------------------")
     ta = 2.5
-    Ea = np.linspace(-1500, 1500, 60001)
-    va = np.linspace(-1200, 1200, 24001)
+    Ea = np.linspace(-1500, 1500, 6001 if quick else 60001)
+    va = np.linspace(-1200, 1200, 2401 if quick else 24001)
     for nm, Sc_ in (("exact S(E)", sms_spectrum(Ea, 70.0, cry, SMSParams(B_s=0.50))),
                     ("squared Lorentzian",
                      rational_if(Ea, 0, GAMMA0_NEV / 2, 0, GAMMA0_NEV / 2)),

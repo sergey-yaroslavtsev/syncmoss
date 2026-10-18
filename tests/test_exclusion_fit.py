@@ -15,18 +15,11 @@ from syncmoss import exclusion_regions as er
 from syncmoss import fitting_io, one_model
 from syncmoss.spectrum_io import load_spectrum, save_spectrum_with_metadata, process_without_excluded
 
-from conftest import FROZEN_PARAMETERS
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 pytestmark = [pytest.mark.gui]
 
 REGIONS = "-12:-8; -3:-2; 1:2"
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _capture_minimiser(monkeypatch):
@@ -86,7 +79,7 @@ def test_the_minimiser_gets_only_the_points_outside_the_regions(physics_app, tmp
     keep = er.kept(A, regions)
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, path, SerialPool())
 
     assert result['success'], result.get('message')
     assert 0 < keep.sum() < len(A)
@@ -106,7 +99,7 @@ def test_the_model_at_the_fitted_points_is_the_full_model_there(physics_app, tmp
     A, _ = _loaded(app, path)
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, path, SerialPool())
 
     assert np.array_equal(calls[0]['model'], np.asarray(result['SPC_f'], dtype=float)[er.kept(A, regions)])
 
@@ -120,7 +113,7 @@ def test_without_regions_every_point_is_fitted(physics_app, tmp_path, monkeypatc
     A, B = _loaded(app, path)
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, path, SerialPool())
 
     assert app.exclusion_regions_in_use() == ()
     assert np.array_equal(calls[0]['x'], A) and np.array_equal(calls[0]['y'], B)
@@ -133,12 +126,12 @@ def test_the_regions_fit_like_the_spectrum_saved_without_their_points(physics_ap
     path, = _spectra(app, tmp_path)
     regions = _apply(app, REGIONS)
     calls = _capture_minimiser(monkeypatch)
-    fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    fitting_io.fit_single_spectrum(app, path, SerialPool())
 
     saved = str(tmp_path / "excl_spectrum_1.dat")
     assert process_without_excluded(app, path, saved, regions) == len(calls[0]['x'])
     app.toolbar.exclusion_action.trigger()      # off: the saved file has no excluded points left
-    fitting_io.fit_single_spectrum(app, saved, _SerialPool())
+    fitting_io.fit_single_spectrum(app, saved, SerialPool())
 
     assert np.array_equal(calls[1]['x'], calls[0]['x'])
     assert np.array_equal(calls[1]['y'], calls[0]['y'])
@@ -155,7 +148,7 @@ def test_a_fit_with_more_free_parameters_than_points_left_is_not_started(physics
     _apply(app, f"{v[0] - 1}:{(v[-4] + v[-3]) / 2}")
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, path, SerialPool())
 
     assert not result['success'] and not calls
     assert result['message'].startswith("3 points are left after the exclusion regions, but ")
@@ -169,7 +162,7 @@ def test_a_spectrum_with_every_point_excluded_is_named(physics_app, tmp_path, mo
     _apply(app, "-100:100")
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, path, SerialPool())
 
     assert not result['success'] and not calls
     assert "spectrum_1.dat" in result['message']
@@ -182,7 +175,7 @@ def test_the_free_parameters_counted_are_those_the_fit_varies(physics_app, tmp_p
     pt.select_model(2, 'Doublet')
     path, = _spectra(app, tmp_path)
     calls = _capture_minimiser(monkeypatch)
-    fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    fitting_io.fit_single_spectrum(app, path, SerialPool())
     inputs = fitting_io.read_fit_inputs(app)
 
     assert fitting_io.free_parameter_count(inputs) == len(calls[0]['p0']) - len(np.ravel(calls[0]['fix']))
@@ -200,7 +193,7 @@ def test_nbaseline_spectra_each_keep_their_own_points(physics_app, tmp_path, mon
     keep = er.kept(A, regions)
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, paths[0], _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, paths[0], SerialPool())
 
     assert result['success'], result.get('message')
     assert np.array_equal(calls[0]['x'], np.concatenate([A[keep], A[keep]]))
@@ -219,7 +212,7 @@ def test_a_recon_adds_its_smoothness_rows_after_the_fitted_points(physics_app, t
     keep = er.kept(A, regions)
     calls = _capture_minimiser(monkeypatch)
 
-    result = fitting_io.fit_single_spectrum(app, path, _SerialPool())
+    result = fitting_io.fit_single_spectrum(app, path, SerialPool())
 
     assert result['success'], result.get('message')
     n_reg = calls[0]['n_reg']
@@ -238,7 +231,7 @@ def test_a_one_model_fit_uses_the_regions(physics_app, tmp_path, monkeypatch):
     calls = _capture_minimiser(monkeypatch)
 
     result = one_model.fit(app, one_model.read_template(app),
-                           one_model.spectra_of([(p, ()) for p in paths]), _SerialPool())
+                           one_model.spectra_of([(p, ()) for p in paths]), SerialPool())
 
     assert result['success'], result.get('message')
     assert np.array_equal(calls[0]['x'], np.concatenate([A[keep], A[keep]]))

@@ -28,6 +28,8 @@ from syncmoss.instrumental_io import (
     shared_dat_metadata_lines,
 )
 
+from conftest import SerialPool
+
 pytestmark = [pytest.mark.gui]
 
 # A second, deliberately different SMS instrumental function (x0 and MulCo
@@ -35,7 +37,8 @@ pytestmark = [pytest.mark.gui]
 ALT_INSEXP = "0.2 0.1 0.7 0.09 -0.06 0.43 -0.54 0.013 0.57"
 ALT_INSINT = "2.0 0.15"
 
-RAW_SAMPLE = os.path.join(os.path.dirname(__file__), "..", "for tests", "000.mca")
+# The raw alpha-Fe spectrum the calibration tests use (kept with the tests).
+RAW_SAMPLE = os.path.join(os.path.dirname(__file__), "data", "alpha_fe_sms_000.mca")
 
 
 def write_dat_variant(directory, name, source_dat, header_lines):
@@ -162,7 +165,6 @@ def test_gcms_wins_when_file_has_both(physics_app, tmp_path):
 # RAW -> DAT conversion
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not os.path.exists(RAW_SAMPLE), reason="RAW sample file not available")
 @pytest.mark.parametrize("mode", ["CMS", "SMS"])
 def test_raw_to_dat_embeds_method_metadata(physics_app, tmp_path, mode):
     from syncmoss.syncmoss_main import RawToDatThread
@@ -740,20 +742,13 @@ def test_overwrite_replaces_the_legacy_theory_line(tmp_path):
     assert read_dat_metadata_lines(str(dat)) == new
 
 
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
-
-
 def test_theory_and_gaussian_spectra_are_computed_together(physics_app, tmp_path):
     """A simultaneous fit of a #@INSth spectrum and a #@INSexp one: every
     Nbaseline section is computed with its own file's shape, exactly as that
     spectrum alone."""
     import syncmoss.models as m5
     _theory, th, ex = _theory_and_gauss_files(physics_app, tmp_path)
-    pool, JN = _SerialPool(), 16
+    pool, JN = SerialPool(), 16
     mps = [resolve_instrumental_for_file(physics_app, f) for f in (th, ex)]
     for mp in mps:
         mp["Norm"] = instrumental_io.compute_norm(pool, JN, mp)

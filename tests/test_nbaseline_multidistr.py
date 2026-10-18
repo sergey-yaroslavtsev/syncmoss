@@ -19,7 +19,7 @@ import syncmoss.models as m5
 from syncmoss.Calibration import MulCoCMS
 from syncmoss.constants import number_of_baseline_parameters as NB
 
-from conftest import FROZEN_PARAMETERS
+from conftest import FROZEN_PARAMETERS, SerialPool
 
 with open(os.path.join(os.path.dirname(__file__), "golden_models.json")) as _f:
     _SEXTET = list(json.load(_f)["cases"]["Sextet"]["params"])
@@ -37,13 +37,8 @@ _W_FIRST = np.array([0.6, 0.2, 0.1, 0.05, 0.05])
 _W_SECOND = np.array([0.05, 0.15, 0.3, 0.3, 0.2])
 
 
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*a) for a in iterable]
-
-
 def _ti(x, p, model, Distri, Recon, lengths=None):
-    return np.asarray(m5.TI(x, np.array(p, dtype=float), model, JN, _SerialPool(), 0.0, MulCoCMS, _G,
+    return np.asarray(m5.TI(x, np.array(p, dtype=float), model, JN, SerialPool(), 0.0, MulCoCMS, _G,
                             list(Distri), [0], Met=1, Norm=1, Recon=list(Recon), lengths=lengths), dtype=float)
 
 

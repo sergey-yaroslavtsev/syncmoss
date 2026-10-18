@@ -28,19 +28,14 @@ from syncmoss import instrumental_io as iio, model_io
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.spectrum_plotter import EXCLUSION_GID, spectrum_axes_of
 
+from conftest import SerialPool
+
 pytestmark = [pytest.mark.gui]
 
 SEXTET = 14
 T = NB              # the Sextet's thickness (row 1, column 0)
 DELTA = NB + 1      # its delta (row 1, column 1)
 L = NB + SEXTET     # one spectrum's section: baseline + Sextet
-
-
-class _SerialPool:
-    """Minimal drop-in for the multiprocessing pool TI expects (single process)."""
-
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
 
 
 def _searches_minimize_with(monkeypatch, minimi_hi):
@@ -113,8 +108,8 @@ def _search(app, theory=False, mode=1, refine=True):
     assert request is not None, app.log.toPlainText()
     if theory:
         return iio.instrumental_theory(app, ref=1 if refine else 0, mode=mode,
-                                       pool=_SerialPool(), request=request)
-    return iio.instrumental(app, 1 if refine else 0, mode, pool=_SerialPool(), request=request)
+                                       pool=SerialPool(), request=request)
+    return iio.instrumental(app, 1 if refine else 0, mode, pool=SerialPool(), request=request)
 
 
 # --- links follow their source ---------------------------------------------------
@@ -245,7 +240,7 @@ def test_rescaling_the_gaussians_keeps_every_spectrum_s_curve(app, tmp_path, mon
     result = _search(app)
 
     raw = returned[-1]
-    expected = m5.TI(result['A'], raw[:mod_p_len], result['model'], app.JN0, _SerialPool(),
+    expected = m5.TI(result['A'], raw[:mod_p_len], result['model'], app.JN0, SerialPool(),
                      result['x0'], result['MulCo'], raw[mod_p_len:], [], [], Recon=[],
                      lengths=result['lengths'])
     assert np.allclose(np.asarray(result['F'], dtype=float), np.asarray(expected, dtype=float),

@@ -14,10 +14,7 @@ import pytest
 from syncmoss import CMS_source_geometry_calibration as sc
 from syncmoss.constants import ALPHA_FE_FIELD, NAT_WIDTH
 
-
-class _SerialPool:
-    def starmap(self, func, iterable):
-        return [func(*args) for args in iterable]
+from conftest import SerialPool
 
 
 def _write_mca(path, counts):
@@ -88,7 +85,7 @@ def test_both_spectra_together_are_each_on_its_own():
 
     def velocity(ch, d):
         return np.where(ch <= n // 2, d[0] - d[2] * ch, d[1] - d[2] * (n - 1 - ch))
-    pool = _SerialPool()
+    pool = SerialPool()
     joint = sc.raw_counts(q, velocity, n, source, r_ratio, JN, pool)
     v = velocity(np.arange(n, dtype=float), q[sc.DRIVE])
     w = sc.distortion(n, q[sc.DISTORTION])
@@ -115,7 +112,7 @@ def test_the_drive_g_dtheta_and_f_lm_come_back_together(tmp_path):
     n, JN, G, dtheta, f_lm, diameters = 512, 32, 0.0765, 0.2, 0.73, (5.0, 20.0)
     c_high, c_static = (3.0e4, 1.5e4), (2.0e3, 1.0e3)
     v = _triangle(n, 8.0, 0.11)
-    pool = _SerialPool()
+    pool = SerialPool()
     rng = np.random.default_rng(7)
     files = []
     for name, model, ns, absorber, ch, cs in (
