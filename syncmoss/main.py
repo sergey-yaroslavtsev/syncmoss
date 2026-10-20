@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QApplication
 import syncmoss.error_reporter as error_reporter
 from syncmoss.syncmoss_main import PhysicsApp
 from syncmoss.supp_menu import apply_saved_settings
-__VERSION__ = "0.5.1"
+__VERSION__ = "0.6.0"
 
 
 def _run_gui_smoke():
