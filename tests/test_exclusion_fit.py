@@ -121,21 +121,30 @@ def test_without_regions_every_point_is_fitted(physics_app, tmp_path, monkeypatc
 
 
 def test_the_regions_fit_like_the_spectrum_saved_without_their_points(physics_app, tmp_path, monkeypatch):
+    """The saved spectrum keeps every velocity, the excluded points' counts
+    'nan': fitted, it gives the points, the counts and the model of the fit with
+    the regions -- also with the channel average on, its drive read from the
+    whole axis."""
     app = physics_app
     app.params_table.select_model(1, 'Sextet')
     path, = _spectra(app, tmp_path)
     regions = _apply(app, REGIONS)
     calls = _capture_minimiser(monkeypatch)
-    fitting_io.fit_single_spectrum(app, path, SerialPool())
-
     saved = str(tmp_path / "excl_spectrum_1.dat")
-    assert process_without_excluded(app, path, saved, regions) == len(calls[0]['x'])
-    app.toolbar.exclusion_action.trigger()      # off: the saved file has no excluded points left
-    fitting_io.fit_single_spectrum(app, saved, SerialPool())
-
-    assert np.array_equal(calls[1]['x'], calls[0]['x'])
-    assert np.array_equal(calls[1]['y'], calls[0]['y'])
-    assert np.array_equal(calls[1]['model'], calls[0]['model'])
+    for average in (False, True):
+        app.channel_average = average
+        if not app.toolbar.exclusion_action.isChecked():
+            app.toolbar.exclusion_action.trigger()
+        fitting_io.fit_single_spectrum(app, path, SerialPool())
+        if not average:
+            assert process_without_excluded(app, path, saved, regions) == len(calls[0]['x'])
+        app.toolbar.exclusion_action.trigger()      # off: the saved file has no excluded points left
+        fitting_io.fit_single_spectrum(app, saved, SerialPool())
+        with_regions, from_saved = calls[-2], calls[-1]
+        assert np.array_equal(from_saved['x'], with_regions['x'])
+        assert np.array_equal(from_saved['y'], with_regions['y'])
+        assert np.array_equal(from_saved['model'], with_regions['model'])
+    assert not np.array_equal(calls[0]['model'], calls[2]['model'])     # the average did change it
 
 
 def test_a_fit_with_more_free_parameters_than_points_left_is_not_started(physics_app, tmp_path, monkeypatch):

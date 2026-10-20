@@ -132,7 +132,7 @@ def _plot_hires_diff(ax, x, diff, reference, label=_HIRES_DIFF_LABEL):
     diff = np.asarray(diff, dtype=float)
     if diff.size == 0:
         return
-    offset = float(np.min(reference)) - float(np.max(diff))
+    offset = float(np.nanmin(reference)) - float(np.max(diff))
     ax.plot(x, diff + offset, color='cyan', label=label)
 
 
@@ -257,14 +257,14 @@ def plot_subspectra_with_positions(ax, x, y, FS, FS_pos, baseline, model_colors,
         if FS_pos and len(FS_pos) > i and len(FS_pos[i][0]) > 0:
             minpos = min(FS_pos[i][0])
             maxpos = max(FS_pos[i][0])
-            H_step = (max(y) - min(y)) * 0.04
+            H_step = (np.nanmax(y) - np.nanmin(y)) * 0.04
             line_h = ax.plot([minpos, maxpos], 
-                   [max(y) + H_step*(1+(i-skip_step)*2), max(y) + H_step*(1+(i-skip_step)*2)], 
+                   [np.nanmax(y) + H_step*(1+(i-skip_step)*2), np.nanmax(y) + H_step*(1+(i-skip_step)*2)], 
                    color=color, zorder=z)
             position_artists.extend(line_h)
             for j in range(len(FS_pos[i][0])):
                 line_v = ax.plot([FS_pos[i][0][j], FS_pos[i][0][j]], 
-                       [max(y) + H_step*((i-skip_step)*2), max(y) + H_step*(1+(i-skip_step)*2)], 
+                       [np.nanmax(y) + H_step*((i-skip_step)*2), np.nanmax(y) + H_step*(1+(i-skip_step)*2)], 
                        color=color, zorder=z)
                 position_artists.extend(line_v)
         else:
@@ -374,7 +374,7 @@ def plot_calibration(figure, A, B, C, gridcolor='white', theme=None):
     ax.grid(color=tc['gridcolor'], linestyle=(0, (1, 10)), linewidth=1)
     ax.plot(A, B, linestyle='None', marker='x', color='m', label='Data')
     ax.plot(A, C, color='r', label='Fit')
-    ax.plot(A, B - C + min(B) - max(B - C), color='lime', label='Residual')
+    ax.plot(A, B - C + np.nanmin(B) - np.nanmax(B - C), color='lime', label='Residual')
     ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
     ax.set_ylabel('Transmission, counts', color=tc['axes_text_color'])
     ax.set_xlabel('Velocity, mm/s', color=tc['axes_text_color'])
@@ -535,14 +535,14 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
                 if len(FS_pos) > i and len(FS_pos[i][0]) > 0:
                     minpos = min(FS_pos[i][0])
                     maxpos = max(FS_pos[i][0])
-                    H_step = (max(y_plot) - min(y_plot)) * 0.04
+                    H_step = (np.nanmax(y_plot) - np.nanmin(y_plot)) * 0.04
                     line_h = ax.plot([minpos, maxpos], 
-                           [max(y_plot) + H_step*(1+(i-skip_step)*2), max(y_plot) + H_step*(1+(i-skip_step)*2)], 
+                           [np.nanmax(y_plot) + H_step*(1+(i-skip_step)*2), np.nanmax(y_plot) + H_step*(1+(i-skip_step)*2)], 
                            color=color, zorder=v[i])
                     position_artists.extend(line_h)
                     for j in range(len(FS_pos[i][0])):
                         line_v = ax.plot([FS_pos[i][0][j], FS_pos[i][0][j]], 
-                               [max(y_plot) + H_step*((i-skip_step)*2), max(y_plot) + H_step*(1+(i-skip_step)*2)], 
+                               [np.nanmax(y_plot) + H_step*((i-skip_step)*2), np.nanmax(y_plot) + H_step*(1+(i-skip_step)*2)], 
                                color=color, zorder=v[i])
                         position_artists.extend(line_v)
                 else:
@@ -552,9 +552,9 @@ def plot_model_with_nbaseline(figure, A, B, SPC_f, FS_all, FS_pos_all, p_all, mo
             position_artists_all.append(position_artists)
         
         # Plot residual
-        residual = y_plot - spc_plot + min(y_plot) - max(y_plot - spc_plot)
+        residual = y_plot - spc_plot + np.nanmin(y_plot) - np.nanmax(y_plot - spc_plot)
         ax.plot(x, residual, color='lime', label='Residual')
-        ax.plot(x, y_plot - y_plot + min(y_plot) - max(y_plot - spc_plot), linestyle='--', color=tc['gridcolor'])
+        ax.plot(x, y_plot - y_plot + np.nanmin(y_plot) - np.nanmax(y_plot - spc_plot), linestyle='--', color=tc['gridcolor'])
 
         # Plot high-resolution convergence check below the residual
         if diff_separate is not None and spc_idx < len(diff_separate):
@@ -714,14 +714,14 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
                 if len(FS_pos) > i and len(FS_pos[i][0]) > 0:
                     minpos = min(FS_pos[i][0])
                     maxpos = max(FS_pos[i][0])
-                    H_step = (max(y) - min(y)) * 0.04
+                    H_step = (np.nanmax(y) - np.nanmin(y)) * 0.04
                     line_h = ax.plot([minpos, maxpos], 
-                           [max(y) + H_step*(1+(i-skip_step)*2), max(y) + H_step*(1+(i-skip_step)*2)], 
+                           [np.nanmax(y) + H_step*(1+(i-skip_step)*2), np.nanmax(y) + H_step*(1+(i-skip_step)*2)], 
                            color=color, zorder=v[i])
                     position_artists.extend(line_h)
                     for j in range(len(FS_pos[i][0])):
                         line_v = ax.plot([FS_pos[i][0][j], FS_pos[i][0][j]], 
-                               [max(y) + H_step*((i-skip_step)*2), max(y) + H_step*(1+(i-skip_step)*2)], 
+                               [np.nanmax(y) + H_step*((i-skip_step)*2), np.nanmax(y) + H_step*(1+(i-skip_step)*2)], 
                                color=color, zorder=v[i])
                         position_artists.extend(line_v)
                 else:
@@ -733,9 +733,9 @@ def plot_simultaneous_fitting_result(figure, A_list, B_list, SPC_f_list, FS_list
             position_artists_list.append([])
         
         # Plot residual
-        residual = y - spc + min(y) - max(y - spc)
+        residual = y - spc + np.nanmin(y) - np.nanmax(y - spc)
         ax.plot(x, residual, color='lime', label='Residual')
-        ax.plot(x, y - y + min(y) - max(y - spc), linestyle='--', color=tc['gridcolor'])
+        ax.plot(x, y - y + np.nanmin(y) - np.nanmax(y - spc), linestyle='--', color=tc['gridcolor'])
 
         # Plot high-resolution convergence check below the residual
         if hires_diff_list is not None and spc_idx < len(hires_diff_list):
@@ -858,23 +858,23 @@ def plot_model(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, backgrounds=Non
             if len(FS_pos) > i and len(FS_pos[i][0]) > 0:
                 minpos = min(FS_pos[i][0])
                 maxpos = max(FS_pos[i][0])
-                H_step = (max(B_plot) - min(B_plot)) * 0.04
+                H_step = (np.nanmax(B_plot) - np.nanmin(B_plot)) * 0.04
                 line_h = ax.plot([minpos, maxpos], 
-                       [max(B_plot) + H_step*(1+(i-skip_step)*2), max(B_plot) + H_step*(1+(i-skip_step)*2)], 
+                       [np.nanmax(B_plot) + H_step*(1+(i-skip_step)*2), np.nanmax(B_plot) + H_step*(1+(i-skip_step)*2)], 
                        color=color, zorder=v[i])
                 position_artists.extend(line_h)
                 for j in range(len(FS_pos[i][0])):
                     line_v = ax.plot([FS_pos[i][0][j], FS_pos[i][0][j]], 
-                           [max(B_plot) + H_step*((i-skip_step)*2), max(B_plot) + H_step*(1+(i-skip_step)*2)], 
+                           [np.nanmax(B_plot) + H_step*((i-skip_step)*2), np.nanmax(B_plot) + H_step*(1+(i-skip_step)*2)], 
                            color=color, zorder=v[i])
                     position_artists.extend(line_v)
             else:
                 skip_step += 1
     
     # Plot residual
-    residual = B_plot - SPC_f_plot + min(B_plot) - max(B_plot - SPC_f_plot)
+    residual = B_plot - SPC_f_plot + np.nanmin(B_plot) - np.nanmax(B_plot - SPC_f_plot)
     ax.plot(A, residual, color='lime', label='Residual')
-    ax.plot(A, B_plot - B_plot + min(B_plot) - max(B_plot - SPC_f_plot), linestyle='--', color=tc['gridcolor'])
+    ax.plot(A, B_plot - B_plot + np.nanmin(B_plot) - np.nanmax(B_plot - SPC_f_plot), linestyle='--', color=tc['gridcolor'])
 
     # Plot high-resolution convergence check below the residual
     _plot_hires_diff(ax, A, hires_diff, residual)
@@ -1054,12 +1054,12 @@ def plot_instrumental_result(figure, A, B, F, F2, p, hi2, filepath, dir_path, gr
         ax1.plot(A_k, B_k, linestyle='None', marker='x', color='m', gid=DATA_GID)
 
         # Plot residuals
-        residual_offset = min(B_k) - max(B_k - F_k)
+        residual_offset = np.nanmin(B_k) - np.nanmax(B_k - F_k)
         ax1.plot(A_k, B_k - F_k + residual_offset, color='lime')
         ax1.plot(A_k, B_k - B_k + residual_offset, linestyle='--', color=tc['gridcolor'])
 
         # Plot high-resolution difference
-        hires_offset = residual_offset + min(B_k - F_k) - max(F2_k - F_k)
+        hires_offset = residual_offset + np.nanmin(B_k - F_k) - max(F2_k - F_k)
         ax1.plot(A_k, F2_k - F_k + hires_offset, color='cyan')
 
         # Add file path annotation
@@ -1192,7 +1192,7 @@ def plot_fitting_result(figure, A, B, SPC_f, FS, FS_pos, p, model_colors, hi2, f
     ax1.plot(A, B, linestyle='None', marker='x', color='m', zorder=max_z+1, label='Data', gid=DATA_GID)
 
     # Plot residuals
-    residual_offset = min(B) - max(B - SPC_f)
+    residual_offset = np.nanmin(B) - np.nanmax(B - SPC_f)
     ax1.plot(A, B - SPC_f + residual_offset, color='lime', label='Residual')
     ax1.plot(A, B - B + residual_offset, linestyle='--', color=tc['gridcolor'])
 

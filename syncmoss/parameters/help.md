@@ -141,12 +141,19 @@ every spectrum after the fit.
 A folder (`path/`): its first `.dat`/`.mca`. `McaAcq_channel_<…>`: a Bliss
 channel (Linux, `bliss` installed).
 
+### 7.9 Channel average
+
+*Supp → Average model over each channel* (ON by default): every point is the
+model averaged over the velocities the drive runs through while it is counted.
+Find the instrumental function and calibrate with the setting you fit with.
+
 ## 8. Exclusion regions
 
 **Apply exclusion** (plot toolbar), then `lo:hi; lo:hi` in mm/s + **Enter**, or
 **Pick on plot** and click both ends (**Esc** cancels). Excluded points are not
 fitted. Off at every start; a change voids the fit on screen. For good:
-*Change spectrum(a) → Save spectrum without excluded points*.
+*Change spectrum(a) → Save spectrum without excluded points* (their counts
+become `nan`; the velocities stay).
 
 ## 9. Errors, χ² and the correlation matrix
 

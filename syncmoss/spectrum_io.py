@@ -12,14 +12,18 @@ from syncmoss.model_io import read_model
 from syncmoss.constants import SMS_POL_DEFAULT
 from syncmoss.expression_eval import eval_expr
 from syncmoss import bliss_channel
-from syncmoss.exclusion_regions import kept, format_regions
+from syncmoss.exclusion_regions import fitted, format_regions
 # NOTE: instrumental_io is imported lazily inside functions below — it imports
 # load_spectrum from this module, so a top-level import here would be circular.
 
 
 def estimate_edge_background(B):
     """First guess for the off-resonance background: the average of the five
-    first and five last points of the spectrum. Shared with instrumental_io."""
+    first and five last points of the spectrum that have counts (a spectrum
+    saved without excluded points has 'nan' there). Shared with
+    instrumental_io."""
+    B = np.asarray(B, dtype=float)
+    B = B[np.isfinite(B)]
     return (B[0] + B[1] + B[2] + B[3] + B[4] + B[-1] + B[-2] + B[-3] + B[-4] + B[-5]) / 10
 
 
@@ -416,6 +420,8 @@ def subtract_model_from_spectrum(main_window):
         if not os.path.exists(spectrum_path):
             main_window.set_status("Selected spectrum file does not exist", "red")
             return
+        if main_window.channel_average_refused([spectrum_path], "Subtract model"):
+            return
 
         main_window.set_status("Loading spectrum and calculating model...", "blue")
 
@@ -455,10 +461,10 @@ def subtract_model_from_spectrum(main_window):
         # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
         pol = float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
-        from syncmoss.instrumental_io import resolve_instrumental_for_file, drive_rest_velocity, source_for
+        from syncmoss.instrumental_io import resolve_instrumental_for_file, drive_values, source_for
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)
-        method_params['v_center'] = drive_rest_velocity(A)
+        method_params.update(drive_values(main_window, A, os.path.basename(spectrum_path)))
 
         # Calculate model spectrum
         try:
@@ -540,6 +546,8 @@ def prepare_model_spectrum(main_window):
         if path_error:
             main_window.set_status(path_error, "red")
             return None
+        if main_window.channel_average_refused([path], action):
+            return None
         source = os.path.basename(path.rstrip('\\/')) or path
     if 'Nbaseline' in main_window.params_table.get_model_list():
         main_window.set_status(f"{action} was not started — the model has Nbaseline rows: it "
@@ -560,7 +568,7 @@ def prepare_model_spectrum(main_window):
             return None
         A = np.asarray(A_list[0], dtype=float)
 
-    from syncmoss.instrumental_io import (resolve_instrumental_for_file, drive_rest_velocity,
+    from syncmoss.instrumental_io import (resolve_instrumental_for_file, drive_values,
                                           read_dat_metadata_lines, build_dat_metadata_lines)
     try:
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
@@ -572,7 +580,7 @@ def prepare_model_spectrum(main_window):
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(
             main_window, os.path.abspath(path) if path else None, use_dat_metadata=use_dat_metadata)
-        method_params['v_center'] = drive_rest_velocity(A)
+        method_params.update(drive_values(main_window, A, source))
         if method_params['source'] == 'file':
             header = read_dat_metadata_lines(path)
         else:
@@ -841,7 +849,6 @@ def save_without_excluded_points(main_window):
             main_window.show_pressed()
             main_window.set_status(f"Spectrum without excluded points ({kept_count} points) "
                                    f"saved to {os.path.basename(save_path)}", "green")
-            _warn_cms_cut_ends(main_window, [spectrum_path], regions)
             return
 
         reply = QMessageBox.question(
@@ -870,45 +877,18 @@ def save_without_excluded_points(main_window):
         if skipped:
             message += f"; not saved (no point left, or not readable): {', '.join(skipped)}"
         main_window.set_status(message, "orange" if skipped else "green")
-        _warn_cms_cut_ends(main_window, saved, regions)
 
     except Exception as e:
         main_window.set_status(f"Error saving spectra without excluded points: {e}", "red")
 
 
-def cuts_a_velocity_end(main_window, spectrum_path, regions):
-    """True when *regions* take away the lowest or the highest velocity of the
-    spectrum: saved without them, the middle of its velocity range -- where the
-    CMS cosine smearing takes the drive to be at rest
-    (instrumental_io.drive_rest_velocity) -- moves."""
-    A_list, _ = load_spectrum(main_window, [spectrum_path], calibration_path=main_window.calibration_path)
-    if not A_list:
-        return False
-    A = np.asarray(A_list[0], dtype=float)
-    keep = kept(A, regions)
-    return not (keep[np.argmin(A)] and keep[np.argmax(A)])
-
-
-def _warn_cms_cut_ends(main_window, spectrum_paths, regions):
-    """After a save without excluded points: a CMS spectrum (by its .dat header
-    or the CMS box, as a fit decides) whose ends were cut is smeared from the
-    wrong velocity if Δθ is used on it -- say so. Returns those spectra."""
-    from syncmoss.instrumental_io import resolve_instrumental_for_file
-    use_dat = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
-    cut = [path for path in spectrum_paths
-           if resolve_instrumental_for_file(main_window, path, use_dat_metadata=use_dat)['method'] == 'CMS'
-           and cuts_a_velocity_end(main_window, path, regions)]
-    if cut:
-        QMessageBox.warning(main_window, "Save spectrum without excluded points",
-                            "CMS: edge points were cut. Keep the edge points, or do not use Δθ for "
-                            + ("this spectrum." if len(spectrum_paths) == 1 else f"these {len(cut)} spectra."))
-    return cut
-
-
 def process_without_excluded(main_window, spectrum_path, save_path, regions):
-    """Write *spectrum_path* to *save_path* (a .dat: velocity, counts) without
-    the points in *regions*. Returns how many points were written (0 -- nothing
-    written -- when none is left or the spectrum cannot be read).
+    """Write *spectrum_path* to *save_path* (a .dat: velocity, counts) with the
+    counts of the points in *regions* 'nan': the velocity axis stays whole --
+    the drive the channel average and the cosine smearing read from it -- and
+    no fit takes those points (exclusion_regions.fitted). Returns how many
+    points keep their counts (0 -- nothing written -- when none does or the
+    spectrum cannot be read).
 
     The instrumental function goes into the header: a .dat keeps the one it
     carries (none if it has none); raw counts (an .mca, ...), calibrated just
@@ -919,7 +899,7 @@ def process_without_excluded(main_window, spectrum_path, save_path, regions):
     if not A_list or not B_list:
         return 0
     A, B = np.asarray(A_list[0], dtype=float), np.asarray(B_list[0], dtype=float)
-    keep = kept(A, regions)
+    keep = fitted(A, B, regions)
     if not keep.any():
         return 0
     from syncmoss.instrumental_io import read_dat_metadata_lines, build_dat_metadata_lines
@@ -928,7 +908,7 @@ def process_without_excluded(main_window, spectrum_path, save_path, regions):
     else:
         metadata_lines, _method = build_dat_metadata_lines(main_window)
     metadata_lines = metadata_lines + [f"# Excluded regions, mm/s: {format_regions(regions)}"]
-    save_spectrum_with_metadata(save_path, A[keep], B[keep], metadata_lines)
+    save_spectrum_with_metadata(save_path, A, np.where(keep, B, np.nan), metadata_lines)
     return int(keep.sum())
 
 
@@ -957,7 +937,7 @@ def calculate_backgrounds(paths, calibration_path="Calibration.dat"):
 
                 # Calculate background as in original code (transmission mode)
                 edge_avg = estimate_edge_background(B)
-                max_minus_sqrt = max(B) - 3 * np.sqrt(max(B))
+                max_minus_sqrt = np.nanmax(B) - 3 * np.sqrt(np.nanmax(B))
 
                 if edge_avg < max_minus_sqrt:
                     N0 = max_minus_sqrt

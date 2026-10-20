@@ -489,6 +489,38 @@ an explicit message and reddened fields rather than failing halfway through.
   **Fit**. The beacon server is taken from the `BEACON_HOST` environment
   variable, or is `id14:25000` when that is unset.
 
+### 7.9 Channel average
+
+- While a point is counted the drive runs through a range of velocities — the
+  point's **channel**: the velocity step of a triangular drive; for a sine, a
+  width shrinking to nothing at the turning points. With *Supp → Average model
+  over each channel* ON (the default) every point is the model averaged over its
+  channel; OFF, the model at the point's velocity, as before. Fits, Show model,
+  the instrumental-function searches, the calibrations and *Create spectrum from
+  model* all follow it; *Save settings as default* keeps it. Switching it warns:
+  an instrumental function or a calibration found with the other setting does
+  not fit — redo them, or *Switch back*.
+- Averaging the model over the channel is the same as averaging the source line
+  over it (for any absorber), so the source is averaged before the transmission
+  integral, as for the cosine smearing, and a calculation takes about as long as
+  without. With Δθ, each ray sees its channel times cos θ.
+- The widths come from the drive: every point is counted for the same time, so
+  a spectrum's velocities, sorted, are a line (triangular drive: every channel
+  one step wide) or a cosine (sine drive: the channel at the velocity v is
+  w √(A² − (v − c)²) wide, 0 at the turning points), fitted once to the whole
+  axis. A point's width depends on its velocity alone — exclusion regions and
+  the ends need no care. An axis with points missing (saved by another
+  program) is neither: Fit, Show model and the searches are not started, and a
+  window says what to do — calibrate and save the spectrum in SYNCmoss (it
+  keeps the velocities of excluded points, section 8), or turn the average off.
+- The effect is largest for narrow lines and wide steps (wide velocity ranges):
+  at a step of 0.08 mm/s a thin line at the natural width comes out a few % of
+  its depth too deep without the average. An instrumental function found with
+  the average OFF already contains the channel — it is broader by about 0.68 ×
+  the step, in quadrature — and with it ON the channel would count twice: find
+  the instrumental function (G for CMS, the Gaussians or the theoretical shape
+  for SMS) again with the setting you fit with.
+
 ## 8. Exclusion regions
 
 Velocity regions whose points are **not fitted**: they are left out of χ², the
@@ -511,15 +543,14 @@ the plot toolbar; a bar appears above the plot.
 - The same regions apply to every spectrum (sequence, `Nbaseline`, one-model).
   For regions that only some spectra need — or that should stay for good — use
   *Change spectrum(a) → Save spectrum without excluded points*: every selected
-  spectrum is written as `excl_<name>.dat` without those points (one spectrum
-  where you say, several into the save path's folder). A `.dat` keeps the
+  spectrum is written as `excl_<name>.dat` with the counts of those points
+  `nan` (one spectrum where you say, several into the save path's folder): no
+  fit takes them, and the velocity axis stays whole — where the drive is at
+  rest (the cosine smearing's centre) and the drive itself (the channel
+  average's widths) stay those of the measurement. A `.dat` keeps the
   instrumental function of its header; an `.mca` (or other raw file) is
   calibrated as it is read, so its `.dat` gets the instrumental function in use
   — CMS or SMS, as the check boxes say — as *RAW → .dat* conversion writes it.
-  A CMS spectrum saved without an end of its velocity range gets a warning:
-  the cosine smearing starts from the middle of the range a file has, which
-  then moves — keep the edge points, or do not use Δθ for it. (Exclusion
-  regions themselves never move it: the smearing follows the whole range.)
 - Changing the regions (typing, picking, *Load*, or **Apply exclusion**)
   changes the bands of the plot on screen. If it shows a fit, that fit is no
   longer a result of these regions: its χ² disappears, the results table is

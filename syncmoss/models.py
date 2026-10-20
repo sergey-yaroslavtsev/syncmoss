@@ -479,8 +479,8 @@ def Voigt(gL, gG, S): # doi.org/10.1107/S0021889800010219
 # ~500 slices for 1e-6 against 12 nodes (docs/cosine_smearing.md, §2).
 #
 # None of this depends on the absorber. TI's caller prepares it with the other
-# instrumental inputs: cms_smearing, the smeared source line at every node of
-# TI's grid and the absorber's shift, and with it the smeared source's Norm
+# instrumental inputs: source_smearing, the smeared source line at every node
+# of TI's grid and the absorber's shift, and with it the smeared source's Norm
 # (instrumental_io.source_for), once per fit (per call where G, dtheta or the
 # axis are being fitted). TI takes them (smearing=, Norm=) and hands each
 # TImod its node's line and the shift; TImod adds that line in place of the
@@ -544,21 +544,228 @@ def disc_rule(dtheta, r_ratio, nodes=DISC_NODES_MIN):
     return mean + std * t, weights
 
 
-def Voigt_disc(gL, gG, S, U, dtheta, r_ratio):
+def Voigt_disc(gL, gG, S, U, dtheta, r_ratio, channel=None):
     """Voigt(gL, gG, .) averaged over the rays of a disc source of r/R =
     r_ratio about their mean (see above), and that mean <y>:
     sum_k w_k Voigt(S + U*(y_k - <y>)), U = MulCo*(v - v_c) (signed; S and U
     broadcast) and y_k = 1 - cos(theta) at the nodes of disc_rule. The node
     count follows the widest box of the point source with the same dtheta,
-    |U|*(1 - cos dtheta), in units of the line width."""
+    |U|*(1 - cos dtheta), in units of the line width.
+    *channel*, MulCo times the channel width (broadcast with S and U): each
+    ray's line is also averaged over the channel as that ray sees it, a box
+    (1 - y_k)*channel wide (Voigt_box) -- the channel average inside the
+    average over the rays (see "Channel average" below)."""
     widths = float(np.max(np.abs(U))) * 2 * np.sin(dtheta / 2) ** 2 / float(np.min(gL + gG))
     y, weights = disc_rule(dtheta, r_ratio, max(DISC_NODES_MIN, int(np.ceil(DISC_NODES_PER_WIDTH * widths))))
     mean = np.dot(weights, y)
     S, U = np.broadcast_arrays(np.asarray(S, dtype=float), np.asarray(U, dtype=float))
     out = 0.0
-    for yk, wk in zip(y - mean, weights):
-        out = out + wk * Voigt(gL, gG, (S + U * yk).ravel()).reshape(S.shape)
+    if channel is None:
+        for yk, wk in zip(y - mean, weights):
+            out = out + wk * Voigt(gL, gG, (S + U * yk).ravel()).reshape(S.shape)
+    else:
+        for yk, ck, wk in zip(y - mean, 1 - y, weights):
+            out = out + wk * Voigt_box(gL, gG, S + U * yk, ck * channel)
     return out, mean
+
+
+# ===========================================================================
+# Channel average (the finite width of a channel).
+#
+# A point of a spectrum is not one velocity: while it is counted, the drive
+# runs through a range of velocities, and the point is the average over them
+# (docs/averaging_around_channel.md, local). The velocity written for the point
+# is the time average of the transducer's velocity over its channel; the range
+# is W_i wide -- the velocity step for a triangular drive, a width shrinking
+# towards the turning points for a sine (fit_drive, channel_widths). Its kernel
+# is taken as a box of width W_i about the written velocity (a sine's is
+# tilted, which moves a line by ~1e-6 mm/s).
+#
+# Averaging the model over the box is the same as averaging the SOURCE line
+# over it: shift the source variable by the box variable and swap the two
+# integrals -- exact, for any absorber:
+#     (1/W) int dw int S(u) T(MulCo*(v + w) + u) du = int B_W[S](u) T(MulCo*v + u) du,
+#     B_W[S](u) = (1/W) int_{|w| < W/2} S(u - MulCo*w) dw
+#               = [F(u + MulCo*W/2) - F(u - MulCo*W/2)] / (MulCo*W),
+# F the cumulative of S. So the absorber is computed as for a point, once per
+# integration node, and only the source line at the node changes -- one value
+# per point. TI's caller prepares it with the cosine smearing (source_smearing,
+# instrumental_io.source_for), with the Norm of that source, one per point.
+#
+# With the cosine smearing a ray at y = 1 - cos(theta) sees the channel's range
+# of transducer velocities times cos(theta): its box is (1 - y)*W wide, and the
+# channel is averaged INSIDE the average over the rays -- a box per ray node
+# (Voigt_disc's channel). The ray nodes stay those of the rays alone.
+#
+# The box itself:
+# * CMS, the pseudo-Voigt: from its cumulative, term by term (_voigt_cdf,
+#   Voigt_box): Lorentzian -> arctan, Gaussian -> erf, the irrational term ->
+#   x/sqrt(1 + x^2), sech^2 -> tanh;
+# * SMS, a sum of Gaussians: erf differences (_gauss_sum_box);
+# * SMS, the theoretical shape: a table, no cumulative to take differences of
+#   -- M Gauss-Legendre channel nodes across the channel (_channel_rule).
+# The analytic boxes are exact for any width, up to erf's (Abramowitz & Stegun:
+# a box's slope off by at most 6e-6 of the peak of a Gaussian it averages).
+# Where the box is narrower than _BOX_POINT_LIMIT of the line the difference of
+# the cumulatives loses its digits, and the point value is taken (near the
+# turning points of a sine).
+# ===========================================================================
+
+# Below this fraction of the line width the box average IS the point value:
+# they differ by ~(W/width)^2, while the difference of the two cumulatives
+# carries a rounding error ~eps*width/W; the two meet at W ~ cbrt(eps)*width.
+_BOX_POINT_LIMIT = np.cbrt(np.finfo(float).eps)
+
+# The channel nodes of the theoretical SMS source: as many as keep the error of
+# the average below this fraction of the depth of the narrowest line a spectrum
+# can have (a thin absorber at the natural width, see _channel_rule).
+CHANNEL_RULE_TOLERANCE = 1e-6
+
+
+def _voigt_cdf(gL, gG, S):
+    """Cumulative of Voigt(gL, gG, .) at S: the integral from -inf to S, term
+    by term. The width and weight block is Voigt's, verbatim."""
+    ro = gL/(gL+gG)
+    WG = (1 - ro*(0.66000 + 0.15021*ro - 1.24984*ro**2 + 4.74052*ro**3 - 9.48291*ro**4 + 8.48252*ro**5 - 2.95553*ro**6)) * (gG + gL)
+    WL = (1 - (1-ro)*(-0.42179 - 1.25693*ro + 10.30003*ro**2 - 23.45651*ro**3 + 29.14158*ro**4 - 16.50453*ro**5 + 3.19974*ro**6)) * (gG + gL)
+    WI = (1.19913 + 1.43021*ro - 15.36331*ro**2 + 47.06071*ro**3 - 73.61822*ro**4 + 57.92559*ro**5 - 17.80614*ro**6) * (gG + gL)
+    WP = (1.10186 - 0.47745*ro - 0.68688*ro**2 + 2.76622*ro**3 - 4.55466*ro**4 + 4.05475*ro**5 - 1.26571*ro**6) * (gG + gL)
+
+    cl = ro*(1+(1-ro)*(-0.30165-1.38927*ro+9.31550*ro**2-24.10743*ro**3+34.96491*ro**4-21.18862*ro**5+3.70290*ro**6))
+    ci = ro*(1-ro)*(0.25437-0.14107*ro+3.23653*ro**2-11.09215*ro**3+22.10544*ro**4-24.12407*ro**5+9.76947*ro**6)
+    cp = ro*(1-ro)*(1.01579+1.50429*ro-9.21815*ro**2+23.59717*ro**3-39.71134*ro**4+32.83023*ro**5-10.02142*ro**6)
+    cg = 1 - cl - ci - cp
+
+    a = WI/2/(2**(2/3)-1)**(1/2)
+    return cl * (0.5 + np.arctan(S / (WL / 2)) / np.pi)\
+        + cg * (0.5 + 0.5 * erf(S / (WG / 2 / np.sqrt(2 * np.log(2))) / np.sqrt(2)))\
+        + ci * (0.5 + 0.5 * (S / a) / np.sqrt(1 + (S / a) ** 2))\
+        + cp * (0.5 + 0.5 * np.tanh(S / (WP/2/np.log(2**(1/2)+1))))
+
+
+def Voigt_box(gL, gG, S, W):
+    """Voigt(gL, gG, .) averaged over a box of width W centred on S (S and W
+    broadcast, in the units of gL and gG): the difference of its cumulative
+    (_voigt_cdf). The point value where the box is too narrow to matter
+    (_BOX_POINT_LIMIT)."""
+    S, W = np.broadcast_arrays(np.asarray(S, dtype=float), np.abs(np.asarray(W, dtype=float)))
+    point = W < _BOX_POINT_LIMIT * (gL + gG)
+    Wb = np.where(point, 1.0, W)
+    box = (_voigt_cdf(gL, gG, S + Wb / 2) - _voigt_cdf(gL, gG, S - Wb / 2)) / Wb
+    if np.any(point):
+        box = np.where(point, Voigt(gL, gG, S.ravel()).reshape(S.shape), box)
+    return box
+
+
+def _gauss_sum_box(INS, MulCo, s, h):
+    """TImod's SMS sum of Gaussians (Met == 0) averaged over a box of
+    half-width h about the source offsets s (both in MulCo units, broadcast):
+    every term from erf differences, its point value where the box is too
+    narrow to matter (_BOX_POINT_LIMIT)."""
+    s, h = np.broadcast_arrays(np.asarray(s, dtype=float), np.asarray(h, dtype=float))
+    out = 0.0
+    for i in range(0, int((len(INS))/3)):
+        sig = (INS[i*3]**2+NAT_WIDTH/2)*MulCo
+        z = s - INS[i*3+1]*MulCo
+        point = 2*h < _BOX_POINT_LIMIT * sig
+        hb = np.where(point, 1.0, h)
+        box = (erf((z + hb)/(np.sqrt(2)*sig)) - erf((z - hb)/(np.sqrt(2)*sig)))/(4*hb)
+        if np.any(point):
+            box = np.where(point, np.exp((-1)*(z**2/(2*sig**2)))/sig/np.sqrt(2*np.pi), box)
+        out = out + INS[i*3+2]**2*box
+    return out
+
+
+def _channel_rule(ratio):
+    """Gauss-Legendre channel nodes t_m on [-1, 1] and their weights (summing
+    to 1) for averaging over channels up to ratio*NAT_WIDTH wide: the fewest
+    that keep the error below CHANNEL_RULE_TOLERANCE of a line's depth. No line
+    of a spectrum is narrower than the natural one (a thin absorber, whatever
+    the source), and a Lorentzian of FWHM NAT_WIDTH has its poles NAT_WIDTH/2
+    off the velocity axis: the rule's error falls as rho^(-2M), rho = 1/ratio +
+    sqrt(1 + 1/ratio^2) the ellipse about the channel that reaches them.
+    Measured on that Lorentzian, the error is 0.8-1.4 times rho^(-2M), and at
+    the M chosen below 1e-6 of its depth for channels 0.1 to 2.5 natural widths
+    wide (9.6e-7 the worst, at 1). One node -- the point value -- for no
+    width."""
+    if not ratio > 0:
+        return np.zeros(1), np.ones(1)
+    rho = 1 / ratio + np.sqrt(1 + 1 / ratio ** 2)
+    M = max(1, int(np.ceil(np.log(1 / CHANNEL_RULE_TOLERANCE) / (2 * np.log(rho)))))
+    t, g = np.polynomial.legendre.leggauss(M)
+    return t, g / 2
+
+
+# --- the drive: where the channel widths come from ------------------------------
+# Every point is counted for the same time. The velocities of a spectrum's
+# points are then the drive's, one channel apart in time -- folded or not, in
+# whatever order the file has them: sorted, a folded triangular drive's are a
+# line in their rank,
+#     v_(j) = v_(0) + s j,                         every channel s wide,
+# and a folded sine drive's a cosine in their rank (one channel = the phase step
+# w; the written velocity of a point is its channel's time average),
+#     v_(j) = c + A cos(phi_0 + w j),              W(v) = w sqrt(A^2 - (v - c)^2),
+# W(v) being exactly the range of velocities the drive runs through in a
+# channel whose average is v. fit_drive fits both to the WHOLE axis
+# (minimi_hi) -- once per spectrum -- and keeps the better one; channel_widths
+# then gives W at any velocity, from the velocity alone, as the cosine smearing
+# takes its box from v - v_c: no neighbours, so points excluded or at the ends
+# need no care. An axis that is neither -- points missing from it -- is refused.
+#
+# Accepted when the median of the misfit is below this fraction of a step (a
+# folded triangular axis can have one end point off by half a step; 0.01 keeps
+# the widths to ~1 %).
+DRIVE_AXIS_TOLERANCE = 0.01
+
+
+def _line_in_rank(q, p):
+    """The sorted velocities of a triangular drive against their rank q."""
+    return p[0] + p[1] * q
+
+
+def _cosine_in_rank(q, p):
+    """The sorted velocities of a sine drive against their rank q: v_c + A
+    cos(phi + w q) written as p[0] + p[1] cos(p[3] q) + p[2] sin(p[3] q)."""
+    return p[0] + p[1] * np.cos(p[3] * q) + p[2] * np.sin(p[3] * q)
+
+
+def fit_drive(x):
+    """The drive of a spectrum whose WHOLE velocity axis is *x* (see above):
+    ('triangular', s), every channel s wide, or ('sine', c, A, w), the channel
+    at the velocity v w sqrt(A^2 - (v - c)^2) wide. Both fitted with
+    minimi_hi (least squares), from the axis' own range: the cosine from half a
+    period over the points. ValueError for an axis that is neither, within
+    DRIVE_AXIS_TOLERANCE of a step."""
+    v = np.sort(np.asarray(x, dtype=float))
+    steps = np.diff(v)
+    if v.size < 4 or not np.median(steps) > 0:
+        raise ValueError("too few velocities to tell the drive from")
+    q = np.arange(v.size, dtype=float)
+    line = mi.minimi_hi(_line_in_rank, q, v, np.array([v[0], np.median(steps)]))[0]
+    # rising from v_c - A to v_c + A over the points: cos(pi + w q), w = pi/n
+    w = np.pi / v.size
+    cosine = mi.minimi_hi(_cosine_in_rank, q, v, np.array([0.5 * (v[0] + v[-1]), -0.5 * (v[-1] - v[0]), 0.0, w]))[0]
+    line_misfit, cosine_misfit = v - _line_in_rank(q, line), v - _cosine_in_rank(q, cosine)
+    if line_misfit @ line_misfit <= cosine_misfit @ cosine_misfit:
+        drive, misfit = ('triangular', float(abs(line[1]))), line_misfit
+    else:
+        drive = ('sine', float(cosine[0]), float(np.hypot(cosine[1], cosine[2])), float(abs(cosine[3])))
+        misfit = cosine_misfit
+    if np.median(np.abs(misfit)) > DRIVE_AXIS_TOLERANCE * np.median(steps):
+        raise ValueError("the velocities are not those of a triangular or sine drive, one channel apart "
+                         "(points missing?)")
+    return drive
+
+
+def channel_widths(x, drive):
+    """The channel width W at every velocity of *x*: the range of transducer
+    velocities the *drive* (fit_drive) runs through while the point at that
+    velocity is counted -- 0 at the turning points of a sine."""
+    x = np.asarray(x, dtype=float)
+    if drive[0] == 'triangular':
+        return np.full(x.shape, drive[1])
+    _sine, c, A, w = drive
+    return w * np.sqrt(np.clip(A ** 2 - (x - c) ** 2, 0.0, None))
 
 
 def _node_grid(Met, JN):
@@ -574,57 +781,101 @@ def _cms_map_coefficients(JN):
     return np.array([0.027181, 22.7718, -33.6937])
 
 
-def cms_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=None):
-    """The cosine smearing TI takes (smearing=), prepared by its caller with
-    the other instrumental inputs (Norm): for the spectrum x on TI's grid of
-    JN nodes, the pair (lines, shift) -- at every node the source line averaged
-    over the rays about their mean (a row per node: Voigt_disc at the node's
-    source offset), and MulCo*(x - v_center)*<y>, the shift that puts the
-    absorber at the mean ray's velocity. None without smearing (not CMS, or
-    dtheta = 0). v_center is where the drive is at rest, the middle of the
-    spectrum's WHOLE velocity range (instrumental_io.drive_rest_velocity), so
-    that a part of its points gives the same values.
+def source_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=None, channel_widths=None,
+                    x0=0.0):
+    """The smearing of the source TI takes (smearing=), prepared by its caller
+    with the other instrumental inputs (Norm): for the spectrum x on TI's grid
+    of JN nodes, the pair (lines, shift) -- at every node the source line as
+    each point sees it (a row per node): averaged over the rays about their
+    mean (the CMS cosine smearing, Voigt_disc at the node's source offset)
+    and/or over each point's channel (*channel_widths*, the channel average,
+    one per point of x: see "Channel average"); and MulCo*(x - v_center)*<y>,
+    the shift that puts the absorber at the mean ray's velocity (None without
+    cosine smearing). None when nothing smears the source: no channel widths,
+    and not CMS or dtheta = 0. v_center is where the drive is at rest, the
+    middle of the spectrum's WHOLE velocity range
+    (instrumental_io.drive_rest_velocity), and the channel widths those of its
+    drive at the points of x (fit_drive of the whole axis, channel_widths), so
+    that a part of the points gives the same values. x0 is the SMS grid's
+    (TI's).
     With *lengths* (the spectra of an Nbaseline model, one after the other): a
     list with one per spectrum, or None when none is smeared. The values are
-    given as TI takes them: MulCo, INS and Met per spectrum when Met is a list,
-    dtheta, v_center and r_ratio each a value or a list."""
+    given as TI takes them: MulCo, INS, Met and x0 per spectrum when Met is a
+    list, dtheta, v_center and r_ratio each a value or a list, the channel
+    widths over all of x."""
     if lengths is None:
-        return _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio)
+        return _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, channel_widths, x0)
     per_section = isinstance(Met, (list, tuple, np.ndarray))
 
     def own(value, i):
         return value[i] if isinstance(value, (list, tuple, np.ndarray)) else value
 
-    pieces = np.split(np.asarray(x, dtype=float), np.cumsum(lengths)[:-1])
+    edges = np.cumsum(lengths)[:-1]
+    pieces = np.split(np.asarray(x, dtype=float), edges)
+    widths = [None] * len(pieces) if channel_widths is None else np.split(np.asarray(channel_widths, dtype=float),
+                                                                           edges)
     smearings = [_smearing_of_spectrum(xi, JN, *((MulCo[i], INS[i], Met[i]) if per_section else (MulCo, INS, Met)),
-                                       own(dtheta, i), own(v_center, i), own(r_ratio, i))
+                                       own(dtheta, i), own(v_center, i), own(r_ratio, i), widths[i], own(x0, i))
                  for i, xi in enumerate(pieces)]
     return None if all(s is None for s in smearings) else smearings
 
 
-def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio):
-    """cms_smearing of one spectrum."""
-    if Met != 1 or dtheta == 0:
+def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, channel_widths, x0):
+    """source_smearing of one spectrum."""
+    x = np.asarray(x, dtype=float)
+    if channel_widths is not None and np.shape(channel_widths) != x.shape:
+        raise ValueError(f"channel widths given for {np.size(channel_widths)} points, the spectrum has {x.size}")
+    widths = None if channel_widths is None else np.asarray(channel_widths, dtype=float)
+    # A triangular drive: every channel as wide, so without the cosine smearing
+    # a node's line is the same at every point -- computed once per node.
+    same = widths is not None and np.all(widths == widths[0])
+    columns = widths[:1] if same else widths
+
+    def every_point(lines):
+        return np.broadcast_to(lines, (lines.shape[0], x.size)) if same else lines
+
+    if Met == 1:
+        EE = _node_grid(1, JN)
+        cof = _cms_map_coefficients(JN)
+        offsets = cof[0] * np.log((1 + EE) / (1 - EE)) + cof[1] * np.log((2 + EE) / (2 - EE)) \
+            + cof[2] * np.log((3 + EE) / (3 - EE))
+        if dtheta == 0:
+            if widths is None:
+                return None
+            return every_point(Voigt_box(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None],
+                                         MulCo * columns[None, :])), None
+        U = (x - v_center) * MulCo
+        lines, mean = Voigt_disc(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None], U[None, :], dtheta, r_ratio,
+                                 None if widths is None else MulCo * widths[None, :])
+        return lines, U * mean
+    if Met != 0 or widths is None:
         return None
-    U = (np.asarray(x, dtype=float) - v_center) * MulCo
-    EE = _node_grid(1, JN)
-    cof = _cms_map_coefficients(JN)
-    offsets = cof[0] * np.log((1 + EE) / (1 - EE)) + cof[1] * np.log((2 + EE) / (2 - EE)) \
-        + cof[2] * np.log((3 + EE) / (3 - EE))
-    lines, mean = Voigt_disc(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None], U[None, :], dtheta, r_ratio)
-    return lines, U * mean
+    # SMS: TImod's source offsets s = MulCo*x0 + log((1 + EE)/(1 - EE)), the
+    # box MulCo*W wide about them
+    EE = _node_grid(0, JN)
+    log_EE = np.log((1 + EE) / (1 - EE))
+    if smst.ins_kind(INS) == smst.KIND_GAUSS:
+        return every_point(_gauss_sum_box(INS, MulCo, MulCo * x0 + log_EE[:, None],
+                                          MulCo * columns[None, :] / 2)), None
+    # the theoretical shape S(v)/MulCo (TImod's), at the channel nodes
+    t, g = _channel_rule(float(np.max(widths)) / NAT_WIDTH)
+    v = log_EE / MulCo + x0
+    lines = 0.0
+    for tm, gm in zip(t, g):
+        lines = lines + gm * smst.ins_shape(INS, v[:, None] + columns[None, :] * tm / 2)
+    return every_point(lines / MulCo), None
 
 
 def _smearing_rows(smearing, x, JN):
     """What TImod takes from TI's smearing= for the spectrum x: its line at
-    every node (None at each without smearing) and the absorber's shift. A
-    smearing prepared for another number of points or nodes is refused (TI
-    would otherwise skip nodes)."""
+    every node (None at each without smearing) and the absorber's shift (None
+    without cosine smearing). A smearing prepared for another number of points
+    or nodes is refused (TI would otherwise skip nodes)."""
     if smearing is None:
         return [None] * int(JN), None              # int: a 0-d array JN would multiply [None] element by element
     lines, shift = smearing
     if np.shape(lines) != (int(JN), len(x)):
-        raise ValueError(f"cosine smearing prepared for {np.shape(lines)[1]} points on {np.shape(lines)[0]} nodes, "
+        raise ValueError(f"source smearing prepared for {np.shape(lines)[1]} points on {np.shape(lines)[0]} nodes, "
                          f"used for {len(x)} points on {int(JN)}")
     return lines, shift
 
@@ -2333,7 +2584,12 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
         elif Met == 0:
             Mett = Met
             E = MulCo*SCR + x0*MulCo + np.log((1+EE)/(1-EE))
-            if smst.ins_kind(INS) == smst.KIND_GAUSS:
+            if source_line is not None:
+                # The channel average, prepared by TI's caller (source_smearing)
+                # and handed to this node by TI: the source line at this node as
+                # every point sees it, averaged over the point's channel.
+                N += source_line
+            elif smst.ins_kind(INS) == smst.KIND_GAUSS:
                 for i in range (0, int((len(INS))/3)):
                         N += 1*INS[i*3+2]**2*np.exp((-1)*((E-(INS[i*3+1]+SCR)*MulCo)**2/(2*((INS[i*3]**2+NAT_WIDTH/2)*MulCo)**2)))/((INS[i*3]**2+NAT_WIDTH/2)*MulCo)/np.sqrt(2*np.pi)
             else:
@@ -2377,7 +2633,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             # negative node weights): [2.09026977e-02, 2.22979289e+01, -3.35214526e+01].
             # The CMS Norm ("SOURCE NORMALISATION" in TI) follows by itself, as
             # compute_norm runs this same map with the same JN. The two sets live
-            # in _cms_map_coefficients (cms_smearing uses the same map).
+            # in _cms_map_coefficients (source_smearing uses the same map).
             cof = _cms_map_coefficients(JN)
             E = MulCo * SCR + cof[0] * np.log((1 + EE) / (1 - EE)) \
                             + cof[1] * np.log((2 + EE) / (2 - EE)) \
@@ -2386,12 +2642,15 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             if source_line is None:
                 N += Voigt(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo)
             else:
-                # Cosine smearing, prepared by TI's caller (cms_smearing) and
-                # handed to this node by TI: the source line averaged over the
-                # rays about their mean, and the shift that moves the absorber
-                # to the mean ray's velocity v_center + (v - v_center)*<cos theta>.
+                # Cosine smearing and/or the channel average, prepared by TI's
+                # caller (source_smearing) and handed to this node by TI: the
+                # source line averaged over the rays about their mean and/or
+                # over each point's channel, and the shift that moves the
+                # absorber to the mean ray's velocity v_center + (v -
+                # v_center)*<cos theta> (None without cosine smearing).
                 N += source_line
-                E = E - absorber_shift
+                if absorber_shift is not None:
+                    E = E - absorber_shift
             # N += Wid/2/np.pi/((E - SCR*MulCo)**2 + (Wid/2)**2)
             # N += (Wid / 2 / np.pi / ((E - SCR * MulCo) ** 2 + (Wid / 2) ** 2)) ** 2 * Wid * np.pi
         elif Met == 2:
@@ -3332,7 +3591,7 @@ def _node_sum_key(x, p, v_from, v_to, model_i, strings, recons, JN, x0, MulCo, I
     its component parameters p[v_from:v_to] (its baseline excluded), the values
     of the p[k] named in the distribution/correlation expressions, those
     expressions themselves, the Recon weights, the instrumental function, JN,
-    the polarization, the cosine smearing (its lines and shift, or None) and
+    the polarization, the source's smearing (its lines and shift, or None) and
     the section's offsets. None -- never reused -- when an expression addresses
     p in a way that cannot be read off (p[2+3], ...)."""
     refs = []
@@ -3351,17 +3610,19 @@ def _node_sum_key(x, p, v_from, v_to, model_i, strings, recons, JN, x0, MulCo, I
         h.update(np.ascontiguousarray(np.asarray(r, dtype=float).ravel()).tobytes())
     h.update(np.ascontiguousarray(np.atleast_1d(np.asarray(INS, dtype=float))).tobytes())
     if smearing is not None:
-        for part in smearing:                                   # its lines and the absorber's shift
-            h.update(np.ascontiguousarray(part, dtype=float).tobytes())
+        for part in smearing:                   # its lines and the absorber's shift (None: no shift)
+            if part is not None:
+                h.update(np.ascontiguousarray(part, dtype=float).tobytes())
     h.update(repr((tuple(str(m) for m in model_i), int(JN), float(x0), float(MulCo), int(Met), float(pol),
-                   smearing is None, tuple(str(s) for s in strings), offsets)).encode())
+                   None if smearing is None else tuple(part is None for part in smearing),
+                   tuple(str(s) for s in strings), offsets)).encode())
     return h.digest()
 
 
 def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, Norm, pol, Recon, lengths, smearing):
     """TI's bookkeeping for every spectrum (Nbaseline section) of a model: its
     velocities, model rows, source-line grid E/D, baseline N0/N1, offsets into
-    p / Distri / Cor / Recon, its cosine smearing (the lines and shift TImod
+    p / Distri / Cor / Recon, its source's smearing (the lines and shift TImod
     takes; *smearing* as TI takes it) and the key of its node sum
     (_node_sum_key). A model without Nbaseline is one section. Shared by TI and
     TI_recon_variants."""
@@ -3370,7 +3631,7 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
     if smearing is not None and not isinstance(smearing, list):
         smearing = [smearing]
     if smearing is not None and len(smearing) != n_sec:
-        raise ValueError(f"cosine smearing given for {len(smearing)} spectra, the model has {n_sec}")
+        raise ValueError(f"source smearing given for {len(smearing)} spectra, the model has {n_sec}")
     if isinstance(Norm, list) and len(Norm) != n_sec:
         raise ValueError(f"Norm given for {len(Norm)} spectra, the model has {n_sec}")
     if n_sec == 1:
@@ -3476,14 +3737,16 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
     (instrumental_io.compute_norm, with the same JN, grid and source): the part
     of the unit-area source line that the grid samples. CMS and SMS use it
     differently -- see "SOURCE NORMALISATION" in the body. A number; for a
-    smeared CMS spectrum the smeared source's own, an array over its
-    velocities (compute_norm with the smearing); for a model with Nbaseline
-    sections, one number for all or a list with one per spectrum.
+    smeared source (cosine smearing, channel average) that source's own, an
+    array over its velocities (compute_norm with the smearing); for a model
+    with Nbaseline sections, one number for all or a list with one per
+    spectrum.
 
-    ``smearing`` is the cosine smearing of a CMS spectrum, ``x_exp`` being the
-    transducer velocity: what cms_smearing prepares for these velocities and
-    JN (per Nbaseline section, a list: cms_smearing with ``lengths``), or None.
-    TI hands each TImod its node's source line and the absorber's shift.
+    ``smearing`` is the smearing of the source, ``x_exp`` being the transducer
+    velocity: the cosine smearing of a CMS spectrum and the channel average of
+    any, what source_smearing prepares for these velocities and JN (per
+    Nbaseline section, a list: source_smearing with ``lengths``), or None. TI
+    hands each TImod its node's source line and the absorber's shift.
     instrumental_io.source_for prepares the two together.
 
     For a model with Nbaseline sections ``x_exp`` holds the velocities of every
@@ -3524,9 +3787,9 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         # the CMS map's choice of coefficients, and the node's smeared source
         # line and the absorber's shift (None and None without smearing) follow
         # recon_cache.
-        if isinstance(smearing, list):             # cms_smearing with lengths, for one spectrum
+        if isinstance(smearing, list):             # source_smearing with lengths, for one spectrum
             if len(smearing) != 1:
-                raise ValueError(f"{len(smearing)} cosine smearings given for one spectrum")
+                raise ValueError(f"{len(smearing)} source smearings given for one spectrum")
             smearing = smearing[0]
         if isinstance(Norm, list):                 # one per spectrum, for one spectrum
             if len(Norm) != 1:
@@ -3599,6 +3862,8 @@ def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, 
         # the smearing), so an empty absorber gives exactly N0 + N1. (The
         # unsmeared Norm is off by < 3e-6 at JN = 64 up to dtheta = 0.3 rad,
         # but by up to 1e-2 beyond the accuracy limit -- docs/cosine_smearing.md.)
+        # The channel average (CMS and SMS) is the same: the source averaged
+        # over each point's channel, its Norm one per point.
         #
         # WHEN THE CMS INTEGRATION CHANGES:
         # * another map, edge or JN: nothing to do, PROVIDED Norm comes from
@@ -3671,7 +3936,7 @@ def TImod_recon_group(x_exp, p, model, EEs, x0, MulCo, INS, Distri, Cor, Met, po
     """Per weight list, the sum over the nodes EEs of TImod's result; at each node
     the Recon copies are computed once (recon_cache) for all the lists. *lines*
     and *shift*: the nodes' smeared source lines and the absorber's shift
-    (cms_smearing), or None."""
+    (source_smearing), or None."""
     sums = [None] * len(recon_variants)
     for k, EE in enumerate(EEs):
         cache = {}

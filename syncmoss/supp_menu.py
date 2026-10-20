@@ -3,7 +3,7 @@ The "Supp" (support) button menu and its actions.
 
 Everything reachable from the Supp button in the main window lives here:
 the menu construction (:func:`build_supp_menu`), the light/dark theme toggle,
-the χ² correction of the errors (on/off),
+the channel average of the model and the χ² correction of the errors (on/off),
 and the handlers for the small settings dialogs (integral points, instrumental
 lines, polarization, the CMS source and aperture diameters, the Be / KB impurity
 presets), saving the settings as the defaults of the next starts (and deleting
@@ -44,7 +44,7 @@ from syncmoss.models_description_window import (
 from syncmoss.license_window import LicenseWindow
 import syncmoss.sms_theory as smst
 from syncmoss.instrumental_io import (
-    DEFAULT_INSTRUMENTAL_METHOD, chi2_correction,
+    DEFAULT_INSTRUMENTAL_METHOD, channel_average, chi2_correction,
     get_cms_diameters, get_internal_dtheta, get_internal_gcms, get_sms_instrumental_from_global_files,
     read_accurate_instrumental, read_gcms_file, resolve_instrumental_for_file, write_gcms_file,
 )
@@ -90,6 +90,56 @@ def toggle_chi2_correction(main_window, action):
                            else "Errors of the next fits: not multiplied by √χ²", "blue")
 
 
+def channel_average_text(on):
+    """Label for the channel-average entry: the state it is in."""
+    return f"Average model over each channel ({'ON' if on else 'OFF'})"
+
+
+def toggle_channel_average(main_window, action):
+    """Turn the channel average (instrumental_io.channel_average) on or off;
+    *action* is relabelled with the new state."""
+    main_window.channel_average = not channel_average(main_window)
+    action.setText(channel_average_text(main_window.channel_average))
+    main_window.set_status("Next calculations: each point averaged over its channel" if main_window.channel_average
+                           else "Next calculations: each point at its velocity", "blue")
+
+
+def keep_channel_average(main_window, on):
+    """The warning after the channel average was switched to *on*: the
+    instrumental function and the calibration found with the other setting do
+    not fit it. True to keep it, False to switch back."""
+    state, other = ("ON", "OFF") if on else ("OFF", "ON")
+    box = QMessageBox(main_window)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Average model over each channel")
+    box.setText(f"Channel average is now {state}.")
+    box.setInformativeText(f"An instrumental function (G and Δθ in CMS) or a calibration found with it {other} "
+                           f"does not fit it: redo them, or switch back.")
+    keep = box.addButton(f"Keep {state}", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton("Switch back", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(keep)
+    box.exec()
+    return box.clickedButton() is keep
+
+
+def switch_channel_average(main_window, action):
+    """Supp -> Average model over each channel: switch it, then warn
+    (keep_channel_average) -- switching back restores it."""
+    toggle_channel_average(main_window, action)
+    if not keep_channel_average(main_window, main_window.channel_average):
+        toggle_channel_average(main_window, action)
+
+
+def refuse_channel_average(main_window, reason):
+    """The window when the channel average cannot be computed for a spectrum
+    -- its velocities are not a drive's (models.fit_drive) -- and what to do."""
+    QMessageBox.warning(
+        main_window, "Average model over each channel",
+        f"{reason}.\n\nCalibrate and save the spectrum in SYNCmoss, or turn off "
+        "Supp → Average model over each channel.\n\n"
+        "If you think this is wrong, please report it (Supp → Contact the author).")
+
+
 def contact_accent_color(is_dark_mode):
     """Accent color of the "Contact the author" entry for the active mode."""
     return CONTACT_ACCENT_DARK if is_dark_mode else CONTACT_ACCENT_LIGHT
@@ -127,7 +177,8 @@ def build_supp_menu(main_window):
     The theme entry is kept on the window as ``main_window.theme_action`` so
     ``PhysicsApp._apply_theme`` can relabel it whenever the mode changes; the
     contact entry is kept as ``main_window.contact_action`` for the same reason
-    (its accent icon is repainted there), and the χ² entry as
+    (its accent icon is repainted there), and the channel-average and χ²
+    entries as ``main_window.channel_average_action`` and
     ``main_window.chi2_correction_action`` (relabelled by
     ``PhysicsApp.apply_settings``).
     """
@@ -146,6 +197,10 @@ def build_supp_menu(main_window):
     chi2_correction_action.triggered.connect(
         lambda: toggle_chi2_correction(main_window, chi2_correction_action))
     main_window.chi2_correction_action = chi2_correction_action
+    channel_average_action = QAction(channel_average_text(channel_average(main_window)), main_window)
+    channel_average_action.triggered.connect(
+        lambda: switch_channel_average(main_window, channel_average_action))
+    main_window.channel_average_action = channel_average_action
     set_polarization_action = QAction("Set polarization", main_window)
     set_polarization_action.triggered.connect(lambda: open_polarization_dialog(main_window))
     cms_diameters_action = QAction("Set CMS source and aperture diameters", main_window)
@@ -197,6 +252,7 @@ def build_supp_menu(main_window):
     menu.addSeparator()
     menu.addAction(ham_guess_action)
     menu.addAction(set_integral_points_action)
+    menu.addAction(channel_average_action)
     menu.addAction(chi2_correction_action)
     # "Set number of lines to reconstruct the instrumental function" used to be
     # its own entry here. It is the number of GAUSSIANS, i.e. a property of one

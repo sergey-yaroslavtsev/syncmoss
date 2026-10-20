@@ -1,6 +1,6 @@
 {
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
-"measured": "2026-10-18 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"measured": "2026-10-20 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
 "typical_test_mb": 76,
 "accumulated_mb": 640,
@@ -273,6 +273,154 @@
 0.01,
 0
 ],
+"tests/test_channel_average.py::test_a_folded_sine_axis_gives_its_drive_whatever_the_fold[0.0]": [
+0.1,
+4
+],
+"tests/test_channel_average.py::test_a_folded_sine_axis_gives_its_drive_whatever_the_fold[0.3]": [
+0.01,
+0
+],
+"tests/test_channel_average.py::test_a_folded_sine_axis_gives_its_drive_whatever_the_fold[200.25]": [
+0.01,
+0
+],
+"tests/test_channel_average.py::test_a_folded_sine_axis_gives_its_drive_whatever_the_fold[37.5]": [
+0.02,
+0
+],
+"tests/test_channel_average.py::test_a_folded_sine_axis_gives_its_drive_whatever_the_fold[511.0]": [
+0.01,
+0
+],
+"tests/test_channel_average.py::test_a_folded_triangular_axis_gives_its_step[0.0]": [
+0.0,
+0
+],
+"tests/test_channel_average.py::test_a_folded_triangular_axis_gives_its_step[1.0]": [
+0.0,
+0
+],
+"tests/test_channel_average.py::test_a_folded_triangular_axis_gives_its_step[3.0]": [
+0.0,
+0
+],
+"tests/test_channel_average.py::test_a_part_of_the_points_gives_the_same_values[CMS-0.25]": [
+0.04,
+15
+],
+"tests/test_channel_average.py::test_a_part_of_the_points_gives_the_same_values[SMS Gaussians-0.0]": [
+0.01,
+0
+],
+"tests/test_channel_average.py::test_a_part_of_the_points_gives_the_same_values[SMS theory-0.0]": [
+0.01,
+0
+],
+"tests/test_channel_average.py::test_a_raw_sweep_gives_the_calibration_its_drive[sine]": [
+0.0,
+18
+],
+"tests/test_channel_average.py::test_a_raw_sweep_gives_the_calibration_its_drive[triangular]": [
+0.0,
+18
+],
+"tests/test_channel_average.py::test_a_triangular_drive_s_line_is_one_for_every_point": [
+0.01,
+0
+],
+"tests/test_channel_average.py::test_an_axis_with_points_missing_is_refused": [
+0.01,
+18
+],
+"tests/test_channel_average.py::test_channel_widths_given_for_other_points_are_refused": [
+0.0,
+2
+],
+"tests/test_channel_average.py::test_component_curves_hires_check_and_model_spectrum_use_the_average": [
+0.12,
+2
+],
+"tests/test_channel_average.py::test_each_nbaseline_spectrum_has_its_own_drive": [
+0.07,
+0
+],
+"tests/test_channel_average.py::test_off_is_the_former_model[CMS-0.0]": [
+0.0,
+0
+],
+"tests/test_channel_average.py::test_off_is_the_former_model[CMS-0.25]": [
+0.01,
+0
+],
+"tests/test_channel_average.py::test_off_is_the_former_model[SMS Gaussians-0.0]": [
+0.0,
+0
+],
+"tests/test_channel_average.py::test_off_is_the_former_model[SMS theory-0.0]": [
+0.0,
+0
+],
+"tests/test_channel_average.py::test_supp_switches_the_average_and_warns": [
+2.45,
+91
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[CMS-sine-0.0]": [
+0.06,
+11
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[CMS-sine-0.25]": [
+0.15,
+13
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[CMS-triangular-0.0]": [
+0.06,
+43
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[CMS-triangular-0.25]": [
+0.16,
+17
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[SMS Gaussians-sine-0.0]": [
+0.07,
+0
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[SMS Gaussians-triangular-0.0]": [
+0.08,
+13
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[SMS theory-sine-0.0]": [
+0.07,
+0
+],
+"tests/test_channel_average.py::test_the_average_follows_the_brute_force[SMS theory-triangular-0.0]": [
+0.08,
+16
+],
+"tests/test_channel_average.py::test_the_shipped_default_is_on": [
+0.0,
+2
+],
+"tests/test_channel_average.py::test_the_source_lines_are_the_source_averaged_over_each_channel[CMS]": [
+0.26,
+0
+],
+"tests/test_channel_average.py::test_the_source_lines_are_the_source_averaged_over_each_channel[SMS Gaussians]": [
+0.2,
+0
+],
+"tests/test_channel_average.py::test_the_source_lines_are_the_source_averaged_over_each_channel[SMS theory]": [
+0.21,
+97
+],
+"tests/test_channel_average.py::test_the_tests_calibration_axis_is_a_sine_of_1024_channels": [
+0.0,
+0
+],
+"tests/test_channel_average.py::test_voigt_box_is_voigt_averaged_over_the_box": [
+0.57,
+2
+],
 "tests/test_chi2_spread.py::test_simultaneous_fit_image_shows_the_spread": [
 0.11,
 1
@@ -346,52 +494,52 @@
 81
 ],
 "tests/test_cosine_smearing.py::test_a_cms_section_is_smeared_and_an_sms_section_is_not": [
-0.02,
-4
+0.03,
+5
 ],
 "tests/test_cosine_smearing.py::test_a_part_of_the_points_gives_the_same_values": [
-0.01,
-18
+0.03,
+11
 ],
 "tests/test_cosine_smearing.py::test_a_small_disc_is_a_point": [
 0.13,
-1
+0
 ],
 "tests/test_cosine_smearing.py::test_a_smearing_prepared_for_other_points_or_nodes_is_refused": [
 0.0,
-29
+0
 ],
 "tests/test_cosine_smearing.py::test_cms_has_refine_only": [
-1.83,
-45
+2.61,
+63
 ],
 "tests/test_cosine_smearing.py::test_cms_searches_with_the_model_over_nbaseline_spectra": [
-5.42,
-36
+5.75,
+63
 ],
 "tests/test_cosine_smearing.py::test_cms_single_line_reference": [
 0.0,
 0
 ],
 "tests/test_cosine_smearing.py::test_cms_source_fields_show_four_decimals_and_keep_every_digit": [
-1.75,
-97
+2.24,
+63
 ],
 "tests/test_cosine_smearing.py::test_component_curves_hires_check_and_model_spectrum_use_the_smearing[0.25]": [
-0.03,
-0
+0.02,
+1
 ],
 "tests/test_cosine_smearing.py::test_component_curves_hires_check_and_model_spectrum_use_the_smearing[1.0]": [
 0.02,
-4
+1
 ],
 "tests/test_cosine_smearing.py::test_disc_model_follows_the_exact_disc_integral": [
-1.81,
-24
+2.2,
+39
 ],
 "tests/test_cosine_smearing.py::test_disc_rule_is_the_point_box_for_a_tiny_disc_and_at_small_angles": [
 0.02,
-0
+1
 ],
 "tests/test_cosine_smearing.py::test_dtheta_alpha_fe_reference_refuses_numbers_it_cannot_use[change0-between 0 and 1]": [
 0.0,
@@ -411,154 +559,154 @@
 ],
 "tests/test_cosine_smearing.py::test_dtheta_alpha_fe_reference_takes_the_non_resonant_baseline_from_the_source": [
 0.0,
-0
+39
 ],
 "tests/test_cosine_smearing.py::test_dtheta_dialog_asks_for_the_source": [
-1.73,
-21
+2.07,
+20
 ],
 "tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[0--0.01]": [
-2.03,
-54
+2.17,
+31
 ],
 "tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[1-0]": [
-1.82,
-4
+1.88,
+44
 ],
 "tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[1-1]": [
-1.96,
+2.12,
 0
 ],
 "tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[2--5]": [
-1.81,
-2
-],
-"tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[3-x]": [
-1.84,
+1.92,
 0
 ],
+"tests/test_cosine_smearing.py::test_dtheta_dialog_refuses_a_number_it_cannot_use[3-x]": [
+1.87,
+1
+],
 "tests/test_cosine_smearing.py::test_dtheta_entries": [
-1.84,
-44
+2.63,
+64
 ],
 "tests/test_cosine_smearing.py::test_dtheta_field_takes_the_aps_place_next_to_g": [
-1.93,
-100
+2.17,
+106
 ],
 "tests/test_cosine_smearing.py::test_each_section_has_its_own_r_over_r": [
-0.01,
+0.03,
 0
 ],
 "tests/test_cosine_smearing.py::test_erf_takes_arrays_element_by_element": [
-0.02,
-2
+0.1,
+5
 ],
 "tests/test_cosine_smearing.py::test_gcms_file_keeps_g_the_smearing_and_the_diameters": [
-0.01,
-4
-],
-"tests/test_cosine_smearing.py::test_gcms_header_numbers_are_g_the_smearing_and_the_diameters": [
-0.01,
-4
-],
-"tests/test_cosine_smearing.py::test_limits_keeps_its_erf": [
-0.0,
-2
-],
-"tests/test_cosine_smearing.py::test_lines_move_out_and_grow_as_the_rays_have_it": [
-0.21,
-3
-],
-"tests/test_cosine_smearing.py::test_r_over_r_is_the_supp_setting_of_two_diameters": [
-1.76,
-69
-],
-"tests/test_cosine_smearing.py::test_recon_variants_carry_dtheta_v_center_and_r_over_r[1]": [
-0.06,
-0
-],
-"tests/test_cosine_smearing.py::test_recon_variants_carry_dtheta_v_center_and_r_over_r[2]": [
-0.07,
-0
-],
-"tests/test_cosine_smearing.py::test_refine_dtheta_from_pure_alpha_fe_finds_it[1.001]": [
-4.31,
-15
-],
-"tests/test_cosine_smearing.py::test_refine_dtheta_from_pure_alpha_fe_finds_it[1.0]": [
-4.05,
-32
-],
-"tests/test_cosine_smearing.py::test_refine_dtheta_without_smearing": [
-5.41,
-14
-],
-"tests/test_cosine_smearing.py::test_refine_single_line_in_cms_finds_g": [
-2.47,
-62
-],
-"tests/test_cosine_smearing.py::test_reset_in_cms_restores_the_cms_defaults": [
-1.92,
-90
-],
-"tests/test_cosine_smearing.py::test_resolved_cms_carries_the_smearing_and_sms_none": [
-1.78,
-22
-],
-"tests/test_cosine_smearing.py::test_same_method_params_tells_dtheta_and_r_over_r_apart": [
-0.0,
-4
-],
-"tests/test_cosine_smearing.py::test_save_g_and_dtheta_as_defaults": [
-1.76,
-77
-],
-"tests/test_cosine_smearing.py::test_smeared_model_follows_the_exact_smeared_integral[thick]": [
-3.59,
-3
-],
-"tests/test_cosine_smearing.py::test_smeared_model_follows_the_exact_smeared_integral[thin]": [
-3.57,
-8
-],
-"tests/test_cosine_smearing.py::test_smearing_starts_where_the_drive_is_at_rest": [
-3.59,
-4
-],
-"tests/test_cosine_smearing.py::test_sms_and_zero_dtheta_have_no_smearing": [
 0.0,
 1
 ],
-"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[0--1]": [
-1.68,
-61
-],
-"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[0-0]": [
-1.85,
-45
-],
-"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[1-0]": [
-1.76,
-63
-],
-"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[1-x]": [
-1.9,
-37
-],
-"tests/test_cosine_smearing.py::test_the_node_sum_store_tells_dtheta_v_center_and_r_over_r_apart": [
+"tests/test_cosine_smearing.py::test_gcms_header_numbers_are_g_the_smearing_and_the_diameters": [
 0.02,
+1
+],
+"tests/test_cosine_smearing.py::test_limits_keeps_its_erf": [
+0.0,
+5
+],
+"tests/test_cosine_smearing.py::test_lines_move_out_and_grow_as_the_rays_have_it": [
+0.37,
+3
+],
+"tests/test_cosine_smearing.py::test_r_over_r_is_the_supp_setting_of_two_diameters": [
+2.62,
+69
+],
+"tests/test_cosine_smearing.py::test_recon_variants_carry_dtheta_v_center_and_r_over_r[1]": [
+0.11,
 0
 ],
-"tests/test_cosine_smearing.py::test_the_smeared_source_s_own_norm_leaves_nothing_absorbed_flat": [
-0.24,
-29
-],
-"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[-3.0-0.2-0.3]": [
+"tests/test_cosine_smearing.py::test_recon_variants_carry_dtheta_v_center_and_r_over_r[2]": [
 0.13,
 0
 ],
+"tests/test_cosine_smearing.py::test_refine_dtheta_from_pure_alpha_fe_finds_it[1.001]": [
+3.88,
+34
+],
+"tests/test_cosine_smearing.py::test_refine_dtheta_from_pure_alpha_fe_finds_it[1.0]": [
+3.66,
+50
+],
+"tests/test_cosine_smearing.py::test_refine_dtheta_without_smearing": [
+6.09,
+25
+],
+"tests/test_cosine_smearing.py::test_refine_single_line_in_cms_finds_g": [
+2.43,
+68
+],
+"tests/test_cosine_smearing.py::test_reset_in_cms_restores_the_cms_defaults": [
+2.4,
+91
+],
+"tests/test_cosine_smearing.py::test_resolved_cms_carries_the_smearing_and_sms_none": [
+2.54,
+19
+],
+"tests/test_cosine_smearing.py::test_same_method_params_tells_dtheta_and_r_over_r_apart": [
+0.0,
+1
+],
+"tests/test_cosine_smearing.py::test_save_g_and_dtheta_as_defaults": [
+2.23,
+77
+],
+"tests/test_cosine_smearing.py::test_smeared_model_follows_the_exact_smeared_integral[thick]": [
+4.41,
+7
+],
+"tests/test_cosine_smearing.py::test_smeared_model_follows_the_exact_smeared_integral[thin]": [
+4.28,
+11
+],
+"tests/test_cosine_smearing.py::test_smearing_starts_where_the_drive_is_at_rest": [
+4.14,
+8
+],
+"tests/test_cosine_smearing.py::test_sms_and_zero_dtheta_have_no_smearing": [
+0.0,
+0
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[0--1]": [
+2.35,
+62
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[0-0]": [
+2.55,
+55
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[1-0]": [
+2.86,
+46
+],
+"tests/test_cosine_smearing.py::test_the_diameters_dialog_refuses_what_it_cannot_use[1-x]": [
+2.64,
+54
+],
+"tests/test_cosine_smearing.py::test_the_node_sum_store_tells_dtheta_v_center_and_r_over_r_apart": [
+0.04,
+0
+],
+"tests/test_cosine_smearing.py::test_the_smeared_source_s_own_norm_leaves_nothing_absorbed_flat": [
+0.26,
+0
+],
+"tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[-3.0-0.2-0.3]": [
+0.13,
+1
+],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[-3.0-0.2-1.0]": [
-0.11,
+0.12,
 0
 ],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[-3.0-0.2-2.5]": [
@@ -566,32 +714,32 @@
 0
 ],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[1.0-0.2-0.3]": [
-0.12,
-0
+0.11,
+1
 ],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[1.0-0.2-1.0]": [
 0.11,
-1
+0
 ],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[1.0-0.2-2.5]": [
 0.11,
 0
 ],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[2.0-0.4-0.3]": [
-0.12,
-0
+0.11,
+1
 ],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[2.0-0.4-1.0]": [
-0.13,
+0.12,
 0
 ],
 "tests/test_cosine_smearing.py::test_voigt_disc_is_voigt_averaged_over_the_rays[2.0-0.4-2.5]": [
-0.12,
+0.11,
 0
 ],
 "tests/test_cosine_smearing.py::test_zero_dtheta_is_the_former_model": [
 0.01,
-1
+0
 ],
 "tests/test_create_spectrum_from_model.py::test_a_dat_gives_its_velocities_and_its_own_header": [
 2.12,
@@ -650,19 +798,19 @@
 0
 ],
 "tests/test_default_settings.py::test_a_new_start_has_the_saved_settings": [
-4.3,
-194
+5.44,
+208
 ],
 "tests/test_default_settings.py::test_a_saved_setting_not_valid_keeps_the_windows_value": [
-2.14,
-56
+1.99,
+72
 ],
 "tests/test_default_settings.py::test_an_unreadable_settings_file_changes_nothing": [
-1.95,
-55
+2.18,
+72
 ],
 "tests/test_default_settings.py::test_restore_deletes_the_saved_settings_and_the_window_keeps_its_own": [
-2.01,
+2.42,
 71
 ],
 "tests/test_distr_composition.py::test_distr_scalar_num1_reproduces_the_plain_scalar": [
@@ -1098,136 +1246,128 @@
 5
 ],
 "tests/test_exclusion_fit.py::test_a_fit_with_more_free_parameters_than_points_left_is_not_started": [
-2.07,
-76
-],
-"tests/test_exclusion_fit.py::test_a_one_model_fit_uses_the_regions": [
-2.42,
-35
-],
-"tests/test_exclusion_fit.py::test_a_recon_adds_its_smoothness_rows_after_the_fitted_points": [
-2.69,
-53
-],
-"tests/test_exclusion_fit.py::test_a_sequence_whose_spectrum_keeps_too_few_points_is_not_started": [
-2.1,
-47
-],
-"tests/test_exclusion_fit.py::test_a_spectrum_with_every_point_excluded_is_named": [
-2.1,
-53
-],
-"tests/test_exclusion_fit.py::test_nbaseline_spectra_each_keep_their_own_points": [
-2.47,
-35
-],
-"tests/test_exclusion_fit.py::test_the_free_parameters_counted_are_those_the_fit_varies": [
-2.23,
-54
-],
-"tests/test_exclusion_fit.py::test_the_minimiser_gets_only_the_points_outside_the_regions": [
-2.93,
-106
-],
-"tests/test_exclusion_fit.py::test_the_model_at_the_fitted_points_is_the_full_model_there": [
-2.47,
-84
-],
-"tests/test_exclusion_fit.py::test_the_regions_fit_like_the_spectrum_saved_without_their_points": [
-2.44,
-100
-],
-"tests/test_exclusion_fit.py::test_without_regions_every_point_is_fitted": [
-2.19,
-70
-],
-"tests/test_exclusion_gui.py::test_apply_exclusion_shows_the_bar_and_puts_the_regions_in_use": [
-2.78,
-108
-],
-"tests/test_exclusion_gui.py::test_bands_are_drawn_only_while_applied_and_never_widen_the_axis": [
-2.39,
-45
-],
-"tests/test_exclusion_gui.py::test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves": [
-2.99,
+2.21,
 77
 ],
+"tests/test_exclusion_fit.py::test_a_one_model_fit_uses_the_regions": [
+3.16,
+70
+],
+"tests/test_exclusion_fit.py::test_a_recon_adds_its_smoothness_rows_after_the_fitted_points": [
+3.6,
+78
+],
+"tests/test_exclusion_fit.py::test_a_sequence_whose_spectrum_keeps_too_few_points_is_not_started": [
+3.02,
+38
+],
+"tests/test_exclusion_fit.py::test_a_spectrum_with_every_point_excluded_is_named": [
+2.39,
+62
+],
+"tests/test_exclusion_fit.py::test_nbaseline_spectra_each_keep_their_own_points": [
+2.95,
+46
+],
+"tests/test_exclusion_fit.py::test_the_free_parameters_counted_are_those_the_fit_varies": [
+2.64,
+46
+],
+"tests/test_exclusion_fit.py::test_the_minimiser_gets_only_the_points_outside_the_regions": [
+3.01,
+95
+],
+"tests/test_exclusion_fit.py::test_the_model_at_the_fitted_points_is_the_full_model_there": [
+2.3,
+69
+],
+"tests/test_exclusion_fit.py::test_the_regions_fit_like_the_spectrum_saved_without_their_points": [
+3.28,
+99
+],
+"tests/test_exclusion_fit.py::test_without_regions_every_point_is_fitted": [
+2.16,
+77
+],
+"tests/test_exclusion_gui.py::test_a_spectrum_saved_without_its_ends_keeps_its_drive": [
+2.91,
+48
+],
+"tests/test_exclusion_gui.py::test_apply_exclusion_shows_the_bar_and_puts_the_regions_in_use": [
+2.14,
+93
+],
+"tests/test_exclusion_gui.py::test_bands_are_drawn_only_while_applied_and_never_widen_the_axis": [
+2.18,
+44
+],
+"tests/test_exclusion_gui.py::test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves": [
+3.0,
+93
+],
 "tests/test_exclusion_gui.py::test_changing_the_regions_on_a_show_model_image_keeps_the_model": [
-2.8,
-71
+2.97,
+59
 ],
 "tests/test_exclusion_gui.py::test_clean_is_refused_while_a_calculation_runs": [
-2.0,
-25
+2.17,
+35
 ],
 "tests/test_exclusion_gui.py::test_clean_removes_every_region_and_drops_the_fit_result": [
-2.84,
-60
+2.87,
+70
 ],
 "tests/test_exclusion_gui.py::test_clicks_in_pan_mode_or_off_a_spectrum_are_ignored_and_esc_cancels": [
-2.24,
-18
-],
-"tests/test_exclusion_gui.py::test_cutting_an_end_of_a_cms_spectrum_warns[CMS, an end cut]": [
-2.42,
-12
-],
-"tests/test_exclusion_gui.py::test_cutting_an_end_of_a_cms_spectrum_warns[CMS, inside only]": [
-2.07,
-0
-],
-"tests/test_exclusion_gui.py::test_cutting_an_end_of_a_cms_spectrum_warns[SMS, an end cut]": [
-1.96,
-1
+3.1,
+31
 ],
 "tests/test_exclusion_gui.py::test_enter_in_the_box_applies_the_regions_and_not_show_model": [
-2.45,
-63
+2.23,
+77
 ],
 "tests/test_exclusion_gui.py::test_every_selected_spectrum_is_saved_without_its_excluded_points": [
-2.15,
+2.85,
 0
 ],
 "tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[CMS]": [
-1.91,
-57
+1.95,
+1
 ],
 "tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[SMS]": [
-1.84,
-0
+2.06,
+1
 ],
 "tests/test_exclusion_gui.py::test_save_and_load_and_load_replaces": [
-2.07,
-51
+2.71,
+41
 ],
 "tests/test_exclusion_gui.py::test_save_result_writes_the_regions_only_when_applied": [
-3.62,
-134
+4.9,
+112
 ],
 "tests/test_exclusion_gui.py::test_saving_without_excluded_points_needs_applied_regions": [
-2.01,
+2.1,
 0
 ],
 "tests/test_exclusion_gui.py::test_the_bar_takes_only_its_own_two_lines": [
-2.63,
-101
+2.6,
+109
 ],
 "tests/test_exclusion_gui.py::test_the_regions_do_not_change_while_a_calculation_runs": [
-2.07,
-1
+2.61,
+30
 ],
 "tests/test_exclusion_gui.py::test_the_text_is_cleaned_and_bad_text_is_refused": [
-2.26,
-61
+2.02,
+78
 ],
 "tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[fit]": [
-2.81,
-59
+3.26,
+51
 ],
 "tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[spectrum]": [
-2.31,
-46
+2.64,
+47
 ],
 "tests/test_exclusion_regions.py::test_a_bad_file_is_refused": [
 0.0,
@@ -2046,56 +2186,56 @@
 67
 ],
 "tests/test_instrumental_joint.py::test_a_link_follows_its_free_source[gaussians]": [
-8.81,
-126
+7.7,
+151
 ],
 "tests/test_instrumental_joint.py::test_a_link_follows_its_free_source[theory]": [
-12.05,
-117
-],
-"tests/test_instrumental_joint.py::test_after_a_search_with_the_model": [
-9.03,
-93
-],
-"tests/test_instrumental_joint.py::test_an_expression_follows_its_free_source": [
-7.08,
+11.98,
 104
 ],
+"tests/test_instrumental_joint.py::test_after_a_search_with_the_model": [
+9.39,
+101
+],
+"tests/test_instrumental_joint.py::test_an_expression_follows_its_free_source": [
+7.22,
+127
+],
 "tests/test_instrumental_joint.py::test_one_spectrum_takes_an_independent_value_as_its_value": [
-2.03,
-71
+1.95,
+70
 ],
 "tests/test_instrumental_joint.py::test_rescaling_the_gaussians_keeps_every_spectrum_s_curve": [
-6.79,
-68
+6.26,
+53
 ],
 "tests/test_instrumental_joint.py::test_several_spectra_without_nbaseline_are_one_model": [
-2.11,
-63
+1.96,
+58
 ],
 "tests/test_instrumental_joint.py::test_the_search_fits_only_the_points_outside_the_regions": [
-2.02,
-27
+1.84,
+16
 ],
 "tests/test_instrumental_joint.py::test_the_theoretical_search_returns_its_spectra_after_an_escalation": [
-19.33,
-93
+24.15,
+108
 ],
 "tests/test_instrumental_joint.py::test_two_spectra_one_model_share_the_free_parameters": [
-7.89,
-94
+8.38,
+85
 ],
 "tests/test_instrumental_joint.py::test_what_the_search_with_the_model_refuses[nbaseline_and_independent-independent =(X)]": [
-2.2,
-55
+2.11,
+79
 ],
 "tests/test_instrumental_joint.py::test_what_the_search_with_the_model_refuses[nbaseline_count-fitted to 2 spectra, but the path box has 3]": [
-2.19,
-37
+2.28,
+49
 ],
 "tests/test_instrumental_joint.py::test_what_the_search_with_the_model_refuses[recon-Recon]": [
-2.24,
-45
+1.96,
+51
 ],
 "tests/test_instrumental_metadata.py::test_a_file_written_before_with_both_follows_the_setting[gauss]": [
 2.12,

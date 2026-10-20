@@ -28,7 +28,7 @@ from syncmoss.instrumental_io import (
     source_for,
     same_method_params,
     hires_model_diff,
-    drive_rest_velocity,
+    drive_values,
     chi2_correction,
 )
 
@@ -499,20 +499,21 @@ def fit_model(app, inputs, spectrum_files, pool):
 
             print(f"[Fitting] Single spectrum loaded: {len(A)} points")
             print(f"[Fitting] X range: {A[0]:.2f} to {A[-1]:.2f}")
-            print(f"[Fitting] Y range: {B.min():.2f} to {B.max():.2f}")
+            print(f"[Fitting] Y range: {np.nanmin(B):.2f} to {np.nanmax(B):.2f}")
 
-        # Exclusion regions: their points are left out of the fit. The model is
-        # computed velocity by velocity (tests/test_model_pointwise.py), so the
-        # fit takes just the points that are left (A_data, B_data); the curves
-        # drawn after it are computed on every point.
+        # Exclusion regions, and points without counts (saved without excluded
+        # points): they are left out of the fit. The model is computed velocity
+        # by velocity (tests/test_model_pointwise.py), so the fit takes just the
+        # points that are left (A_data, B_data); the curves drawn after it are
+        # computed on every point.
         regions = tuple(inputs.get('exclusion_regions') or ())
-        if regions:
-            keeps = [exclusion_regions.kept(a, regions) for a in A_list]
+        keeps = [exclusion_regions.fitted(a, b, regions) for a, b in zip(A_list, B_list)]
+        if not all(k.all() for k in keeps):
             emptied = [os.path.basename(f) for f, k in zip(spectrum_files, keeps) if not k.any()]
             if emptied:
                 return {
                     'success': False,
-                    'message': f"every point of {', '.join(emptied)} is in an exclusion region"
+                    'message': f"every point of {', '.join(emptied)} is excluded"
                 }
             A_data = np.concatenate([a[k] for a, k in zip(A_list, keeps)])
             B_data = np.concatenate([b[k] for b, k in zip(B_list, keeps)])
@@ -542,9 +543,10 @@ def fit_model(app, inputs, spectrum_files, pool):
         method_params_list = []
         for ins_file, a in zip(files_for_ins, A_list):
             mp_i = resolve_instrumental_for_file(app, ins_file, use_dat_metadata=use_dat_metadata)
-            # where the cosine smearing starts: each spectrum's own (whole) axis,
-            # also when the rest is shared
-            mp_i['v_center'] = drive_rest_velocity(a)
+            # where the cosine smearing starts and the drive the channel widths
+            # come from: each spectrum's own (whole) axis, also when the rest is
+            # shared
+            mp_i.update(drive_values(app, a, os.path.basename(str(ins_file))))
             method_params_list.append(mp_i)
         mp0 = method_params_list[0]
 
@@ -611,11 +613,11 @@ def fit_model(app, inputs, spectrum_files, pool):
                                             Distri, Cor, met_list, norm, pol, recons, lengths,
                                             smearing=smearing)
 
-        # The source of every spectrum -- its Norm and its cosine smearing
-        # (source_for) -- prepared once, before the minimiser: for the fitted
-        # points and, when exclusion regions leave some out, for every point
-        # (the curves drawn after the fit). A simultaneous fit has a list of
-        # each, one per spectrum.
+        # The source of every spectrum -- its Norm and its smearing (the cosine
+        # smearing, the channel average: source_for) -- prepared once, before
+        # the minimiser: for the fitted points and, when exclusion regions leave
+        # some out, for every point (the curves drawn after the fit). A
+        # simultaneous fit has a list of each, one per spectrum.
         def sources_of(x, lengths):
             if lengths is None:
                 return source_for(pool, x, JN, mp0)

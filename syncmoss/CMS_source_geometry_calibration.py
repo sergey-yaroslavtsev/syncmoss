@@ -46,7 +46,7 @@ import numpy as np
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
 from syncmoss.Calibration import (Calibration, MulCoCMS, _fold_sinusoidal, _fold_triangular, _load_raw_counts,
-                                  _write_calibration_dat)
+                                  _raw_drive, _write_calibration_dat)
 from syncmoss.constants import ALPHA_FE_FIELD, NAT_WIDTH, number_of_baseline_parameters as NB
 from syncmoss.instrumental_io import compute_norm, drive_rest_velocity, r_ratio_of, write_gcms_file
 from syncmoss.spectrum_io import estimate_edge_background, load_spectrum
@@ -133,16 +133,20 @@ def source_refusal(source):
     return None
 
 
-def counts(x, p, model, lengths, G, dtheta, r_ratio, JN, pool):
+def counts(x, p, model, lengths, G, dtheta, r_ratio, JN, pool, channel_average=False):
     """The counts of *model* (parameters p) at the velocities x, with the CMS
     source of Gaussian width G and smearing Δθ: the smearing and its Norm
     prepared for these velocities, each spectrum from where its drive is at
-    rest, as every CMS search prepares them (instrumental_io.instrumental)."""
+    rest, as every CMS search prepares them (instrumental_io.instrumental);
+    with *channel_average*, every point averaged over its channel (the widths
+    of the drive of each spectrum's raw channels, Calibration._raw_drive)."""
     x = np.asarray(x, dtype=float)
     pieces = [x] if lengths is None else np.split(x, np.cumsum(lengths)[:-1])
     v_center = [drive_rest_velocity(piece) for piece in pieces]
-    smearing = m5.cms_smearing(x, JN, MulCoCMS, G, 1, dtheta, v_center if lengths else v_center[0], r_ratio,
-                               lengths)
+    widths = (np.concatenate([m5.channel_widths(piece, _raw_drive(piece)) for piece in pieces])
+              if channel_average else None)
+    smearing = m5.source_smearing(x, JN, MulCoCMS, G, 1, dtheta, v_center if lengths else v_center[0], r_ratio,
+                                  lengths, widths)
     source = {'x0': 0, 'MulCo': MulCoCMS, 'INS': G, 'Met': 1}
     if lengths is None:
         norm = compute_norm(pool, JN, source, x, smearing)
@@ -178,20 +182,22 @@ def single_line_parameters(q, c_high):
     return _baseline(q[LINE_NS], q[F_I], c_high) + [q[LINE_T], q[LINE_SHIFT], NAT_WIDTH, 0]
 
 
-def raw_counts(q, velocity, n_ch, source, r_ratio, JN, pool, line_only=False):
+def raw_counts(q, velocity, n_ch, source, r_ratio, JN, pool, line_only=False, channel_average=False):
     """Both raw spectra (alpha-Fe's channels, then the single line's) for the
     fitted vector q, or the single line's alone: the absorbers on the drive's
     velocities, times the count distortion, plus each spectrum's static
-    noise."""
+    noise; with *channel_average*, every channel averaged over its
+    velocities."""
     c_high, c_static = source['C_high'], source['C_static']
     v = velocity(np.arange(n_ch, dtype=float), q[DRIVE])
     w = distortion(n_ch, q[DISTORTION])
     G, dtheta = q[G_I], float(np.arccos(1 - q[U_I]))
     if line_only:
-        return (counts(v, single_line_parameters(q, c_high[1]), ['Singlet'], None, G, dtheta, r_ratio, JN, pool) * w
+        return (counts(v, single_line_parameters(q, c_high[1]), ['Singlet'], None, G, dtheta, r_ratio, JN, pool,
+                       channel_average) * w
                 + c_static[1])
     joint = counts(np.concatenate((v, v)), alpha_fe_parameters(q, c_high[0]) + single_line_parameters(q, c_high[1]),
-                   MODEL, [n_ch, n_ch], G, dtheta, r_ratio, JN, pool)
+                   MODEL, [n_ch, n_ch], G, dtheta, r_ratio, JN, pool, channel_average)
     return joint * np.concatenate((w, w)) + np.repeat(np.asarray(c_static, dtype=float), n_ch)
 
 
@@ -204,7 +210,7 @@ def _resonant_start(level, f_lm, c_high, c_static, name):
     return ns
 
 
-def start_vector(details, line_counts, line_folded, source, G, dtheta, r_ratio, JN, pool):
+def start_vector(details, line_counts, line_folded, source, G, dtheta, r_ratio, JN, pool, channel_average=False):
     """The fitted vector to start from: the drive, its distortion and alpha-Fe
     from the start calibration (*details*, Calibration's), the single line
     fitted on its own on that drive (G, Δθ and f_LM held)."""
@@ -226,7 +232,8 @@ def start_vector(details, line_counts, line_folded, source, G, dtheta, r_ratio, 
     q[LINE_SHIFT] = float(x_f[2:-2][np.argmin(smooth[2:-2])])
 
     def line_alone(trial):
-        return raw_counts(trial, details['velocity'], n_ch, source, r_ratio, JN, pool, line_only=True)
+        return raw_counts(trial, details['velocity'], n_ch, source, r_ratio, JN, pool, line_only=True,
+                          channel_average=channel_average)
 
     def deviance_at(t):
         # the Poisson deviance: what the fits here minimise (weights='P')
@@ -253,13 +260,14 @@ def _bounds(line_axis):
     return bounds
 
 
-def fit_together(q, data, velocity, n_ch, line_axis, source, r_ratio, JN, pool, chi2_correction=True):
+def fit_together(q, data, velocity, n_ch, line_axis, source, r_ratio, JN, pool, chi2_correction=True,
+                 channel_average=False):
     """Everything fitted together on both raw spectra (*data*: alpha-Fe's
     counts, then the single line's), by the Poisson likelihood; the errors
     carry sqrt(chi2) unless *chi2_correction* is False. Returns (q, errors,
     deviance, chi2): the reduced deviance it minimised and Pearson's chi2."""
     def f(_x, trial):
-        return raw_counts(trial, velocity, n_ch, source, r_ratio, JN, pool)
+        return raw_counts(trial, velocity, n_ch, source, r_ratio, JN, pool, channel_average=channel_average)
     x, bounds = np.arange(2 * n_ch), _bounds(line_axis)
     q, errors, deviance, chi2 = np.array(q, dtype=float), None, np.inf, np.nan
     # until a pass no longer lowers the deviance, as the instrumental-function searches refine
@@ -280,7 +288,7 @@ def _fold(method, v_axis, raw, fit, drive):
 
 
 def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameters, source, report=None,
-                     cancelled=None, chi2_correction=True):
+                     cancelled=None, chi2_correction=True, channel_average=False):
     """Calibrate the drive on the alpha-Fe and find G, Δθ and f_LM, in one fit
     with the single line (see the module docstring). *files*: the alpha-Fe and
     the single-line raw spectra; *diameters*: the source's and the aperture's
@@ -290,7 +298,8 @@ def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameter
 
     *report*, when given, takes a progress line; *cancelled* (a callable, the
     window's Interrupt) stops it between steps -- TI stops it inside them.
-    *chi2_correction*: the errors carry sqrt(chi2) (Supp).
+    *chi2_correction*: the errors carry sqrt(chi2) (Supp). *channel_average*:
+    every channel averaged over its velocities (Supp), in each step.
 
     Returns 'G', 'dtheta' and 'f_LM' with their 'errors', the 'start' G and Δθ,
     the 'drive' found, and the fit folded for the plot: 'A' (the folded axis,
@@ -318,18 +327,18 @@ def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameter
     report(f"Start: calibrating with G {G:.4f} mm/s, Δθ {dtheta:.4f} rad...")
     details = {}
     Calibration(params_dir, files[0], pool, 1, np.array([G]), JN, 0.0, MulCoCMS, Vel_start=vel_start, GCMS=G,
-                dtheta=dtheta, r_ratio=r_ratio, details=details)
+                dtheta=dtheta, r_ratio=r_ratio, details=details, channel_average=channel_average)
     check()
     report("Start: the single line on its own...")
     line_raw = np.asarray(_load_raw_counts(files[1]), dtype=float)
     alpha_raw = np.asarray(details['counts'], dtype=float)
     A_f, B_f = load_spectrum(None, [files[1]], calibration_path=calibration_path)
-    q = start_vector(details, line_raw, (A_f[0], B_f[0]), source, G, dtheta, r_ratio, JN, pool)
+    q = start_vector(details, line_raw, (A_f[0], B_f[0]), source, G, dtheta, r_ratio, JN, pool, channel_average)
     check()
     report("Calibration, G, Δθ and f_LM together...")
     n_ch, velocity = len(alpha_raw), details['velocity']
     q, errors, deviance, chi2 = fit_together(q, np.concatenate((alpha_raw, line_raw)), velocity, n_ch, A_f[0],
-                                             source, r_ratio, JN, pool, chi2_correction)
+                                             source, r_ratio, JN, pool, chi2_correction, channel_average)
     check()
 
     G, dtheta, f_lm = float(q[G_I]), float(np.arccos(1 - q[U_I])), float(q[F_I])
@@ -338,7 +347,7 @@ def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameter
     v_axis = velocity(np.arange(n_ch, dtype=float), q[DRIVE])
 
     def folded(jn):
-        model = raw_counts(q, velocity, n_ch, source, r_ratio, jn, pool)
+        model = raw_counts(q, velocity, n_ch, source, r_ratio, jn, pool, channel_average=channel_average)
         return [_fold(details['method'], v_axis, raw, fit, q[DRIVE])
                 for raw, fit in ((alpha_raw, model[:n_ch]), (line_raw, model[n_ch:]))]
     alpha, line = folded(JN)

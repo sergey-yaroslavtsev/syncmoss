@@ -1,4 +1,4 @@
-"""Cosine smearing of CMS spectra (models.Voigt_disc, models.cms_smearing,
+"""Cosine smearing of CMS spectra (models.Voigt_disc, models.source_smearing,
 which TI's callers prepare and pass as TI's ``smearing``), its storage next to
 G (#@GCMS and GCMS.txt: G, Δθ, then the diameters), the searches that fit G or
 Δθ, and models.erf.
@@ -72,7 +72,7 @@ def _cms(x, p, model, JN, dtheta=0.0, Norm=1.0, lengths=None, Recon=[0], v_cente
     """TI of a CMS spectrum with the smearing prepared for it, as TI's callers
     do; Norm=None: the source's own (_norm), as they pass it."""
     x = np.asarray(x, dtype=float)
-    smearing = m5.cms_smearing(x, JN, MulCoCMS, _G, 1, dtheta, v_center, r_ratio, lengths)
+    smearing = m5.source_smearing(x, JN, MulCoCMS, _G, 1, dtheta, v_center, r_ratio, lengths)
     if Norm is None:
         Norm = _norm(x, JN, smearing, lengths=lengths)
     return np.asarray(m5.TI(x, np.asarray(p, dtype=float), list(model), JN, SerialPool(), 0.0, MulCoCMS, _G,
@@ -222,12 +222,12 @@ def test_sms_and_zero_dtheta_have_no_smearing():
     """Nothing to prepare for an SMS spectrum or at dtheta = 0: TI then
     computes as it always did."""
     x = np.linspace(-6.0, 6.0, 41)
-    assert m5.cms_smearing(x, 16, _MULCO_SMS, _INS_SMS, 0, _DTHETA, 0.3, 0.5) is None
-    assert m5.cms_smearing(x, 16, MulCoCMS, _G, 1, 0.0, 0.3, 0.5) is None
-    assert m5.cms_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
-                           [0.0, _DTHETA], 0.3, 0.5, [41, 41]) is None
-    smeared = m5.cms_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
-                              _DTHETA, 0.3, 0.5, [41, 41])
+    assert m5.source_smearing(x, 16, _MULCO_SMS, _INS_SMS, 0, _DTHETA, 0.3, 0.5) is None
+    assert m5.source_smearing(x, 16, MulCoCMS, _G, 1, 0.0, 0.3, 0.5) is None
+    assert m5.source_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
+                              [0.0, _DTHETA], 0.3, 0.5, [41, 41]) is None
+    smeared = m5.source_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
+                                 _DTHETA, 0.3, 0.5, [41, 41])
     assert smeared[1] is None and np.shape(smeared[0][0]) == (16, 41)
 
 
@@ -253,11 +253,11 @@ def test_a_smearing_prepared_for_other_points_or_nodes_is_refused():
     """TI would otherwise skip nodes or misplace lines."""
     x = np.linspace(-8.0, 8.0, 41)
     p = _singlets([(5.0, 3.0)])
-    smearing = m5.cms_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, 0.3, _RATIO)
+    smearing = m5.source_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, 0.3, _RATIO)
     for xs, JN in ((x[:-1], 16), (x, 32)):
-        with pytest.raises(ValueError, match="cosine smearing prepared for"):
+        with pytest.raises(ValueError, match="source smearing prepared for"):
             m5.TI(xs, p, ['Singlet'], JN, SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, smearing=smearing)
-    with pytest.raises(ValueError, match="cosine smearing given for 1 spectra, the model has 2"):
+    with pytest.raises(ValueError, match="source smearing given for 1 spectra, the model has 2"):
         m5.TI(np.concatenate([x, x]), np.concatenate([p, p]), ['Singlet', 'Nbaseline', 'Singlet'], 16,
               SerialPool(), 0.0, MulCoCMS, _G, [0], [0], Met=1, lengths=[41, 41], smearing=[smearing])
 
@@ -395,8 +395,8 @@ def test_a_cms_section_is_smeared_and_an_sms_section_is_not():
     n = len(x)
     p_cms, p_sms = _singlets([(5.0, 3.0)], 2.0), _singlets([(5.0, 1.0)], 3.0)
     for dtheta, v_center in ((_DTHETA, 0.3), ([_DTHETA, _DTHETA], [0.3, -2.0]), ([_DTHETA, 0.0], [0.3, 0.0])):
-        smearing = m5.cms_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
-                                   dtheta, v_center, _RATIO, [n, n])
+        smearing = m5.source_smearing(np.concatenate([x, x]), 16, [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [1, 0],
+                                      dtheta, v_center, _RATIO, [n, n])
         mixed = np.asarray(m5.TI(np.concatenate([x, x]), np.concatenate([p_cms, p_sms]),
                                  ['Singlet', 'Nbaseline', 'Singlet'], 16, SerialPool(),
                                  [0.0, _X0_SMS], [MulCoCMS, _MULCO_SMS], [_G, _INS_SMS], [0], [0],
@@ -466,7 +466,7 @@ def test_recon_variants_carry_dtheta_v_center_and_r_over_r(sections):
     recons = [[w] for w in _W]
     got = m5.TI_recon_variants(x, p, model, 16, SerialPool(), 0.0, MulCoCMS, _G, [0], [0], 1, 1,
                                m5.SMS_POL_DEFAULT, recons, lengths,
-                               smearing=m5.cms_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, vc, rr, lengths))
+                               smearing=m5.source_smearing(x, 16, MulCoCMS, _G, 1, _DTHETA, vc, rr, lengths))
     for R, spectrum in zip(recons, got):
         m5._NODE_SUMS.clear()
         np.testing.assert_allclose(np.asarray(spectrum, dtype=float),
@@ -925,7 +925,7 @@ def _synthetic_cms(tmp_path, model, p, v, G, dtheta, r_ratio, JN, offset=0.0, ax
     """A CMS spectrum of *model* at *p* with the source G, Δθ, r/R (plus a flat
     *offset*), written as a plain two-column .dat (no #@GCMS: the fields decide)
     on its axis times *axis_scale* (a calibration that much off)."""
-    smearing = m5.cms_smearing(v, JN, MulCoCMS, G, 1, dtheta, iio.drive_rest_velocity(v), r_ratio)
+    smearing = m5.source_smearing(v, JN, MulCoCMS, G, 1, dtheta, iio.drive_rest_velocity(v), r_ratio)
     counts = np.asarray(m5.TI(v, p, model, JN, SerialPool(), 0.0, MulCoCMS, G, [0], [0], Met=1,
                               Norm=_norm(v, JN, smearing, G), smearing=smearing), dtype=float)
     path = os.path.join(str(tmp_path), "synthetic.dat")
@@ -1002,8 +1002,8 @@ def test_cms_searches_with_the_model_over_nbaseline_spectra(physics_app, tmp_pat
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, _, Recon, _ = model_io.read_model(app)
     p = iio.apply_links(p, iio._links_of(con1, con2, con3), Expr, NExpr)
     v = np.concatenate(axes)
-    smearing = m5.cms_smearing(v, app.JN0, MulCoCMS, G, 1, dtheta, [iio.drive_rest_velocity(a) for a in axes],
-                               r_ratio, [64, 64])
+    smearing = m5.source_smearing(v, app.JN0, MulCoCMS, G, 1, dtheta, [iio.drive_rest_velocity(a) for a in axes],
+                                  r_ratio, [64, 64])
     counts = np.asarray(m5.TI(v, p, model, app.JN0, SerialPool(), 0.0, MulCoCMS, G, Distri, Cor, Met=1,
                               Norm=_norm(v, app.JN0, smearing, G, [64, 64]), Recon=Recon, lengths=[64, 64],
                               smearing=smearing), dtype=float)

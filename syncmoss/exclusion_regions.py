@@ -7,7 +7,8 @@ means none. A point is excluded when ``lo <= v <= hi``.
 The model at one velocity does not depend on the other velocities computed --
 the instrumental function is integrated over the source energy for every
 velocity on its own (tests/test_model_pointwise.py) -- so a fit with exclusion
-regions is simply a fit of the points that are left.
+regions is simply a fit of the points that are left. Points whose counts are
+'nan' (saved without excluded points) are left out the same way (fitted).
 
 The user types the regions as ``lo:hi; lo:hi``; only ';' separates them.
 """
@@ -72,12 +73,19 @@ def format_regions(regions):
 
 
 def kept(velocities, regions):
-    """Boolean mask over *velocities*: True for the points that are fitted."""
+    """Boolean mask over *velocities*: True for the points outside *regions*."""
     v = np.asarray(velocities, dtype=float)
     keep = np.ones(v.shape, dtype=bool)
     for lo, hi in regions:
         keep &= ~((v >= lo) & (v <= hi))
     return keep
+
+
+def fitted(velocities, counts, regions):
+    """Boolean mask: True for the points a fit takes -- outside *regions* and
+    with counts. A spectrum saved without its excluded points keeps their
+    velocities (the drive's axis stays whole) with the counts 'nan'."""
+    return kept(velocities, regions) & np.isfinite(np.asarray(counts, dtype=float))
 
 
 def shortest_decimal_in(lo, hi, target):

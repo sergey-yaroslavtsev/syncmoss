@@ -11,8 +11,8 @@ import os
 
 from conftest import _destroy_window
 from syncmoss.supp_menu import (
-    SETTINGS_FILE, apply_saved_settings, chi2_correction_text, restore_default_settings,
-    save_settings_as_default, toggle_chi2_correction,
+    SETTINGS_FILE, apply_saved_settings, channel_average_text, chi2_correction_text, restore_default_settings,
+    save_settings_as_default, toggle_channel_average, toggle_chi2_correction,
 )
 from syncmoss.syncmoss_main import ONE_MODEL, PhysicsApp
 
@@ -26,6 +26,7 @@ _NOT_VALID = {
     'polarization': 1.5,
     'sequence_fitting_type': 7,       # no such Multispectra mode
     'instrumental_method': 'magic',
+    'channel_average': 1,             # a switch that is not true/false
 }
 
 
@@ -43,6 +44,7 @@ def _change_every_setting(w):
     w.instrumental_method = 'theory'             # what the method dialog sets
     w.instrumental_number.setText("5")
     toggle_chi2_correction(w, w.chi2_correction_action)
+    toggle_channel_average(w, w.channel_average_action)
     w.jn0_sms_input.setText("40")                # what the integral-points dialog sets
     w.jn0_cms_input.setText("100")
     w.refresh_jn0_for_mode()
@@ -72,7 +74,7 @@ def test_a_new_start_has_the_saved_settings(physics_app):
         assert not new.SMS_fit.isChecked()
         assert new.SMS_pol == 0.5
         for name in ('jn0_input', 'instrumental_btn', 'seq_fit_btn', 'cal_cho_title',
-                     'theme_action', 'chi2_correction_action'):
+                     'theme_action', 'chi2_correction_action', 'channel_average_action'):
             assert getattr(new, name).text() == getattr(w, name).text(), name
     finally:
         _destroy_window(new)
@@ -99,11 +101,12 @@ def test_a_saved_setting_not_valid_keeps_the_windows_value(physics_app):
     w = physics_app
     built_in = w.current_settings()
     with open(_path(w), 'w', encoding='utf-8') as f:
-        json.dump(dict(_NOT_VALID, chi2_correction=False, a_later_setting=1), f)
+        json.dump(dict(_NOT_VALID, chi2_correction=False, channel_average=False, a_later_setting=1), f)
     assert apply_saved_settings(w)
-    # the valid one is applied, the others keep their values
-    assert w.current_settings() == dict(built_in, chi2_correction=False)
+    # the valid ones are applied, the others keep their values
+    assert w.current_settings() == dict(built_in, chi2_correction=False, channel_average=False)
     assert w.chi2_correction_action.text() == chi2_correction_text(False)
+    assert w.channel_average_action.text() == channel_average_text(False)
     assert SETTINGS_FILE in w.log.toPlainText()
     # each not valid one is named; an unknown one is ignored
     assert sorted(w.apply_settings(dict(_NOT_VALID, a_later_setting=1))) == sorted(_NOT_VALID)

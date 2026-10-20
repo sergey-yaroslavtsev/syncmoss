@@ -249,6 +249,21 @@ def parameters_folder_is_read_only():
             "that searches, calibrates or resets.")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def channel_average_off():
+    """The suite computes with the channel average OFF (Supp -> Average model
+    over each channel, ON for the user): every window, and every object without
+    the setting, starts with it off, so the tests keep the model they were
+    written for. tests/test_channel_average.py turns it on where it is about
+    it. Yields the shipped defaults (instrumental_io's, syncmoss_main's)."""
+    import syncmoss.instrumental_io as iio
+    import syncmoss.syncmoss_main as main
+    shipped = (iio.DEFAULT_CHANNEL_AVERAGE, main.DEFAULT_CHANNEL_AVERAGE)
+    iio.DEFAULT_CHANNEL_AVERAGE = main.DEFAULT_CHANNEL_AVERAGE = False
+    yield shipped
+    iio.DEFAULT_CHANNEL_AVERAGE, main.DEFAULT_CHANNEL_AVERAGE = shipped
+
+
 @pytest.fixture(scope="session")
 def qapp():
     """A single QApplication shared by every GUI test in the session.

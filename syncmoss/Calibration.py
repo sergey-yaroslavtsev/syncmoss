@@ -459,12 +459,36 @@ def _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve, flat_coun
     plt.close()
 
 
+def _raw_drive(x):
+    """The drive of a raw sweep -- a velocity per channel, in recorded order, as
+    sin_cal or lin_cal make them -- as models.channel_widths takes it: a cosine
+    of one period over the channels (sin_cal: exact), else two ramps of one
+    step (lin_cal: the slope of the first). Fitted with minimi_hi."""
+    n = len(x)
+    channels = np.arange(n, dtype=float)
+    w = 2 * np.pi / n
+
+    def one_period(k, p):                              # sin_cal's cosine, phase at the channel's middle
+        return p[0] + p[1] * np.cos(w * (k + 0.5)) + p[2] * np.sin(w * (k + 0.5))
+
+    p = mi.minimi_hi(one_period, channels, x, np.array([0.5 * (np.min(x) + np.max(x)),
+                                                        0.5 * (np.max(x) - np.min(x)), 0.0]))[0]
+    if np.median(np.abs(x - one_period(channels, p))) <= m5.DRIVE_AXIS_TOLERANCE * np.median(np.abs(np.diff(x))):
+        return ('sine', float(p[0]), float(np.hypot(p[1], p[2])), w)
+    ramp = np.arange(int(n / 2) + 1, dtype=float)      # lin_cal's first ramp
+
+    def line(k, q):
+        return q[0] + q[1] * k
+    slope = mi.minimi_hi(line, ramp, x[:ramp.size], np.array([x[0], x[1] - x[0]]))[0][1]
+    return ('triangular', float(abs(slope)))
+
+
 # ========================================================================= #
 #  Main entry point                                                         #
 # ========================================================================= #
 
 def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, GCMS=0.1, dtheta=0.0,
-                r_ratio=0.0, details=None):
+                r_ratio=0.0, details=None, channel_average=False):
     """Fit the velocity calibration of a standard alpha-Fe absorber spectrum.
 
     Loads the calibration spectrum ``Cal_file``, auto-detects everything about
@@ -491,17 +515,21 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
             (down-up), ``0`` at its minimum (up-down).
         GCMS: Gaussian instrumental linewidth for CMS (the GUI GCMS box).
         dtheta: cosine smearing for CMS in rad (the GUI Δθ box,
-            models.cms_smearing's ``dtheta``); 0 = none. With it the model's
+            models.source_smearing's ``dtheta``); 0 = none. With it the model's
             lines sit out by ~<1/cos theta> and broaden, so the calibration
             gives the transducer velocity -- the axis the fits with the same
             dtheta take.
         r_ratio: d/D of the CMS source and aperture diameters (the Supp
-            setting, models.cms_smearing's ``r_ratio``), above 0 when dtheta is.
+            setting, models.source_smearing's ``r_ratio``), above 0 when dtheta is.
         details: a dict to receive what the fit found, for a procedure that
             starts from it (CMS_source_geometry_calibration): 'method' (0 sinusoidal, 1
             triangular), 'velocity' (channel -> velocity, ``velocity(x, drive)``),
             'pS' (the final-fit vector, layout above), 'model' (the absorber's
             parameters, pCAL) and 'counts' (the raw counts). None: nothing.
+        channel_average: every channel the model averaged over the
+            velocities the drive runs through in it (the Supp setting,
+            models "Channel average"), the widths from the drive curve being
+            fitted (_raw_drive).
 
     Returns:
         tuple ``(v_folded, data_folded, fit_folded)`` -- the folded velocity
@@ -536,11 +564,14 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
 
         def fit_func(x, p):
             # x is always the whole drive axis: its middle is the drive at rest,
-            # where the cosine smearing starts. The axis is what the calibration
-            # fits, so the smearing -- and with it the smeared source's own
-            # Norm, an array over x (the same empty-model sum as Norm above) --
-            # is prepared for every call.
-            smearing = m5.cms_smearing(x, JN, MulCoCMS, INS, 1, dtheta, 0.5 * (np.min(x) + np.max(x)), r_ratio)
+            # where the cosine smearing starts, and its channels' widths those
+            # of the channel average. The axis is what the calibration fits, so
+            # the smearing -- and with it the smeared source's own Norm, an
+            # array over x (the same empty-model sum as Norm above) -- is
+            # prepared for every call.
+            smearing = m5.source_smearing(x, JN, MulCoCMS, INS, 1, dtheta, 0.5 * (np.min(x) + np.max(x)), r_ratio,
+                                          channel_widths=m5.channel_widths(x, _raw_drive(x)) if channel_average
+                                          else None)
             norm = Norm if smearing is None else np.asarray(
                 m5.TI(x, pNorm, [], JN, pool, 0.0, MulCoCMS, INS, [0], [0], Met=1, smearing=smearing), dtype=float)
             return m5.TI(x, p, model, JN, pool, 0.0, MulCoCMS, INS, [], [],
@@ -552,7 +583,14 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
                      MulCo, INS, [0], [0])[0]
 
         def fit_func(x, p):
-            return m5.TI(x, p, model, JN, pool, x0, MulCo, INS, [], [], Norm=Norm)
+            if not channel_average:
+                return m5.TI(x, p, model, JN, pool, x0, MulCo, INS, [], [], Norm=Norm)
+            # the channel average of the axis being fitted, and the averaged
+            # source's own Norm, one per channel, prepared for every call
+            smearing = m5.source_smearing(x, JN, MulCo, INS, 0, 0.0, 0.0, 0.0,
+                                          channel_widths=m5.channel_widths(x, _raw_drive(x)), x0=x0)
+            norm = np.asarray(m5.TI(x, pNorm, [], JN, pool, x0, MulCo, INS, [0], [0], smearing=smearing), dtype=float)
+            return m5.TI(x, p, model, JN, pool, x0, MulCo, INS, [], [], Norm=norm, smearing=smearing)
 
         # The multi-line instrumental function displaces the apparent line
         # positions by its first moment (for the legacy sum of unit-area

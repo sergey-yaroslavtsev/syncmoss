@@ -19,7 +19,7 @@ import syncmoss.sms_theory as smst
 from syncmoss.spectrum_io import (load_spectrum, estimate_edge_background,
                                   resolve_calibration_path, calculate_backgrounds)
 from syncmoss.model_io import read_model, read_bounds_and_fix
-from syncmoss.exclusion_regions import kept
+from syncmoss.exclusion_regions import fitted
 
 
 # Built-in defaults used by "Reset to default values" in Instrumental function menu.
@@ -348,6 +348,20 @@ def chi2_correction(app):
     return getattr(app, 'chi2_correction', DEFAULT_CHI2_CORRECTION)
 
 
+# Whether every point is the model averaged over its channel -- the range of
+# velocities the drive runs through while the point is counted (models,
+# "Channel average") -- or the model at the point's velocity: Supp -> "Average
+# model over each channel", on unless the user turns it off. Fits, Show model,
+# the instrumental-function searches and the calibrations all follow it.
+DEFAULT_CHANNEL_AVERAGE = True
+
+
+def channel_average(app):
+    """True when the model averages every point over its channel (Supp); the
+    default for anything without the attribute (tests, scripts)."""
+    return getattr(app, 'channel_average', DEFAULT_CHANNEL_AVERAGE)
+
+
 def deviance_per_point(B, model):
     """The Poisson deviance of *model* against the counts *B*, per point: what
     the searches' fits minimise (weights='P'), so it is also what their grid,
@@ -413,7 +427,7 @@ def cms_source_numbers(values):
 
 
 def r_ratio_of(source_diameter, aperture_diameter):
-    """d/D of the diameters, the r/R of the radii (models.cms_smearing's
+    """d/D of the diameters, the r/R of the radii (models.source_smearing's
     ``r_ratio``), above 0 for any real source; 0 without an aperture, which the
     smearing refuses (models.disc_rule)."""
     return source_diameter / aperture_diameter if aperture_diameter > 0 else 0.0
@@ -448,7 +462,7 @@ def get_internal_gcms(app):
 
 def get_internal_dtheta(app):
     """The CMS cosine smearing Δθ (rad) of the field next to G
-    (models.cms_smearing's ``dtheta``), falling back to parameters/GCMS.txt,
+    (models.source_smearing's ``dtheta``), falling back to parameters/GCMS.txt,
     then to 0 (none)."""
     try:
         return float(app.dtheta_input.text())
@@ -475,7 +489,7 @@ def get_cms_diameters(app):
 
 def get_internal_r_ratio(app):
     """d/D of the Supp setting's diameters (get_cms_diameters):
-    models.cms_smearing's ``r_ratio``."""
+    models.source_smearing's ``r_ratio``."""
     return r_ratio_of(*get_cms_diameters(app))
 
 
@@ -483,9 +497,27 @@ def drive_rest_velocity(A):
     """Where the drive is at rest on the velocity axis A of a spectrum (mm/s):
     the middle of its range, as the drive sweeps symmetrically (sine or
     triangle). The cosine smearing scales velocities from there
-    (models.cms_smearing's ``v_center``). A must be the WHOLE axis, not the
+    (models.source_smearing's ``v_center``). A must be the WHOLE axis, not the
     points a fit keeps."""
     return 0.5 * (float(np.min(A)) + float(np.max(A)))
+
+
+def drive_values(app, A, name=''):
+    """What the WHOLE velocity axis A of a spectrum gives the source of its TI
+    calls (source_for), to add to its resolved method
+    (resolve_instrumental_for_file): 'v_center', where the drive is at rest
+    (drive_rest_velocity), and 'drive', the drive fitted to the axis
+    (models.fit_drive), whose channel widths the channel average takes -- None
+    with it off (Supp). An axis that is not a drive's is refused, *name* (the
+    spectrum's file) saying which."""
+    drive = None
+    if channel_average(app):
+        try:
+            drive = m5.fit_drive(A)
+        except ValueError as e:
+            raise ValueError(f"{name or 'spectrum'}: {e}; the channel average (Supp) needs the whole velocity "
+                             f"axis") from None
+    return {'v_center': drive_rest_velocity(A), 'drive': drive}
 
 
 def _smearing_note(dtheta, r_ratio=0.0):
@@ -521,7 +553,7 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
             'INS'    : float G (CMS) or instrumental-function array (SMS)
             'x0'     : float
             'MulCo'  : float
-            'dtheta' : the cosine smearing's Δθ (models.cms_smearing), CMS:
+            'dtheta' : the cosine smearing's Δθ (models.source_smearing), CMS:
                        the #@GCMS line's second number (0 when it has none),
                        else the Δθ field; SMS: 0
             'r_ratio': its d/D of the source and aperture diameters, the same
@@ -529,11 +561,11 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
             'source' : 'file' or 'internal'
             'note'   : human-readable description for the log box
 
-    The velocity the cosine smearing starts from, models.cms_smearing's
-    v_center, is not here: it needs the spectrum's velocities
-    (drive_rest_velocity) and the callers add it as 'v_center'. The smearing
-    itself, and with it the Norm, is prepared for the velocities and JN of
-    each TI call (source_for).
+    The velocity the cosine smearing starts from (models.source_smearing's
+    v_center) and the points' channel widths are not here: they need the
+    spectrum's velocities, and the callers add them (drive_values). The
+    smearing itself, and with it the Norm, is prepared for the velocities and
+    JN of each TI call (source_for).
     """
     ui_method = force_method or (
         'CMS' if (getattr(app, 'MS_fit', None) is not None and app.MS_fit.isChecked()) else 'SMS'
@@ -654,9 +686,9 @@ def compute_norm(pool, JN, method_params, x=None, smearing=None):
     empty model. It must be computed with the same JN and source as the TI
     call it is passed to; how CMS and SMS use it is explained at "SOURCE
     NORMALISATION" in models.TI. A number, the same at every velocity. With
-    the CMS cosine smearing (*smearing*, prepared for the velocities *x*), the
-    source differs from velocity to velocity, and so does this: an array over
-    x."""
+    the source smeared (*smearing*, prepared for the velocities *x*: the CMS
+    cosine smearing, the channel average), the source differs from velocity to
+    velocity, and so does this: an array over x."""
     pNorm = np.array([float(0)] * number_of_baseline_parameters)
     pNorm[0] = 1
     if smearing is None:
@@ -674,13 +706,18 @@ def compute_norm(pool, JN, method_params, x=None, smearing=None):
 
 def source_for(pool, x, JN, method_params):
     """The source of a TI call for the velocities x at JN nodes, from a
-    resolved method, as TI takes it: (Norm, smearing) -- the cosine smearing
-    (models.cms_smearing; None for SMS or without Δθ) and the Norm of the
-    source with it (compute_norm). Prepared before TI is called, for exactly
-    that call's x and JN."""
+    resolved method with its drive values (drive_values), as TI takes it:
+    (Norm, smearing) -- the source's smearing (models.source_smearing: the
+    cosine smearing, CMS with Δθ, and the channel average when the method
+    carries a drive, its channel widths at x; None for neither) and the Norm of
+    the source with it (compute_norm). Prepared before TI is called, for
+    exactly that call's x and JN -- any part of the spectrum's points."""
     mp = method_params
-    smearing = m5.cms_smearing(x, JN, mp['MulCo'], mp['INS'], mp['Met'], mp.get('dtheta', 0.0),
-                               mp.get('v_center', 0.0), mp.get('r_ratio', 0.0))
+    drive = mp.get('drive')
+    smearing = m5.source_smearing(x, JN, mp['MulCo'], mp['INS'], mp['Met'], mp.get('dtheta', 0.0),
+                                  mp.get('v_center', 0.0), mp.get('r_ratio', 0.0),
+                                  channel_widths=None if drive is None else m5.channel_widths(x, drive),
+                                  x0=mp['x0'])
     return compute_norm(pool, JN, mp, x, smearing), smearing
 
 
@@ -1121,16 +1158,24 @@ def search_data(app, request):
     the points that are fitted -- those outside the exclusion regions -- as
     'A_fit'/'B_fit'/'lengths_fit'. TI is point by point in velocity
     (tests/test_model_pointwise.py), so fitting the kept points IS the fit with
-    the regions left out.
+    the regions left out. 'channel_widths' and 'channel_widths_fit': the
+    channel widths of those points, from the drive of every spectrum's whole
+    axis (drive_values); None with the channel average off (Supp).
     """
     files = list(request['files'])
     A_list, B_list = load_spectrum(app, files, calibration_path=app.calibration_path)
     regions = tuple(request.get('exclusion_regions') or ())
-    keeps = [kept(a, regions) for a in A_list]
+    keeps = [fitted(a, b, regions) for a, b in zip(A_list, B_list)]
     emptied = [os.path.basename(f) for f, k in zip(files, keeps) if not k.any()]
     if emptied:
-        raise SearchRefused(f"every point of {', '.join(emptied)} is in an exclusion region")
+        raise SearchRefused(f"every point of {', '.join(emptied)} is excluded")
     joint = len(files) > 1
+    try:
+        drives = [drive_values(app, a, os.path.basename(f))['drive'] for a, f in zip(A_list, files)]
+    except ValueError as e:
+        raise SearchRefused(str(e)) from None
+    averaged = drives[0] is not None
+    widths = [m5.channel_widths(a, d) for a, d in zip(A_list, drives)] if averaged else None
     return {
         'files': files, 'regions': regions, 'A_list': A_list, 'B_list': B_list,
         'A': np.concatenate(A_list), 'B': np.concatenate(B_list),
@@ -1138,6 +1183,8 @@ def search_data(app, request):
         'A_fit': np.concatenate([a[k] for a, k in zip(A_list, keeps)]),
         'B_fit': np.concatenate([b[k] for b, k in zip(B_list, keeps)]),
         'lengths_fit': [int(k.sum()) for k in keeps] if joint else None,
+        'channel_widths': np.concatenate(widths) if averaged else None,
+        'channel_widths_fit': np.concatenate([w[k] for w, k in zip(widths, keeps)]) if averaged else None,
     }
 
 
@@ -1595,18 +1642,25 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
     # counts a reference adds to the spectrum after the model, flat: the
     # detector's static noise of the alpha-Fe Δθ search
     offset = extra.get('offset', 0.0)
+
+    def sms_smearing(x_exp, p, lengths, widths):
+        # SMS: the Gaussians are being fitted, so their channel average is
+        # prepared for every call (None with it off)
+        return m5.source_smearing(x_exp, JN, MulCo, p[mod_p_len:], 0, 0.0, 0.0, 0.0, lengths, widths, x0)
+
     if CMS_ch == 1:
         # every reference (single line, model, pure alpha-Fe) the same way: the
         # last entry of p is G -- or Δθ in a Δθ search
         def cms_source(p):
             return (p[-1], dtheta) if dtheta_search is None else (g_cms, p[-1])
 
-        def INSSS(x_exp, p, lengths=lengths):
-            # G or Δθ is being fitted: the source -- its smearing and, with it,
-            # its Norm, one per spectrum -- is prepared for every call. Without
-            # smearing, the plain Norm of G (cms_norm).
+        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+            # G or Δθ is being fitted: the source -- its smearing (the cosine
+            # smearing, the channel average) and, with it, its Norm, one per
+            # spectrum -- is prepared for every call. Without smearing, the
+            # plain Norm of G (cms_norm).
             g, th = cms_source(p)
-            smearing = m5.cms_smearing(x_exp, JN, MulCoCMS, g, 1, th, v_center, r_ratio, lengths)
+            smearing = m5.source_smearing(x_exp, JN, MulCoCMS, g, 1, th, v_center, r_ratio, lengths, widths)
             if smearing is None:
                 norm = cms_norm(JN, g)
             else:
@@ -1619,16 +1673,19 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
             return spectrum + offset if offset else spectrum
 
     elif mode == 1:
-        def INSSS(x_exp, p, lengths=lengths):
-            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon, lengths=lengths)
+        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon, lengths=lengths,
+                         smearing=sms_smearing(x_exp, p, lengths, widths))
 
     elif mode == 0:
-        def INSSS(x_exp, p, lengths=lengths):
-            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
+        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths,
+                         smearing=sms_smearing(x_exp, p, lengths, widths))
 
     elif mode == 2:
-        def INSSS(x_exp, p, lengths=lengths):
-            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths)
+        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+            return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths,
+                         smearing=sms_smearing(x_exp, p, lengths, widths))
 
     # Normalization function
     # to insure sum of amplitudes squared = 1 in case of SMS
@@ -1759,10 +1816,10 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
         print('G:', g_out, ' dtheta:', dtheta_out, ' d/D:', r_ratio)
 
     # Calculate fitted spectra for plotting: every point, the excluded ones too
-    F = INSSS(data['A'], p, data['lengths'])
+    F = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
     JN_save = np.copy(JN)
     JN = JN * 4
-    F2 = INSSS(data['A'], p, data['lengths'])
+    F2 = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
     JN = JN_save
 
     # Save instrumental function parameters
@@ -2279,7 +2336,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     x0, MulCo = m5.limits(pool, JN, make_ins(p0))
     print(f"[Instrumental function: theory] integration grid: x0={x0:.5f}, MulCo={MulCo:.5f}")
 
-    def INSSS(x_exp, pp, lengths=lengths):
+    def INSSS(x_exp, pp, lengths=lengths, widths=data['channel_widths_fit']):
         # COOPERATIVE INTERRUPT. "! INTERRUPT !" terminates and recreates the
         # multiprocessing pool, which stops an ordinary fit because an ordinary
         # fit spends its time IN the pool. This search does not: the cost is
@@ -2289,9 +2346,13 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         # the answer comes back within one evaluation of the click.
         if search_cancelled(app):
             raise FitInterrupted()
+        # the shape is being fitted: its channel average is prepared for every
+        # call (None with it off)
+        ins = make_ins(pp[mod_p_len:])
+        smearing = m5.source_smearing(x_exp, JN, MulCo, ins, 0, 0.0, 0.0, 0.0, lengths, widths, x0)
         return m5.TI(x_exp, pp[:mod_p_len], model, JN, pool, x0, MulCo,
-                     make_ins(pp[mod_p_len:]), Distri, Cor, Recon=Recon,
-                     lengths=lengths)
+                     ins, Distri, Cor, Recon=Recon,
+                     lengths=lengths, smearing=smearing)
 
     def chi2_of(pp):
         # the deviance per point: what the passes minimise (weights='P')
@@ -2608,10 +2669,10 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
               f"({e}); INSexp.txt is left as it was")
 
     # every point, the excluded ones too
-    F = INSSS(data['A'], p, data['lengths'])
+    F = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
     JN_save = int(JN)
     JN = JN * HIRES_INTEGRATION_FACTOR
-    F2 = INSSS(data['A'], p, data['lengths'])
+    F2 = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
     JN = JN_save
 
     # Convergence of the transmission integral. The integration grid is uniform

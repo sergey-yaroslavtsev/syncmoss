@@ -74,7 +74,7 @@ from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, 
 # ---------------------------------------------------------------------------
 from syncmoss.expression_eval import eval_expr
 import syncmoss.fitting_io as fitting_io
-from syncmoss.models import TI, FIT_CANCEL, FitInterrupted
+from syncmoss.models import TI, FIT_CANCEL, FitInterrupted, fit_drive
 from syncmoss.Calibration import Calibration
 from syncmoss.constants import (model_colors, number_of_baseline_parameters,
                                SMS_POL_DEFAULT, NBASELINE_COLOR)
@@ -107,12 +107,14 @@ from syncmoss.spectrum_plotter import (
     calculate_baseline, update_exclusion_regions, remove_chi2_title, chi2_title,
 )
 from syncmoss.exclusion_bar import ExclusionBar
-from syncmoss.exclusion_regions import format_regions, kept as kept_points
+from syncmoss.exclusion_regions import format_regions
 import syncmoss.exclusion_regions as exclusion_regions
 from syncmoss.instrumental_io import (
     DEFAULT_INSTRUMENTAL_METHOD,
     DEFAULT_CHI2_CORRECTION,
+    DEFAULT_CHANNEL_AVERAGE,
     chi2_correction,
+    channel_average,
     instrumental,
     instrumental_theory,
     SearchRefused,
@@ -133,12 +135,13 @@ from syncmoss.instrumental_io import (
     get_cms_diameters,
     read_gcms_file,
     write_gcms_file,
-    drive_rest_velocity,
+    drive_values,
 )
 from syncmoss.CMS_source_geometry_calibration import calibrate_source, refusal as source_calibration_refusal
 from syncmoss.Library_window import save_to_library_via_dialog
 from syncmoss.supp_menu import (
-    INSTRUMENTAL_METHODS, build_supp_menu, chi2_correction_text, contact_icon, theme_action_text,
+    INSTRUMENTAL_METHODS, build_supp_menu, channel_average_text, chi2_correction_text, contact_icon,
+    refuse_channel_average, theme_action_text,
 )
 from syncmoss.instrumental_dialogs import (
     open_dtheta_alpha_fe_dialog, open_source_calibration_dialog, open_theory_find_dialog,
@@ -341,7 +344,7 @@ class CalibrationThread(QThread):
     error = Signal(str)
     
     def __init__(self, dir_path, file, experimental_method, INS, JN, x0, MulCo, vel_start, pool, GCMS=0.1,
-                 dtheta=0.0, r_ratio=0.0):
+                 dtheta=0.0, r_ratio=0.0, channel_average=False):
         super().__init__()
         self.dir_path = dir_path
         self.file = file
@@ -355,6 +358,7 @@ class CalibrationThread(QThread):
         self.GCMS = GCMS  # single Gaussian width used as the CMS instrumental function
         self.dtheta = dtheta  # CMS cosine smearing (rad), the Δθ field
         self.r_ratio = r_ratio  # d/D of the CMS source and aperture diameters (Supp)
+        self.channel_average = channel_average  # the model averaged over each channel (Supp)
 
     def run(self):
         try:
@@ -366,7 +370,7 @@ class CalibrationThread(QThread):
                 self.dir_path, self.file, pool,
                 self.experimental_method, self.INS, self.JN,
                 self.x0, self.MulCo, self.vel_start, GCMS=self.GCMS, dtheta=self.dtheta,
-                r_ratio=self.r_ratio
+                r_ratio=self.r_ratio, channel_average=self.channel_average
             )
             
             # Don't close the global pool - it's reused throughout the app
@@ -386,19 +390,22 @@ class SourceCalibrationThread(QThread):
     done = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, params_dir, files, pool, JN, vel_start, source, diameters, chi2_correction=True):
+    def __init__(self, params_dir, files, pool, JN, vel_start, source, diameters, chi2_correction=True,
+                 channel_average=False):
         super().__init__()
         self.params_dir, self.files, self.pool = params_dir, files, pool
         self.JN, self.vel_start = JN, vel_start
         self.source, self.diameters = source, diameters   # open_source_calibration_dialog's numbers
         self.chi2_correction = chi2_correction
+        self.channel_average = channel_average
 
     def run(self):
         try:
             self.done.emit(calibrate_source(self.params_dir, self.files, self.pool, self.JN, self.vel_start,
                                             self.source['G'], self.source['dtheta'], self.diameters, self.source,
                                             report=self.progress.emit, cancelled=FIT_CANCEL.is_set,
-                                            chi2_correction=self.chi2_correction))
+                                            chi2_correction=self.chi2_correction,
+                                            channel_average=self.channel_average))
         except FitInterrupted as e:
             self.failed.emit(str(e) or "interrupted")
         except Exception as e:
@@ -780,12 +787,14 @@ class ShowModelThread(QThread):
                         section_files.append(None)
 
             use_dat_metadata = bool(getattr(self.main_window, 'use_dat_instrumental_metadata', True))
-            # each section's whole velocity axis: where its cosine smearing starts
+            # each section's whole velocity axis: where its cosine smearing
+            # starts, and its points' channel widths
             section_axes = A_list if num_nbaseline > 0 else [A]
             method_params_list = []
             for section_file, axis in zip(section_files, section_axes):
                 mp_section = resolve_instrumental_for_file(self.main_window, section_file, use_dat_metadata=use_dat_metadata)
-                mp_section['v_center'] = drive_rest_velocity(axis)
+                mp_section.update(drive_values(self.main_window, axis,
+                                               os.path.basename(section_file) if section_file else 'model'))
                 method_params_list.append(mp_section)
 
             note_lines = [mp_section['note'] for mp_section in method_params_list]
@@ -1132,6 +1141,9 @@ class PhysicsApp(QMainWindow):
         # Whether the fits' errors carry sqrt(chi2): Supp -> "Empirical
         # correction of errors by χ²" (per session)
         self.chi2_correction = DEFAULT_CHI2_CORRECTION
+        # Whether every point is the model averaged over its channel: Supp ->
+        # "Average model over each channel" (instrumental_io.channel_average)
+        self.channel_average = DEFAULT_CHANNEL_AVERAGE
         # Set once the user ticks "do not ask again" on the mixed/different
         # instrumental-function warning (per-session, resets on restart).
         self.suppress_mixed_metadata_warning = False
@@ -1875,6 +1887,7 @@ class PhysicsApp(QMainWindow):
             'instrumental_method': self.instrumental_method,
             'instrumental_number': int(self.instrumental_number.text()),
             'chi2_correction': self.chi2_correction,
+            'channel_average': self.channel_average,
             'jn0_sms': int(self.jn0_sms_input.text()),
             'jn0_cms': int(self.jn0_cms_input.text()),
             'polarization': float(self.polarization_input.text()),
@@ -1934,6 +1947,10 @@ class PhysicsApp(QMainWindow):
         if correction is not None:
             self.chi2_correction = correction
             self.chi2_correction_action.setText(chi2_correction_text(correction))
+        averaged = take('channel_average', switch)
+        if averaged is not None:
+            self.channel_average = averaged
+            self.channel_average_action.setText(channel_average_text(averaged))
         dark = take('dark_mode', switch)
         if dark is not None and dark != self._is_dark_mode:
             self.toggle_theme()
@@ -2560,7 +2577,8 @@ class PhysicsApp(QMainWindow):
         # Start calibration in a separate thread
         self.calibration_thread = CalibrationThread(
             self.params_dir, file, experimental_method, self.INS, JN, self.x0, self.MulCo, vel_start, self.pool,
-            GCMS=self.GCMS, dtheta=get_internal_dtheta(self), r_ratio=get_internal_r_ratio(self)
+            GCMS=self.GCMS, dtheta=get_internal_dtheta(self), r_ratio=get_internal_r_ratio(self),
+            channel_average=channel_average(self)
         )
         self.calibration_thread.finished.connect(self.on_calibration_finished)
         self.calibration_thread.error.connect(self.on_calibration_error)
@@ -2628,6 +2646,9 @@ class PhysicsApp(QMainWindow):
             path_error = self.check_spectrum_paths_exist(self.path_list)
             if path_error:
                 self.set_status(path_error, "red")
+                self.inprogress = False
+                return
+            if self.channel_average_refused(self.path_list, "Show model"):
                 self.inprogress = False
                 return
 
@@ -3285,6 +3306,9 @@ class PhysicsApp(QMainWindow):
         if request is None:
             self.inprogress = False
             return
+        if self.channel_average_refused(request['files'], "The instrumental-function search"):
+            self.inprogress = False
+            return
 
         # Start instrumental calculation in a thread
         together = (f", {len(request['files'])} spectra together"
@@ -3349,7 +3373,7 @@ class PhysicsApp(QMainWindow):
         self.set_status(f"{what}...", "blue")
         self.source_calibration_thread = SourceCalibrationThread(
             self.params_dir, files, self.pool, int(self.jn0_input.text()), int(self.velocity_direction),
-            source, get_cms_diameters(self), chi2_correction(self))
+            source, get_cms_diameters(self), chi2_correction(self), channel_average(self))
         self.source_calibration_thread.progress.connect(lambda line: self.set_status(line, "blue"))
         self.source_calibration_thread.done.connect(self.on_source_calibration_done)
         self.source_calibration_thread.failed.connect(self.on_source_calibration_failed)
@@ -3950,8 +3974,29 @@ class PhysicsApp(QMainWindow):
         for i, (A, B) in enumerate(zip(A_list, B_list)):
             if len(A) == 0 or len(B) == 0:
                 return False, f"File contains no data: {spectrum_files[i]}"
-        
+
         return True, None
+
+    def channel_average_refused(self, spectrum_files, action):
+        """True -- after a window saying why and what to do
+        (refuse_channel_average) -- when the channel average is on (Supp) and
+        the velocities of one of *spectrum_files* are not those of a drive, one
+        channel apart (models.fit_drive: points missing). Checked before
+        *action* starts, so that nothing runs."""
+        if not channel_average(self):
+            return False
+        for path in spectrum_files:
+            A_list, _ = load_spectrum(self, [path], calibration_path=self.calibration_path)
+            if not A_list or len(A_list[0]) == 0:
+                continue                      # a file that does not load is refused elsewhere
+            try:
+                fit_drive(A_list[0])
+            except ValueError as e:
+                reason = f"{os.path.basename(path)}: {e}"
+                self.set_status(f"{action} was not started — {reason}", "red")
+                refuse_channel_average(self, reason)
+                return True
+        return False
             
     
     def fit_pressed(self):
@@ -4006,7 +4051,10 @@ class PhysicsApp(QMainWindow):
                 self.set_status(f"Spectrum validation failed: {error_msg}", "red")
                 self.inprogress = False
                 return
-            
+            if self.channel_average_refused(spectrum_files, "Fit"):
+                self.inprogress = False
+                return
+
             # Several spectra and independent =(X) values (or the one-model mode
             # of Multispectra settings): one model fitted to all of them at once
             one_model_fit, refused = self.one_model_request(spectrum_files)
@@ -4138,6 +4186,9 @@ class PhysicsApp(QMainWindow):
         valid, error_msg = self.validate_spectrum_files([path])
         if not valid:
             self.set_status(f"Spectrum validation failed: {error_msg}", "red")
+            self.inprogress = False
+            return
+        if self.channel_average_refused([path], "Fit one spectrum"):
             self.inprogress = False
             return
         if not self.confirm_instrumental_methods([path], 'single'):
@@ -4419,8 +4470,8 @@ class PhysicsApp(QMainWindow):
         n_free = fitting_io.free_parameter_count(inputs)
         lines = []
         for path in spectrum_files:
-            A_list, _ = load_spectrum(self, [path], calibration_path=self.calibration_path)
-            n_points = int(kept_points(A_list[0], regions).sum()) if A_list else 0
+            A_list, B_list = load_spectrum(self, [path], calibration_path=self.calibration_path)
+            n_points = int(exclusion_regions.fitted(A_list[0], B_list[0], regions).sum()) if A_list else 0
             reason = fitting_io.too_few_points(n_points, n_free, regions)
             if reason:
                 lines.append(f"{os.path.basename(path)}: {reason}")
@@ -5213,7 +5264,7 @@ class PhysicsApp(QMainWindow):
                     columns.append(np.asarray(data, dtype=float))
                 if regions:
                     column_names.append('Fitted')
-                    columns.append(kept_points(A, regions).astype(float))
+                    columns.append(exclusion_regions.fitted(A, B, regions).astype(float))
                 self._write_graf_columns(spectrum_base + '_graf.txt', column_names, columns)
             write(spectrum_base + '_graf.txt', graf)
 
@@ -5369,12 +5420,13 @@ class PhysicsApp(QMainWindow):
         regions = fitting_data.get('exclusion_regions')
         if regions:
             if fitting_data.get('is_simultaneous'):
-                for i, A in enumerate(fitting_data['A']):
+                for i, (A, B) in enumerate(zip(fitting_data['A'], fitting_data['B'])):
                     column_names.append(f'S{i + 1}_Fitted')
-                    data_columns.append(kept_points(A, regions).astype(float))
+                    data_columns.append(exclusion_regions.fitted(A, B, regions).astype(float))
             else:
                 column_names.append('Fitted')
-                data_columns.append(kept_points(fitting_data['A'], regions).astype(float))
+                data_columns.append(exclusion_regions.fitted(fitting_data['A'], fitting_data['B'],
+                                                             regions).astype(float))
 
         self._write_graf_columns(filepath, column_names, data_columns)
 

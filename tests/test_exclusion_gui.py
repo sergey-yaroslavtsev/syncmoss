@@ -15,8 +15,10 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+import syncmoss.models as m5
 from syncmoss import exclusion_regions as er
 from syncmoss import fitting_io, spectrum_io
+from syncmoss import instrumental_io as iio
 from syncmoss.instrumental_io import build_dat_metadata_lines, resolve_instrumental_for_file
 from syncmoss.model_io import model_file_rows
 from syncmoss.spectrum_io import load_spectrum, save_spectrum_with_metadata
@@ -370,30 +372,26 @@ def test_every_selected_spectrum_is_saved_without_its_excluded_points(physics_ap
         assert "#@GCMS 0.1" in lines
         assert "# Excluded regions, mm/s: -3:-2; 1:2" in lines
         A_saved, B_saved = load_spectrum(app, [str(saved)], calibration_path=app.calibration_path)
-        assert np.array_equal(A_saved[0], A[0][keep]) and np.array_equal(B_saved[0], B[0][keep])
+        # every velocity kept, the excluded points' counts 'nan': no fit takes them
+        assert np.array_equal(A_saved[0], A[0]) and np.array_equal(B_saved[0][keep], B[0][keep])
+        assert np.isnan(B_saved[0][~keep]).all() and (~keep).any()
+        assert np.array_equal(er.fitted(A_saved[0], B_saved[0], ()), keep)
 
 
-@pytest.mark.parametrize("cms, end, warned", [(True, True, True), (True, False, False), (False, True, False)],
-                         ids=["CMS, an end cut", "CMS, inside only", "SMS, an end cut"])
-def test_cutting_an_end_of_a_cms_spectrum_warns(physics_app, tmp_path, monkeypatch, cms, end, warned):
-    """Saved without an end of its velocity range, a CMS spectrum has another
-    middle -- where its cosine smearing would start: a warning, the save done."""
+def test_a_spectrum_saved_without_its_ends_keeps_its_drive(physics_app, tmp_path, monkeypatch):
+    """Excluded ends stay on the velocity axis ('nan' counts): where the drive
+    is at rest (the cosine smearing's centre) and the drive itself (the
+    channel average's widths) are those of the whole spectrum."""
     app = physics_app
-    A = np.loadtxt(os.path.join(FROZEN_PARAMETERS, "Calibration.dat"), comments='#', unpack=True)[0]
-    paths = _spectra(app, tmp_path, 2, metadata=["#@GCMS 0.1 0.2 5 20"] if cms else [])
-    _apply(app, f"{A.min() - 1:.3f}:{A.min() + 0.5:.3f}" if end else REGIONS)
-    app.save_path.setText(str(tmp_path / "cut"))
-    monkeypatch.setattr(spectrum_io.QMessageBox, "question",
-                        lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
-    shown = []
-    monkeypatch.setattr(spectrum_io.QMessageBox, "warning", lambda *args, **kwargs: shown.append(args[-1]))
-
-    spectrum_io.save_without_excluded_points(app)
-
-    assert all(os.path.exists(tmp_path / "cut" / f"excl_{os.path.basename(p)}") for p in paths)
-    assert bool(shown) is warned
-    if warned:
-        assert "Δθ" in shown[0] and "2 spectra" in shown[0]
+    path, = _spectra(app, tmp_path, 1, metadata=["#@GCMS 0.1 0.2 5 20"])
+    A = load_spectrum(app, [path], calibration_path=app.calibration_path)[0][0]
+    regions = _apply(app, f"{A.min() - 1:.3f}:{A.min() + 0.5:.3f}")
+    saved = str(tmp_path / "cut.dat")
+    assert spectrum_io.process_without_excluded(app, path, saved, regions) == er.kept(A, regions).sum()
+    A_saved = load_spectrum(app, [saved], calibration_path=app.calibration_path)[0][0]
+    assert np.array_equal(A_saved, A)
+    assert iio.drive_rest_velocity(A_saved) == iio.drive_rest_velocity(A)
+    assert m5.fit_drive(A_saved) == m5.fit_drive(A)
 
 
 @pytest.mark.parametrize("method", ["SMS", "CMS"])
@@ -418,8 +416,8 @@ def test_raw_counts_are_saved_with_the_instrumental_function_in_use(physics_app,
     keep = er.kept(A[0], regions)
     A_saved, B_saved = load_spectrum(app, [saved], calibration_path=app.calibration_path)
     assert written == keep.sum()
-    assert np.array_equal(B_saved[0], B[0][keep])
-    assert np.allclose(A_saved[0], A[0][keep], rtol=0, atol=5e-7)     # written with 6 decimals
+    assert np.array_equal(B_saved[0][keep], B[0][keep]) and np.isnan(B_saved[0][~keep]).all()
+    assert np.allclose(A_saved[0], A[0], rtol=0, atol=5e-7)     # every velocity, written with 6 decimals
 
 
 def test_saving_without_excluded_points_needs_applied_regions(physics_app, tmp_path):
