@@ -23,6 +23,7 @@ Gauss-Jordan kernel, which
 * came back without the sqrt(chi2) the errors have, so an Expression or a %
   intensity propagated through it was 1/sqrt(chi2) of what the errors say.
 """
+import inspect
 import warnings
 
 import numpy as np
@@ -191,11 +192,17 @@ def test_poisson_weights_maximise_the_likelihood():
 
 
 def test_an_array_of_data_weights_is_W():
+    """The same fit, rounded differently: 'W' scales the rows by
+    1/sqrt(|y|+1), the array by sqrt(1/(|y|+1)), an ulp apart. The two stop
+    where the reduced chi-square drops by less than eps, so they agree to what
+    that resolves, sigma*sqrt(eps*dof), not to rounding."""
     y = _counts(_dip, X, [1e3, 0.3, 0.2], 7)
     p0 = np.array([1.01e3, 0.25, 0.1])
     by_name = mi.minimi_hi(_dip, X, y, p0, weights='W')
     by_array = mi.minimi_hi(_dip, X, y, p0, weights=1 / (np.abs(y) + 1))
-    assert by_array[0] == pytest.approx(by_name[0], rel=1e-9)
+    eps = inspect.signature(mi.minimi_hi).parameters['eps'].default
+    sigma = by_name[1] / np.sqrt(by_name[4])           # without Pearson's factor
+    assert np.all(np.abs(by_array[0] - by_name[0]) < sigma * np.sqrt(eps * (len(X) - 3)))
     assert by_array[2] == pytest.approx(by_name[2], rel=1e-9)
 
 
