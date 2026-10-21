@@ -92,9 +92,10 @@ _CMS_HIGH_ENERGY = 12889 / 100 / 1024 * 50258 * 2
 # (see step_check_results).
 _CHI2_SIGMAS = 3
 
-# The titles of the questions a fit of the two standards asks before it starts
-# (PhysicsApp.confirm_instrumental_methods).
-_FIT_QUESTIONS = ("Instrumental method from .dat file", "Different instrumental functions")
+# The questions a fit of the two standards asks before it starts
+# (PhysicsApp.confirm_instrumental_methods), told by their text: on macOS a
+# message box has no title (QMessageBox.setWindowTitle does nothing there).
+_FIT_QUESTIONS = ("selects the other mode", "You are about to fit")
 
 # Expected final model component colours (baseline excluded). The user verified
 # these are produced by the delete/insert/Be sequence below; the key invariant is
@@ -360,10 +361,10 @@ class _TestRunner:
         for widget in QApplication.topLevelWidgets():
             if not (isinstance(widget, QMessageBox) and widget.isVisible()):
                 continue
-            if widget.windowTitle() in _FIT_QUESTIONS:
+            if any(question in widget.text() for question in _FIT_QUESTIONS):
                 widget.button(QMessageBox.StandardButton.Yes).click()
             else:
-                self.errors.append(f"fit: {widget.windowTitle()}: {widget.text()}")
+                self.errors.append(f"fit: {widget.text()}")
                 widget.done(0)
         if attempts > 0:
             QTimer.singleShot(200, lambda: self._answer_fit_questions(attempts - 1))
