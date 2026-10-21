@@ -172,7 +172,7 @@ when used). A sequence or one-model fit writes ONE `_param.txt` and ONE
 ## 11. Other
 
 - **! INTERRUPT !** restarts the worker pool; model and spectrum are kept.
-- *Supp → Set polarization*: SMS polarization degree (default 0.98).
+- *Supp → Set SMS polarization*: SMS polarization degree (default 0.98).
 - *Supp → Set number of points for full transmission integral*: 32 SMS, 64 CMS;
   a flat cyan *Integration check (×4)* line means enough.
 - *Supp → Save settings as default*: the next starts keep the current settings

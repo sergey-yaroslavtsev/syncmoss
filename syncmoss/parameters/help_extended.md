@@ -654,7 +654,7 @@ values with the X they started from — ready for another fit.
 - **! INTERRUPT !** does not just stop the fit: it terminates the worker pool and
   builds a fresh one. Use it if a calculation is stuck — the fit in progress dies
   with it, but the model and the loaded spectrum are untouched.
-- *Supp -> Set polarization* sets the SMS beam linear-polarization degree
+- *Supp -> Set SMS polarization* sets the SMS beam linear-polarization degree
   (0 = unpolarized, 1 = fully polarized; default 0.98). It changes the readout of
   every thick model.
 - *Supp -> Set number of points for full transmission integral* is the
@@ -916,5 +916,5 @@ Practical fitting advice:
   Faraday term whatever Am says.
 
 Source modes: SMS is a linearly polarized readout (the polarization degree is
-set in *Supp -> Set polarization*, default 0.98); CMS an unpolarized half-trace
+set in *Supp -> Set SMS polarization*, default 0.98); CMS an unpolarized half-trace
 readout.

@@ -3,7 +3,7 @@
 Covers the two knobs added on top of the fully-polarized SMS assumption:
 
   (1) the ``sms_pol`` argument of ``TImod`` (the ``pol`` argument of ``TI``,
-      GUI-editable via Supp -> "Set polarization", default 0.98) -- the SMS beam
+      GUI-editable via Supp -> "Set SMS polarization", default 0.98) -- the SMS beam
       may be partially polarized. The transmission is read out of the density
       matrix ``rho = diag((1+p)/2, (1-p)/2)``, so the spectrum must be the linear
       mix ``(1+p)/2 * [read (1,1)] + (1-p)/2 * [read (2,2)]``. p = 1 reproduces

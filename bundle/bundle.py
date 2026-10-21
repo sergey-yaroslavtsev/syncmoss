@@ -121,6 +121,9 @@ def verify():
         "theme_dark.json",
         "theme_light.json",
         "parameters/Calibration.dat",
+        # the standard spectra the "--test" smoke run fits
+        "parameters/Standard_SMS.dat",
+        "parameters/Standard_CMS.dat",
         "COPYING.txt",
         "NOTICE.txt",
         "LICENSE",

@@ -117,6 +117,9 @@ def verify(app_dir: str):
         "Contents/MacOS/parameters/help.md",
         "Contents/MacOS/parameters/help_extended.md",
         "Contents/MacOS/parameters/Calibration.dat",
+        # the standard spectra the "--test" smoke run fits
+        "Contents/MacOS/parameters/Standard_SMS.dat",
+        "Contents/MacOS/parameters/Standard_CMS.dat",
         "Contents/MacOS/theme_dark.json",
         "Contents/MacOS/theme_light.json",
         # third-party license texts (MacOS.spec -> third_party_licenses.py);

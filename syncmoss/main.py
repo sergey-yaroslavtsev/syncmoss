@@ -1,3 +1,4 @@
+import io
 import os
 import sys
 import multiprocessing as mp
@@ -29,6 +30,12 @@ def _run_gui_smoke():
 
 
 def main():
+    # print() writes UTF-8. Where stdout is a pipe or a file on Windows (CI,
+    # `SYNCmoss_console.exe --test > log`) Python takes the ANSI code page, which
+    # has no χ: printing a fit result raised UnicodeEncodeError.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding='utf-8', errors='backslashreplace')
     mp.freeze_support()
 
     if '--test' in sys.argv:

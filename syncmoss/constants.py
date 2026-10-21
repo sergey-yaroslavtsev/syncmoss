@@ -99,7 +99,7 @@ MC2_EV = M_FE57_U * U_C2_EV                             # 5.303498e10 eV, rest e
 E_RECOIL_EV = E0**2 / (2 * MC2_EV)                      # 1.958e-3 eV, free-atom recoil energy
 
 # Linear polarization degree of the SMS (synchrotron) beam, 0..1. Only a default:
-# it is GUI-editable via Supp -> "Set polarization" and travels to the models as
+# it is GUI-editable via Supp -> "Set SMS polarization" and travels to the models as
 # the `pol` / `sms_pol` argument. 0.98 is a realistic synchrotron beam.
 SMS_POL_DEFAULT = 0.98
 

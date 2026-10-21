@@ -293,5 +293,5 @@ Parameters:
 - Am: magnetic polar order, in Sextet, MDGD, Relax_2S, SCDW, Hamiltonian; a
   thick-only effect.
 - Ah: azimuthal order (Hamiltonian only).
-- SMS: linearly polarized readout (*Supp -> Set polarization*, default 0.98);
+- SMS: linearly polarized readout (*Supp -> Set SMS polarization*, default 0.98);
   CMS: unpolarized.

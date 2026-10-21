@@ -1346,7 +1346,7 @@ class PhysicsApp(QMainWindow):
         self.instrumental_number.hide()
 
         # SMS beam linear polarization degree (0..1). Mirrors jn0_input above:
-        # a hidden store edited via the "Set polarization" dialog in the Supp
+        # a hidden store edited via the "Set SMS polarization" dialog in the Supp
         # menu. Its value is mirrored into self.SMS_pol and passed to TI as the
         # ``pol`` argument, which forwards it into the transmission-integral
         # workers. Default from constants.SMS_POL_DEFAULT.

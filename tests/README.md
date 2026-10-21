@@ -107,7 +107,11 @@ process (numba code can hold the GIL for seconds).
 * No test writes into `syncmoss/parameters/` (a session fixture checks it), and
   no test depends on what is in it: tests compute with the frozen copies in
   `tests/data/parameters/` (`redirect_params_dir_to_tmp`,
-  `redirect_calibration_to_tmp`).
+  `redirect_calibration_to_tmp`). The one exception is its standard spectra,
+  `Standard_SMS.dat` and `Standard_CMS.dat` (measured alpha-Fe that never
+  changes, each with its instrumental function in its header): the smoke flow
+  (`syncmoss_test.py`, also `SYNCmoss --test`) fits them from the parameters
+  folder of the operating system.
 * No test reads data from outside the repository.
 * `SerialPool` (conftest) stands in for the multiprocessing pool.
 * `slow` marks the real calibrations, the full GUI smoke flow and a few real

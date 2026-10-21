@@ -1920,7 +1920,7 @@ def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
 #
 # The degree p is the ``pol`` argument of ``TI`` (default SMS_POL_DEFAULT), which forwards
 # it to ``TImod`` as ``sms_pol``. It is editable at runtime from the GUI
-# (Supp -> "Set polarization"). It applies to SMS spectra only; CMS spectra
+# (Supp -> "Set SMS polarization"). It applies to SMS spectra only; CMS spectra
 # (Met == 1) are always read out unpolarized (rho = I/2, a fixed 1:1 mixture)
 # regardless of this value, because an unpolarized source defines no direction
 # in the polarization plane.

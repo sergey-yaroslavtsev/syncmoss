@@ -189,8 +189,8 @@ def build_supp_menu(main_window):
     theme_action.triggered.connect(main_window.toggle_theme)
     main_window.theme_action = theme_action
 
-    ham_guess_action = QAction("Find initial guess for Hamiltonian", main_window)
-    ham_guess_action.triggered.connect(lambda: open_hamiltonian_helper(main_window))
+    #ham_guess_action = QAction("Find initial guess for Hamiltonian", main_window)
+    #ham_guess_action.triggered.connect(lambda: open_hamiltonian_helper(main_window))
     set_integral_points_action = QAction("Set number of points for full transmission integral", main_window)
     set_integral_points_action.triggered.connect(lambda: open_integral_points_dialog(main_window))
     chi2_correction_action = QAction(chi2_correction_text(chi2_correction(main_window)), main_window)
@@ -201,7 +201,7 @@ def build_supp_menu(main_window):
     channel_average_action.triggered.connect(
         lambda: switch_channel_average(main_window, channel_average_action))
     main_window.channel_average_action = channel_average_action
-    set_polarization_action = QAction("Set polarization", main_window)
+    set_polarization_action = QAction("Set SMS polarization", main_window)
     set_polarization_action.triggered.connect(lambda: open_polarization_dialog(main_window))
     cms_diameters_action = QAction("Set CMS source and aperture diameters", main_window)
     cms_diameters_action.triggered.connect(lambda: open_cms_diameters_dialog(main_window))
@@ -250,7 +250,7 @@ def build_supp_menu(main_window):
 
     menu.addAction(theme_action)
     menu.addSeparator()
-    menu.addAction(ham_guess_action)
+    #menu.addAction(ham_guess_action)
     menu.addAction(set_integral_points_action)
     menu.addAction(channel_average_action)
     menu.addAction(chi2_correction_action)
@@ -680,7 +680,7 @@ def open_polarization_dialog(main_window):
     """Edit the SMS beam linear polarization degree (0..1)."""
     changed = _open_value_setting_dialog(
         main_window,
-        "Set polarization",
+        "Set SMS polarization",
         "SMS linear polarization degree (0 = unpolarized, 1 = fully polarized):",
         main_window.polarization_input,
         min_value=0.0,

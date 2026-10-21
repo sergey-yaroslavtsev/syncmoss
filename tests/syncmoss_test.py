@@ -12,17 +12,20 @@ the only test helper bundled into the frozen binaries (see ``bundle/*.spec``), s
 
 The flow:
   1. open the GUI
-  2. show a spectrum (Calibration.dat = an alpha-iron calibration)
-  3. refine the instrumental function (pure alpha-iron)
-  4. switch to a TWO-spectrum path ([Calibration.dat, Calibration.dat]) and show it
+  2. show Calibration.dat of the parameters folder -- the folder of the operating
+     system (on the frozen macOS app ~/Library/Application Support/SYNCmoss)
+  3. show the SMS standard spectrum of that folder and refine the instrumental
+     function on it (pure alpha-iron)
+  4. switch to a TWO-spectrum path, the SMS and the CMS standard, and show it
   5. build the model: add Sextet, Doublet, Nbaseline; delete the Doublet; Insert a
      row before Nbaseline; turn that row into a Be model; add a Sextet after
-     Nbaseline  ->  Sextet, Be(=Doublet), Nbaseline, Sextet
+     Nbaseline  ->  Sextet, Be(=Doublet), Nbaseline, Sextet; free the CMS
+     standard's baseline (non-resonant counts and curvature)
   6. show the model
   6a. start a fit and press Interrupt; with a real pool the pool is forced to
      be killed and recreated. The fit of step 7 then shows the app still works
   7. fit (simultaneous, because of Nbaseline + two spectra)
-  8. assert reduced chi-square < 3
+  8. assert the reduced chi-square is below 1 + 3 of its spreads
   9. assert the per-model colours match between the parameters table and the
      results table (and equal the expected red-cyan-cyan-yellow)
  10. Library: saving the fitted model must be refused -- the Library takes no
@@ -70,8 +73,28 @@ _POLL_MS = 500
 # about a minute on the slow macOS x86_64 CI runner.
 _TIMEOUT_POLLS = 360
 
-# Upper bound on the final reduced chi-square (see step_check_results).
-_MAX_CHI2 = 3.0
+# The standard spectra of the parameters folder: alpha-Fe measured in SMS (the
+# tests' frozen spectrum) and in CMS (MossLab 035, calibrated with its single
+# line 036). Each carries its instrumental function in its header, and the file
+# decides (".dat metadata", on by default): the fit of the two depends neither
+# on the user's Calibration.dat nor on the instrumental function nor on SMS/CMS
+# mode.
+_STANDARD_SPECTRA = ["Standard_SMS.dat", "Standard_CMS.dat"]
+
+# The CMS standard's non-resonant counts start from what was measured with it:
+# the source's recoil-free fraction f_LM (from that calibration) and the
+# high-energy background, 12889 counts per 100 s in all 1024 channels during
+# 50258 s, two channels per folded point.
+_CMS_F_LM = 0.744
+_CMS_HIGH_ENERGY = 12889 / 100 / 1024 * 50258 * 2
+
+# The fit of the standards must end below 1 + this many of its chi^2 spreads
+# (see step_check_results).
+_CHI2_SIGMAS = 3
+
+# The titles of the questions a fit of the two standards asks before it starts
+# (PhysicsApp.confirm_instrumental_methods).
+_FIT_QUESTIONS = ("Instrumental method from .dat file", "Different instrumental functions")
 
 # Expected final model component colours (baseline excluded). The user verified
 # these are produced by the delete/insert/Be sequence below; the key invariant is
@@ -99,11 +122,12 @@ def _parse_bg_color(stylesheet: str):
 def _redirect_params_to_tmp(window, tmp_dir=None) -> None:
     """Point the window's parameter directory at a throw-away copy.
 
-    The smoke flow both shows/fits the bundled Calibration.dat AND refines the
-    instrumental function (step 2), which rewrites ``INSexp.txt`` / ``INSint.txt``
-    in ``params_dir`` (and re-calibrating rewrites Calibration.dat in place). Left
-    on the real ``parameters/`` folder, those tracked data files would be mutated
-    and show up as spurious modifications on every commit. Copying the whole
+    The smoke flow shows Calibration.dat and the standard spectra of
+    ``params_dir`` AND refines the instrumental function (step 2), which rewrites
+    ``INSexp.txt`` / ``INSint.txt`` in ``params_dir`` (and re-calibrating rewrites
+    Calibration.dat in place). Left on the real ``parameters/`` folder, those
+    tracked data files would be mutated and show up as spurious modifications
+    on every commit. Copying the whole
     parameters folder into a temp dir and repointing ``params_dir`` +
     ``calibration_path`` there keeps the repo clean while all the parameter files
     the fit reads (Be.txt, GCMS.txt, ...) remain available.
@@ -178,6 +202,7 @@ class _TestRunner:
         self._library_file = None
         self._library_model = None
         self._browser_pending = False
+        self._questions_pending = False     # while Fit may ask (_press_fit)
 
     # -- entry point ---------------------------------------------------
 
@@ -229,25 +254,34 @@ class _TestRunner:
         print("[TEST] show spectrum OK")
         QTimer.singleShot(300, self.step_refine_instrumental)
 
+    def _standards(self) -> list:
+        return [os.path.join(self.window.params_dir, name) for name in _STANDARD_SPECTRA]
+
     # -- Step 2: refine instrumental function, pure alpha-iron (async) -
 
     def step_refine_instrumental(self) -> None:
-        print("[TEST] Step: refine instrumental function (pure a-Fe) ...")
-        self.window.instrumental_pressed(1, 2)  # ref=1 (refine), mode=2 (pure a-Fe)
+        print("[TEST] Step: refine instrumental function (pure a-Fe, SMS standard) ...")
+        w = self.window
+        w.process_path.setPlainText(repr(self._standards()[:1]))
+        w.show_pressed()  # synchronous
+        if "red" in w.log.styleSheet():
+            self.errors.append(f"show the SMS standard: {w.log.toPlainText()}")
+            self._finish()
+            return
+        w.instrumental_pressed(1, 2)  # ref=1 (refine), mode=2 (pure a-Fe)
         self._wait(self.step_set_two_paths, "refine instrumental")
 
     # -- Step 3: switch to a two-spectrum path (synchronous) ----------
 
     def step_set_two_paths(self) -> None:
-        print("[TEST] Step: set two-spectrum path ...")
+        print("[TEST] Step: set two-spectrum path (SMS and CMS standards) ...")
         w = self.window
-        cal = w.calibration_path
-        w.process_path.setPlainText(repr([cal, cal]))
+        w.process_path.setPlainText(repr(self._standards()))
         # Show them, as a user does (choosing files through the dialog has the
         # same effect): Nbaseline takes its starting Ns from the background of
         # the matching entry of path_list, and without this path_list still
-        # holds the single spectrum of step 1, so Ns fell back to 10000 against
-        # ~1.4e5 counts and the fit could land in a wrong minimum.
+        # holds the single spectrum of step 2, so Ns fell back to 10000 against
+        # the CMS standard's ~2.7e5 counts and the fit could land in a wrong minimum.
         w.show_pressed()  # synchronous
         if "red" in w.log.styleSheet():
             self.errors.append(f"set two-spectrum path: {w.log.toPlainText()}")
@@ -274,6 +308,21 @@ class _TestRunner:
             self.errors.append(f"build model: got {models}, expected {_EXPECTED_MODEL_LIST}")
             self._finish()
             return
+        # The section after Nbaseline is the CMS standard: its baseline as a
+        # CMS spectrum needs, free -- the non-resonant counts Nnr (the SMS
+        # default holds them at 0), started from the source's 1 - f_LM and the
+        # high-energy background, and the curvature of a folded CMS spectrum.
+        row = models.index('Nbaseline')
+        names = pt.get_parameter_names()[row]
+
+        def param(name):
+            return pt.row_widgets[row].layout().itemAt(names.index(name) + 1).widget()
+
+        ns = float(param('Ns').layout().itemAt(1).widget().text())
+        nnr = (1 - _CMS_F_LM) * (ns - _CMS_HIGH_ENERGY) + _CMS_HIGH_ENERGY
+        param('Nnr').layout().itemAt(1).widget().setText(repr(nnr))
+        for name in ('Nnr', 'c²s', 'lins'):
+            param(name).layout().itemAt(0).layout().itemAt(1).widget().setChecked(False)
         print(f"[TEST] build model OK: {models}")
         QTimer.singleShot(300, self.step_show_model)
 
@@ -292,11 +341,38 @@ class _TestRunner:
     # recreated -- in the frozen apps, real worker processes respawned from the
     # bundle. Step 6 is then the "fit again" on whatever pool that left.
 
+    def _press_fit(self) -> None:
+        """Press Fit. The fit of the two standards asks twice before it starts
+        (a CMS spectrum while SMS mode is selected; spectra with different
+        instrumental functions): both answered Yes, as a user does."""
+        self._questions_pending = True
+        QTimer.singleShot(200, lambda: self._answer_fit_questions(50))
+        try:
+            self.window.fit_pressed()
+        finally:
+            self._questions_pending = False
+
+    def _answer_fit_questions(self, attempts) -> None:
+        """Answer the questions of _FIT_QUESTIONS Yes. Any other message box
+        is recorded and closed, so the run can never hang on a dialog."""
+        if not self._questions_pending:
+            return
+        for widget in QApplication.topLevelWidgets():
+            if not (isinstance(widget, QMessageBox) and widget.isVisible()):
+                continue
+            if widget.windowTitle() in _FIT_QUESTIONS:
+                widget.button(QMessageBox.StandardButton.Yes).click()
+            else:
+                self.errors.append(f"fit: {widget.windowTitle()}: {widget.text()}")
+                widget.done(0)
+        if attempts > 0:
+            QTimer.singleShot(200, lambda: self._answer_fit_questions(attempts - 1))
+
     def step_interrupt_fit(self) -> None:
         print("[TEST] Step: interrupt a fit ...")
         w = self.window
         self._expect_kill = not isinstance(w.pool, ThreadPool)
-        w.fit_pressed()
+        self._press_fit()
         if self._expect_kill:
             w.pool.starmap_async(time.sleep, [(3,)])
         QTimer.singleShot(500, w.interrupt)
@@ -328,7 +404,7 @@ class _TestRunner:
 
     def step_fit(self) -> None:
         print("[TEST] Step: fit ...")
-        self.window.fit_pressed()
+        self._press_fit()
         self._wait(self.step_check_results, "fit")
 
     # -- Step 7: check chi^2 and colours (synchronous) ----------------
@@ -338,15 +414,14 @@ class _TestRunner:
         w = self.window
         rt = w.results_table
 
-        # (8) reduced chi-square. The bar is set by the bundled Calibration.dat:
-        # at ~1.4e5 counts per channel the instrumental refinement of step 2
-        # already ends at 2.43, and this fit converges to 2.80 (the second
-        # spectrum carries no Be doublet). A fit stuck in a wrong minimum is
-        # ~100x that. The old 6e3-count calibration passed at < 2.
+        # (8) reduced chi-square of the standards: measured alpha-Fe, so a
+        # right fit ends at 1 within its spread, sqrt(2/dof) (chi2_title's
+        # brackets). A fit stuck in a wrong minimum is far above.
         chi2 = rt.current_chi2
-        print(f"[TEST] chi^2 = {chi2}")
-        if chi2 is None or not (chi2 < _MAX_CHI2):
-            self.errors.append(f"chi^2 check: chi2={chi2}, expected < {_MAX_CHI2}")
+        spread = (w.last_plot_data or {}).get('chi2_spread')
+        print(f"[TEST] chi^2 = {chi2}, spread {spread}")
+        if chi2 is None or spread is None or not (chi2 < 1 + _CHI2_SIGMAS * spread):
+            self.errors.append(f"chi^2 check: chi2={chi2}, expected < 1 + {_CHI2_SIGMAS} x {spread}")
 
         # (9) per-model colours must agree between the two tables.
         model_list = list(rt.current_model_list)
@@ -605,11 +680,14 @@ def test_gui_open_and_fit(qapp, tmp_path):
     # nor the instrumental refinement (step 2) rewrites the tracked data files
     # (Calibration.dat, INSexp.txt, INSint.txt). Same for the Library, which
     # the round trip (step 10) saves into. Its calibration and instrumental
-    # function are the tests' frozen ones: the chi^2 check must not depend on
-    # the user's current calibration.
+    # function are the tests' frozen ones; the chi^2 check is of the standard
+    # spectra, which carry their own.
     _redirect_params_to_tmp(window, tmp_path)
     redirect_params_dir_to_tmp(window, tmp_path)
     _redirect_library_to_tmp(window, tmp_path)
+    # The channel average on, as shipped and as --test runs: the CMS
+    # standard's source was found with it.
+    window.channel_average = True
     try:
         window.show()
         runner = _TestRunner(qapp, window)
