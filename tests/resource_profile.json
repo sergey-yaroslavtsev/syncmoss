@@ -1,8 +1,8 @@
 {
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
-"measured": "2026-10-20 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"measured": "2026-10-28 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
-"typical_test_mb": 76,
+"typical_test_mb": 75,
 "accumulated_mb": 640,
 "tests": {
 "tests/syncmoss_test.py::test_gui_library_round_trip": [
@@ -422,28 +422,28 @@
 2
 ],
 "tests/test_chi2_spread.py::test_simultaneous_fit_image_shows_the_spread": [
-0.11,
-1
-],
-"tests/test_chi2_spread.py::test_single_fit_image_shows_the_spread": [
-0.14,
+0.08,
 0
 ],
+"tests/test_chi2_spread.py::test_single_fit_image_shows_the_spread": [
+0.06,
+3
+],
 "tests/test_chi2_spread.py::test_spread_is_sqrt_two_over_dof": [
-0.0,
-6
+0.09,
+5
 ],
 "tests/test_chi2_spread.py::test_the_spread_is_in_units_of_the_last_decimal": [
 0.0,
-6
+5
 ],
 "tests/test_chi2_spread.py::test_title_carries_the_spread_only_when_given": [
 0.0,
-6
+5
 ],
-"tests/test_chi2_spread.py::test_title_shows_the_deviance_before_chi2": [
+"tests/test_chi2_spread.py::test_title_is_chi2_alone": [
 0.0,
-6
+5
 ],
 "tests/test_cms_source_geometry_calibration.py::test_both_spectra_together_are_each_on_its_own": [
 0.28,
@@ -1290,84 +1290,84 @@
 77
 ],
 "tests/test_exclusion_gui.py::test_a_spectrum_saved_without_its_ends_keeps_its_drive": [
-2.91,
-48
+1.99,
+33
 ],
 "tests/test_exclusion_gui.py::test_apply_exclusion_shows_the_bar_and_puts_the_regions_in_use": [
-2.14,
-93
+2.22,
+92
 ],
 "tests/test_exclusion_gui.py::test_bands_are_drawn_only_while_applied_and_never_widen_the_axis": [
-2.18,
-44
+1.94,
+34
 ],
 "tests/test_exclusion_gui.py::test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves": [
-3.0,
-93
+2.77,
+108
 ],
 "tests/test_exclusion_gui.py::test_changing_the_regions_on_a_show_model_image_keeps_the_model": [
-2.97,
-59
+2.53,
+60
 ],
 "tests/test_exclusion_gui.py::test_clean_is_refused_while_a_calculation_runs": [
-2.17,
-35
+1.9,
+65
 ],
 "tests/test_exclusion_gui.py::test_clean_removes_every_region_and_drops_the_fit_result": [
-2.87,
-70
+2.58,
+79
 ],
 "tests/test_exclusion_gui.py::test_clicks_in_pan_mode_or_off_a_spectrum_are_ignored_and_esc_cancels": [
-3.1,
-31
+2.12,
+39
 ],
 "tests/test_exclusion_gui.py::test_enter_in_the_box_applies_the_regions_and_not_show_model": [
-2.23,
-77
+1.83,
+53
 ],
 "tests/test_exclusion_gui.py::test_every_selected_spectrum_is_saved_without_its_excluded_points": [
-2.85,
-0
+1.9,
+28
 ],
 "tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[CMS]": [
-1.95,
-1
+1.83,
+0
 ],
 "tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[SMS]": [
-2.06,
-1
+1.84,
+0
 ],
 "tests/test_exclusion_gui.py::test_save_and_load_and_load_replaces": [
-2.71,
-41
+1.78,
+24
 ],
 "tests/test_exclusion_gui.py::test_save_result_writes_the_regions_only_when_applied": [
-4.9,
-112
+3.74,
+93
 ],
 "tests/test_exclusion_gui.py::test_saving_without_excluded_points_needs_applied_regions": [
-2.1,
+1.8,
 0
 ],
 "tests/test_exclusion_gui.py::test_the_bar_takes_only_its_own_two_lines": [
-2.6,
-109
+2.13,
+94
 ],
 "tests/test_exclusion_gui.py::test_the_regions_do_not_change_while_a_calculation_runs": [
-2.61,
-30
+1.85,
+0
 ],
 "tests/test_exclusion_gui.py::test_the_text_is_cleaned_and_bad_text_is_refused": [
-2.02,
-78
+1.79,
+52
 ],
 "tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[fit]": [
-3.26,
-51
+2.69,
+41
 ],
 "tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[spectrum]": [
-2.64,
-47
+1.95,
+54
 ],
 "tests/test_exclusion_regions.py::test_a_bad_file_is_refused": [
 0.0,
@@ -1864,6 +1864,62 @@
 "tests/test_fit_one_spectrum.py::test_the_dialog_starts_at_the_first_spectrum_and_each_field_follows_the_other": [
 2.13,
 85
+],
+"tests/test_fit_quality.py::test_a_line_saturated_to_no_counts_at_its_bottom": [
+0.05,
+2
+],
+"tests/test_fit_quality.py::test_a_long_spectrum_is_smoothed_in_blocks_whose_sums_add": [
+0.26,
+0
+],
+"tests/test_fit_quality.py::test_a_spectrum_multiplied_by_ten_changes_only_f": [
+0.11,
+1
+],
+"tests/test_fit_quality.py::test_chi2_and_d_rows_are_the_fit_s_with_their_poisson_spreads": [
+0.13,
+0
+],
+"tests/test_fit_quality.py::test_deviance_moments_are_the_poisson_sums": [
+0.06,
+3
+],
+"tests/test_fit_quality.py::test_f_without_a_model_does_not_see_the_model_but_f_of_the_fit_does": [
+0.11,
+3
+],
+"tests/test_fit_quality.py::test_f_without_a_model_survives_an_excluded_range_through_a_line": [
+0.05,
+3
+],
+"tests/test_fit_quality.py::test_misfit_of_a_noise_free_misfit_is_its_power_over_the_absorption": [
+0.01,
+2
+],
+"tests/test_fit_quality.py::test_noise_only_reads_ideal_and_a_misfit_does_not": [
+1.74,
+0
+],
+"tests/test_fit_quality.py::test_s_fit_by_hand_with_an_exclusion_region_and_any_point_order": [
+0.0,
+0
+],
+"tests/test_fit_quality.py::test_savgol_noise_is_its_dense_form": [
+0.0,
+0
+],
+"tests/test_fit_quality.py::test_the_smoother_is_its_dense_form": [
+0.01,
+0
+],
+"tests/test_fit_quality.py::test_the_smooths_need_the_natural_line_on_two_channels": [
+0.02,
+7
+],
+"tests/test_fit_quality.py::test_two_counts_per_point_zeros_included": [
+0.07,
+0
 ],
 "tests/test_golden_models.py::test_model_matches_golden[ASM]": [
 0.21,
@@ -4334,20 +4390,20 @@
 0
 ],
 "tests/test_result_window.py::test_a_sequence_shows_every_spectrum_with_its_own_correlation_matrix": [
-3.62,
-121
+3.41,
+122
 ],
 "tests/test_result_window.py::test_a_spectrum_s_formula_is_shown_as_typed_and_evaluated_with_the_whole_fit": [
-2.79,
-57
+2.48,
+59
 ],
 "tests/test_result_window.py::test_an_nbaseline_fit_shows_every_spectrum_without_a_correlation_matrix": [
-2.72,
-85
+2.53,
+78
 ],
 "tests/test_result_window.py::test_selecting_nbaseline_greys_the_row": [
-2.22,
-81
+2.02,
+74
 ],
 "tests/test_results_table_image.py::test_all_three_rows_of_an_expression_are_in_the_picture": [
 3.42,

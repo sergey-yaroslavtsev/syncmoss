@@ -569,12 +569,11 @@ the plot toolbar; a bar appears above the plot.
   searches — maximises the **Poisson likelihood**: every channel counts with the
   inverse of the counts the model expects there. For counts that is the most
   precise fit there is, and an unbiased one.
-- The result shows two numbers, both divided by ν = points − free parameters:
-  **D**, the Poisson deviance (what the fit minimises), and **χ²**, Pearson's
-  Σ (y − m)²/m. With a right model and Poisson counts both are about 1, within
-  ±√(2/ν), written in brackets in units of the last decimal:
-  `D = 0.884(63), χ² = 0.885(63)` means ±0.063 (500 points). D and χ² differ only
-  when a channel has few counts.
+- The plot title shows **χ²**, Pearson's Σ (y − m)²/m divided by ν = points −
+  free parameters. With a right model and Poisson counts it is about 1, within
+  ±√(2/ν), written in brackets in units of the last decimal: `χ² = 0.885(63)`
+  means ±0.063 (500 points). **D**, the Poisson deviance the fit minimises, is
+  in the Fit quality tab (9.1) with the other numbers about the fit.
 - An error is the statistical 1σ of the fit times √χ², so it follows the noise
   the spectrum really has: a χ² of 0.88 makes the errors 6 % smaller, one of 2
   makes them 41 % larger. **Supp → Empirical correction of errors by χ²**
@@ -588,6 +587,91 @@ the plot toolbar; a bar appears above the plot.
   free.
 - The errors are statistical only: the calibration, the instrumental function
   and the choice of model are not in them.
+
+### 9.1 Fit quality
+
+The third tab of the results table. It is filled once, when a fit has ended,
+and it does not change the fit. Each row has its **ideal** value (that of a
+right model with Poisson counts), the **value** of this fit and its **1σ**: the
+spread the value has over repeated measurements when the model is right and
+the counting Poisson. Every row reads the same way: within 2σ of the ideal
+nothing is seen, 2–3σ is borderline, beyond 3σ the difference is real. Each S
+row also shows the **F** it divides χ² by — the noise over Poisson's, 1 for
+Poisson counting — with its own 1σ, so that χ² = F × S. The fit prints to the
+terminal the points, the degrees of freedom ν and the share of the points the
+two rows without a model use.
+
+- **χ²** — Pearson's χ² per degree of freedom, as in the title. Ideal 1,
+  deviation √(Σ(2 + 1/m))/ν: √(2/ν) above about 10 counts per point. It mixes
+  the model and the counting; S and F tell them apart.
+- **D** — the Poisson deviance per degree of freedom, what the fit minimised.
+  Its ideal is its mean for the fitted counts: 1 from about 10³ counts per
+  point, 1.002 at 100, 1.019 at 10.
+- **S (fit)** — the residual's variance over the noise that the differences of
+  neighbouring residuals measure (its F). Ideal 1 whatever the counting
+  statistics (a spectrum multiplied by 10, a dead time), 1σ = 1/√n. Above
+  1 + 3/√n (1.13 at 512 points) the residual has structure: the model misses
+  something. Its kind shows in the residual: long and smooth, wings included
+  (the background, a broad component); bumps at the lines (a line too deep, too
+  shallow or missing); up-down-up across the lines (line shape, positions,
+  thickness); waves everywhere (a ripple). Below 1 − 3/√n neighbouring points
+  are anticorrelated: processed data, not a misfit. Its F is **not** the
+  counting statistics: a misfit that changes from point to point raises it, and
+  lines missing from the model count in it.
+- **S (no model)** — χ² over the counting noise measured from the counts alone:
+  their scatter about their own smooth, a smoothing spline of the points away
+  from the lines (the points near a line, found from the counts, are left out:
+  a line's peak is what no smooth follows; the terminal line gives the share
+  kept). Its F is the check of the data, **not of the fit**: 1 for Poisson
+  counts; above 1 more noise than Poisson (F = 10 for a spectrum multiplied by
+  10), below 1 quieter counts (a dead time, averaged data). The model does not
+  enter it at all, and zero counts or a few counts per point are fine: the
+  counts enter its normalisation only as a sum, whose mean is the Poisson
+  variance exactly. With a right model S (no model) is 1: χ² is then counting
+  noise alone.
+- **S (SG)** — the same with a Savitzky–Golay smooth (a quartic over 7 points)
+  of the same points. Less precise — its 1σ is about 1.5 times that of
+  S (no model) — but it holds where that one does not: deep lines of natural
+  width at 10⁷ counts per point and more.
+- **MISFIT, %** — the misfit's power over the absorption's (Ruby's MISFIT,
+  with the F of S (no model) instead of Poisson's noise). Ideal 0. Unlike χ²
+  and S it does not grow with the counts: it is the size of the misfit.
+  √MISFIT is the R-factor: the misfit's rms against the absorption's (0.035 % →
+  1.9 %). A large 1σ means the absorption is too weak to size the misfit.
+
+**What to look at first.** S (fit): is there a misfit? Then the F of
+S (no model): is the counting Poisson? Then S (no model): does that noise
+explain χ²? S (SG) is a cross-check: where its F and that of S (no model)
+differ by more than their 1σ, trust S (SG).
+
+| S (fit) | F of S (no model) | χ² | meaning |
+|---|---|---|---|
+| ≈ 1 | ≈ 1 | ≈ 1 | the model describes the spectrum down to the noise |
+| ≈ 1 | ≠ 1 | ≈ F | the model is right; the counting is not Poisson |
+| > 1 | ≈ 1 | > 1 | the model misses something |
+| > 1 | ≠ 1 | ≈ F × S (no model) | both |
+
+**When a row can fail.**
+
+- S (fit) reads low for a misfit that changes sign within 2–3 channels (line
+  shape, positions, thickness on coarse channels): S (no model) and χ² still
+  show it. It reads high with a right model for correlated noise — data folded
+  with interpolation, rebinned with overlap or smoothed outside SYNCmoss —
+  which also lowers every F.
+- S (no model): its F stays within 3 % of the truth up to 10⁶ counts per
+  point, tested on singlets, doublets, sextets, distributions, thick
+  absorbers, relaxation, spin-density waves, coarse and sinusoidal axes. With
+  deep lines of natural width at 10⁷ counts it reads up to 20 % high
+  (S (no model) low): then S (SG) holds.
+- S (no model) and S (SG) need the lines sampled: they are not shown when the
+  narrowest line — natural source on natural absorber, 0.194 mm/s — spans
+  fewer than 2 channels where the spectrum absorbs (the terminal says so).
+- Every F: one spectrum gives it to ±0.06 at best, whatever its counts (±0.06
+  to ±0.11 at 512 points); a value 2σ from 1 comes in one spectrum of 20. A
+  10 % departure from Poisson needs several spectra measured the same way.
+- In a simultaneous fit χ² and D are the fit's; the S rows, their F and
+  MISFIT are each spectrum's own. The result window shows each spectrum's, the
+  main window all of them, each spectrum's under a blue row with its file name.
 
 ## 10. Saving
 

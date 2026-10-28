@@ -30,12 +30,11 @@ def test_title_carries_the_spread_only_when_given():
     assert chi2_title(1.02345, float('nan')) == 'χ² = 1.023'
 
 
-def test_title_shows_the_deviance_before_chi2():
-    assert chi2_title(1.02345, 0.04472, 0.9871) == 'D = 0.987(45), χ² = 1.023(45)'
-    assert chi2_title(1.02345, None, 0.9871) == 'D = 0.987, χ² = 1.023'
-    # a fit that did not report one (nan): only the chi-square
-    assert chi2_title(1.02345, 0.04472, float('nan')) == 'χ² = 1.023(45)'
-    assert chi2_title(None, 0.04472, 0.9871) == ''
+def test_title_is_chi2_alone():
+    """The deviance and the rest are in the Fit quality tab, not on the image."""
+    # no result (dropped when the exclusion regions changed), or a nan one: no title
+    assert chi2_title(None, 0.04472) == ''
+    assert chi2_title(float('nan'), 0.04472) == ''
 
 
 def _spectrum():
@@ -54,10 +53,6 @@ def test_single_fit_image_shows_the_spread(tmp_path):
                         str(tmp_path / 'one.dat'), str(tmp_path), z_order=[],
                         chi2_spread=0.04472)
     assert figure.get_axes()[0].get_title() == 'χ² = 1.023(45)'
-    plot_fitting_result(figure, A, B, SPC_f, [], [], p, ['r'], 1.02345,
-                        str(tmp_path / 'one.dat'), str(tmp_path), z_order=[],
-                        chi2_spread=0.04472, deviance=0.9871)
-    assert figure.get_axes()[0].get_title() == 'D = 0.987(45), χ² = 1.023(45)'
 
 
 def test_simultaneous_fit_image_shows_the_spread(tmp_path):

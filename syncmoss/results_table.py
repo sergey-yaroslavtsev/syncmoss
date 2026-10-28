@@ -45,6 +45,8 @@ from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortc
 from syncmoss.constants import numco, contrast_text_color
 from syncmoss.support_math import calculate_intensity_percentage_error
 from syncmoss.spectrum_parameters import substitute
+from syncmoss.fit_quality import CHI2, DEVIANCE, STRUCTURE, STRUCTURE_FREE, STRUCTURE_SG, MISFIT
+from syncmoss.spectrum_plotter import CHI2_DECIMALS
 # Expression texts are evaluated by eval_expr, as in the fit.
 from syncmoss.expression_eval import eval_expr
 
@@ -52,6 +54,47 @@ from syncmoss.expression_eval import eval_expr
 # (see _calculate_intensities). Rounding to four decimals moves a value by at
 # most 5e-5, so this takes a preset rounded or not.
 _PRESET_ATOL = 1e-4
+
+# The Fit quality tab: what each row is, in a line (help §9.1 has the rest)
+_QUALITY_TIPS = {
+    CHI2: "Pearson's χ² per degree of freedom",
+    DEVIANCE: "Poisson deviance per degree of freedom, what the fit minimised",
+    STRUCTURE: "χ² over the noise of neighbouring residuals: 1 = no misfit, whatever the counting",
+    STRUCTURE_FREE: "χ² over the counting noise of the counts alone: 1 = χ² is noise",
+    STRUCTURE_SG: "the same with a Savitzky–Golay smooth: holds at very high counts, less precise",
+    MISFIT: "misfit power over absorption power (Ruby); its square root is the R-factor",
+}
+# ... and what each S row's F is
+_NOISE_TIPS = {
+    STRUCTURE: "noise of neighbouring residuals over Poisson; a misfit raises it",
+    STRUCTURE_FREE: "counting noise over Poisson, from the counts alone",
+    STRUCTURE_SG: "counting noise over Poisson, from the counts alone (Savitzky–Golay)",
+}
+
+# A spectrum's heading row in the Fit quality of several spectra: the blue of
+# the correlation matrix's diagonal
+_SPECTRUM_ROW_COLOR = QColor(100, 100, 255)
+
+
+def _quality_cells(row):
+    """The six texts of a Fit quality row: name, ideal, value, 1σ, F, F's 1σ
+    (the last two empty but in the S rows). The decimals are the χ² title's;
+    MISFIT's follow its 1σ (two digits of it), as its size changes by orders of
+    magnitude between spectra. The ideals are exact numbers (1, 0) except D's,
+    computed for the fitted counts: it is shown as 1 too when it is 1 at the
+    decimals shown (from about 10³ counts per point), as its value otherwise
+    (1.019 at 10 counts)."""
+    name, ideal, value, sigma, noise, noise_sigma = row
+    decimals = CHI2_DECIMALS
+    if name == MISFIT and sigma > 0 and np.isfinite(sigma):
+        decimals = max(0, 1 - int(np.floor(np.log10(sigma))))
+    ideal_text = f'{ideal:.{decimals}f}'
+    if name != DEVIANCE or ideal_text == f'{1:.{decimals}f}':
+        ideal_text = f'{round(ideal):d}'
+    cells = [name, ideal_text, f'{value:.{decimals}f}', f'{sigma:.{decimals}f}']
+    if noise is None:
+        return cells + ['', '']
+    return cells + [f'{noise:.{CHI2_DECIMALS}f}', f'{noise_sigma:.{CHI2_DECIMALS}f}']
 
 class ClickableResultButton(QPushButton):
     """Clickable button for result table rows that triggers replotting."""
@@ -81,6 +124,8 @@ class ResultsTable(QWidget):
     Features:
     - Tab 1: Interactive results table (buttons + labels) like original
     - Tab 2: Correlation matrix display
+    - Tab 3: Fit quality -- the numbers fit_quality computes about the fit's
+      residual: quantity, ideal value, fitted value, deviation
     - 3 rows (parameter name, value, error) per component of the current
       result, none without a result
     - First column contains model names/colors
@@ -144,7 +189,11 @@ class ResultsTable(QWidget):
         # Tab 2: Correlation matrix
         self.correlation_tab = self.create_correlation_tab()
         self.tabs.addTab(self.correlation_tab, "Correlation Matrix")
-        
+
+        # Tab 3: Fit quality
+        self.quality_tab = self.create_quality_tab()
+        self.tabs.addTab(self.quality_tab, "Fit quality")
+
         layout.addWidget(self.tabs)
 
     def create_interactive_tab(self):
@@ -238,6 +287,76 @@ class ResultsTable(QWidget):
         # Will be populated when correlation matrix is available
         tab_layout.addWidget(self.correlation_table)
         return tab_widget
+
+    def create_quality_tab(self):
+        """Create the Fit quality tab (Tab 3): a table quantity | ideal | value |
+        1σ | F | 1σ, 1σ being the spread of the value when the model is right
+        and the counting Poisson, F what an S row divides χ² by (fit_quality).
+        Filled by fill_quality after a fit, emptied by clear_table. What the
+        rows rest on (points, degrees of freedom, the share the smooths use)
+        goes to the terminal with the fit (fitting_io)."""
+        tab_widget = QWidget()
+        tab_layout = QVBoxLayout(tab_widget)
+        tab_layout.setSpacing(0)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.quality_table = QTableWidget(0, 6)
+        self.quality_table.setFont(QFont('Arial', 10))
+        self.quality_table.setHorizontalHeaderLabels(['quantity', 'ideal', 'value', '1σ', 'F', '1σ'])
+        self.quality_table.verticalHeader().setVisible(False)
+        self.quality_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.quality_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._enable_copy(self.quality_table)
+        tab_layout.addWidget(self.quality_table)
+        return tab_widget
+
+    def fill_quality(self, qualities, labels=None):
+        """Show a fit's Fit quality: *qualities* one dict per spectrum
+        (fit_quality.fit_quality; None for a spectrum without one), *labels*
+        the spectra's file names when there are several. One spectrum: its rows.
+        Several: the fit's χ² and D once, then every spectrum's own rows under a
+        blue row with its file name."""
+        self.clear_quality()
+        qualities = list(qualities or [])
+        shown = [(k, quality) for k, quality in enumerate(qualities) if quality is not None]
+        if not shown:
+            return
+        fit_rows = (CHI2, DEVIANCE)
+        if len(qualities) == 1:
+            entries = list(shown[0][1]['rows'])
+        else:
+            entries = [row for row in shown[0][1]['rows'] if row[0] in fit_rows]
+            for k, quality in shown:
+                name = labels[k] if labels is not None and k < len(labels) else f"spectrum {k + 1}"
+                entries.append(name)                # the spectrum's row
+                entries += [row for row in quality['rows'] if row[0] not in fit_rows]
+
+        table = self.quality_table
+        table.setRowCount(len(entries))
+        for r, entry in enumerate(entries):
+            if isinstance(entry, str):          # a spectrum's row: its file name on blue
+                item = QTableWidgetItem(entry)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                item.setBackground(_SPECTRUM_ROW_COLOR)
+                table.setItem(r, 0, item)
+                table.setSpan(r, 0, 1, table.columnCount())
+                continue
+            for c, text in enumerate(_quality_cells(entry)):
+                item = QTableWidgetItem(text)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                if c == 0:
+                    item.setToolTip(_QUALITY_TIPS.get(entry[0], ''))
+                else:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    if c == 4 and text:
+                        item.setToolTip(_NOISE_TIPS.get(entry[0], ''))
+                table.setItem(r, c, item)
+        table.resizeColumnsToContents()
+
+    def clear_quality(self):
+        """Empty the Fit quality tab: no fit, no quality."""
+        self.quality_table.clearSpans()
+        self.quality_table.setRowCount(0)
 
     def _enable_copy(self, table):
         """Make Ctrl+C copy the selected cells of *table* as tab-separated text.
@@ -344,11 +463,13 @@ class ResultsTable(QWidget):
         self.display_correlation_matrix(covariance_matrix)
 
     def clear_table(self):
-        """Remove every row of the results table, and the correlation matrix.
+        """Remove every row of the results table, the correlation matrix and
+        the fit quality.
 
         Show model leaves the table like this -- a model is not a fit result --
         and fill_table starts from it, so nothing of an earlier result (a text,
-        a colour, a spanned Expression cell) can survive into the next one.
+        a colour, a spanned Expression cell) can survive into the next one. A
+        fit's handler fills the fit quality after fill_table.
         """
         self.interactive_table.clearSpans()
         self._set_row_count(0)
@@ -359,6 +480,8 @@ class ResultsTable(QWidget):
         self.correlation_table.clear()
         self.correlation_table.setRowCount(0)
         self.correlation_table.setColumnCount(0)
+
+        self.clear_quality()
     
     def fill_values(self, parameters):
         """

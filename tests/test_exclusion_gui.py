@@ -164,6 +164,11 @@ def test_bands_are_drawn_only_while_applied_and_never_widen_the_axis(physics_app
     assert _bands(app) == [[]]
 
 
+def _quality_names(app):
+    table = app.results_table.quality_table
+    return [table.item(row, 0).text() for row in range(table.rowCount())]
+
+
 def test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves(physics_app, tmp_path, monkeypatch):
     app = physics_app
     path, = _spectra(app, tmp_path)
@@ -171,11 +176,15 @@ def test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves(physics_ap
     _fit(app, path, monkeypatch)
     ax = spectrum_axes_of(app.figure)[0]
     assert 'χ² = ' in _chi2_title(app)[0] and _bands(app) == [[(-3.0, -2.0), (1.0, 2.0)]]
+    # the image keeps χ² alone; D and the rest are in the Fit quality tab
+    assert 'D' not in _chi2_title(app)[0]
+    assert {'χ²', 'D', 'S (fit)', 'S (no model)', 'S (SG)', 'MISFIT, %'} <= set(_quality_names(app))
 
     _apply(app, "4:5")
 
     assert spectrum_axes_of(app.figure)[0] is ax                 # the same image, not redrawn
     assert _chi2_title(app) == ['']
+    assert _quality_names(app) == []                             # no result, no quality
     assert any(line.get_label() == 'Fit' for line in ax.lines)   # its curves stay
     assert _bands(app) == [[(4.0, 5.0)]]
     assert app.results_table.current_parameters is None

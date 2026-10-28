@@ -260,8 +260,12 @@ class OneModelResult:
     def chi2_spread_of(self, k):
         return self.chi2_spread
 
-    def deviance_of(self, k):
-        return self.deviance
+    def fit_quality_of(self, k):
+        """Spectrum k's Fit quality (fit_quality): the fit's χ² and D, its own
+        S, F and MISFIT -- or None (the model of an instrumental-function
+        search has none)."""
+        qualities = self.result.get('fit_quality') or []
+        return qualities[k] if k < len(qualities) else None
 
     def model_of(self, k):
         return list(self.template['model'])

@@ -148,8 +148,9 @@ class SequenceSeries:
     def chi2_spread_of(self, k):
         return self.items[k][1].get('chi2_spread')
 
-    def deviance_of(self, k):
-        return self.items[k][1].get('deviance')
+    def fit_quality_of(self, k):
+        """Spectrum k's Fit quality (fit_quality): its own fit's, or None."""
+        return (self.items[k][1].get('fit_quality') or [None])[0]
 
 
 class NbaselineSeries:
@@ -264,8 +265,11 @@ class NbaselineSeries:
     def chi2_spread_of(self, k):
         return self.result.get('chi2_spread')
 
-    def deviance_of(self, k):
-        return self.result.get('deviance')
+    def fit_quality_of(self, k):
+        """Spectrum k's Fit quality (fit_quality): the fit's χ² and D, its own
+        S, F and MISFIT -- or None."""
+        qualities = self.result.get('fit_quality') or []
+        return qualities[k] if k < len(qualities) else None
 
 
 class _Canvas(FigureCanvas):
@@ -372,7 +376,7 @@ class ResultWindow(QMainWindow):
         self.draw(value - 1)
 
     def draw(self, k):
-        """Draw spectrum *k*: the plot, its N line and its results."""
+        """Draw spectrum *k*: the plot, its N line, its results and its fit quality."""
         result = self.result
         self.spectrum_label.setText(result.label(k))
         self.parameters_line.setText(result.parameters_line(k))
@@ -382,6 +386,7 @@ class ResultWindow(QMainWindow):
             result.names_of(k), result.covariance_of(k), result.errors_of(k),
             result.fix_of(k), result.texts_of(k),
             spectrum_parameters=result.spectrum_parameters_of(k), whole_fit=result.whole_fit())
+        self.table.fill_quality([result.fit_quality_of(k)])
 
     def _draw_plot(self, k):
         result = self.result
@@ -395,7 +400,7 @@ class ResultWindow(QMainWindow):
             main.dir_path, z_order=self.z_order, gridcolor=main.gridcolor,
             theme=main._theme, model=result.model_of(k), hires_diff=hires,
             chi2_spread=result.chi2_spread_of(k), save=False,
-            exclusion_regions=result.exclusion_regions_of(k), deviance=result.deviance_of(k))
+            exclusion_regions=result.exclusion_regions_of(k))
         self.canvas.draw()
 
     def replot_result(self, row_index):

@@ -157,10 +157,30 @@ become `nan`; the velocities stay).
 
 ## 9. Errors, χ² and the correlation matrix
 
-- Fits maximise the Poisson likelihood; **D** (deviance) and **χ²** are per
-  degree of freedom, ±√(2/ν) in brackets.
+- Fits maximise the Poisson likelihood; the plot shows **χ²** per degree of
+  freedom, ±√(2/ν) in brackets. D and the rest: tab *Fit quality* (9.1).
 - Errors = statistical 1σ × √χ² (*Supp → Empirical correction of errors by χ²*
   turns the factor off). A parameter with no error is redundant (see the log).
+
+### 9.1 Fit quality
+
+Third tab of the results: each number with its ideal and its 1σ (its spread
+for a right model and Poisson counting). Within 2σ nothing is seen; beyond 3σ
+it is real. Each S comes with the F it divides χ² by (F = 1: Poisson).
+
+| quantity | ideal | says |
+|---|---|---|
+| χ² | 1 | model and counting together (Poisson counts) |
+| D | ≈ 1 | the deviance the fit minimised |
+| S (fit) | 1 | look first: above 1 the model misses something, whatever the counting |
+| S (no model) | 1 | χ² over the counting noise of the counts alone; its F: is the counting Poisson? |
+| S (SG) | 1 | the same with another smooth: a cross-check, holds at very high counts |
+| MISFIT, % | 0 | size of the misfit against the absorption; √ = R-factor |
+
+S (fit) reads low for misfits narrower than ~3 channels, high for data
+interpolated or smoothed elsewhere. S (no model) can read low (its F high) with
+deep natural lines at ≳10⁷ counts per point: then trust S (SG). Neither is
+shown when the natural line spans fewer than 2 channels.
 
 ## 10. Saving
 

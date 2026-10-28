@@ -9,13 +9,14 @@ tab is hidden. The one-model fit's window is in test_one_model_gui.
 
 Made-up results throughout: what is tested is the window, not the physics.
 """
+import os
 import shutil
 
 import numpy as np
 import pytest
 
 import syncmoss.syncmoss_main as sm
-from syncmoss import model_io
+from syncmoss import fit_quality, model_io, results_table
 from syncmoss.constants import model_colors, number_of_baseline_parameters as NB, NBASELINE_COLOR
 
 from conftest import redirect_params_dir_to_tmp
@@ -98,8 +99,22 @@ def test_an_nbaseline_fit_shows_every_spectrum_without_a_correlation_matrix(phys
     pt.select_model(2, 'Nbaseline')
     pt.select_model(3, 'Doublet')
     result = _nbaseline_result(app, paths)
+    result['fit_quality'] = fit_quality.fit_quality(
+        [(A, B, fit, np.full(len(A), 1000.0 + 100 * k), np.ones(len(A), bool))
+         for k, (A, B, fit) in enumerate(zip(result['A_list'], result['B_list'], result['SPC_f_list']))],
+        1.07, 1.05, 8)
 
     app.on_fitting_finished(result)
+    # the main window's Fit quality: the fit's χ² and D once, then each spectrum's own rows
+    quality = app.results_table.quality_table
+    names = [quality.item(row, 0).text() for row in range(quality.rowCount())]
+    assert names[:2] == ['χ²', 'D'] and names.count('S (fit)') == 2 and names.count('χ²') == 1
+    # each spectrum's rows under its file name alone, on the correlation matrix's blue
+    basenames = [os.path.basename(path) for path in paths]
+    assert [name for name in names if name in basenames] == basenames
+    heading = names.index(basenames[1])
+    assert quality.item(heading, 0).background().color() == results_table._SPECTRUM_ROW_COLOR
+    assert quality.columnSpan(heading, 0) == quality.columnCount() == 6
     window = app.result_window
     assert window is not None and window.slider.maximum() == 2
     assert not window.table.tabs.isTabVisible(1)
@@ -110,6 +125,18 @@ def test_an_nbaseline_fit_shows_every_spectrum_without_a_correlation_matrix(phys
     assert table.current_model_list == ['baseline', 'Doublet']   # its own components
     assert np.array_equal(table.current_parameters, result['parameters'][NB + SEXTET:])
     assert 'χ² = 1.070(40)' in window.figure.axes[0].get_title()  # the fit's one chi2
+    # its own Fit quality: S of spectrum 2, not of spectrum 1
+    first, own = ({row[0]: row for row in q['rows']} for q in result['fit_quality'])
+    assert f"{own['S (fit)'][2]:.3f}" != f"{first['S (fit)'][2]:.3f}"
+    cells = {table.quality_table.item(row, 0).text(): [table.quality_table.item(row, c).text() for c in range(6)]
+             for row in range(table.quality_table.rowCount())}
+    assert cells['S (fit)'][2] == f"{own['S (fit)'][2]:.3f}" and cells['χ²'][2] == '1.070'
+    # an S row shows the F it divides χ² by, with that F's 1σ; χ² has none
+    assert cells['S (fit)'][4:] == [f"{own['S (fit)'][4]:.3f}", f"{own['S (fit)'][5]:.3f}"]
+    assert cells['χ²'][4:] == ['', '']
+    # every ideal an exact 1 here; D's is computed (1.0002 at these 10^3 counts): 1 too
+    assert cells['D'][1] == '1' and cells['χ²'][1] == '1' and cells['S (fit)'][1] == '1'
+    assert results_table._quality_cells(('D', 1.01883, 1.05, 0.06, None, None))[1] == '1.019'   # ~10 counts
 
 
 def test_a_spectrum_s_formula_is_shown_as_typed_and_evaluated_with_the_whole_fit(physics_app,

@@ -17,6 +17,8 @@ import syncmoss.minimi_lib as mi
 from syncmoss.minimi_lib import chi2_spread
 from syncmoss.expression_eval import eval_expr
 from syncmoss import exclusion_regions
+from syncmoss.fit_quality import fit_quality, quality_line
+from syncmoss.spectrum_plotter import calculate_baseline
 from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_bounds_and_fix
 from syncmoss.models_positions import mod_pos
@@ -382,6 +384,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             - 'chi2': Pearson's reduced chi-square
             - 'deviance': the reduced Poisson deviance (what the fit minimised)
             - 'chi2_spread': 1-sigma spread of both for a correct model, sqrt(2/dof)
+            - 'fit_quality': the Fit quality tab, one dict per spectrum
+              (fit_quality.fit_quality)
             - 'correlation_matrix': correlation matrix
             - 'model': model list
             - 'message': status message
@@ -871,6 +875,15 @@ def fit_model(app, inputs, spectrum_files, pool):
                 FS_list.append(FS)
                 FS_pos_list.append(FS_pos)
 
+            # The Fit quality tab: each spectrum's residual, the fit's χ² and D
+            quality = fit_quality(
+                [(A_list[k], B_list[k], SPC_f_list[k],
+                  calculate_baseline(section_parameters(p, k), A_list[k]), keeps[k])
+                 for k in range(number_of_spectra)], chi2, hi2, n_free)
+            for spec_file, spectrum_quality in zip(spectrum_files, quality):
+                if spectrum_quality is not None:
+                    print(f"[Fitting] Fit quality, {os.path.basename(spec_file)}: {quality_line(spectrum_quality)}")
+
             return {
                 'success': True,
                 'parameters': p,
@@ -878,6 +891,7 @@ def fit_model(app, inputs, spectrum_files, pool):
                 'chi2': chi2,
                 'deviance': hi2,
                 'chi2_spread': spread,
+                'fit_quality': quality,  # one per spectrum (fit_quality.fit_quality)
                 'covariance_matrix': covariance_matrix,
                 'fix': fix,
                 'model': model,
@@ -911,6 +925,11 @@ def fit_model(app, inputs, spectrum_files, pool):
             # instrumental settings and Distri/Cor as func(), so it matches SPC_f.
             hires_diff = hires_model_diff(pool, JN, A, p, model, mp0, SPC_f, Distri, Cor, pol=pol, Recon=Recon)
 
+            # The Fit quality tab (fit_quality.fit_quality): this spectrum's residual
+            quality = fit_quality([(A, B, SPC_f, calculate_baseline(p, A), keeps[0])], chi2, hi2, n_free)
+            if quality[0] is not None:
+                print(f"[Fitting] Fit quality: {quality_line(quality[0])}")
+
             return {
                 'success': True,
                 'parameters': p,
@@ -918,6 +937,7 @@ def fit_model(app, inputs, spectrum_files, pool):
                 'chi2': chi2,
                 'deviance': hi2,
                 'chi2_spread': spread,
+                'fit_quality': quality,
                 'covariance_matrix': covariance_matrix,
                 'fix': fix,
                 'model': model,

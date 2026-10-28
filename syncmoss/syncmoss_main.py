@@ -3388,7 +3388,7 @@ class PhysicsApp(QMainWindow):
                 self.figure, result['A'], result['B'], result['F'], result['F2'], result['p'], result['hi2'],
                 result['files'][0], self.dir_path, self.gridcolor, theme=self._theme, lengths=result['lengths'],
                 starts=result['starts'], labels=[os.path.basename(f) for f in result['files']],
-                chi2_spread=result.get('chi2_spread'), deviance=result.get('deviance'))
+                chi2_spread=result.get('chi2_spread'))
             self.canvas.draw()
             self.toolbar.push_current()
             self.calibration_path = result['calibration_path']
@@ -3403,7 +3403,7 @@ class PhysicsApp(QMainWindow):
             self.set_status(
                 f"Calibrated with G {result['G']:.4f} ± {g_error:.4f} mm/s, Δθ {result['dtheta']:.4f} ± "
                 f"{dtheta_error:.4f} rad (saved as defaults), f_LM {result['f_LM']:.3f} ± {f_error:.3f}{note}. "
-                + chi2_title(result['hi2'], result.get('chi2_spread'), result.get('deviance')), "green")
+                + chi2_title(result['hi2'], result.get('chi2_spread')), "green")
         except Exception as e:
             self.set_status(f"Error showing the calibration with G and Δθ: {e}", "red")
         finally:
@@ -3482,9 +3482,9 @@ class PhysicsApp(QMainWindow):
                 labels=[os.path.basename(f) for f in result['files']],
                 exclusion_regions=result['exclusion_regions'],
                 baseline_offset=result.get('baseline_offset', 0.0),
-                chi2_spread=result.get('chi2_spread'), deviance=result.get('deviance'),
+                chi2_spread=result.get('chi2_spread'),
             )
-            quality = chi2_title(result['hi2'], result.get('chi2_spread'), result.get('deviance'))
+            quality = chi2_title(result['hi2'], result.get('chi2_spread'))
 
             # Update canvas the same way as showM_pressed does
             self.canvas.draw()
@@ -3863,7 +3863,7 @@ class PhysicsApp(QMainWindow):
                 theme=self._theme, model=data.get('model'),
                 hires_diff_list=data.get('hires_diff_list'),
                 chi2_spread=data.get('chi2_spread'), labels=data.get('labels'),
-                exclusion_regions=data.get('exclusion_regions'), deviance=data.get('deviance')
+                exclusion_regions=data.get('exclusion_regions')
             )
             self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         else:
@@ -3875,7 +3875,7 @@ class PhysicsApp(QMainWindow):
                 theme=self._theme, model=data.get('model'),
                 hires_diff=data.get('hires_diff'),
                 chi2_spread=data.get('chi2_spread'),
-                exclusion_regions=data.get('exclusion_regions'), deviance=data.get('deviance')
+                exclusion_regions=data.get('exclusion_regions')
             )
             self.position_artists = position_artists if position_artists else []
 
@@ -4286,6 +4286,8 @@ class PhysicsApp(QMainWindow):
             self.results_table.current_chi2 = result['chi2']
             self.results_table.current_deviance = result.get('deviance')
             self.results_table.current_exclusion_regions = fit.exclusion_regions_of(0)
+            self.results_table.fill_quality(result.get('fit_quality'),
+                                            [os.path.basename(fit.path_of(k)) for k in range(fit.count())])
             self.plot_one_model_result(fit)
             self.show_result_window(fit)
         except Exception as e:
@@ -4313,7 +4315,6 @@ class PhysicsApp(QMainWindow):
             'model_colors': fit.displayed_colors(),
             'chi2': fit.chi2,
             'chi2_spread': fit.chi2_spread,
-            'deviance': fit.deviance,
             'spectrum_files': [fit.spectra[k].path for k in shown],
             'labels': labels,
             'is_simultaneous': True,
@@ -4337,7 +4338,7 @@ class PhysicsApp(QMainWindow):
             data['model_colors'], fit.chi2, data['spectrum_files'], self.dir_path,
             z_order=None, gridcolor=self.gridcolor, theme=self._theme, model=data['model'],
             hires_diff_list=data['hires_diff_list'], chi2_spread=fit.chi2_spread, labels=labels,
-            exclusion_regions=data['exclusion_regions'], deviance=fit.deviance)
+            exclusion_regions=data['exclusion_regions'])
         self.position_artists = [artist for sublist in position_artists_list for artist in sublist]
         self.toolbar.toggle_positions_action.setEnabled(bool(self.position_artists))
         self.toolbar.toggle_positions_action.setChecked(bool(self.position_artists))
@@ -4346,7 +4347,7 @@ class PhysicsApp(QMainWindow):
         self.toolbar.push_current()
         note = str(fit.result.get('instrumental_note', '') or '').strip()
         self.set_status(f"Simultaneous one-model fit of {fit.count()} spectra completed! "
-                        + chi2_title(fit.chi2, fit.chi2_spread, fit.deviance)
+                        + chi2_title(fit.chi2, fit.chi2_spread)
                         + (f"\n{note}" if note else ""), "green")
 
     def show_result_window(self, series, spectrum=None):
@@ -4522,6 +4523,7 @@ class PhysicsApp(QMainWindow):
             self.results_table.current_chi2 = chi2
             self.results_table.current_deviance = result.get('deviance')
             self.results_table.current_exclusion_regions = tuple(result.get('exclusion_regions') or ())
+            self.results_table.fill_quality(result.get('fit_quality'))
 
             # Plot the result
             self.plot_fitting_result(result)
@@ -4727,8 +4729,7 @@ class PhysicsApp(QMainWindow):
             fitted_parameters = result['parameters']
             chi2 = result['chi2']
             chi2_spread = result.get('chi2_spread')
-            deviance = result.get('deviance')
-            quality = chi2_title(chi2, chi2_spread, deviance)
+            quality = chi2_title(chi2, chi2_spread)
             is_simultaneous = result.get('is_simultaneous', False)
             instrumental_note = str(result.get('instrumental_note', '') or '').strip()
             note_suffix = f"\n{instrumental_note}" if instrumental_note else ""
@@ -4754,7 +4755,6 @@ class PhysicsApp(QMainWindow):
                     'model_colors': model_colors,
                     'chi2': chi2,
                     'chi2_spread': chi2_spread,
-                    'deviance': deviance,
                     'spectrum_files': result['spectrum_files'],
                     'is_simultaneous': True,
                     'z_order': None,
@@ -4788,7 +4788,7 @@ class PhysicsApp(QMainWindow):
                     self.dir_path, z_order=None, gridcolor=gridcolor,
                     theme=self._theme, model=result.get('model'),
                     hires_diff_list=result.get('hires_diff_list'),
-                    chi2_spread=chi2_spread, exclusion_regions=regions, deviance=deviance
+                    chi2_spread=chi2_spread, exclusion_regions=regions
                 )
                 
                 # Store position artists (from all subplots)
@@ -4838,7 +4838,6 @@ class PhysicsApp(QMainWindow):
                     'model_colors': model_colors,
                     'chi2': chi2,
                     'chi2_spread': chi2_spread,
-                    'deviance': deviance,
                     'filepath': result['spectrum_file'],
                     'is_simultaneous': False,
                     'z_order': None,
@@ -4857,7 +4856,7 @@ class PhysicsApp(QMainWindow):
                     self.dir_path, z_order=None, gridcolor=gridcolor,
                     theme=self._theme, model=result.get('model'),
                     hires_diff=result.get('hires_diff'),
-                    chi2_spread=chi2_spread, exclusion_regions=regions, deviance=deviance
+                    chi2_spread=chi2_spread, exclusion_regions=regions
                 )
                 
                 # Store position artists and enable toggle button if positions exist
@@ -4910,7 +4909,7 @@ class PhysicsApp(QMainWindow):
             
             chi2_spread = result.get('chi2_spread')
             print(f"[Fit] Fitting successful!")
-            print(f"[Fit] {chi2_title(chi2, chi2_spread, result.get('deviance'))}")
+            print(f"[Fit] {chi2_title(chi2, chi2_spread)}")
             print(f"[Fit] Simultaneous: {is_simultaneous}")
             
             # Update results table
@@ -4934,6 +4933,10 @@ class PhysicsApp(QMainWindow):
             self.results_table.current_chi2 = chi2
             self.results_table.current_deviance = result.get('deviance')
             self.results_table.current_exclusion_regions = tuple(result.get('exclusion_regions') or ())
+            # The Fit quality tab: a simultaneous fit's spectra by name
+            self.results_table.fill_quality(
+                result.get('fit_quality'),
+                [os.path.basename(f) for f in result['spectrum_files']] if is_simultaneous else None)
 
             # Plot results
             self.plot_fitting_result(result)
@@ -5237,8 +5240,7 @@ class PhysicsApp(QMainWindow):
                 figure, A, B, curve, components, positions, values, colors, fit.chi2,
                 spectrum.path, self.dir_path, gridcolor=self.gridcolor, theme=self._theme,
                 model=list(template['model']), hires_diff=hires,
-                chi2_spread=fit.chi2_spread, save=False, exclusion_regions=regions,
-                deviance=fit.deviance)
+                chi2_spread=fit.chi2_spread, save=False, exclusion_regions=regions)
             write(spectrum_base + '.svg', lambda: figure.savefig(
                 spectrum_base + '.svg', bbox_inches='tight', facecolor=figure.get_facecolor()))
             table.fill_table(values, model_list, colors, names, fit.covariance_of(k), errors,
