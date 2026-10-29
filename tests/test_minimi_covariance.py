@@ -2,10 +2,10 @@
 
 Unweighted ('U', the default) its covariance is the sandwich H^-1 J V J^T H^-1
 (H = J J^T, V = |y|+1); weighted ('W': 1/(|y|+1), 'P': the Poisson likelihood,
-or an array) it is (J W J^T)^-1; times Pearson's reduced chi-square (none
-where the model is not counts) unless chi2_correction=False. The block
-the sandwich replaced weighted every point by 1/model and inverted with a numba
-Gauss-Jordan kernel, which
+or an array) it is (J W J^T)^-1; times Pearson's reduced chi-square, below 1
+as well (none where the model is not counts, or the chi-square 0: no noise)
+unless chi2_correction=False. The block the sandwich replaced weighted every
+point by 1/model and inverted with a numba Gauss-Jordan kernel, which
 
 * made the covariance indefinite when the model is not counts (Calibration
   fits velocities, of both signs): a negative variance, "invalid value
@@ -160,13 +160,15 @@ def test_the_chi_squares_returned_by_each_weighting():
 
 
 @pytest.mark.parametrize('weights', ['U', 'W', 'P'])
-def test_the_chi2_correction_can_be_turned_off(weights):
+@pytest.mark.parametrize('noise', [2.0, 0.5])                     # times the Poisson noise
+def test_the_chi2_correction_can_be_turned_off(weights, noise):
     """Off, the errors are those of the variances alone: on, they are sqrt of
-    Pearson's reduced chi-square (the last value returned) larger, whatever
-    the weights."""
+    Pearson's reduced chi-square (the last value returned) times those,
+    whatever the weights -- larger with twice the Poisson noise, smaller with
+    half of it."""
     rng = np.random.default_rng(11)
     clean = _dip(X, [1e5, 0.3, 0.2])
-    y = clean + 2 * np.sqrt(clean) * rng.normal(size=X.size)     # twice the Poisson noise
+    y = clean + noise * np.sqrt(clean) * rng.normal(size=X.size)
     p0 = np.array([1.01e5, 0.25, 0.1])
 
     on = mi.minimi_hi(_dip, X, y, p0, weights=weights)
@@ -174,9 +176,26 @@ def test_the_chi2_correction_can_be_turned_off(weights):
 
     assert off[0] == pytest.approx(on[0], rel=1e-12)              # the same fit
     factor = on[4]
-    assert factor > 3
+    assert factor == pytest.approx(noise ** 2, rel=0.25)          # 4 or 1/4
     assert on[1] == pytest.approx(off[1] * np.sqrt(factor), rel=1e-9)
     assert on[3] == pytest.approx(off[3] * factor, rel=1e-9)
+
+
+@pytest.mark.parametrize('weights', ['U', 'W', 'P'])
+def test_without_noise_the_errors_are_not_0(weights):
+    """A spectrum simulated without noise: the chi-square is 0 to the fit's
+    tolerance (eps), and the errors are those of the variances -- what a
+    measurement with these counts would give -- not 0."""
+    y = _dip(X, [1e5, 0.3, 0.2])
+    p0 = np.array([1.01e5, 0.25, 0.1])
+
+    on = mi.minimi_hi(_dip, X, y, p0, weights=weights)
+    off = mi.minimi_hi(_dip, X, y, p0, weights=weights, chi2_correction=False)
+
+    assert on[4] <= inspect.signature(mi.minimi_hi).parameters['eps'].default
+    assert np.all(on[1] > 0)
+    assert on[1] == pytest.approx(off[1], rel=1e-12)
+    assert on[3] == pytest.approx(off[3], rel=1e-12)
 
 
 def test_poisson_weights_maximise_the_likelihood():

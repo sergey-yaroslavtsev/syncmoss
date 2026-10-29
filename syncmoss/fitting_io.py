@@ -23,7 +23,7 @@ from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_bounds_and_fix
 from syncmoss.models_positions import mod_pos
 from syncmoss.constants import SMS_POL_DEFAULT
-from syncmoss.spectrum_io import load_spectrum
+from syncmoss.spectrum_io import load_spectrum, ns_for_background
 from syncmoss.spectrum_parameters import first_spectrum_parameters, table_uses_names
 from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
@@ -370,7 +370,8 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
         app: Main application object
         spectrum_file: Path to spectrum file (or list of files for simultaneous fitting)
         pool: Multiprocessing pool for parallel computation
-        background: Optional background value (Ns) to override parameter table (for sequential fitting)
+        background: The spectrum's counts (calculate_backgrounds), for sequential
+            fitting: Ns starts with Ns + Nnr at that level instead of the table's Ns
         sequence_params: Optional parameter array to use instead of reading from table (for sequential fitting)
         spectrum_parameters: SpectrumParameters -- what N, N1, N2, ... stand for in
             this fit (for sequential fitting); by default the first spectrum
@@ -408,10 +409,12 @@ def fit_single_spectrum(app, spectrum_file, pool, background=None, sequence_para
             inputs['p'] = np.array(sequence_params, dtype=float)
             print(f"[Fitting] Using sequence parameters (result mode)")
         
-        # Override background (Ns, p[1]) if provided (for sequential fitting)
-        if background is not None:
-            inputs['p'][0] = background
-            print(f"[Fitting] Using provided background: Ns = {background}")
+        # Each spectrum of a sequence starts from its own counts: Ns + Nnr at
+        # that level (ns_for_background) -- unless Ns is a link: it follows that
+        if background is not None and 0 not in inputs['con1']:
+            inputs['p'][0] = ns_for_background(background, inputs['p'], inputs['con1'],
+                                               inputs['con2'], inputs['con3'])
+            print(f"[Fitting] Counts of the spectrum {background}: Ns = {inputs['p'][0]}")
 
         # An Nbaseline model is fitted to every spectrum of the path box
         spectrum_files = app.parse_process_path() if 'Nbaseline' in model else [spectrum_file]

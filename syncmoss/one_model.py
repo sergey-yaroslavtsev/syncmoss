@@ -22,8 +22,10 @@ slot i is slot ``k*L + i``:
   Expression parameter). So a link never follows another link (read_model has
   already followed the template's chains to their end), as minimi_hi applies
   the links in one pass;
-* the baseline of spectra 2..K starts from the spectrum's own counts (Ns from
-  spectrum_io.calculate_backgrounds, as in a sequence) unless Ns is a link; its
+* the baseline of spectra 2..K starts from the spectrum's own counts
+  (spectrum_io.calculate_backgrounds): Ns is set so that Ns + Nnr is that level,
+  as the table sets it for one spectrum and a sequence for each (an Nnr linked
+  =[0,X] is X*Ns: spectrum_io.ns_for_background), unless Ns is a link; its
   other values are the template's, its links stay inside the spectrum;
 * a Recon's weights are shared: every copy uses section 1's weights
   (recon_fit_layout's *share*).
@@ -40,7 +42,7 @@ from syncmoss import fitting_io
 from syncmoss.constants import number_of_baseline_parameters as NB, NBASELINE_COLOR
 from syncmoss.model_io import (read_model, read_bounds_and_fix, model_file_rows,
                                fitted_model_rows)
-from syncmoss.spectrum_io import calculate_backgrounds
+from syncmoss.spectrum_io import calculate_backgrounds, ns_for_background
 from syncmoss.spectrum_parameters import SpectrumParameters, substitute
 
 _P_REF = re.compile(r'p\[(\d+)\]')
@@ -96,7 +98,8 @@ def expand(template, spectra, backgrounds=None):
     Returns the inputs of fitting_io.fit_model (model, p, links, texts, slots,
     Recon, bounds, fix, recon_share) plus 'L' (the template's length) and
     'shared' (shared_slots). *backgrounds* holds each spectrum's estimated
-    counts; spectrum 1 keeps the template's Ns.
+    counts, where its Ns + Nnr start (ns_for_background); spectrum 1 keeps the
+    template's Ns.
     """
     p = np.asarray(template['p'], dtype=float)
     L = len(p)
@@ -127,7 +130,8 @@ def expand(template, spectra, backgrounds=None):
 
         section = p.copy()
         if k > 0 and backgrounds is not None and 0 not in linked:
-            section[0] = float(backgrounds[k])
+            section[0] = ns_for_background(float(backgrounds[k]), p, template['con1'],
+                                           template['con2'], template['con3'])
         values.append(section)
         bounds[0].extend(template['bounds'][0])
         bounds[1].extend(template['bounds'][1])

@@ -955,3 +955,24 @@ def calculate_backgrounds(paths, calibration_path="Calibration.dat"):
             backgrounds.append(1)
 
     return backgrounds
+
+
+def ns_for_background(background, p, con1, con2, con3):
+    """The Ns that puts the baseline's off-resonance counts, Ns + Nnr, at a
+    spectrum's *background* (calculate_backgrounds): the start of every
+    spectrum -- the table's one (update_baseline_from_bg), each of a sequence
+    and of a simultaneous one-model fit.
+
+    Nnr is p[4] of read_model's *p* and links *con1*, *con2*, *con3*: the link
+    =[0,X] makes it X*Ns, so Ns = background/(1 + X); a number is taken off,
+    Ns = background - Nnr; any other link is not counted. At least 1. An Ns
+    that is a link itself is not estimated: the callers leave it to its link.
+    """
+    links = {int(target): (int(source), float(factor)) for target, source, factor in zip(con1, con2, con3)}
+    if 4 not in links:
+        ns = background - float(p[4])
+    elif links[4][0] == 0:
+        ns = background / (1 + links[4][1])
+    else:
+        ns = background
+    return max(1.0, ns)

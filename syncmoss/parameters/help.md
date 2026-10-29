@@ -159,8 +159,9 @@ become `nan`; the velocities stay).
 
 - Fits maximise the Poisson likelihood; the plot shows **χ²** per degree of
   freedom, ±√(2/ν) in brackets. D and the rest: tab *Fit quality* (9.1).
-- Errors = statistical 1σ × √χ² (*Supp → Empirical correction of errors by χ²*
-  turns the factor off). A parameter with no error is redundant (see the log).
+- Errors = statistical 1σ × √χ² (× 1 when χ² = 0: a spectrum without noise;
+  *Supp → Empirical correction of errors by χ²* turns the factor off). A
+  parameter with no error is redundant (see the log).
 
 ### 9.1 Fit quality
 

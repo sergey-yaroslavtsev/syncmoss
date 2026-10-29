@@ -2947,7 +2947,8 @@ class PhysicsApp(QMainWindow):
         self.inprogress = False
         if self._calculation_started is None:
             return
-        took = f"{self.busy_with} took {_duration_text(time.perf_counter() - self._calculation_started)}"
+        took = (f"{getattr(self, 'busy_with', 'The calculation')} took "
+                f"{_duration_text(time.perf_counter() - self._calculation_started)}")
         self._calculation_started = None
         print(took)
         self.log.append(took)

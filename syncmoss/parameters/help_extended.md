@@ -576,9 +576,11 @@ the plot toolbar; a bar appears above the plot.
   in the Fit quality tab (9.1) with the other numbers about the fit.
 - An error is the statistical 1σ of the fit times √χ², so it follows the noise
   the spectrum really has: a χ² of 0.88 makes the errors 6 % smaller, one of 2
-  makes them 41 % larger. **Supp → Empirical correction of errors by χ²**
-  turns the factor off (ON by default): the errors are then those of exactly
-  Poisson counts.
+  makes them 41 % larger. A spectrum without noise (*Create spectrum from
+  model*) fits with χ² = 0: nothing multiplies its errors, they are those of
+  Poisson counts at its level — what a measurement with those counts would
+  give. **Supp → Empirical correction of errors by χ²** turns the factor off
+  (ON by default): the errors are then those of exactly Poisson counts.
 - The % intensities and the Expression rows get their errors from the same
   covariance, with the same factor; the correlation matrix does not depend on it.
 - A parameter the other free ones reproduce exactly — two that enter only as a

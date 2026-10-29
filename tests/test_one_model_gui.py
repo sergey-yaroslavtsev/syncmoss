@@ -22,6 +22,7 @@ import syncmoss.syncmoss_main as sm
 from syncmoss import fitting_io, model_io, one_model
 from syncmoss.constants import number_of_baseline_parameters as NB
 from syncmoss.models import FitInterrupted
+from syncmoss.spectrum_io import calculate_backgrounds
 
 from conftest import redirect_params_dir_to_tmp, SerialPool
 
@@ -439,31 +440,51 @@ def test_an_interrupted_one_model_fit_releases_the_window(physics_app, tmp_path,
 
 # --- with real curves -----------------------------------------------------------------
 
-def test_show_model_draws_the_first_and_the_last_spectrum(physics_app, tmp_path, monkeypatch):
+@pytest.mark.parametrize('cms', [False, True])
+def test_show_model_draws_the_first_and_the_last_spectrum(physics_app, tmp_path, monkeypatch, cms):
+    """Each spectrum's baseline starts at its own counts, Ns + Nnr -- in CMS
+    with Nnr = 0.67 Ns (the link =[0,0.67]): the first one's Ns as Show writes
+    it into the table, the last one's as Show model estimates it."""
     app = physics_app
     redirect_params_dir_to_tmp(app, tmp_path)
-    _spectra(app, tmp_path, 3)
+    if cms:
+        app.MS_fit.setChecked(True)
+        app.on_ms_sms_changed(app.MS_fit)
+    paths = _spectra(app, tmp_path, 3)
     _sextet_with_independent_delta(app)
     app.jn0_input.setText("16")
     app.pool = SerialPool()
     monkeypatch.setattr(sm.ShowModelThread, 'start', lambda thread: thread.run())
 
+    app.show_pressed()
     app.showM_pressed()
     data = app.last_plot_data
     assert data['has_nbaseline'] and data['model'] == ['Sextet', 'Nbaseline', 'Sextet']
     assert data['labels'][0].startswith('1 of 3') and data['labels'][1].startswith('3 of 3')
     assert app.results_table.interactive_table.rowCount() == 0
     assert "red" not in app.log.styleSheet().lower(), app.log.toPlainText()
+    p = data['p_flat']
+    L = len(p) // 2
+    first, last = calculate_backgrounds([paths[0], paths[-1]], app.calibration_path)
+    # the table holds Ns in whole counts: half a count, carried by Nnr too
+    assert p[0] + p[4] == pytest.approx(first, abs=0.5 * (1 + p[4] / p[0]))
+    assert p[L] + p[L + 4] == pytest.approx(last)
+    if cms:
+        assert p[L + 4] == pytest.approx(0.67 * p[L])
 
 
+@pytest.mark.parametrize('cms', [False, True])
 def test_show_model_of_a_sequence_draws_the_first_and_the_last_spectrum(physics_app, tmp_path,
-                                                                       monkeypatch):
+                                                                       monkeypatch, cms):
     """No =(X), a sequence mode: the table's model on the first and the last
     spectrum, each with its own baseline and N values -- where the sequence
-    starts every spectrum from."""
+    starts every spectrum from (in CMS with Nnr = 0.67 Ns too)."""
     app = physics_app
     redirect_params_dir_to_tmp(app, tmp_path)
-    _spectra(app, tmp_path, 3)
+    if cms:
+        app.MS_fit.setChecked(True)
+        app.on_ms_sms_changed(app.MS_fit)
+    paths = _spectra(app, tmp_path, 3)
     app.params_table.select_model(1, 'Sextet')
     app.set_sequence_fitting_type(0)
     app.jn0_input.setText("16")
@@ -476,6 +497,57 @@ def test_show_model_of_a_sequence_draws_the_first_and_the_last_spectrum(physics_
     assert data['labels'][0].startswith('1 of 3') and data['labels'][1].startswith('3 of 3')
     assert len(app.figure.axes) == 2
     assert "red" not in app.log.styleSheet().lower(), app.log.toPlainText()
+
+    # the sequence starts the last spectrum with the Ns Show model drew
+    started = {}
+    monkeypatch.setattr(fitting_io, 'fit_model',
+                        lambda _app, inputs, files, pool: started.update(p=inputs['p'].copy()) or {})
+    fitting_io.fit_single_spectrum(app, paths[-1], app.pool,
+                                   background=calculate_backgrounds(paths[-1:], app.calibration_path)[0])
+    assert started['p'][0] == pytest.approx(data['p_flat'][len(data['p_flat']) // 2])
+
+
+def test_a_linked_ns_is_never_estimated(physics_app, tmp_path, monkeypatch):
+    """Ns linked to an Expression of the spectrum's N1 (N1*100): Show leaves the
+    link in the table, Show model gives each spectrum its own value, and a
+    sequence starts the last spectrum at its value -- none of them at an
+    estimate from the counts."""
+    app = physics_app
+    redirect_params_dir_to_tmp(app, tmp_path)
+    paths = _spectra(app, tmp_path, 3)                   # N1 = 10, 20, 30
+    pt = app.params_table
+    pt.select_model(1, 'Sextet')
+    pt.select_model(2, 'Expression')
+    model_io._set_row_param(pt.row_widgets[2], 0, 'N1*100', '', '', 'False')
+    link = f'=[{NB + SEXTET},1]'                          # the Expression's slot
+    _value_input(pt, 0, 0).setText(link)
+    app.set_sequence_fitting_type(0)
+    app.jn0_input.setText("16")
+    app.pool = SerialPool()
+    monkeypatch.setattr(sm.ShowModelThread, 'start', lambda thread: thread.run())
+
+    app.show_pressed()
+    assert _value_input(pt, 0, 0).text() == link
+    app.showM_pressed()
+    p = app.last_plot_data['p_flat']
+    assert (p[0], p[len(p) // 2]) == pytest.approx((1000.0, 3000.0))
+    assert "red" not in app.log.styleSheet().lower(), app.log.toPlainText()
+
+    starts = []
+
+    def start_only(func, x, y, p0, **kwargs):           # a "fit" that stays at its start
+        starts.append(np.array(p0, dtype=float))
+        fixed = {int(i) for i in np.ravel(kwargs['fix'])}
+        free = [i for i in range(len(p0)) if i not in fixed]
+        errors = np.full(len(p0), np.nan)
+        errors[free] = 0.01
+        return np.array(p0, dtype=float), errors, 1.0, np.eye(len(free)) * 1e-4, 1.0
+
+    monkeypatch.setattr(fitting_io.mi, 'minimi_hi', start_only)
+    fitting_io.fit_single_spectrum(app, paths[-1], app.pool,
+                                   background=calculate_backgrounds(paths[-1:], app.calibration_path)[0],
+                                   spectrum_parameters=one_model.spectra_of(app.parse_process_entries())[-1])
+    assert starts[0][0] == pytest.approx(3000.0)
 
 
 @pytest.mark.slow

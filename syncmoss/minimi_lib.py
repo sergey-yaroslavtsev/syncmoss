@@ -375,9 +375,10 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
 
     ``chi2_correction`` (default True) multiplies the covariance -- so the
     errors -- by Pearson's reduced chi-square, the last value returned, for
-    every ``weights``; where that is nan (a model that is not positive: not
-    counts) nothing multiplies it. False: the errors the variances alone give
-    (for 'P' the Cramer-Rao ones).
+    every ``weights``, below 1 as well as above; where that is nan (a model
+    that is not positive: not counts) or not above ``eps`` (0 to the fit's
+    tolerance: a spectrum without noise) nothing multiplies it. False: the
+    errors the variances alone give (for 'P' the Cramer-Rao ones).
 
     Returns:
         tuple ``(params, errors, chi2_red, covariance, chi2_pearson)`` - fitted
@@ -775,8 +776,13 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     chi2_pearson = np.sum(resid_end ** 2 / model_end) / dof if np.all(model_end > 0) else np.nan
     # What multiplies the covariance (step 5): Pearson's, whatever the weights
     # -- the scale of the variances the residuals show (docs/minimization.md,
-    # 8.5). Without it (a model that is not counts) nothing does.
-    chi2_factor = chi2_pearson if chi2_correction and np.isfinite(chi2_pearson) else 1.0
+    # 8.5), below 1 as well as above. Nothing does without it (a model that is
+    # not counts), nor where it is 0 to the fit's own tolerance -- a spectrum
+    # simulated without noise, whose errors would all be 0: the fit stops when
+    # its reduced chi-square changes by less than eps (convergence test 4), so
+    # one below eps cannot be told from 0.
+    chi2_factor = (chi2_pearson if chi2_correction and np.isfinite(chi2_pearson) and chi2_pearson > eps
+                   else 1.0)
     if poisson:
         chi2_red = poisson_deviance(y_raw[:n_data], model_end) / dof   # what it minimised
 

@@ -18,6 +18,7 @@ from syncmoss import one_model
 from syncmoss.constants import NBASELINE_COLOR
 from syncmoss.fitting_io import recon_fit_layout
 from syncmoss.model_io import fitted_model_rows, split_independent_field
+from syncmoss.spectrum_io import ns_for_background
 from syncmoss.spectrum_parameters import SpectrumParameters
 
 L = 17
@@ -84,8 +85,23 @@ def test_one_section_per_spectrum_each_as_long_as_the_template():
 def test_the_first_spectrum_keeps_the_table_and_the_others_their_own_counts():
     p = one_model.expand(_template(), SPECTRA, BACKGROUNDS)['p']
     assert np.array_equal(p[:L], _template()['p'])
-    assert (p[L], p[2 * L]) == (2000.0, 3000.0)
+    # Ns + Nnr = Ns + 0.67 Ns at each spectrum's counts
+    assert (p[L], p[2 * L]) == pytest.approx((2000.0 / 1.67, 3000.0 / 1.67))
     assert np.array_equal(p[L + 1:2 * L], _template()['p'][1:])
+
+
+@pytest.mark.parametrize("link, nnr, ns", [
+    ((0, 0.67), 1.0, 2000.0 / 1.67),    # =[0,0.67]: Nnr = 0.67 Ns
+    (None, 300.0, 1700.0),              # a number: taken off the counts
+    ((8, 1.0), 1.0, 2000.0),            # a link to anything else: not counted
+    (None, 2500.0, 1.0),                # more than the counts: Ns = 1
+])
+def test_ns_puts_ns_plus_nnr_at_the_counts(link, nnr, ns):
+    """Where every spectrum starts: the table's, each of a sequence and of a
+    one-model fit."""
+    p = np.array([1000, 0, 0, 0, nnr, 0, 0, 0, 1.0])
+    con1, con2, con3 = ([4.0], [link[0]], [link[1]]) if link else ([], [], [])
+    assert ns_for_background(2000.0, p, np.array(con1), np.array(con2), np.array(con3)) == pytest.approx(ns)
 
 
 def test_links_stay_inside_their_spectrum_unless_they_point_at_a_shared_parameter():
@@ -131,7 +147,8 @@ def test_after_the_links_every_copy_of_a_shared_parameter_is_spectrum_1s():
         assert p[k * L + 15] == 0.6                           # 2 x the shared G
     assert [p[k * L + 13] for k in range(3)] == [0.11, 0.22, 0.33]
     assert p[L + 16] == pytest.approx(1.7 + 0.77 + 0.22)
-    assert p[L + 4] == pytest.approx(0.67 * 2000.0)
+    assert p[L + 4] == pytest.approx(0.67 * p[L])              # Nnr follows its own Ns
+    assert p[L] + p[L + 4] == pytest.approx(2000.0)            # together: its own counts
 
 
 def test_a_recon_shares_the_first_spectrum_s_weights():
@@ -185,7 +202,7 @@ def test_each_spectrum_is_its_section_of_the_result():
     result, _ = _result()
     values = result.values(1)
     assert len(values) == L
-    assert values[0] == 2000.0 and values[9] == 0.22 and values[8] == 1.7
+    assert values[0] == pytest.approx(2000.0 / 1.67) and values[9] == 0.22 and values[8] == 1.7
     assert values[13] == 0.22                                  # its own linked delta
 
 

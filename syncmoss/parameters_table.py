@@ -13,9 +13,9 @@ from syncmoss.constants import (numro, numco, model_colors, number_of_baseline_p
 # Natural line width as a table string: the default and the lower bound of every
 # Lorentzian width L (a fitted line can never be narrower than the natural width).
 _NAT = str(NAT_WIDTH)
-from syncmoss.spectrum_io import calculate_backgrounds
+from syncmoss.spectrum_io import calculate_backgrounds, ns_for_background
 from syncmoss.model_io import (mod_len_def, append_model_via_dialog, split_link_field,
-                               split_independent_field, resolve_link_chains)
+                               split_independent_field, resolve_link_chains, read_model)
 from syncmoss.spectrum_parameters import path_box_entries
 from syncmoss.Library_window import open_library_model_dialog
 from syncmoss.expressions_window import open_expressions_dialog
@@ -1843,40 +1843,19 @@ class ParametersTable(QWidget):
         # Get baseline row (row 0)
         row_widget = self.row_widgets[0]
         
-        # Get Ns (parameter 0) and Nnr (parameter 4)
+        # Get Ns (parameter 0)
         ns_widget = row_widget.layout().itemAt(1).widget()  # column 0 + 1
         ns_value_input = ns_widget.layout().itemAt(1).widget()
-        
-        nnr_widget = row_widget.layout().itemAt(5).widget()  # column 4 + 1
-        nnr_value_input = nnr_widget.layout().itemAt(1).widget()
-        nnr_text = nnr_value_input.text().strip()
-        
-        # Calculate new Ns based on Nnr
-        if nnr_text.startswith('=[0,'):
-            # Case: Nnr = =[0,X] -> Ns = BG / (1 + X)
-            match = re.match(r'=\[0,(.+)\]', nnr_text)
-            if match:
-                try:
-                    X = float(match.group(1))
-                    new_ns = BG / (1 + X)
-                except:
-                    new_ns = BG
-            else:
-                new_ns = BG
-        elif nnr_text and not nnr_text.startswith('='):
-            # Case: Nnr is a constant -> Ns = BG - Nnr
-            try:
-                nnr_value = float(nnr_text)
-                new_ns = BG - nnr_value
-            except:
-                new_ns = BG
-        else:
-            # Default case: Ns = BG
-            new_ns = BG
-        
-        # Round to integer and ensure minimum of 1
-        new_ns = max(1, int(round(new_ns)))
-        
+
+        # Ns + Nnr at BG, the start of every spectrum (an Nnr linked =[0,X] is
+        # X*Ns, a number is taken off), in whole counts -- unless Ns is a link:
+        # it follows that
+        _model, p, con1, con2, con3 = read_model(self.main_window, substitute_names=False)[:5]
+        if 0 in con1:
+            self.main_window.set_status("Baseline Ns is a link: not changed", "blue")
+            return
+        new_ns = int(round(ns_for_background(BG, p, con1, con2, con3)))
+
         # Update Ns value
         ns_value_input.setText(str(new_ns))
         self.main_window.set_status(f"Baseline Ns updated to {new_ns} (BG={int(round(BG))})", "green")
