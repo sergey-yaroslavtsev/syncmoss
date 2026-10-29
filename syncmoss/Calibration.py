@@ -62,9 +62,13 @@ has many steps. The steps, in order (mirrored by the STEP banners in
 7.  **Distortion fit** -- the source-absorber solid angle changes with the
     drive position, adding a parabolic count modulation that differs between
     the half-sweeps; it is fitted from their difference.
-8.  **Final global fit** -- drive parameters, parabolic distortion, absorber
-    intensities (and, for SMS, the impurity components: a second sextet and
-    the Be-window doublet from ``Be.txt``) are all refined together.
+8.  **Final global fit** -- drive parameters, parabolic distortion and absorber
+    intensities are all refined together. Besides the alpha-Fe sextet the
+    model holds what the caller chooses (the Calibrate menu): the foil's
+    impurity sextet (its intensity fitted) and the doublet of the optics' iron
+    impurity, the beamline's preset ``Be.txt`` or ``KB.txt`` (held). By
+    default (:func:`default_impurities`) no impurity sextet, and for SMS the
+    Be doublet.
 9.  **Folding** -- each velocity is visited twice per period; the two visits
     are averaged onto a single velocity axis. For SMS the multi-line
     instrumental function also shifts the apparent line positions; the
@@ -83,15 +87,18 @@ Parameter-vector layouts used throughout (``nbp`` = number_of_baseline_parameter
   a+(+10) a-(+11) GH(+12) I13(+13)``.
   ``theta_k=90, phi_h=0, A=0`` make the polarized Sextet identical to the old
   scalar one (isotropic powder); ``Am=0`` is also a no-op since
-  ``theta_k=90 -> n_z=0`` kills the Faraday term.
+  ``theta_k=90 -> n_z=0`` kills the Faraday term. In the final model ``pCAL``
+  the impurity Sextet block (14) and then the optics Doublet (9) follow, each
+  when chosen.
 * Drive-curve parameters ``ps`` (3): sinusoidal ``[amplitude, phase(rad),
   source shift]``; triangular ``[v at ch 0, v at last ch, v step/channel]``.
 * Final-fit vector ``ps1`` / ``pS``: ``[0..2]`` drive curve, ``[3]`` global
   intensity scale, ``[4..6]`` parabola of half-sweep 1 (centre, curvature,
   offset), ``[7..8]`` parabola of half-sweep 2 (centre, curvature),
-  ``[9]`` main sextet intensity, ``[10]`` texture parameter A, then
-  ``[11]`` impurity sextet intensity (SMS) or ``[11..12]`` the count rate and
-  the unattenuated background, ``pCAL[0]`` and ``pCAL[4]`` (CMS).
+  ``[9]`` main sextet intensity, ``[10]`` texture parameter A, then for CMS
+  ``[11..12]`` the count rate and the unattenuated background, ``pCAL[0]``
+  and ``pCAL[4]``, and last the impurity sextet's intensity when it is fitted
+  (``[11]`` SMS, ``[13]`` CMS).
 """
 
 import os
@@ -125,6 +132,23 @@ ALPHA_FE_LINE_VELOCITIES = np.array(
      LINE_RATIO_34 * _ALPHA_FE_HH / 2,
      LINE_RATIO_25 * _ALPHA_FE_HH / 2,
      _ALPHA_FE_HH / 2])
+
+# The second sextet an alpha-Fe foil may show (an iron impurity of the foil):
+# a polarized Sextet block (layout in the module docstring) whose intensity the
+# final fit frees, the rest held.
+IMPURITY_SEXTET = np.array([0.451, -0.041, 0.003, 30.88, NAT_WIDTH, 0.1, 90, 0, 0, 0, 0, 0, 0, 3])
+
+# The doublet of the optics' iron impurity the final fit can add: the file of
+# the beamline's preset (Supp -> "Set parameters of Be / KB"), or none.
+OPTICS_PRESETS = {'Be': 'Be.txt', 'KB': 'KB.txt', 'none': None}
+
+
+def default_impurities(VVV):
+    """``(impurity sextet, optics)`` a calibration of method *VVV* uses unless
+    told otherwise -- what the Calibrate menu starts from and returns to when
+    CMS/SMS is switched: no impurity sextet; the Be doublet for SMS, nothing
+    for CMS."""
+    return False, ('Be' if VVV == 3 else 'none')
 
 
 # ========================================================================= #
@@ -299,6 +323,55 @@ def _subtract_distortion(counts, channels, pS):
 
 
 # ========================================================================= #
+#  The final model (STEP 9)                                                 #
+# ========================================================================= #
+
+def _read_optics_preset(dir_path, name):
+    """The nine Doublet values of the optics preset *name* ('Be' or 'KB') from
+    its file in *dir_path*. A Be file that cannot be read gives the built-in
+    values (an earlier beamline state); KB has none."""
+    file_name = OPTICS_PRESETS[name]
+    try:
+        values = np.genfromtxt(os.path.join(dir_path, file_name), delimiter='\t', skip_footer=0)
+        print(file_name, 'was read')
+    except Exception:
+        if name != 'Be':
+            raise ValueError(f"could not read {file_name}")
+        values = np.array([0.057, 0.066, -0.261, NAT_WIDTH, 0.375, 90, 0, 0.427, 1])
+        print('COULD NOT READ Be.txt')
+    return values
+
+
+def _final_model(VVV, method, p, p0, impurity, optics_doublet):
+    """The model of the final fit and its parameter vector ``pCAL``: the
+    alpha-Fe sextet, then the impurity sextet (*impurity*) and the optics
+    doublet (*optics_doublet*: its nine values, or None), each when chosen.
+
+    *p* is the last refinement fit and *p0* its copy (STEP 6). A sinusoidal
+    drive starts from the reference alpha-Fe; a triangular one (``method`` 1,
+    CMS) from that copy itself, which is changed in place.
+    """
+    nbp = number_of_baseline_parameters
+    if method == 0:
+        # the count rate through the absorber; CMS also the background the
+        # absorber does not attenuate
+        pCAL = np.array([p[0], 0, 0, 0, p[4] if VVV == 1 else 0, 0, 0, 0,
+                         8.08, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3])
+    else:
+        pCAL = p0
+        pCAL[nbp + 13] = 3                             # I1/I3 line-intensity ratio
+        pCAL[nbp + 5] = 0                              # Gaussian broadening G
+    model = ['Sextet']
+    if impurity:
+        model.append('Sextet')
+        pCAL = np.concatenate((pCAL, IMPURITY_SEXTET))
+    if optics_doublet is not None:
+        model.append('Doublet')
+        pCAL = np.concatenate((pCAL, optics_doublet))
+    return model, pCAL
+
+
+# ========================================================================= #
 #  Folding the two half-sweeps onto one velocity axis                       #
 # ========================================================================= #
 
@@ -417,9 +490,10 @@ def _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded):
 
 def _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve, flat_counts,
                               v_axis, v_folded, data_folded, fold_residual,
-                              pS, baseline, method, n1, n2):
+                              pS, imp, baseline, method, n1, n2):
     """Save ``calibr.png``: raw data + fit vs channel, folded halves vs velocity,
-    the fold residual, and the key numbers (amplitude, distortion, impurity)."""
+    the fold residual, and the key numbers (amplitude, distortion, impurity:
+    ``pS[imp]``, *imp* None without the impurity sextet)."""
     fig, ax = plt.subplots(dpi=300)
     plt.plot(channels, counts, 'm')
     plt.plot(channels, final_curve, 'b')
@@ -448,7 +522,8 @@ def _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve, flat_coun
             'ΔN0 = %.1f ' % (abs(pS[6]) / (baseline + pS[6] * (1 + np.sign(pS[6])) / 2) * 100) + '%',
             color='w', fontsize=8, horizontalalignment='center')
     ax.text(len(channels), max(counts) + 4 * np.sqrt(max(counts)),
-            'impurity %.1f ' % (pS[11] / (pS[9] + pS[11]) * 100) + '%',
+            'impurity %.1f ' % (pS[imp] / (pS[9] + pS[imp]) * 100) + '%' if imp is not None
+            else 'no impurity sextet',
             color='w', fontsize=8, horizontalalignment='right')
     ax.text(len(channels) / 2, max(counts) + 10 * np.sqrt(max(counts)),
             str('lin ') * (method == 1) + str('sin ') * (method == 0)
@@ -488,7 +563,7 @@ def _raw_drive(x):
 # ========================================================================= #
 
 def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, GCMS=0.1, dtheta=0.0,
-                r_ratio=0.0, details=None, channel_average=False):
+                r_ratio=0.0, details=None, channel_average=False, impurities=None):
     """Fit the velocity calibration of a standard alpha-Fe absorber spectrum.
 
     Loads the calibration spectrum ``Cal_file``, auto-detects everything about
@@ -499,8 +574,8 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     channel -> velocity scale.
 
     Args:
-        dir_path: Writable directory holding ``Be.txt`` and receiving
-            ``Calibration.dat`` / ``calibr.png``.
+        dir_path: Writable directory holding ``Be.txt`` / ``KB.txt`` and
+            receiving ``Calibration.dat`` / ``calibr.png``.
         Cal_file: Path of the raw calibration spectrum (format by extension).
         pool: Shared multiprocessing pool for the transmission integral.
         VVV: Experimental method -- ``1`` conventional source (CMS / MS mode),
@@ -530,6 +605,10 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
             velocities the drive runs through in it (the Supp setting,
             models "Channel average"), the widths from the drive curve being
             fitted (_raw_drive).
+        impurities: what the final fit adds to the alpha-Fe sextet (the
+            Calibrate menu), ``(impurity sextet, optics)``: True/False and a
+            key of OPTICS_PRESETS ('Be', 'KB' or 'none'). None: the method's
+            defaults (default_impurities).
 
     Returns:
         tuple ``(v_folded, data_folded, fit_folded)`` -- the folded velocity
@@ -537,6 +616,9 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     """
     print('experimental method VVV =', VVV)
     nbp = number_of_baseline_parameters
+    impurity, optics = default_impurities(VVV) if impurities is None else impurities
+    # read now: a preset that cannot be read stops the calibration before its fits
+    optics_doublet = None if optics == 'none' else _read_optics_preset(dir_path, optics)
     counts = _load_raw_counts(Cal_file)
     n_ch = len(counts)
     channels = np.linspace(0, n_ch - 1, n_ch)          # 0, 1, ..., n_ch-1 as floats
@@ -644,10 +726,10 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         module docstring for the meaning of p)."""
         pCAL2 = pCAL                                   # ALIAS: writes into pCAL
         pCAL2[nbp] = p[9]                              # main sextet intensity
-        if VVV == 3:
+        if imp is not None:
             # second Sextet (impurity) intensity: baseline(8) + first
             # Sextet(14) -> the second Sextet block starts at nbp+14.
-            pCAL2[nbp + 14] = p[11]
+            pCAL2[nbp + 14] = p[imp]
         Hx = (p[0] / np.pi * n_ch * np.sin(np.pi / n_ch)
               * np.cos(p[1] + np.pi / n_ch * (2 * x + 1)) + p[2])
         if min(Hx) > -2.95 and max(Hx) < 2.95:
@@ -671,6 +753,8 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         """Final-fit model for the triangular drive (CMS only)."""
         pCAL2 = pCAL                                   # ALIAS: writes into pCAL
         pCAL2[nbp] = p[9]                              # main sextet intensity
+        if imp is not None:
+            pCAL2[nbp + 14] = p[imp]                   # impurity sextet intensity
         first = x <= int(n_ch / 2)
         Hx = np.where(first, p[0] - p[2] * x, p[1] - p[2] * (n_ch - 1 - x))
         # Indicators of the two half-sweeps (x is always the sorted channel
@@ -907,42 +991,16 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     ps1 = np.append(ps1, (-1) * parab[1] / 2)          # ps1[8]: curvature, half 2
 
     # --------------------------------------------------------------------- #
-    # STEP 9: final model. SMS reference foils show a second (impurity)     #
-    # sextet and the Be-window doublet (parameters from Be.txt); CMS keeps  #
-    # the single sextet but frees the count rate and the background.       #
+    # STEP 9: final model: the alpha-Fe sextet, then the foil's impurity    #
+    # sextet and the doublet of the optics (Be.txt / KB.txt), each when     #
+    # chosen. CMS also frees the count rate and the background.             #
     # --------------------------------------------------------------------- #
-    if method == 0:
-        if VVV == 3:
-            model = ['Sextet', 'Sextet', 'Doublet']
-            try:
-                Be_param = np.genfromtxt(os.path.join(dir_path, 'Be.txt'),
-                                         delimiter='\t', skip_footer=0)
-                print('Be.txt was read')
-            except Exception:
-                Be_param = np.array([0.057, 0.066, -0.261, NAT_WIDTH, 0.375, 90, 0,
-                                     0.427, 1])
-                print('COULD NOT READ Be.txt')
-            # baseline(8) + two polarized Sextets(14 each) + Be Doublet(9).
-            pCAL = np.array([p[0], 0, 0, 0, 0, 0, 0, 0,
-                             8.08, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3,
-                             0.451, -0.041, 0.003, 30.88, NAT_WIDTH, 0.1, 90, 0, 0, 0, 0, 0, 0, 3])
-            pCAL = np.concatenate((pCAL, Be_param))
-        if VVV == 1:
-            model = ['Sextet']
-            pCAL = np.array([p[0], 0, 0, 0, p[4], 0, 0, 0,
-                             8.08, 0, 0, ALPHA_FE_FIELD, NAT_WIDTH, 0, 90, 0, 0, 0, 0, 0, 0, 3])
-            print('background ', pCAL[0], pCAL[4], ps1[3])
-    if method == 1:
-        model = ['Sextet']
-        pCAL = p0
-        pCAL[nbp + 13] = 3                             # I1/I3 line-intensity ratio
-        pCAL[nbp + 5] = 0                              # Gaussian broadening G
+    model, pCAL = _final_model(VVV, method, p, p0, impurity, optics_doublet)
+    if VVV == 1:
         print('background ', pCAL[0], pCAL[4], ps1[3])
 
     ps1 = np.append(ps1, 8)                            # ps1[9]:  main sextet intensity
     ps1 = np.append(ps1, 0)                            # ps1[10]: texture parameter A
-    if VVV == 3:
-        ps1 = np.append(ps1, 0.5)                      # ps1[11]: impurity intensity
     if VVV == 1:
         # Free the count rate and the background, starting from a 60/40 split
         # of the fitted total; rescale the intensity guess accordingly.
@@ -953,6 +1011,12 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         ps1 = np.append(ps1, pCAL[0])                  # ps1[11]: count rate through the absorber
         ps1 = np.append(ps1, pCAL[4])                  # ps1[12]: unattenuated background
         print('baseline ', ps1[11], ps1[12])
+    # The impurity sextet's intensity comes last ([11] SMS, [13] CMS), from
+    # 1/16 of the main sextet's (SMS: 0.5).
+    imp = None
+    if impurity:
+        imp = len(ps1)
+        ps1 = np.append(ps1, ps1[9] / 16)
 
     print('parameter set after preliminary fit ', ps1)
     print('model parameters after preliminary fit ', pCAL)
@@ -1005,7 +1069,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
     if VVV == 3:
         _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve,
                                   flat_counts, v_axis, v_folded, data_folded,
-                                  fold_residual, pS, pCAL[0], method, n1, n2)
+                                  fold_residual, pS, imp, pCAL[0], method, n1, n2)
         print('Shift due to instrumental function ', INS_shift)
         print('Velocity range: ', min(v_folded), ' to ', max(v_folded),
               'mm/s, absolute shift ', (max(v_folded) + min(v_folded)) / 2)
@@ -1013,7 +1077,8 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         print('Source shift is', pS[2], 'mm/s')
         print('difference of N0:',
               abs(pS[6]) / (pCAL[0] + pS[6] * (1 + np.sign(pS[6])) / 2) * 100, '%')
-        print('impurity is', pS[11] / (pS[9] + pS[11]) * 100, '%')
+        if imp is not None:
+            print('impurity is', pS[imp] / (pS[9] + pS[imp]) * 100, '%')
         print('maximum deviation is ', max(np.abs(data_folded - fit_folded)),
               'or ', max(np.abs(data_folded - fit_folded)) / pCAL[0], '%')
         print('Texture parameter is', pS[10], 'should be 0 for isotropic')

@@ -64,7 +64,7 @@ from PySide6.QtWidgets import (
     QAbstractScrollArea, QDialog
 )
 from PySide6.QtGui import (
-    QImage, QFont, QIcon, QAction, QDoubleValidator, QIntValidator,
+    QImage, QFont, QIcon, QAction, QActionGroup, QDoubleValidator, QIntValidator,
     QPalette, QShortcut, QKeySequence
 )
 from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, QCoreApplication, QTimer
@@ -75,7 +75,7 @@ from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, 
 from syncmoss.expression_eval import eval_expr
 import syncmoss.fitting_io as fitting_io
 from syncmoss.models import TI, FIT_CANCEL, FitInterrupted, fit_drive
-from syncmoss.Calibration import Calibration
+from syncmoss.Calibration import Calibration, OPTICS_PRESETS, default_impurities
 from syncmoss.constants import (model_colors, number_of_baseline_parameters,
                                SMS_POL_DEFAULT, NBASELINE_COLOR)
 from syncmoss.parameters_table import (ParametersTable, format_parameter_value, ValueLineEdit,
@@ -163,6 +163,16 @@ _MULTISPECTRA_MODES = {0: "sequence - initial", 1: "sequence - result",
 def _multispectra_label(fitting_type):
     """Text of the Multispectra settings button for *fitting_type*."""
     return f"Multispectra settings\n({_MULTISPECTRA_MODES[fitting_type]})"
+
+
+def _impurity_sextet_label(on):
+    """Text of the Calibrate menu's impurity-sextet switch: the state it is in."""
+    return f"Impurity sextet ({'ON' if on else 'OFF'})"
+
+
+# The Calibrate menu's entries for the optics' impurity doublet the calibration
+# adds (Calibration.OPTICS_PRESETS); one of them is chosen.
+_CALIBRATION_OPTICS_ENTRIES = (('Be', "Contain Be"), ('KB', "Contain KB"), ('none', "No impurity from optics"))
 
 
 def _instrumental_label(use_dat_metadata):
@@ -345,7 +355,7 @@ class CalibrationThread(QThread):
     error = Signal(str)
     
     def __init__(self, dir_path, file, experimental_method, INS, JN, x0, MulCo, vel_start, pool, GCMS=0.1,
-                 dtheta=0.0, r_ratio=0.0, channel_average=False):
+                 dtheta=0.0, r_ratio=0.0, channel_average=False, impurities=None):
         super().__init__()
         self.dir_path = dir_path
         self.file = file
@@ -360,6 +370,7 @@ class CalibrationThread(QThread):
         self.dtheta = dtheta  # CMS cosine smearing (rad), the Δθ field
         self.r_ratio = r_ratio  # d/D of the CMS source and aperture diameters (Supp)
         self.channel_average = channel_average  # the model averaged over each channel (Supp)
+        self.impurities = impurities  # (impurity sextet, optics): the Calibrate menu
 
     def run(self):
         try:
@@ -371,7 +382,7 @@ class CalibrationThread(QThread):
                 self.dir_path, self.file, pool,
                 self.experimental_method, self.INS, self.JN,
                 self.x0, self.MulCo, self.vel_start, GCMS=self.GCMS, dtheta=self.dtheta,
-                r_ratio=self.r_ratio, channel_average=self.channel_average
+                r_ratio=self.r_ratio, channel_average=self.channel_average, impurities=self.impurities
             )
             
             # Don't close the global pool - it's reused throughout the app
@@ -1216,7 +1227,31 @@ class PhysicsApp(QMainWindow):
 
         self.cal_btn = QPushButton("Calibrate")
         self.cal_btn.setFont(QFont('Arial', 16))
-        self.cal_btn.clicked.connect(self.calibration)
+        # The menu also chooses what the calibration's final fit adds to the
+        # alpha-Fe sextet: the foil's impurity sextet (on/off) and one of the
+        # optics' impurity doublets. CMS/SMS sets the mode's defaults
+        # (reset_calibration_impurities); set_calibration_impurities shows them.
+        cal_menu = QMenu(self)
+        start_calibration = QAction("Start calibration", self)
+        start_calibration.triggered.connect(self.calibration)
+        cal_menu.addAction(start_calibration)
+        cal_menu.addSeparator()
+        self.impurity_sextet_action = QAction(self)
+        self.impurity_sextet_action.triggered.connect(
+            lambda: self.choose_calibration_impurities(not self.calibration_impurity, self.calibration_optics))
+        cal_menu.addAction(self.impurity_sextet_action)
+        cal_menu.addSeparator()
+        optics_group = QActionGroup(self)              # exclusive: one is chosen
+        self.optics_actions = {}
+        for key, text in _CALIBRATION_OPTICS_ENTRIES:
+            action = QAction(text, self)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda _checked, key=key: self.choose_calibration_impurities(self.calibration_impurity, key))
+            optics_group.addAction(action)
+            cal_menu.addAction(action)
+            self.optics_actions[key] = action
+        self.cal_btn.setMenu(cal_menu)
 
         self.vel_btn = QPushButton("RAW\nto\ndat")
         self.vel_btn.setFont(QFont('Arial', 16))
@@ -1275,6 +1310,7 @@ class PhysicsApp(QMainWindow):
         # Connect MS and SMS to be mutually exclusive
         self.MS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.MS_fit))
         self.SMS_fit.stateChanged.connect(lambda: self.on_ms_sms_changed(self.SMS_fit))
+        self.reset_calibration_impurities()
 
         # The CMS source: the Gaussian width G of its line and the cosine
         # smearing dtheta (models.Voigt_disc); the source and
@@ -1819,6 +1855,27 @@ class PhysicsApp(QMainWindow):
         # Nnr 0 <-> =[0,0.67] with the mode (idempotent, so the nested call the
         # mutual exclusivity above makes is harmless)
         self.params_table.match_nnr_to_mode(self.MS_fit.isChecked())
+        self.reset_calibration_impurities()
+
+    def reset_calibration_impurities(self):
+        """The calibration's impurities (Calibrate menu) set to the defaults of
+        the mode (Calibration.default_impurities): at the start and whenever
+        CMS/SMS is switched."""
+        self.set_calibration_impurities(*default_impurities(1 if self.MS_fit.isChecked() else 3))
+
+    def set_calibration_impurities(self, impurity, optics):
+        """What the calibration's final fit adds to the alpha-Fe sextet: the
+        impurity sextet (True/False) and the optics' doublet (a key of
+        Calibration.OPTICS_PRESETS); the Calibrate menu shows it."""
+        self.calibration_impurity, self.calibration_optics = impurity, optics
+        self.impurity_sextet_action.setText(_impurity_sextet_label(impurity))
+        self.optics_actions[optics].setChecked(True)
+
+    def choose_calibration_impurities(self, impurity, optics):
+        """A choice in the Calibrate menu: set it and say so."""
+        self.set_calibration_impurities(impurity, optics)
+        self.set_status(f"Next calibrations: impurity sextet {'ON' if impurity else 'OFF'}, "
+                        f"optics impurity: {optics}.", "blue")
 
     def refresh_jn0_for_mode(self):
         """Point ``jn0_input`` at the SMS or the CMS setting, whichever applies.
@@ -1877,11 +1934,14 @@ class PhysicsApp(QMainWindow):
     def current_settings(self):
         """The settings Supp -> "Save settings as default" keeps for the next
         starts (supp_menu.SETTINGS_FILE): CMS/SMS, the velocity direction, the
-        theme and the choices of the Instrumental function, Multispectra and
-        Supp menus. G, Δθ, d and D have their own defaults (GCMS.txt)."""
+        theme and the choices of the Calibrate, Instrumental function,
+        Multispectra and Supp menus. G, Δθ, d and D have their own defaults
+        (GCMS.txt)."""
         return {
             'cms': self.MS_fit.isChecked(),
             'velocity_up_down': self.velocity_direction,
+            'calibration_impurity': self.calibration_impurity,
+            'calibration_optics': self.calibration_optics,
             'dark_mode': self._is_dark_mode,
             'use_dat_instrumental_metadata': self.use_dat_instrumental_metadata,
             'sequence_fitting_type': self.sequence_fitting_type,
@@ -1929,6 +1989,11 @@ class PhysicsApp(QMainWindow):
         if cms is not None:
             self.MS_fit.setChecked(cms)   # SMS follows (on_ms_sms_changed)
         self.refresh_jn0_for_mode()
+        # after CMS/SMS, which sets the mode's defaults
+        impurity = take('calibration_impurity', switch)
+        optics = take('calibration_optics', lambda value: value in list(OPTICS_PRESETS))
+        self.set_calibration_impurities(self.calibration_impurity if impurity is None else impurity,
+                                        self.calibration_optics if optics is None else optics)
         up_down = take('velocity_up_down', switch)
         if up_down is not None:
             self.velocity_direction = up_down
@@ -2596,7 +2661,7 @@ class PhysicsApp(QMainWindow):
         self.calibration_thread = CalibrationThread(
             self.params_dir, file, experimental_method, self.INS, JN, self.x0, self.MulCo, vel_start, self.pool,
             GCMS=self.GCMS, dtheta=get_internal_dtheta(self), r_ratio=get_internal_r_ratio(self),
-            channel_average=channel_average(self)
+            channel_average=channel_average(self), impurities=(self.calibration_impurity, self.calibration_optics)
         )
         self.calibration_thread.finished.connect(self.on_calibration_finished)
         self.calibration_thread.error.connect(self.on_calibration_error)
@@ -2617,7 +2682,9 @@ class PhysicsApp(QMainWindow):
             # Calibration moved the velocity axis by the instrumental function's
             # gravity centre; the source has to move with it or every later fit
             # is off by that amount. See recentre_instrumental_after_calibration.
-            moved = recentre_instrumental_after_calibration(self)
+            # A CMS calibration moves nothing: its source line is centred.
+            moved = (recentre_instrumental_after_calibration(self)
+                     if self.calibration_thread.experimental_method == 3 else 0.0)
             note = (f" (instrumental function re-centred by {moved:+.4f} mm/s)"
                     if moved else "")
             # the in-memory copy must follow the file, or this session keeps
@@ -3410,18 +3477,16 @@ class PhysicsApp(QMainWindow):
                 chi2_spread=result.get('chi2_spread'))
             self.canvas.draw()
             self.toolbar.push_current()
+            # a CMS calibration: the SMS instrumental function stays as it is
+            # (on_calibration_finished)
             self.calibration_path = result['calibration_path']
-            # as after a calibration (on_calibration_finished)
-            moved = recentre_instrumental_after_calibration(self)
-            self.INS, self.MulCo, self.x0 = get_sms_instrumental_from_global_files(self)
             self.GCMS = result['G']
             self.GCMS_input.setText(str(float(result['G'])))
             self.dtheta_input.setText(str(float(result['dtheta'])))
             g_error, dtheta_error, f_error = result['errors']
-            note = f" (instrumental function re-centred by {moved:+.4f} mm/s)" if moved else ""
             self.set_status(
                 f"Calibrated with G {result['G']:.4f} ± {g_error:.4f} mm/s, Δθ {result['dtheta']:.4f} ± "
-                f"{dtheta_error:.4f} rad (saved as defaults), f_LM {result['f_LM']:.3f} ± {f_error:.3f}{note}. "
+                f"{dtheta_error:.4f} rad (saved as defaults), f_LM {result['f_LM']:.3f} ± {f_error:.3f}. "
                 + chi2_title(result['hi2'], result.get('chi2_spread')), "green")
         except Exception as e:
             self.set_status(f"Error showing the calibration with G and Δθ: {e}", "red")

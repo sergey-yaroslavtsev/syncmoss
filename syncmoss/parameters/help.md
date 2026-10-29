@@ -120,6 +120,10 @@ all; `Recon` refused.
 
 First line `# <method> <n1> <n2>`: `sin` or `lin` folding, raw-channel range.
 
+*Calibrate* menu: *Start calibration* careful it also affects the centroid of the instrumental function for SMS; what its final fit adds to α-Fe:
+*Impurity sextet* ON/OFF and *Contain Be* / *Contain KB* / *No impurity from
+optics*. Default OFF + Be (SMS), OFF + nothing (CMS); switching CMS/SMS sets it.
+
 ### 7.6 Several spectra
 
 A list in the path box (`a.dat, b.dat`); *Multispectra settings* chooses:

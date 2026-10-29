@@ -2,8 +2,8 @@
 
 The end-to-end calibration fits are covered by ``test_calibration.py`` (slow);
 these tests exercise the extracted, fit-free pieces -- raw-file parsing for
-every supported format, phase detection, minimum finding, folding and the
-``Calibration.dat`` writer -- so a regression there is caught in milliseconds
+every supported format, phase detection, minimum finding, the final model,
+folding and the ``Calibration.dat`` writer -- so a regression there is caught in milliseconds
 instead of a multi-minute full fit.
 """
 import os
@@ -12,19 +12,26 @@ import numpy as np
 import pytest
 
 from syncmoss.Calibration import (
+    IMPURITY_SEXTET,
     _deepest_line_channels,
     _detect_phase_offset,
+    _final_model,
     _fold_sinusoidal,
     _fold_triangular,
     _load_raw_counts,
     _parabola,
+    _read_optics_preset,
     _subtract_distortion,
     _write_calibration_dat,
+    default_impurities,
 )
+from syncmoss.constants import ALPHA_FE_FIELD, number_of_baseline_parameters as NBP
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _CMS_MCA = os.path.join(_HERE, "data", "synthetic_alpha_fe_cms_linear.mca")
 _SMS_MCA = os.path.join(_HERE, "data", "alpha_fe_sms_000.mca")
+# Be.txt and KB.txt as shipped: the beamline's current presets, read, never typed in
+_SRC_PARAMS = os.path.abspath(os.path.join(_HERE, "..", "syncmoss", "parameters"))
 
 
 # --------------------------------------------------------------------------- #
@@ -137,6 +144,54 @@ def test_subtract_distortion_recovers_flat_signal():
     counts[:32] += _parabola(channels[:32], [pS[4], pS[5], pS[6]])
     counts[32:] += _parabola(channels[32:], [pS[7], pS[8], 0.0])
     np.testing.assert_allclose(_subtract_distortion(counts, channels, pS), flat)
+
+
+# --------------------------------------------------------------------------- #
+# the final model: the alpha-Fe sextet and the chosen impurities              #
+# --------------------------------------------------------------------------- #
+
+def test_default_impurities():
+    """The Calibrate menu's defaults: no impurity sextet; Be for SMS (3),
+    nothing for CMS (1)."""
+    assert default_impurities(3) == (False, 'Be')
+    assert default_impurities(1) == (False, 'none')
+
+
+@pytest.mark.parametrize("vvv, method", [(3, 0), (1, 0), (1, 1)])
+@pytest.mark.parametrize("impurity", [False, True])
+@pytest.mark.parametrize("optics", ['none', 'Be', 'KB'])
+def test_final_model_holds_what_is_chosen(vvv, method, impurity, optics):
+    """The alpha-Fe sextet, then the impurity sextet, then the optics doublet
+    -- each block where the final fit's writes (nbp + 14: the impurity's
+    intensity) expect it."""
+    p = np.arange(NBP + 14, dtype=float) + 1.0          # the last refinement fit
+    p0 = np.copy(p)
+    doublet = None if optics == 'none' else _read_optics_preset(_SRC_PARAMS, optics)
+    model, pCAL = _final_model(vvv, method, p, p0, impurity, doublet)
+
+    assert model == ['Sextet'] + ['Sextet'] * impurity + ['Doublet'] * (doublet is not None)
+    assert pCAL.size == NBP + 14 + 14 * impurity + 9 * (doublet is not None)
+    if method == 0:                                       # the reference alpha-Fe
+        assert pCAL[NBP + 1] == 0 and pCAL[NBP + 3] == ALPHA_FE_FIELD
+        assert pCAL[4] == (p[4] if vvv == 1 else 0)       # CMS: the unattenuated background
+    else:                                                 # the refined sextet, I1/I3 3, G 0
+        assert np.array_equal(pCAL[:NBP + 5], p[:NBP + 5])
+        assert pCAL[NBP + 13] == 3 and pCAL[NBP + 5] == 0
+    if impurity:
+        assert np.array_equal(pCAL[NBP + 14:NBP + 28], IMPURITY_SEXTET)
+    if doublet is not None:
+        assert np.array_equal(pCAL[-9:], doublet)
+
+
+def test_optics_presets_are_read(tmp_path):
+    """Both presets come from their files; an unreadable KB stops the
+    calibration (no built-in values), Be keeps its built-in ones."""
+    for name, file_name in (('Be', 'Be.txt'), ('KB', 'KB.txt')):
+        expected = np.genfromtxt(os.path.join(_SRC_PARAMS, file_name), delimiter='\t')
+        assert np.array_equal(_read_optics_preset(_SRC_PARAMS, name), expected)
+    with pytest.raises(ValueError, match="KB.txt"):
+        _read_optics_preset(str(tmp_path), 'KB')
+    assert _read_optics_preset(str(tmp_path), 'Be').size == 9
 
 
 # --------------------------------------------------------------------------- #

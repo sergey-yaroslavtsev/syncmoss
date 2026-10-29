@@ -11,8 +11,12 @@ fit off by the centroid, which is what forced a sextet's shift open.
 
 Doing both halves is the whole point: the fit is unchanged, the gravity centre
 lands at zero, and the NEXT calibration has nothing left to do.
+
+The source that moves is the one the calibration used -- the description in
+use (Supp setting), with both files stored side by side as shipped.
 """
 import os
+import types
 
 import numpy as np
 import pytest
@@ -42,6 +46,7 @@ def app_with_theory_ins(physics_app, tmp_path):
     ph['shift'] += OFFSET
     io.write_accurate_instrumental(
         physics_app, smst.encode_physical(**{k: ph[k] for k in smst.PHYS_FIELDS}))
+    physics_app.instrumental_method = 'theory'       # in use: a calibration takes it
     return physics_app
 
 
@@ -91,15 +96,30 @@ def test_it_is_a_fixed_point(app_with_theory_ins):
     assert np.array_equal(stored, again), "the file was rewritten for nothing"
 
 
+def _stored(app, name):
+    with open(os.path.join(app.params_dir, name)) as f:
+        return f.read()
+
+
 def _first_moment(a):
     return sum(a[i * 3 + 1] * a[i * 3 + 2] ** 2 for i in range(len(a) // 3))
 
 
+def test_the_gaussian_sum_not_in_use_stays(app_with_theory_ins):
+    """The theoretical shape in use moves; the Gaussian sum stored beside it
+    does not."""
+    gauss = _stored(app_with_theory_ins, io.INS_EXP_FILE)
+    assert io.recentre_instrumental_after_calibration(app_with_theory_ins) != 0.0
+    assert _stored(app_with_theory_ins, io.INS_EXP_FILE) == gauss
+
+
 @pytest.fixture
 def app_with_offcentre_gaussians(physics_app, tmp_path):
-    """A Gaussian sum deliberately off centre, as a fresh search could give."""
+    """A Gaussian sum deliberately off centre, as a fresh search could give, in
+    use (the default) with the theoretical shape stored beside it, as shipped."""
     redirect_params_dir_to_tmp(physics_app, tmp_path)
-    io.write_accurate_instrumental(physics_app, None)      # Gaussian selected
+    assert io.read_accurate_instrumental(physics_app) is not None
+    physics_app.instrumental_method = 'gauss'
     g = np.array(io.get_legacy_sms_instrumental(physics_app), dtype=float)
     g[1::3] += 0.05
     with open(os.path.join(physics_app.params_dir, io.INS_EXP_FILE), "w") as f:
@@ -111,13 +131,19 @@ def test_a_gaussian_sum_is_recentred_too(app_with_offcentre_gaussians):
     """The argument is about the GAUGE, not about which shape is used. The
     shipped sum's centroid is small by accident (+0.0008 mm/s, because it was
     fitted against an axis that had already absorbed it), not by construction.
+
+    The theoretical shape stored beside it is not the calibration's and stays:
+    re-centring it instead -- whenever INSth.txt existed -- left the Gaussian
+    sum's centre in every sextet fitted after a calibration.
     """
     app = app_with_offcentre_gaussians
     before = np.array(io.get_legacy_sms_instrumental(app), dtype=float)
     assert abs(_first_moment(before)) > 0.01, "the fixture is not off centre"
+    theory = _stored(app, io.INS_TH_FILE)
 
     moved = io.recentre_instrumental_after_calibration(app)
     after = np.array(io.get_legacy_sms_instrumental(app), dtype=float)
+    assert _stored(app, io.INS_TH_FILE) == theory
 
     assert _first_moment(after) == pytest.approx(0.0, abs=1e-9)
     assert moved == pytest.approx(_first_moment(before), abs=1e-9)
@@ -134,3 +160,17 @@ def test_gaussian_recentring_is_a_fixed_point(app_with_offcentre_gaussians):
     stored = np.array(io.get_legacy_sms_instrumental(app))
     assert io.recentre_instrumental_after_calibration(app) == 0.0
     assert np.array_equal(stored, np.array(io.get_legacy_sms_instrumental(app)))
+
+
+@pytest.mark.parametrize("method, moves", [(3, True), (1, False)])
+def test_only_an_sms_calibration_moves_it(app_with_offcentre_gaussians, method, moves):
+    """What the window does when a calibration ends: an SMS one moves the
+    source with its axis; a CMS one moved no axis (its source line is centred)
+    and leaves the SMS instrumental function alone."""
+    app = app_with_offcentre_gaussians
+    before = _stored(app, io.INS_EXP_FILE)
+    app.calibration_thread = types.SimpleNamespace(experimental_method=method)
+    v = np.linspace(-5.0, 5.0, 16)
+    app.on_calibration_finished(v, np.full(16, 100.0), np.full(16, 99.0))
+    assert "Calibration completed" in app.log.toPlainText()
+    assert (_stored(app, io.INS_EXP_FILE) != before) == moves

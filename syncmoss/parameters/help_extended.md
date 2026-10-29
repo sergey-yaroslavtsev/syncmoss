@@ -394,6 +394,15 @@ an explicit message and reddened fields rather than failing halfway through.
 - The calibration file's first line is `# <method> <n1> <n2>`: `sin` or `lin`
   folding and the raw-channel range. Without it, `sin` folding over all channels
   is assumed.
+- *Calibrate* opens a menu. *Start calibration* calibrates the raw α-Fe spectrum
+  of the path box. Its final fit holds the α-Fe sextet and what the menu adds:
+  *Impurity sextet (ON/OFF)*, a second sextet of the foil (30.9 T, its
+  intensity fitted; keep it OFF when the foil has none — at low statistics the
+  fit overestimates it), and one of *Contain Be* / *Contain KB* / *No impurity
+  from optics*: the doublet of the optics' iron impurity, held at the preset of
+  *Supp → Set parameters of Be / KB*, or none. The defaults are OFF and Be for
+  SMS, OFF and nothing for CMS; switching CMS/SMS sets them again, and *Supp →
+  Save settings as default* keeps a choice for the next starts.
 
 ### 7.6 Several spectra
 
@@ -752,9 +761,10 @@ values with the X they started from — ready for another fit.
   line means converged; a visible wiggle means raise the number.
 - *Supp -> Save settings as default* writes the current settings to
   `config.json` in the parameters folder, and every later start of SYNCmoss uses
-  them: CMS or SMS, the velocity direction, the theme, where a spectrum's
-  instrumental function comes from (its `.dat` file or the global one), how the
-  SMS one is approximated (theory or Gaussians, and how many), the χ² correction
+  them: CMS or SMS, the velocity direction, the theme, the impurities of the
+  *Calibrate* menu, where a spectrum's instrumental function comes from (its
+  `.dat` file or the global one), how the SMS one is approximated (theory or
+  Gaussians, and how many), the χ² correction
   of the errors, the integral points for SMS and CMS, the polarization and the
   Multispectra mode. Not among them: G, Δθ, d and D, which have their own
   defaults (*Instrumental function -> Save G, Δθ, d and D as defaults*), and the

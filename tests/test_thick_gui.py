@@ -1,9 +1,11 @@
 """GUI-level tests for the polarized ("thick") models, the Layer marker, the
-Distr/Corr placement guard, and the default-locked orientation angles.
+Distr/Corr placement guard, the rows' text fields, and the default-locked
+orientation angles.
 
 Head-less (offscreen Qt) via the ``physics_app`` fixture.
 """
 import pytest
+from PySide6.QtCore import Qt
 
 from syncmoss.model_io import read_model
 
@@ -117,6 +119,23 @@ def test_recon_weight_column_hidden(physics_app):
     for col in range(6):
         assert row_layout.itemAt(col + 1).widget().isHidden() is False, f"col {col} should be visible"
     assert row_layout.itemAt(7).widget().isHidden() is True  # weights column hidden
+
+
+def test_a_text_fields_name_sits_at_its_left(physics_app):
+    """The long text field of an Expression, Distr or Corr row has its name at
+    the left, above where the field starts: centred on a row wider than the
+    view, it had to be scrolled to before pressing it for its p[i]. Another
+    model in the row centres the name again."""
+    pt = physics_app.params_table
+    pt.select_model(1, 'Sextet')
+    pt.select_model(2, 'Distr')
+    pt.select_model(3, 'Corr')
+    pt.select_model(4, 'Expression')
+    left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+    for row, text_col in ((2, 4), (3, 1), (4, 0)):
+        assert pt._name_label(row, text_col).alignment() == left, _model_name(pt, row)
+    pt.select_model(4, 'Sextet')
+    assert pt._name_label(4, 0).alignment() == Qt.AlignmentFlag.AlignCenter
 
 
 def test_recon_num_and_reg_locked_by_default(physics_app):

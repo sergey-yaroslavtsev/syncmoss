@@ -1784,11 +1784,14 @@ class ParametersTable(QWidget):
         value_input.setMinimumWidth(80)
         value_input.setMaximumWidth(16777215)
 
-        # Expand name_label so long names are fully visible
+        # Expand name_label so long names are fully visible; its text sits at the
+        # left, above the start of the field (centred on a row wider than the
+        # view, it had to be scrolled to before clicking it for its p[i])
         top_layout = param_widget.layout().itemAt(0).layout()
         name_label = top_layout.itemAt(0).widget()
         name_label.setMinimumWidth(50)
         name_label.setMaximumWidth(16777215)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # Disable fix checkbox and use L2 icon (permanently fixed indicator)
         fix_cb = top_layout.itemAt(1).widget()
@@ -1832,10 +1835,11 @@ class ParametersTable(QWidget):
             value_input = param_widget.layout().itemAt(1).widget()
             value_input.setFixedWidth(80)
 
-            # Restore name_label fixed width
+            # Restore name_label fixed width and centred text
             top_layout = param_widget.layout().itemAt(0).layout()
             name_label = top_layout.itemAt(0).widget()
             name_label.setFixedWidth(50)
+            name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
             # Re-enable fix checkbox and restore normal style
             fix_cb = top_layout.itemAt(1).widget()

@@ -9,7 +9,9 @@ spectra end-to-end and check the recovered velocity scale, guarding those offset
 
 * SMS (synchrotron, ``VVV == 3``, sinusoidal drive): fitted against the real
   ``alpha_fe_sms_000.mca`` for both velocity directions (``Vel_start`` 0 and 1),
-  compared to committed golden results captured from the working calibration.
+  compared to committed golden results captured from the working calibration,
+  with the impurity sextet and the Be doublet in its final fit; and once with
+  the default final fit (no impurity sextet).
 * CMS (conventional source, ``VVV == 1``, linear/triangular drive): fitted
   against a synthetic linear-step alpha-Fe spectrum (``synthetic_alpha_fe_cms_linear.mca``,
   drive amplitude +/-6 mm/s). CMS uses a single Gaussian instrumental width
@@ -38,6 +40,7 @@ pytestmark = pytest.mark.slow
 # (--dist loadgroup) the tests sharing one go to the same worker, so it runs
 # once instead of once per worker that gets one of them.
 _SMS_GROUP = pytest.mark.xdist_group("calibration_sms")
+_SMS_DEFAULT_GROUP = pytest.mark.xdist_group("calibration_sms_default")
 _CMS_GROUP = pytest.mark.xdist_group("calibration_cms")
 _CMS_SINUS_GROUP = pytest.mark.xdist_group("calibration_cms_sinus")
 
@@ -50,16 +53,19 @@ _SMS_MCA = os.path.join(_HERE, "data", "alpha_fe_sms_000.mca")
 _CMS_MCA = os.path.join(_HERE, "data", "synthetic_alpha_fe_cms_linear.mca")
 _CMS_SINUS_MCA = os.path.join(_HERE, "data", "synthetic_alpha_fe_cms_sinus.mca")
 _GOLDEN = os.path.join(_HERE, "data", "calibration_000_golden.json")
+# What the golden results' final fit held besides alpha-Fe: the impurity sextet
+# and the Be doublet (the SMS default until 2026-10-29)
+_GOLDEN_IMPURITIES = (True, 'Be')
 
 
-def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False):
+def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False, impurities=None):
     """Run a full calibration on ``mca`` in a throw-away params dir.
 
     ``dir_path`` is a copy of the parameters folder so the fit writes its
     ``Calibration.dat`` there and never mutates the tracked data files.
     With ``return_drive`` the drive waveform the calibration chose (``'sin'``
     or ``'lin'``, from the ``Calibration.dat`` header) is returned as a fourth
-    value.
+    value. ``impurities``: Calibration's (None: the defaults).
     """
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ.setdefault("MPLBACKEND", "Agg")
@@ -86,7 +92,8 @@ def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False):
 
     pool = mp.Pool(processes=1)
     try:
-        A, B, C = Calibration(work, mca, pool, vvv, INS, jn, x0, MulCo, Vel_start=vel_start, GCMS=GCMS)
+        A, B, C = Calibration(work, mca, pool, vvv, INS, jn, x0, MulCo, Vel_start=vel_start, GCMS=GCMS,
+                              impurities=impurities)
         with open(os.path.join(work, "Calibration.dat")) as f:
             drive = f.readline().split()[1]
     finally:
@@ -100,10 +107,11 @@ def _run_calibration(mca, vel_start, vvv, jn=32, return_drive=False):
 
 @pytest.fixture(scope="module")
 def sms_results():
-    """Run the SMS calibration on the real alpha-Fe spectrum for both directions."""
+    """Run the SMS calibration on the real alpha-Fe spectrum for both
+    directions, with the golden results' final fit."""
     if not os.path.exists(_SMS_MCA):
         pytest.skip("SMS calibration fixture missing")
-    return {vs: _run_calibration(_SMS_MCA, vs, vvv=3) for vs in (0, 1)}
+    return {vs: _run_calibration(_SMS_MCA, vs, vvv=3, impurities=_GOLDEN_IMPURITIES) for vs in (0, 1)}
 
 
 @pytest.fixture(scope="module")
@@ -160,6 +168,29 @@ def test_sms_velocity_direction_reverses(sms_results):
     """
     v0, v1 = sms_results[0][0], sms_results[1][0]
     assert float(v0.max() - v0.min()) == pytest.approx(float(v1.max() - v1.min()), abs=0.05)
+
+
+@pytest.fixture(scope="module")
+def sms_default_result():
+    """The SMS calibration with the default final fit: alpha-Fe and the Be
+    doublet, no impurity sextet."""
+    if not os.path.exists(_SMS_MCA):
+        pytest.skip("SMS calibration fixture missing")
+    return _run_calibration(_SMS_MCA, 0, vvv=3)
+
+
+@_SMS_DEFAULT_GROUP
+def test_sms_default_final_fit(sms_default_result, golden):
+    """Without the impurity sextet (about 4 % of this foil) the span grows by
+    0.027 mm/s (measured 2026-10-29), still within the golden tolerance, and
+    the fit still describes the data."""
+    v, data, fit = sms_default_result
+    ref = golden["0"]
+    assert v.size == ref["n"]
+    assert float(v.max() - v.min()) == pytest.approx(ref["v_span"], abs=0.05)
+    assert float(v.min()) == pytest.approx(ref["v_min"], abs=0.05)
+    assert float(v.max()) == pytest.approx(ref["v_max"], abs=0.05)
+    assert float(np.max(np.abs(data - fit))) < 0.10 * float(np.max(data))
 
 
 @pytest.fixture(scope="module")

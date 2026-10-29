@@ -27,6 +27,8 @@ _NOT_VALID = {
     'sequence_fitting_type': 7,       # no such Multispectra mode
     'instrumental_method': 'magic',
     'channel_average': 1,             # a switch that is not true/false
+    'calibration_impurity': 'on',
+    'calibration_optics': 'Fe',       # no such optics impurity
 }
 
 
@@ -38,6 +40,7 @@ def _change_every_setting(w):
     """Every setting off its built-in value, each through its own control."""
     w.toggle_theme()
     w.MS_fit.setChecked(True)                    # on_ms_sms_changed unchecks SMS
+    w.choose_calibration_impurities(True, 'KB')  # what the Calibrate menu sets, after CMS
     w.toggle_velocity_direction()
     w.toggle_use_dat_instrumental()
     w.set_sequence_fitting_type(ONE_MODEL)
@@ -74,8 +77,10 @@ def test_a_new_start_has_the_saved_settings(physics_app):
         assert not new.SMS_fit.isChecked()
         assert new.SMS_pol == 0.5
         for name in ('jn0_input', 'instrumental_btn', 'seq_fit_btn', 'cal_cho_title',
-                     'theme_action', 'chi2_correction_action', 'channel_average_action'):
+                     'theme_action', 'chi2_correction_action', 'channel_average_action',
+                     'impurity_sextet_action'):
             assert getattr(new, name).text() == getattr(w, name).text(), name
+        assert new.optics_actions['KB'].isChecked() and not new.optics_actions['none'].isChecked()
     finally:
         _destroy_window(new)
         w._force_color_scheme(built_in['dark_mode'])

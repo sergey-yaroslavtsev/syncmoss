@@ -2,7 +2,7 @@
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
 "measured": "2026-10-29 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
-"typical_test_mb": 75,
+"typical_test_mb": 76,
 "accumulated_mb": 640,
 "tests": {
 "tests/syncmoss_test.py::test_gui_library_round_trip": [
@@ -109,6 +109,14 @@
 1.86,
 97
 ],
+"tests/test_calibrate_menu.py::test_start_calibration_passes_the_choice_on": [
+1.89,
+93
+],
+"tests/test_calibrate_menu.py::test_the_choices_and_the_modes_defaults": [
+1.79,
+91
+],
 "tests/test_calibration.py::test_cms_folded_spectrum_and_fit": [
 0.0,
 0
@@ -118,8 +126,8 @@
 0
 ],
 "tests/test_calibration.py::test_cms_sinus_detected_as_sinusoidal": [
-24.92,
-6
+24.87,
+3
 ],
 "tests/test_calibration.py::test_cms_sinus_fit_sits_on_data": [
 0.0,
@@ -130,15 +138,19 @@
 0
 ],
 "tests/test_calibration.py::test_cms_velocity_axis_is_finite": [
-19.41,
-4
+18.34,
+49
+],
+"tests/test_calibration.py::test_sms_default_final_fit": [
+31.25,
+12
 ],
 "tests/test_calibration.py::test_sms_folded_spectrum_and_fit[0]": [
 0.0,
 0
 ],
 "tests/test_calibration.py::test_sms_folded_spectrum_and_fit[1]": [
-0.01,
+0.0,
 0
 ],
 "tests/test_calibration.py::test_sms_matches_golden[0]": [
@@ -150,8 +162,8 @@
 0
 ],
 "tests/test_calibration.py::test_sms_velocity_axis_is_finite[0]": [
-70.9,
-13
+67.41,
+14
 ],
 "tests/test_calibration.py::test_sms_velocity_axis_is_finite[1]": [
 0.0,
@@ -163,11 +175,87 @@
 ],
 "tests/test_calibration_helpers.py::test_deepest_line_channels": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_deepest_line_channels_prefers_first_occurrence_inside_quarter": [
 0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_default_impurities": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[Be-False-1-0]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[Be-False-1-1]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[Be-False-3-0]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[Be-True-1-0]": [
+0.0,
 1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[Be-True-1-1]": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[Be-True-3-0]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[KB-False-1-0]": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[KB-False-1-1]": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[KB-False-3-0]": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[KB-True-1-0]": [
+0.01,
+1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[KB-True-1-1]": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[KB-True-3-0]": [
+0.0,
+1
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[none-False-1-0]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[none-False-1-1]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[none-False-3-0]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[none-True-1-0]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[none-True-1-1]": [
+0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_final_model_holds_what_is_chosen[none-True-3-0]": [
+0.0,
+3
 ],
 "tests/test_calibration_helpers.py::test_fold_sinusoidal_symmetric": [
 0.0,
@@ -179,43 +267,47 @@
 ],
 "tests/test_calibration_helpers.py::test_load_m1_skips_first_data_row": [
 0.01,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_load_mca_real_fixture": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_load_mca_synthetic_fixture": [
-0.0,
-1
+0.15,
+3
 ],
 "tests/test_calibration_helpers.py::test_load_mcs_binary": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_load_moe_skips_float_header_lines": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_load_unknown_extension_raises": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_load_ws5": [
 0.0,
+3
+],
+"tests/test_calibration_helpers.py::test_optics_presets_are_read": [
+0.02,
 1
 ],
 "tests/test_calibration_helpers.py::test_phase_detects_known_shift": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_phase_zero_for_perfect_mirror": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_subtract_distortion_recovers_flat_signal": [
 0.0,
-1
+3
 ],
 "tests/test_calibration_helpers.py::test_write_calibration_dat[0-sin]": [
 0.0,
@@ -223,7 +315,7 @@
 ],
 "tests/test_calibration_helpers.py::test_write_calibration_dat[1-lin]": [
 0.0,
-0
+1
 ],
 "tests/test_calibration_path.py::test_an_explicit_absolute_path_wins": [
 1.97,
@@ -798,20 +890,20 @@
 0
 ],
 "tests/test_default_settings.py::test_a_new_start_has_the_saved_settings": [
-5.44,
-208
+3.87,
+202
 ],
 "tests/test_default_settings.py::test_a_saved_setting_not_valid_keeps_the_windows_value": [
-1.99,
-72
+1.84,
+63
 ],
 "tests/test_default_settings.py::test_an_unreadable_settings_file_changes_nothing": [
-2.18,
+2.03,
 72
 ],
 "tests/test_default_settings.py::test_restore_deletes_the_saved_settings_and_the_window_keeps_its_own": [
-2.42,
-71
+1.81,
+80
 ],
 "tests/test_distr_composition.py::test_distr_scalar_num1_reproduces_the_plain_scalar": [
 0.18,
@@ -2486,32 +2578,44 @@
 62
 ],
 "tests/test_instrumental_recentre.py::test_a_gaussian_sum_is_recentred_too": [
-2.05,
-81
+1.8,
+68
 ],
 "tests/test_instrumental_recentre.py::test_gaussian_recentring_is_a_fixed_point": [
-2.09,
-66
+1.72,
+52
 ],
 "tests/test_instrumental_recentre.py::test_it_is_a_fixed_point": [
-2.03,
-61
+1.91,
+43
 ],
 "tests/test_instrumental_recentre.py::test_it_moves_only_the_shift": [
-1.93,
-59
+1.67,
+89
+],
+"tests/test_instrumental_recentre.py::test_only_an_sms_calibration_moves_it[1-False]": [
+2.07,
+80
+],
+"tests/test_instrumental_recentre.py::test_only_an_sms_calibration_moves_it[3-True]": [
+1.9,
+61
 ],
 "tests/test_instrumental_recentre.py::test_recentring_zeroes_the_gravity_centre": [
-2.04,
-92
+1.7,
+81
 ],
 "tests/test_instrumental_recentre.py::test_the_fixture_is_off_centre": [
-2.86,
-91
+2.33,
+123
+],
+"tests/test_instrumental_recentre.py::test_the_gaussian_sum_not_in_use_stays": [
+1.93,
+93
 ],
 "tests/test_instrumental_recentre.py::test_the_shape_is_only_translated": [
-2.06,
-83
+1.88,
+68
 ],
 "tests/test_instrumental_window.py::test_cms_mode_reports_instead_of_plotting": [
 2.15,
@@ -5581,97 +5685,101 @@
 20.73,
 108
 ],
+"tests/test_thick_gui.py::test_a_text_fields_name_sits_at_its_left": [
+2.22,
+44
+],
 "tests/test_thick_gui.py::test_corr_after_recon_is_allowed": [
-2.09,
-24
+1.96,
+25
 ],
 "tests/test_thick_gui.py::test_corr_requires_distr_or_corr": [
-2.24,
-67
+2.19,
+56
 ],
 "tests/test_thick_gui.py::test_distr_after_baseline_is_blocked": [
-2.03,
-74
+1.77,
+87
 ],
 "tests/test_thick_gui.py::test_distr_after_component_is_allowed": [
-2.21,
-61
+2.04,
+96
 ],
 "tests/test_thick_gui.py::test_distr_after_expression_is_blocked": [
-1.99,
-83
+1.75,
+76
 ],
 "tests/test_thick_gui.py::test_distr_after_layer_is_blocked": [
-2.01,
-59
+1.79,
+60
 ],
 "tests/test_thick_gui.py::test_layer_selection_has_no_parameters": [
-3.33,
-89
+2.81,
+93
 ],
 "tests/test_thick_gui.py::test_loading_an_old_hamiltonian_model_file_upgrades_it[Hamilton_mc-values1-tail1]": [
-3.47,
-40
+3.42,
+1
 ],
 "tests/test_thick_gui.py::test_loading_an_old_hamiltonian_model_file_upgrades_it[Hamilton_mc-values2-tail2]": [
 3.59,
-0
-],
-"tests/test_thick_gui.py::test_loading_an_old_hamiltonian_model_file_upgrades_it[Hamilton_pc-values0-tail0]": [
-3.58,
-10
-],
-"tests/test_thick_gui.py::test_recon_after_baseline_is_blocked": [
-2.05,
-51
-],
-"tests/test_thick_gui.py::test_recon_after_component_is_allowed": [
-2.06,
-60
-],
-"tests/test_thick_gui.py::test_recon_num_and_reg_locked_by_default": [
-2.06,
-46
-],
-"tests/test_thick_gui.py::test_recon_weight_column_hidden": [
-2.16,
-92
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[ASM]": [
-2.07,
-28
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Doublet]": [
-2.09,
-49
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Hamiltonian]": [
-1.99,
-39
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[MDGD]": [
-2.15,
-5
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Relax_2S]": [
-2.21,
-39
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Relax_MS]": [
-2.18,
-4
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[SCDW]": [
-2.05,
-0
-],
-"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Sextet]": [
-1.91,
 1
 ],
+"tests/test_thick_gui.py::test_loading_an_old_hamiltonian_model_file_upgrades_it[Hamilton_pc-values0-tail0]": [
+3.4,
+33
+],
+"tests/test_thick_gui.py::test_recon_after_baseline_is_blocked": [
+1.82,
+35
+],
+"tests/test_thick_gui.py::test_recon_after_component_is_allowed": [
+1.94,
+61
+],
+"tests/test_thick_gui.py::test_recon_num_and_reg_locked_by_default": [
+2.12,
+39
+],
+"tests/test_thick_gui.py::test_recon_weight_column_hidden": [
+2.03,
+66
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[ASM]": [
+1.89,
+31
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Doublet]": [
+1.99,
+40
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Hamiltonian]": [
+2.11,
+75
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[MDGD]": [
+1.93,
+42
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Relax_2S]": [
+2.08,
+2
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Relax_MS]": [
+1.91,
+5
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[SCDW]": [
+2.08,
+5
+],
+"tests/test_thick_gui.py::test_thick_extra_angles_locked_by_default[Sextet]": [
+2.15,
+11
+],
 "tests/test_thick_gui.py::test_thick_non_angle_param_not_force_locked": [
-2.1,
-0
+2.13,
+90
 ]
 }
 }

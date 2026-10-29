@@ -273,15 +273,22 @@ def recentre_instrumental_after_calibration(app):
     compute INS_shift = 0, so the pair is a fixed point rather than something
     the user has to iterate.
 
-    BOTH descriptions are re-centred, because the argument is about the gauge,
-    not about which shape is used: the simulated one by its ``shift``, the
-    Gaussian sum by moving every line position. The Gaussian sum's centroid is
-    small by accident (+0.0008 mm/s in the shipped file, because it was fitted
-    against an axis that had already absorbed it) -- that is luck, not a
-    guarantee, and a freshly searched sum has no reason to be centred at all.
+    The description re-centred is the one the calibration used: the one in use,
+    as the setting chooses it (get_sms_instrumental_from_global_files). Both
+    files are kept and the Gaussian sum is the default, so re-centring INSth.txt
+    merely because it exists moved the axis by the Gaussian sum's centre with
+    nothing moving back -- every sextet fitted after the calibration came out
+    shifted by that centre. Either kind is re-centred, because the argument is
+    about the gauge, not about which shape is used: the simulated one by its
+    ``shift``, the Gaussian sum by moving every line position. The Gaussian
+    sum's centroid is small by accident (+0.0008 mm/s in the shipped file,
+    because it was fitted against an axis that had already absorbed it) --
+    that is luck, not a guarantee, and a freshly searched sum has no reason to
+    be centred at all.
 
     CMS needs nothing: its instrumental function is a single Gaussian width, so
-    its centroid is zero by construction.
+    its centroid is zero by construction -- call this after SMS calibrations
+    only.
     """
     def recentre(INS, write):
         centre = float(smst.ins_centroid(INS))
@@ -294,8 +301,8 @@ def recentre_instrumental_after_calibration(app):
               f"centre {centre:+.5f} -> 0 mm/s")
         return centre
 
-    INS = read_accurate_instrumental(app)
-    if INS is not None and smst.ins_kind(INS) == smst.KIND_PHYSICAL:
+    INS = get_sms_instrumental_from_global_files(app)[0]
+    if smst.ins_kind(INS) == smst.KIND_PHYSICAL:
         def write_physical(centre):
             ph = smst.decode_physical(INS)
             ph['shift'] = float(ph['shift']) - centre
@@ -303,12 +310,11 @@ def recentre_instrumental_after_calibration(app):
                 app, smst.encode_physical(**{k: ph[k] for k in smst.PHYS_FIELDS}))
         return recentre(INS, write_physical)
 
-    gauss = get_legacy_sms_instrumental(app)
-    if gauss is None or gauss.size < 3 or smst.ins_kind(gauss) != smst.KIND_GAUSS:
+    if INS.size < 3 or smst.ins_kind(INS) != smst.KIND_GAUSS:
         return 0.0
 
     def write_gauss(centre):
-        moved = np.array(gauss, dtype=float)
+        moved = np.array(INS, dtype=float)
         # a sum of Gaussians is translated by moving every line position
         moved[1::3] -= centre
         path = os.path.join(app.params_dir, INS_EXP_FILE)
@@ -316,7 +322,7 @@ def recentre_instrumental_after_calibration(app):
             f.write(' '.join(str(float(v)) for v in moved) + ' ')
         print(f"[Instrumental function] wrote {path}")
 
-    return recentre(gauss, write_gauss)
+    return recentre(INS, write_gauss)
 
 
 # Which description "Find / Refine Instr. func." uses, and which stored shape
