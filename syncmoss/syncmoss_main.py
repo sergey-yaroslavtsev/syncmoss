@@ -85,8 +85,9 @@ from syncmoss.model_io import (
     load_model, read_model, save_model, save_model_as, mod_len_def,
     model_file_rows, fitted_model_rows, save_result_model, write_result_model,
     result_model_path, strip_known_extension, validate_user_expressions,
-    validate_expression_order,
+    validate_expression_order, TEXT_SLOT_MODELS,
 )
+from syncmoss.spectrum_model import distri_count
 from syncmoss.spectrum_io import (
     load_spectrum, sum_all_spectra, subtract_model_from_spectrum,
     half_points, calculate_backgrounds, save_without_excluded_points,
@@ -810,7 +811,7 @@ class ShowModelThread(QThread):
             Distri_sub, Cor_sub = list(Distri), list(Cor)
             if len(Distri) > 0 or len(Cor) > 0:
                 Distri_sub, Cor_sub = fitting_io.create_subspectra(model, Distri, Cor, p)[2:4]
-            distr_bounds = np.cumsum([0] + [ms.count('Distr') for ms in model_sections])
+            distr_bounds = np.cumsum([0] + [distri_count(ms) for ms in model_sections])
             corr_bounds = np.cumsum([0] + [ms.count('Corr') for ms in model_sections])
             recon_bounds = np.cumsum([0] + [ms.count('Recon') for ms in model_sections])
 
@@ -2116,7 +2117,7 @@ class PhysicsApp(QMainWindow):
                         upper_input.setText(result_rows[model_idx][col][2])
 
                     # Expression / weight-vector placeholders carry no numeric value.
-                    if model_name in ['Distr', 'Corr', 'Recon', 'Expression'] and col == num_params - 1:
+                    if model_name in TEXT_SLOT_MODELS and col == num_params - 1:
                         expr_text = expression_texts.get(model_idx)
                         if expr_text is not None:
                             pending_expression_updates.append((model_idx, col, expr_text))
@@ -2256,7 +2257,7 @@ class PhysicsApp(QMainWindow):
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
 
-        Six checks run up front:
+        Seven checks run up front:
 
         * no active numeric parameter slot may be empty or hold a half-written
           link (a =[X,y] reference to a deleted parameter leaves its field empty,
@@ -2264,6 +2265,9 @@ class PhysicsApp(QMainWindow):
           would silently read either as 0.0),
         * no two Distr/Corr/Recon rows of one chain may share a 'par' (they would
           overwrite each other in the same parameter slot),
+        * every Distr/Corr/Recon must take a parameter its component has, not
+          its T nor its text column (a Spectrum's line set,
+          ParametersTable.get_invalid_distribution_targets),
         * no link =[X,y] may point at a parameter a Distr/Corr/Recon sets, or at
           the text column of one (ParametersTable.get_links_to_distributions:
           the link would copy a number the model never uses),
@@ -2323,6 +2327,20 @@ class PhysicsApp(QMainWindow):
                 f"the same component must each take a DIFFERENT 'par' (they write "
                 f"into the same parameter slot, so only the last one would "
                 f"survive):\n" + "\n".join(lines),
+                "red",
+            )
+            return False
+
+        invalid = self.params_table.get_invalid_distribution_targets()
+        if invalid:
+            for hit in invalid:
+                self.params_table.mark_parameter_error(hit['row'], 0)
+            self.set_status(
+                f"{action_label} was not started — 'par' of a Distr/Corr/Recon must be a "
+                f"parameter of the component above, after its T:\n"
+                + "\n".join(f"{hit['model']} (table row {hit['row']}): par = {hit['par']} → "
+                            f"{hit['what']} of {hit['base_model']} (table row {hit['base_row']})"
+                            for hit in invalid),
                 "red",
             )
             return False

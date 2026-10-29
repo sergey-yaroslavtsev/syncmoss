@@ -227,6 +227,19 @@ Not models: they act on their row. `Library` and `Load model` ADD a model there
 `Copy`/`Paste` copy a row; `Insert`/`Delete` add/remove a row (references
 renumbered).
 
+### Spectrum
+A measured reference spectrum (.dat) as one component. Choosing it asks for the
+.dat, fits it with natural-width lines and shows the fit; OK writes the row.
+Isotropic sample, no texture. For comparing spectra and preliminary fits, not
+final results (no polarization; thickness inaccurate).
+
+Parameters:
+- T: effective thickness; starts at the reference's ($\sum T_q$).
+- $\delta$: shift of every line from the reference's position.
+- G: Gaussian width added to every line ($\sqrt{G_q^2 + G^2}$); fixed at 0 to
+  start (no slope there: start it at 0.1 or more to fit it).
+- Lines: the reference's lines $T_1, \delta_1, G_1, T_2, \ldots$ (hidden, fixed).
+
 ---
 
 ## 4. Expression/distribution helper rows

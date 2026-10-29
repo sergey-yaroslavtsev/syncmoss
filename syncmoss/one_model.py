@@ -44,6 +44,7 @@ from syncmoss.model_io import (read_model, read_bounds_and_fix, model_file_rows,
                                fitted_model_rows)
 from syncmoss.spectrum_io import calculate_backgrounds, ns_for_background
 from syncmoss.spectrum_parameters import SpectrumParameters, substitute
+from syncmoss.spectrum_model import distri_count
 
 _P_REF = re.compile(r'p\[(\d+)\]')
 
@@ -309,7 +310,8 @@ class OneModelResult:
         return np.flatnonzero(np.isnan(self.errors_of(k)))
 
     def _section_slice(self, items, name, k):
-        per_section = self.template['model'].count(name)
+        per_section = (distri_count(self.template['model']) if name == 'Distr'
+                       else self.template['model'].count(name))
         return list(items[k * per_section:(k + 1) * per_section])
 
     def distri(self, k):
@@ -408,8 +410,9 @@ class OneModelResult:
         """Expression/Distr/Corr texts of every section (renumbered, with that
         spectrum's N values) and the Recon weights, keyed by component index."""
         texts = {}
+        distri = iter(self.inputs['Distri'])        # Distr texts and Spectrum line sets
         sources = {'Expression': iter(self.inputs['Expr']),
-                   'Distr': iter(self.inputs['Distri']),
+                   'Distr': distri, 'Spectrum': distri,
                    'Corr': iter(self.inputs['Cor'])}
         weights = iter(self.result.get('Recon', []))
         for component, name in enumerate(self.expanded_model_list()):

@@ -111,6 +111,11 @@ ISSUES_URL = 'https://github.com/sergey-yaroslavtsev/syncmoss/issues'
 # Number of baseline parameters
 number_of_baseline_parameters = 8
 
+# A CMS spectrum's non-resonant counts, Nnr = CMS_NNR_RATIO * Ns: the link a CMS
+# baseline starts with (parameters_table) and the one a CMS reference of a
+# 'Spectrum' row is fitted with (spectrum_reference; an SMS reference: Nnr = 0).
+CMS_NNR_RATIO = 0.67
+
 # Default color sequence for plotting models
 model_colors = ['red', 'blue', 'cyan', 'yellow', 'fuchsia', 'lime', 'darkorange', 'blueviolet', 'green', 'tomato', 'white', 'silver', 'lightgreen', 'pink']
 

@@ -49,6 +49,8 @@ from syncmoss.fit_quality import CHI2, DEVIANCE, STRUCTURE, STRUCTURE_FREE, STRU
 from syncmoss.spectrum_plotter import CHI2_DECIMALS
 # Expression texts are evaluated by eval_expr, as in the fit.
 from syncmoss.expression_eval import eval_expr
+from syncmoss.model_io import TEXT_SLOT_MODELS
+from syncmoss.spectrum_model import parse_spectrum_lines
 
 # How close a Doublet must be to the Be/KB preset to count as that impurity
 # (see _calculate_intensities). Rounding to four decimals moves a value by at
@@ -517,6 +519,11 @@ class ResultsTable(QWidget):
                         # viewed in the Distribution plot); the value still lives in
                         # self.expression_texts so "take result as model" round-trips it.
                         self.labels[value_row][col].setText('(see Distribution)')
+                    elif model_name == 'Spectrum' and col == num_params - 1:
+                        # The line set is too long for a cell: its count only (the
+                        # text itself is kept in self.expression_texts)
+                        lines = parse_spectrum_lines(self.expression_texts.get(component, ''))
+                        self.labels[value_row][col].setText(f'{len(lines)} lines')
                     elif model_name in ['Distr', 'Corr'] and col == num_params - 1:
                         # Show expression text for Distr/Corr
                         if component in self.expression_texts:
@@ -747,8 +754,8 @@ class ResultsTable(QWidget):
             # Fill errors for this component
             for col in range(min(num_params, numco)):
                 if error_index < len(errors):
-                    if model_name in ['Distr', 'Corr', 'Recon', 'Expression'] and col == num_params - 1:
-                        # Expression / weight-vector column
+                    if model_name in TEXT_SLOT_MODELS and col == num_params - 1:
+                        # Expression / weight-vector / line-set column
                         if model_name == 'Expression':
                             # Show propagated error for the expression
                             _, calc_error = self._evaluate_expression_with_error(component)

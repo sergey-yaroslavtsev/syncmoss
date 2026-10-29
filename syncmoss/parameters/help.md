@@ -74,6 +74,9 @@ baseline (`p[0]` … `p[7]`) and shift when rows are added or removed.
 - `Nbaseline` (silver row) opens the next spectrum; `Layer` separates the layers
   of a stack.
 - `Library` / `Load model` ADD a model at that row; the baseline is kept.
+- `Spectrum`: a measured `.dat` as a component, fitted with lines first (CMS:
+  Nnr/Ns fitted in 0.1…1.2; SMS: 0); free `T`, `δ`, `G`. For comparing spectra
+  and preliminary fits, not final results (extended help, 13.10).
 - *Supp*: theme (first entry), Be / KB impurity presets (pick the entry again
   to load new values).
 

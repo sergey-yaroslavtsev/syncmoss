@@ -63,6 +63,8 @@ from numpy import abs
 # state and imports nothing from here, so the pool workers can re-import it
 # freely; see sms_theory.ins_kind for how the INS array selects a shape.
 import syncmoss.sms_theory as smst
+# The 'Spectrum' row's line set arrives as its text in Distri.
+from syncmoss.spectrum_model import DISTRI_TEXT_MODELS, distri_count, parse_spectrum_lines
 
 T = 1
 
@@ -779,6 +781,18 @@ def _cms_map_coefficients(JN):
     if JN < 56:
         return np.array([-0.00317686, 20.7572, -30.7854])
     return np.array([0.027181, 22.7718, -33.6937])
+
+
+def node_energy(SCR, EE, x0, MulCo, Met, JN):
+    """The energy E that TImod's components see at the node EE of TI's grid,
+    for the velocities SCR: SMS (Met 0) and CMS (Met 1, its map explained in
+    TImod). Before the absorber's shift of the cosine smearing."""
+    if Met == 0:
+        return MulCo*SCR + x0*MulCo + np.log((1+EE)/(1-EE))
+    cof = _cms_map_coefficients(JN)
+    return MulCo * SCR + cof[0] * np.log((1 + EE) / (1 - EE)) \
+                    + cof[1] * np.log((2 + EE) / (2 - EE)) \
+                    + cof[2] * np.log((3 + EE) / (3 - EE))
 
 
 def source_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=None, channel_widths=None,
@@ -2555,7 +2569,7 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
 SKIP_REPLACED_COMPONENT = True
 _COMPONENT_SLOTS = {'Singlet': 4, 'Doublet': 9, 'Sextet': 14, 'Sextet(rough)': 14, 'MDGD': 17, 'Relax_2S': 14,
                     'Average_H': 11, 'Relax_MS': 11, 'ASM': 15, 'SCDW': 27, 'Hamiltonian': 15,
-                    'Hamilton_mc': 12, 'Hamilton_pc': 9}
+                    'Hamilton_mc': 12, 'Hamilton_pc': 9, 'Spectrum': 4}
 
 
 def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0, JN=64, recon_cache=None, source_line=None, absorber_shift=None):
@@ -2583,7 +2597,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             E = EE
         elif Met == 0:
             Mett = Met
-            E = MulCo*SCR + x0*MulCo + np.log((1+EE)/(1-EE))
+            E = node_energy(SCR, EE, x0, MulCo, Met, JN)
             if source_line is not None:
                 # The channel average, prepared by TI's caller (source_smearing)
                 # and handed to this node by TI: the source line at this node as
@@ -2635,9 +2649,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             # compute_norm runs this same map with the same JN. The two sets live
             # in _cms_map_coefficients (source_smearing uses the same map).
             cof = _cms_map_coefficients(JN)
-            E = MulCo * SCR + cof[0] * np.log((1 + EE) / (1 - EE)) \
-                            + cof[1] * np.log((2 + EE) / (2 - EE)) \
-                            + cof[2] * np.log((3 + EE) / (3 - EE))
+            E = node_energy(SCR, EE, x0, MulCo, Met, JN)
 
             if source_line is None:
                 N += Voigt(NAT_WIDTH*MulCo, Wid, E - SCR * MulCo)
@@ -2705,6 +2717,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 # Only step over its slots (the copies read their parameters from
                 # p) and keep the rewind point, as the end of the loop would.
                 V += _COMPONENT_SLOTS[model[i]]
+                Di += int(model[i] == 'Spectrum')     # its line set is read by the copies
                 CHold = CH
                 Smat_old = Smat
                 continue
@@ -2715,6 +2728,23 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 WG = abs(p[V + 3]) * MulCo
                 V += 4
                 Voi = Voigt(WL, WG, S)
+                CHt = CH*np.exp((-1)*np.pi*(NAT_WIDTH/2*MulCo)*I*Voi)
+            if model[i] == 'Spectrum':
+                # A measured reference: natural-width lines (T_q, δ_q, G_q), its
+                # text in Distri. T scales their sum, δ shifts and G broadens all
+                # of them (spectrum_model's docstring).
+                lines = parse_spectrum_lines(Distri[Di])
+                Di += 1
+                I = abs(p[V])
+                WL = NAT_WIDTH * MulCo
+                Voi = 0
+                if len(lines):
+                    Tq = np.abs(lines[:, 0])
+                    for Iq, dq, Gq in zip(Tq / np.sum(Tq), lines[:, 1], lines[:, 2]):
+                        S = (-1) * (dq + p[V + 1]) * MulCo + E
+                        WG = np.sqrt(Gq**2 + p[V + 2]**2) * MulCo
+                        Voi = Voi + Iq * Voigt(WL, WG, S)
+                V += 4
                 CHt = CH*np.exp((-1)*np.pi*(NAT_WIDTH/2*MulCo)*I*Voi)
             if model[i] == 'Sextet(rough)':
                 I = abs(p[V])
@@ -3271,7 +3301,10 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
                            + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='SCDW')\
-                           + 14*(model[k]=='Relax_2S')) + 15*(model[k]=='Hamiltonian') + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+                           + 14*(model[k]=='Relax_2S')) + 15*(model[k]=='Hamiltonian') + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')\
+                           + 4*(model[k]=='Spectrum')
+                # A Spectrum base brings its own Distri entry (its line set) to the copies
+                Sk = int(model[k] == 'Spectrum')
 
                 # Total flat slots from the base component through every preceding
                 # distribution marker (Corr=2, Distr=5, Recon=7 each): the base
@@ -3333,13 +3366,13 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                     mCk = 0
                     mRk = 0
                     for mk in range(0, k):
-                        if model[mk] == 'Distr':
+                        if model[mk] in DISTRI_TEXT_MODELS:
                             mDk += 1
                         if model[mk] == 'Corr':
                             mCk += 1
                         if model[mk] == 'Recon':
                             mRk += 1
-                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[Di0+mDk:Di0+mDk+Dk]]*Num).flatten(), np.array([Cor[Co0+mCk:Co0+mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk])*Num)
+                    CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[Di0+mDk:Di0+mDk+Sk+Dk]]*Num).flatten(), np.array([Cor[Co0+mCk:Co0+mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk])*Num)
                     CHt = CH * CH_in                                  # scalar (thin) part multiplies in, as before
                     if Smat_in is not None:                          # thick part joins the CURRENT layer's Smat
                         Smat_t = Smat_in if Smat is None else Smat + Smat_in
@@ -3380,7 +3413,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
 
                 Vnum = int(4*(model[k]=='Singlet') + 9*(model[k]=='Doublet') + 14*(model[k]=='Sextet') + 14*(model[k]=='Sextet(rough)') + 17 * (model[k] == 'MDGD')\
                            + 11*(model[k]=='Relax_MS') + numco*(model[k]=='Variables') + 11*(model[k]=='Average_H') + 15*(model[k]=='ASM') + 27*(model[k]=='SCDW')\
-                           + 14*(model[k]=='Relax_2S')) + 15*(model[k]=='Hamiltonian') + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')
+                           + 14*(model[k]=='Relax_2S')) + 15*(model[k]=='Hamiltonian') + 12*(model[k]=='Hamilton_mc') + 9*(model[k]=='Hamilton_pc') + 1*(model[k]=='Expression')\
+                           + 4*(model[k]=='Spectrum')
+                Sk = int(model[k] == 'Spectrum')      # as in Distr
 
                 Prev = Vnum + Ck*2 + Dk*5 + Rk*7
 
@@ -3426,14 +3461,14 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                     mCk = 0
                     mRk = 0
                     for mk in range(0, k):
-                        if model[mk] == 'Distr':
+                        if model[mk] in DISTRI_TEXT_MODELS:
                             mDk += 1
                         if model[mk] == 'Corr':
                             mCk += 1
                         if model[mk] == 'Recon':
                             mRk += 1
                     if pN_unit is None:
-                        CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[Di0+mDk:Di0+mDk+Dk]]*Num).flatten(), np.array([Cor[Co0+mCk:Co0+mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk])*Num)
+                        CH_in, Smat_in = TImod(x_exp, pN, model_d, E, x0, MulCo, INS, np.array([Distri[Di0+mDk:Di0+mDk+Sk+Dk]]*Num).flatten(), np.array([Cor[Co0+mCk:Co0+mCk+Ck]]*Num).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk])*Num)
                     else:
                         # Each copy once at unit weight, then recombined with this
                         # list's weights: a copy's cross-section is linear in its
@@ -3442,7 +3477,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                         # rounding.
                         units = recon_cache.get(Re)
                         if units is None:
-                            units = [TImod(x_exp, pN_unit[:, c].copy(), np.array(model[k:i]), E, x0, MulCo, INS, np.array(Distri[Di0+mDk:Di0+mDk+Dk]).flatten(), np.array(Cor[Co0+mCk:Co0+mCk+Ck]).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk]))
+                            units = [TImod(x_exp, pN_unit[:, c].copy(), np.array(model[k:i]), E, x0, MulCo, INS, np.array(Distri[Di0+mDk:Di0+mDk+Sk+Dk]).flatten(), np.array(Cor[Co0+mCk:Co0+mCk+Ck]).flatten(), Met = -1, Mett = Mett, O=O, return_layer_matrix=True, sms_pol=sms_pol, Recon=list(Recon[Re0+mRk:Re0+mRk+Rk]))
                                      for c in range(Num)]
                             recon_cache[Re] = units
                         CH_in, Smat_in = 1, None
@@ -3691,8 +3726,8 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
                 + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='SCDW')\
                 + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                 + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
-                + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
-            if model[j] == 'Distr':
+                + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression') + 4 * (model[j] == 'Spectrum')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
+            if model[j] in DISTRI_TEXT_MODELS:
                 Di += 1
             if model[j] == 'Corr':
                 Co += 1
@@ -3705,7 +3740,7 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
         # its own Distri/Cor/Recon entries (a multidimensional distribution's
         # nested call too, through TImod's Di0/Co0/Re0).
         ms = list(model_separate[i])
-        strings = list(Distri[Di_i:Di_i + ms.count('Distr')]) + list(Cor[Co_i:Co_i + ms.count('Corr')])
+        strings = list(Distri[Di_i:Di_i + distri_count(ms)]) + list(Cor[Co_i:Co_i + ms.count('Corr')])
         recons = list(Recon[Re_i:Re_i + ms.count('Recon')])
         key = _node_sum_key(x_separate[i], p, V_i, V, ms, strings, recons, JN, x0_i, MulCo_i, INS_i,
                             Met_i, pol, (V_i, Di_i, Co_i, Re_i), smearing_i) \
@@ -3723,6 +3758,38 @@ def _section_spectrum(s, H):
     if s['Met'] == 1:
         return s['N0'] * (H * s['D'] + (1 - s['Norm'])) + s['N1']
     return H * s['N0'] / s['Norm'] * s['D'] + s['N1']
+
+
+# --- TI's node sum taken apart (one spectrum, scalar components) -------------
+# For a caller that evaluates scalar components (Singlets) many times on the
+# same velocities -- the fit of a 'Spectrum' row's reference: what does not
+# depend on the components is prepared once, as Norm is.
+
+def node_parts(x_exp, JN, x0, MulCo, INS, Met, pol, smearing):
+    """Per node of TI's grid, (E, W): the energies E (JN, n) the components see
+    at the velocities x_exp (node_energy, the absorber's shift included), and
+    the weight W (JN, n) of the node's result -- TImod of an empty model: the
+    source line and the node's Jacobian. For scalar components the node's
+    result is W times TImod at the energies E (Met = -1, their transmission),
+    and the sum over the nodes is TI's node sum H (spectrum_of_node_sum)."""
+    lines, shift = _smearing_rows(smearing, x_exp, JN)
+    empty = np.zeros(number_of_baseline_parameters)
+    E, W = [], []
+    for EE, line in zip(_node_grid(Met, JN), lines):
+        energy = node_energy(x_exp, EE, x0, MulCo, Met, JN)
+        if line is not None and shift is not None:       # as TImod
+            energy = energy - shift
+        E.append(energy)
+        W.append(TImod(x_exp, empty, [], EE, x0, MulCo, INS, [0], [0], Met, pol, -2, [], 0, 0,
+                       number_of_baseline_parameters, False, [0], 0, JN, None, line, shift))
+    return np.array(E, dtype=float), np.array(W, dtype=float)
+
+
+def spectrum_of_node_sum(x_exp, p, H, JN, x0, MulCo, INS, Met, Norm, pol):
+    """The counts TI makes of the node sum H of one spectrum with the baseline
+    p[:8] (its N0, N1 and source normalisation, _section_spectrum)."""
+    s = _spectrum_sections(x_exp, p, [], JN, x0, MulCo, INS, [0], [0], Met, Norm, pol, [0], None, None)[0]
+    return _section_spectrum(s, H)
 
 
 def TI(x_exp, p, model, JN, pool, x0, MulCo, INS, Distri=[0], Cor = [0], Met=0, Norm = 1, pol=SMS_POL_DEFAULT, Recon=[0], lengths=None, smearing=None):  # num - number of Gausians # PS - spc, p - InsFun

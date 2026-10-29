@@ -22,6 +22,7 @@ from syncmoss.spectrum_plotter import calculate_baseline
 from syncmoss.constants import number_of_baseline_parameters, numco
 from syncmoss.model_io import mod_len_def, read_model as read_model_full, read_bounds_and_fix
 from syncmoss.models_positions import mod_pos
+from syncmoss.spectrum_model import distri_count
 from syncmoss.constants import SMS_POL_DEFAULT
 from syncmoss.spectrum_io import load_spectrum, ns_for_background
 from syncmoss.spectrum_parameters import first_spectrum_parameters, table_uses_names
@@ -257,6 +258,10 @@ def create_subspectra(model, Distri, Cor, p):
             V += 1
         Ps.append(ps)
         Psm.append([model_name])
+        if model_name == 'Spectrum':
+            # Its line set, in Distri with the Distr texts (spectrum_model)
+            Distri_t.append(Distri[Di])
+            Di += 1
 
     return (Ps, Psm, Distri_t, Cor_t, Di, Co)
 
@@ -281,7 +286,7 @@ def compute_component_curves(A, Ps, Psm, Distri_t, Cor_t, JN, pool, method_param
     norm, smearing = source_for(pool, A, JN, method_params)      # the same for every component
     for i in range(len(Ps)):
         DiSt, CoSt, ReSt = DiEn, CoEn, ReEn
-        DiEn += Psm[i].count('Distr')
+        DiEn += distri_count(Psm[i])
         CoEn += Psm[i].count('Corr')
         ReEn += Psm[i].count('Recon')
         # The [0] placeholder is never read (the slice is empty exactly when
@@ -575,7 +580,7 @@ def fit_model(app, inputs, spectrum_files, pool):
 
             # Per-section slices of the Distri/Cor/Recon lists (used after the
             # fit to rebuild each section's sub-spectra for plotting)
-            distr_bounds = np.cumsum([0] + [ms.count('Distr') for ms in model_separate])
+            distr_bounds = np.cumsum([0] + [distri_count(ms) for ms in model_separate])
             corr_bounds = np.cumsum([0] + [ms.count('Corr') for ms in model_separate])
             recon_bounds = np.cumsum([0] + [ms.count('Recon') for ms in model_separate])
 

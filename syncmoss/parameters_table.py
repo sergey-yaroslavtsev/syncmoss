@@ -8,17 +8,19 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QRegularExpression, QEvent
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QRegularExpressionValidator, QAction
 from syncmoss.constants import (numro, numco, model_colors, number_of_baseline_parameters,
-                                contrast_text_color, NAT_WIDTH, NBASELINE_COLOR)
+                                contrast_text_color, NAT_WIDTH, NBASELINE_COLOR, CMS_NNR_RATIO)
 
 # Natural line width as a table string: the default and the lower bound of every
 # Lorentzian width L (a fitted line can never be narrower than the natural width).
 _NAT = str(NAT_WIDTH)
 from syncmoss.spectrum_io import calculate_backgrounds, ns_for_background
 from syncmoss.model_io import (mod_len_def, append_model_via_dialog, split_link_field,
-                               split_independent_field, resolve_link_chains, read_model)
+                               split_independent_field, resolve_link_chains, read_model,
+                               TEXT_SLOT_MODELS)
 from syncmoss.spectrum_parameters import path_box_entries
 from syncmoss.Library_window import open_library_model_dialog
 from syncmoss.expressions_window import open_expressions_dialog
+from syncmoss.spectrum_reference_window import SPECTRUM_TOOL_COLOR, choose_reference
 
 # Absolute path to the icons directory.
 # Used to build absolute url() paths in Qt stylesheets so they work both
@@ -71,7 +73,7 @@ _INDEPENDENT_STYLE = "background-color: lightgreen; color: black;"
 # The baseline's non-resonant counts in CMS: Nnr = 0.67 * Ns. Switching to CMS
 # puts this link into an Nnr of 0, and switching back to SMS turns exactly this
 # link into 0 again (see ParametersTable.match_nnr_to_mode).
-_CMS_NNR_LINK = '=[0,0.67]'
+_CMS_NNR_LINK = f'=[0,{CMS_NNR_RATIO}]'
 _NNR_COL = 4    # Nnr in the baseline row ('Ns', 'Os', 'c²s', 'lins', 'Nnr', ...)
 
 # Onr, c²nr, linnr of a baseline / Nbaseline row start as links to Os, c²s, lins
@@ -227,9 +229,12 @@ MODEL_OPTIONS = [
     # 'Library' picks a model out of the internal Library folder, 'Load model'
     # picks any .mdl through a file browser; both ADD the chosen model's
     # components to the current one (see model_io.load_model_from_path).
+    # 'Spectrum' makes a measured .dat a component (spectrum_reference_window):
+    # an approximate tool, so it sits with the loaders, apart from the physical
+    # models, in a colour of its own.
     # 'Load expression' inserts a predefined expression out of the Expressions
     # folder (expressions_window).
-    'Variables', 'Expression', 'Load expression', 'Library', 'Load model', 'Delete', 'Insert',
+    'Variables', 'Expression', 'Load expression', 'Library', 'Load model', 'Spectrum', 'Delete', 'Insert',
     'Nbaseline',
     'Copy', 'Paste'
 ]
@@ -475,6 +480,7 @@ class ParametersTable(QWidget):
             'Distr': '#774488', 'Corr': '#774488', 'Recon': '#774488',
             'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
             'Layer': '#2a8a8a',
+            'Spectrum': SPECTRUM_TOOL_COLOR,
         }
         for option in model_options:
             if option in _MENU_SEPARATOR_BEFORE:
@@ -574,6 +580,10 @@ class ParametersTable(QWidget):
                     return
                 if opt == 'Load expression':
                     open_expressions_dialog(self.main_window, r)
+                    return
+                if opt == 'Spectrum':
+                    # The reference (.dat) first: the row is written by its window's OK
+                    choose_reference(self.main_window, r)
                     return
                 if opt == 'Copy':
                     self.copy_model_to_memory(r)
@@ -900,7 +910,7 @@ class ParametersTable(QWidget):
                 param_widget = row_widget.layout().itemAt(col + 1).widget()
                 value_input = param_widget.layout().itemAt(1).widget()
                 if col < self.row_params[row]:
-                    if model in ['Distr', 'Corr', 'Recon', 'Expression'] and col == self.row_params[row] - 1:
+                    if model in TEXT_SLOT_MODELS and col == self.row_params[row] - 1:
                         value_input.setValidator(None)
                         # Free prose, not a number: it keeps the stock
                         # right-click menu (see _show_value_context_menu).
@@ -937,13 +947,14 @@ class ParametersTable(QWidget):
             if model in ['Distr', 'Corr', 'Expression']:
                 last_col = self.row_params[row] - 1  # 0-based last meaningful column
                 self._apply_expression_expansion(row, last_col)
-            elif model == 'Recon':
-                # The reconstruction weight vector is managed internally (the fit
-                # determines it; it is viewed in the Distribution plot), so it is
-                # NOT shown as an editable row field. Keep its fixed flat slot
-                # (row_params is unchanged) but hide the trailing weights column so
-                # the row shows only the 6 controls (par, L, R, Num, D_dif, D_dif2).
-                self._hide_recon_weight_column(row)
+            elif model in ('Recon', 'Spectrum'):
+                # The reconstruction weight vector (the fit determines it; it is
+                # viewed in the Distribution plot) and a reference's line set (its
+                # window makes it) are managed internally, so they are NOT shown as
+                # an editable row field. Keep the fixed flat slot (row_params is
+                # unchanged) but hide the trailing column so the row shows only
+                # its parameters.
+                self._hide_text_column(row)
             elif model == 'Layer':
                 # Layer has no parameters; show it as one long, locked box
                 # (red lock), purely cosmetic, like the expanded field of Distr.
@@ -1076,10 +1087,11 @@ class ParametersTable(QWidget):
                     })
         return conflicts
 
-    # The last column of a Distr / Corr / Recon row holds a text; its flat
-    # parameter is only a placeholder, with no number in it.
+    # The last column of a Distr / Corr / Recon / Spectrum row holds a text; its
+    # flat parameter is only a placeholder, with no number in it.
     _PLACEHOLDER_COLUMNS = {'Distr': 'probability density function',
-                            'Corr': 'dependency function', 'Recon': 'weights'}
+                            'Corr': 'dependency function', 'Recon': 'weights',
+                            'Spectrum': 'line set'}
 
     def _flat_starts(self):
         """``{row: flat index of its first parameter}`` for the baseline and
@@ -1102,8 +1114,8 @@ class ParametersTable(QWidget):
           'par'. The distribution never reads the number left in that field,
           and a fit would move it only for whatever reads it;
         * the last column of a Distr / Corr / Recon -- the probability density
-          function, the dependency function, the Recon weights -- whose flat
-          slot is only a placeholder.
+          function, the dependency function, the Recon weights -- and of a
+          Spectrum -- its line set -- whose flat slot is only a placeholder.
 
         Nothing may read them: neither a link ``=[i,Y]``
         (get_links_to_distributions) nor a ``p[i]`` in an Expression / Distr /
@@ -1120,6 +1132,11 @@ class ParametersTable(QWidget):
         """
         starts = self._flat_starts()
         sources = {}
+        for row in starts:
+            if row > 0 and self.model_name_at(row) == 'Spectrum':
+                sources[starts[row] + mod_len_def('Spectrum') - 1] = {
+                    'reason': 'placeholder', 'marker_row': row, 'marker_model': 'Spectrum',
+                    'column': self._PLACEHOLDER_COLUMNS['Spectrum']}
         for base_row, marker_rows in self.get_distribution_chains():
             distribution_model = None
             for row in marker_rows:
@@ -1140,6 +1157,39 @@ class ParametersTable(QWidget):
                     dependency=(self._value_input(row, 1).text().strip()
                                 if model_name == 'Corr' else 'X'))
         return sources
+
+    def get_invalid_distribution_targets(self):
+        """Distr/Corr/Recon rows whose 'par' is no parameter they can take: T
+        (par 0 -- the copies' T is what the distribution weighs), one beyond the
+        component's parameters, or its text column -- a Spectrum's line set,
+        whose slot holds no number, so the copies would all be the same. Show
+        model / Fit refuse them (the bounds of 'par' refuse a T at Fit only).
+
+        Returns:
+            list of dicts ``{'row', 'model', 'par', 'base_row', 'base_model',
+            'what'}`` in table order, 'what' saying what par points at.
+        """
+        found = []
+        for base_row, marker_rows in self.get_distribution_chains():
+            if base_row is None:
+                continue
+            base_model = self.model_name_at(base_row)
+            last = self.row_params[base_row] - 1
+            for row in marker_rows:
+                par = self._par_value(row)
+                if par is None:
+                    continue
+                if par < 1:
+                    what = "T"
+                elif par > last:
+                    what = f"beyond the {last + 1} parameters"
+                elif base_model in self._PLACEHOLDER_COLUMNS and par == last:
+                    what = f"the {self._PLACEHOLDER_COLUMNS[base_model]} (no number)"
+                else:
+                    continue
+                found.append({'row': row, 'model': self.model_name_at(row), 'par': par,
+                              'base_row': base_row, 'base_model': base_model, 'what': what})
+        return found
 
     def get_links_to_distributions(self):
         """Links ``=[X,Y]`` whose source X is a slot of get_distribution_slots.
@@ -1446,6 +1496,15 @@ class ParametersTable(QWidget):
             lowers = ['0', '', _NAT, '0']
             uppers = ['', '', '', '']
             fixes = [False, False, True, False]
+        elif model == 'Spectrum':
+            # A measured reference (spectrum_model): its whole T, a shift and an
+            # extra Gaussian G on every line (fixed at 0: G has no slope there),
+            # then the line set T_1, δ_1, G_1, T_2, ... found from the .dat.
+            names = ['T', 'δ, mm/s', 'G, mm/s', 'Lines']
+            values = ['1.0', '0.0', '0.0', '']
+            lowers = ['0', '', '0', '']
+            uppers = ['', '', '', '']
+            fixes = [False, False, True, True]
         # --- Polarized fittable models. Every anisotropic component carries the
         # orientation angles (theta_k, phi_h) of its axis in the lab frame
         # (theta_k from the beam k, phi_h from the polarization h) followed by the
@@ -1740,18 +1799,19 @@ class ParametersTable(QWidget):
         bounds_layout.itemAt(0).widget().setReadOnly(True)
         bounds_layout.itemAt(1).widget().setReadOnly(True)
 
-    def _hide_recon_weight_column(self, row):
-        """Hide a Recon row's trailing weight-vector column.
+    def _hide_text_column(self, row):
+        """Hide the trailing text column of a Recon row (its weight vector) or a
+        Spectrum row (its line set).
 
-        The column still exists (it holds the serialized weights so they round-trip
-        through .mdl save/load and carry the fitted reconstruction), and its flat
-        p-slot is still counted in ``row_params`` — it is only made invisible so the
-        visible row shows just the six control parameters. The reconstruction itself
-        is viewed in the Distribution plot.
+        The column still exists (it holds the text so it round-trips through
+        .mdl save/load and carries the fitted reconstruction or the reference's
+        lines), and its flat p-slot is still counted in ``row_params`` — it is
+        only made invisible so the visible row shows just the parameters. A
+        reconstruction is viewed in the Distribution plot.
         """
-        weight_col = self.row_params[row] - 1  # last Recon slot = weights
-        if 0 <= weight_col < numco:
-            self.row_widgets[row].layout().itemAt(weight_col + 1).widget().setVisible(False)
+        text_col = self.row_params[row] - 1  # the last slot = the text
+        if 0 <= text_col < numco:
+            self.row_widgets[row].layout().itemAt(text_col + 1).widget().setVisible(False)
 
     def _restore_normal_columns(self, row):
         """
@@ -1960,15 +2020,16 @@ class ParametersTable(QWidget):
                     param_widget = row_widget.layout().itemAt(2).widget()
                     value_input = param_widget.layout().itemAt(1).widget()
                     texts[component_idx] = value_input.text()
-                elif model_name == 'Recon':
-                    param_widget = row_widget.layout().itemAt(7).widget()
+                elif model_name in ('Recon', 'Spectrum'):
+                    param_widget = row_widget.layout().itemAt(self._EXPRESSION_COLUMNS[model_name]).widget()
                     value_input = param_widget.layout().itemAt(1).widget()
                     texts[component_idx] = value_input.text()
         return texts
 
     # Column (layout index) of the free-text field per model type: an Expression /
-    # PDF / dependency string, or (Recon) the reconstruction weight vector.
-    _EXPRESSION_COLUMNS = {'Expression': 1, 'Distr': 5, 'Corr': 2, 'Recon': 7}
+    # PDF / dependency string, (Recon) the reconstruction weight vector, or
+    # (Spectrum) the reference's line set.
+    _EXPRESSION_COLUMNS = {'Expression': 1, 'Distr': 5, 'Corr': 2, 'Recon': 7, 'Spectrum': 4}
 
     def get_expression_rows(self):
         """
@@ -1979,7 +2040,7 @@ class ParametersTable(QWidget):
                   table order — the same order read_model() collects the
                   Expr/Distri/Cor lists in.
         """
-        rows = {'Expression': [], 'Distr': [], 'Corr': [], 'Recon': []}
+        rows = {'Expression': [], 'Distr': [], 'Corr': [], 'Recon': [], 'Spectrum': []}
         for row_idx in range(1, len(self.row_widgets)):
             row_widget = self.row_widgets[row_idx]
             start_widget = row_widget.layout().itemAt(0).widget()

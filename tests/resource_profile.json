@@ -1,6 +1,6 @@
 {
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
-"measured": "2026-10-28 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"measured": "2026-10-29 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
 "typical_test_mb": 75,
 "accumulated_mb": 640,
@@ -4984,6 +4984,70 @@
 "tests/test_source_norm.py::test_single_spectrum_cms_adds_and_sms_divides[SMS]": [
 0.0,
 0
+],
+"tests/test_spectrum_model.py::test_a_dat_without_instrumental_function_asks_sms_or_cms": [
+1.83,
+71
+],
+"tests/test_spectrum_model.py::test_distri_order_with_distributions[CMS]": [
+0.03,
+1
+],
+"tests/test_spectrum_model.py::test_distri_order_with_distributions[SMS]": [
+0.04,
+1
+],
+"tests/test_spectrum_model.py::test_lines_model_is_ti[False-CMS]": [
+0.01,
+1
+],
+"tests/test_spectrum_model.py::test_lines_model_is_ti[False-SMS]": [
+0.01,
+2
+],
+"tests/test_spectrum_model.py::test_lines_model_is_ti[True-CMS]": [
+0.02,
+2
+],
+"tests/test_spectrum_model.py::test_lines_model_is_ti[True-SMS]": [
+0.01,
+2
+],
+"tests/test_spectrum_model.py::test_nbaseline_sections_read_their_own_line_sets": [
+0.01,
+1
+],
+"tests/test_spectrum_model.py::test_parse_and_format_round_trip": [
+0.07,
+6
+],
+"tests/test_spectrum_model.py::test_reference_fit_finds_the_lines_and_takes_the_number_set": [
+0.54,
+0
+],
+"tests/test_spectrum_model.py::test_reference_fit_of_a_cms_reference_links_nnr": [
+0.03,
+4
+],
+"tests/test_spectrum_model.py::test_reference_fit_tells_an_absorbing_edge": [
+0.01,
+4
+],
+"tests/test_spectrum_model.py::test_reference_window_fits_refits_and_writes_the_row": [
+2.42,
+75
+],
+"tests/test_spectrum_model.py::test_spectrum_is_the_product_of_its_singlets[CMS]": [
+0.21,
+1
+],
+"tests/test_spectrum_model.py::test_spectrum_is_the_product_of_its_singlets[SMS]": [
+0.0,
+1
+],
+"tests/test_spectrum_model.py::test_table_row_read_validate_and_mdl_round_trip": [
+3.76,
+83
 ],
 "tests/test_spectrum_parameters.py::test_a_bad_file_is_refused_with_the_line[#N1\\n4,2 77\\n-line 2: '4,2' is not a number .*decimal point]": [
 0.0,

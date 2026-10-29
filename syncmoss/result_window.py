@@ -248,7 +248,7 @@ class NbaselineSeries:
         first, end = self._components[k]
         texts = {component - first: text for component, text in self.texts.items()
                  if first <= component < end
-                 and self.model_list[component] in ('Expression', 'Distr', 'Corr')}
+                 and self.model_list[component] in ('Expression', 'Distr', 'Corr', 'Spectrum')}
         recons_before = self.model_list[:first].count('Recon')
         weights = list(self.result.get('Recon', []))[recons_before:]
         return _texts_with_weights(texts, self.model_list_of(k), weights)

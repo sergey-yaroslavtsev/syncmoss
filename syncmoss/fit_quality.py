@@ -363,9 +363,32 @@ def savgol_noise(y, channels, smooth):
     return F, np.sqrt(2 * gauss) / expected
 
 
-def _spectrum_rows(v, y, m, baseline, fitted, dof):
+def counts_noise(v, y, fitted):
+    """What the rows without a model rest on: the counts alone, the same for
+    every model fitted to them -- the narrowest line in channels, the points
+    the smooths use, and the noise of the masked smoother and of the
+    Savitzky-Golay smooth (None where not measured), velocities ascending. A
+    caller that fits one spectrum many times prepares it once (fit_quality's
+    *noises*)."""
+    order = np.argsort(v, kind='stable')
+    v, y, fitted = v[order], y[order], fitted[order]
+    counts = np.where(fitted, y, 0.0)
+    mean = counts_mean(y, fitted)
+    line = line_in_channels(v, y, fitted)
+    if line is None or line >= SAMPLES_PER_LINE:
+        channels = keep_away_from_lines(counts, mean, fitted)
+    else:
+        channels = np.zeros(len(v), bool)        # the lines are spikes: no smooth
+    free = smoother_noise(counts, channels)
+    savgol = None if free is None else savgol_noise(counts, channels, free[2])
+    return {'line': line, 'channels': channels, 'free': free, 'savgol': savgol}
+
+
+def _spectrum_rows(v, y, m, baseline, fitted, dof, noise=None):
     """The rows of one spectrum (the S rows with their F, MISFIT) and what they
-    rest on."""
+    rest on; *noise* its counts_noise, when prepared."""
+    if noise is None:
+        noise = counts_noise(v, y, fitted)
     order = np.argsort(v, kind='stable')
     v, y, m, baseline, fitted = v[order], y[order], m[order], baseline[order], fitted[order]
     z = np.full(len(v), np.nan)
@@ -384,15 +407,7 @@ def _spectrum_rows(v, y, m, baseline, fitted, dof):
     rows = [(STRUCTURE, 1.0, chi2 / neighbours, 1 / np.sqrt(n), neighbours, np.sqrt(3 / n))]
 
     # the rows without a model: the counts alone, the model nowhere
-    counts = np.where(fitted, y, 0.0)
-    mean = counts_mean(y, fitted)
-    line = line_in_channels(v, y, fitted)
-    if line is None or line >= SAMPLES_PER_LINE:
-        channels = keep_away_from_lines(counts, mean, fitted)
-    else:
-        channels = np.zeros(len(v), bool)        # the lines are spikes: no smooth
-    free = smoother_noise(counts, channels)
-    savgol = None if free is None else savgol_noise(counts, channels, free[2])
+    line, channels, free, savgol = noise['line'], noise['channels'], noise['free'], noise['savgol']
     sigma_free = None
     for name, noise in ((STRUCTURE_FREE, free), (STRUCTURE_SG, savgol)):
         if noise is None:
@@ -428,7 +443,7 @@ def quality_line(quality):
     return start + f"{STRUCTURE_FREE} and {STRUCTURE_SG} use {100 * quality['kept']:.0f} % of them, away from the lines"
 
 
-def fit_quality(spectra, chi2, deviance, n_free):
+def fit_quality(spectra, chi2, deviance, n_free, noises=None):
     """The Fit quality of a fit: one dict per spectrum.
 
     *spectra* holds, for every spectrum of the fit, (velocity, counts, model,
@@ -437,7 +452,8 @@ def fit_quality(spectra, chi2, deviance, n_free):
     deviance per degree of freedom, *n_free* its free values. χ² and D are the
     fit's, the same for every spectrum of a simultaneous fit; the S rows and
     MISFIT are each spectrum's own, from its own residual and counts, with the
-    degrees of freedom shared out by the points.
+    degrees of freedom shared out by the points. *noises*: every spectrum's
+    counts_noise, when the caller has them (they do not depend on the model).
 
     Each dict: 'points', 'dof', 'line' (line_in_channels), 'kept' (the share
     of its fitted points the smooths use) and 'rows' -- (name, ideal, value,
@@ -462,11 +478,11 @@ def fit_quality(spectra, chi2, deviance, n_free):
                 (DEVIANCE, 1 + np.sum(mean - 1) / dof_total, deviance, np.sqrt(np.sum(variance)) / dof_total,
                  None, None)]
     qualities = []
-    for (v, y, m, baseline, fitted), n in zip(arrays, counts):
+    for (v, y, m, baseline, fitted), n, noise in zip(arrays, counts, noises or [None] * len(arrays)):
         if n < 3:
             qualities.append(None)
             continue
-        quality = _spectrum_rows(v, y, m, baseline, fitted, n - n_free * n / n_total)
+        quality = _spectrum_rows(v, y, m, baseline, fitted, n - n_free * n / n_total, noise)
         if quality is not None:
             quality['rows'] = fit_rows + quality['rows']
         qualities.append(quality)

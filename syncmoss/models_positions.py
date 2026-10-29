@@ -799,6 +799,11 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 S = p[V + 1]
                 V += 4
                 SET.append([S])
+            if model[i] == 'Spectrum':
+                # One marker at the reference's shift δ (its lines are not here)
+                S = p[V + 1]
+                V += 4
+                SET.append([S])
             if model[i] == 'Sextet(rough)':
                 HH = p[V + 3] / TESLA_PER_MMS
                 S1 = (p[V + 1] - HH / 2 + p[V + 2]) + p[V + 6]
@@ -1016,7 +1021,7 @@ def mod_pos(p, model, INS, Met=0):
                     + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM') + 27 * (model[j] == 'SCDW')\
                     + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
-                    + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
+                    + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression') + 4 * (model[j] == 'Spectrum')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
                 if model[j] == 'Distr':
                     Di += 1

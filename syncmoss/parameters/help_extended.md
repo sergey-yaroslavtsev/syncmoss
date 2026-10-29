@@ -1004,3 +1004,65 @@ Practical fitting advice:
 Source modes: SMS is a linearly polarized readout (the polarization degree is
 set in *Supp -> Set SMS polarization*, default 0.98); CMS an unpolarized half-trace
 readout.
+
+### 13.10 Spectrum: a measured reference as a component
+
+A tool to compare spectra or to do a preliminary fit, not for a final result: it
+has no information about polarization, it estimates the thickness inaccurately,
+and when the content (amount) differs significantly from the reference's it can
+give a wrong result. Its window says so too; use it knowingly.
+
+Choosing `Spectrum` in a row's model menu (after *Load model*, in its own colour)
+asks for a `.dat` (nothing else). The
+reference is fitted with its own instrumental function -- its header's, whatever
+the setting; for a `.dat` without one you say whether it is SMS or CMS, and the
+program's instrumental function of that method is used. The fit: the baseline
+and a few Singlets of the natural width $\Gamma_0$, each with its own $T_q$,
+position $\delta_q$ and Gaussian $G_q \le 3$ mm/s:
+
+1. the baseline from the edge points; the parabola centred on the middle of the
+   spectrum's range (not on 0), its curvature fitted. The non-resonant counts
+   follow the method: a CMS reference's $N_{nr}/N_s$ is fitted between 0.1 and 1.2
+   (from 0.67), an SMS one has none (Onr, c²nr, linnr linked to Os, c²s, lins),
+   so that $T_q$ is an absorber's whichever method the row is then used in;
+2. one line per minimum of the counts (averaged over two natural widths) that
+   stands out of the noise;
+3. after every fit a line that vanished ($T_q$ below its 1σ, or its position at
+   the end of the absorbing range) is removed, and a $G_q$ at 0 or 3 is moved
+   0.1 off that limit;
+4. while $S$ (no model) or MISFIT is further than 2σ from its ideal, a line is
+   added where the score test says, and kept if it lowers the deviance by at
+   least $11.34\,F$ (the 99 % point of $\chi^2_3$; $F$ the counts' noise factor
+   of the Fit quality).
+
+The window shows the fit with every line and the residuals, the number of lines,
+$T_{\rm ref} = \sum T_q$, a CMS reference's fitted $N_{nr}/N_s$, and $\chi^2$,
+$S$ (no model) and MISFIT; $S$ or MISFIT further than 2σ from its ideal is red:
+the lines do not describe the reference (more lines, or the baseline). It warns
+when the absorption reaches an end of the spectrum: those edges are not baseline,
+and the spectrum should not be a model until that is resolved. **Number of lines**
++ **Refit** fits with another number (lines added by the score test, or the least
+significant removed; fewer when the data do not take that many); **OK** writes the
+row, **Cancel** leaves the table as it was.
+
+$N_{nr}/N_s$ of a CMS reference: a thick line's saturated depth tells it; thin
+lines cannot tell it from their $T_q$, so it stays near 0.67 and their $T_q$ follow
+it (a line's significance is judged with it held). The deepest absorption a fit can
+reach is $1/(1 + N_{nr}/N_s)$ of the counts: 0.909 at the bound 0.1, so a deeper
+line cannot be described.
+
+The row: $T$ (starts at $T_{\rm ref}$), $\delta$, $G$ and the line set
+$T_1, \delta_1, G_1, T_2, \ldots$ (hidden, saved in the `.mdl`):
+
+$$
+\tau(E) = T\,\frac{\pi\Gamma_0}{2}\sum_q \frac{T_q}{T_{\rm ref}}\,
+V\!\Big(\Gamma_0, \sqrt{G_q^2 + G^2};\ E - \delta_q - \delta\Big).
+$$
+
+$G$ broadens every line and cannot sharpen; it starts fixed at 0, where it has
+no slope -- start it at 0.1 or more to fit it. The reference's own noise is not
+in the target's errors: the component adds about
+$(3n_{\rm lines} - 1)(N_{s,\rm target}/N_{s,\rm ref})(T/T_{\rm ref})^2$ to the
+target's $\chi^2$, so count the reference longer than the target and use it near
+its own thickness. A texture of the reference cannot be undone (isotropic
+samples only). Energy domain only.

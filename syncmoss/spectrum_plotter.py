@@ -3,6 +3,7 @@ import os
 import numpy as np
 from syncmoss.constants import model_colors, number_of_baseline_parameters
 from syncmoss.model_io import mod_len_def
+from syncmoss.spectrum_model import distr_texts
 from syncmoss.expression_eval import eval_expr
 
 # Default theme (original dark mode colors)
@@ -1261,6 +1262,7 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
     figure.clear()
     figure.patch.set_facecolor(tc['figure_facecolor'])
     Recon = list(Recon) if Recon is not None else []
+    Distri = distr_texts(model, Distri)          # without the Spectrum line sets
 
     model_np = np.array(model)
     # A parametric Distr and a model-independent Recon are both distributions to
@@ -1427,7 +1429,7 @@ def distribution_curves(model, p, Distri, Cor, Recon=None):
     distributions.
     """
     Recon = list(Recon) if Recon is not None else []
-    Distri = list(Distri) if Distri is not None else []
+    Distri = distr_texts(model, Distri) if Distri is not None else []
     Cor = list(Cor) if Cor is not None else []
     model_np = np.array(model)
     distr_indices = np.where((model_np == 'Distr') | (model_np == 'Recon'))[0]

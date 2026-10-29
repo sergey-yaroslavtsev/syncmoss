@@ -21,6 +21,7 @@ from syncmoss.constants import (numco, number_of_baseline_parameters, mdl_color_
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
 from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
 from syncmoss.expression_eval import eval_expr
+from syncmoss.spectrum_model import distr_texts, spectrum_texts, parse_spectrum_lines
 from syncmoss.spectrum_parameters import (
     substitute, names_used, missing_names, first_spectrum_parameters)
 
@@ -54,6 +55,8 @@ def mod_len_def(mod, include_special=True):
         11 * (mod == 'Relax_MS') + 15 * (mod == 'ASM') + 27 * (mod == 'SCDW') +
         15 * (mod == 'Hamiltonian') + 12 * (mod == 'Hamilton_mc') +
         9 * (mod == 'Hamilton_pc') + numco * (mod == 'Variables') + 17 * (mod == 'MDGD') +
+        4 * (mod == 'Spectrum') +  # T, δ, G and the placeholder of its line-set text
+
         number_of_baseline_parameters * (mod == 'Nbaseline')  # Nbaseline has baseline parameters
         # 'Layer' has 0 parameters (handled by the default for unknown names).
     )
@@ -470,9 +473,10 @@ def model_file_rows(main_window):
     return model_names, colors, rows
 
 
-# Components whose LAST slot is a text — the expression, the PDF string or the
-# Recon weight vector — with only a placeholder entry in the flat parameters.
-TEXT_SLOT_MODELS = ('Expression', 'Distr', 'Corr', 'Recon')
+# Components whose LAST slot is a text — the expression, the PDF string, the
+# Recon weight vector or a Spectrum's line set — with only a placeholder entry
+# in the flat parameters.
+TEXT_SLOT_MODELS = ('Expression', 'Distr', 'Corr', 'Recon', 'Spectrum')
 
 
 def fitted_model_rows(model_rows, parameters, recon_weights=(), keep_independent=False):
@@ -961,6 +965,8 @@ def read_model(main_window, spectrum_parameters=None, substitute_names=True):
             model.append(model_name)
 
         model_param_count = mod_len_def(model_name, include_special=False) + 1
+        if model_name == 'Spectrum':
+            model_param_count -= 1          # its last column, the line set, is read below
 
         # Read parameters for this model
         for j in range(1, min(model_param_count, numco + 1)):
@@ -983,6 +989,14 @@ def read_model(main_window, spectrum_parameters=None, substitute_names=True):
             # Get distribution expression from 5th field
             distri_text = _field_text(row_widget, 5) if 5 < row_widget.layout().count() else ''
             Distri.append(distri_text)
+            DistriN = np.append(DistriN, len(p) - 1)
+
+        elif model_name == 'Spectrum':
+            # T, δ, G were read above; the line set gets a placeholder slot in p
+            # and travels in Distri, in model order with the Distr texts
+            # (spectrum_model.DISTRI_TEXT_MODELS).
+            p = np.append(p, 0)
+            Distri.append(_field_text(row_widget, 4) if 4 < row_widget.layout().count() else '')
             DistriN = np.append(DistriN, len(p) - 1)
 
         elif model_name == 'Corr':
@@ -1142,7 +1156,7 @@ def validate_user_expressions(main_window):
     """
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
     typed = read_model(main_window, substitute_names=False)
-    typed = {'Expression': typed[7], 'Distr': typed[5], 'Corr': typed[6]}
+    typed = {'Expression': typed[7], 'Distr': distr_texts(typed[0], typed[5]), 'Corr': typed[6]}
     parameters = first_spectrum_parameters(main_window)
     X = np.linspace(-1.0, 1.0, 8)
     rows = main_window.params_table.get_expression_rows()
@@ -1177,10 +1191,17 @@ def validate_user_expressions(main_window):
 
     for k, text in enumerate(Expr):
         _check('Expression', k, text, lambda s: float(eval_expr(s, p)))
-    for k, text in enumerate(Distri):
+    for k, text in enumerate(distr_texts(model, Distri)):
         _check('Distr', k, text, lambda s: eval_expr(s, p, X) + 0 * X)
     for k, text in enumerate(Cor):
         _check('Corr', k, text, lambda s: eval_expr(s, p, X) + 0 * X)
+    for k, text in enumerate(spectrum_texts(model, Distri)):
+        if not len(parse_spectrum_lines(text)):
+            kind_rows = rows.get('Spectrum', [])
+            problems.append({'kind': 'Spectrum', 'occurrence': k,
+                             'row': kind_rows[k] if k < len(kind_rows) else None, 'text': text,
+                             'error': ValueError("no line set: T, δ, G of every line, "
+                                                 "comma-separated")})
 
     return problems
 
