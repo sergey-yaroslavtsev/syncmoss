@@ -618,6 +618,8 @@ two rows without a model use.
 - **D** — the Poisson deviance per degree of freedom, what the fit minimised.
   Its ideal is its mean for the fitted counts: 1 from about 10³ counts per
   point, 1.002 at 100, 1.019 at 10.
+- **D (norm)** — D divided by its ideal, and its 1σ by the same: ideal 1 at
+  any counts per point. Display only; the fit still minimises D.
 - **S (fit)** — the residual's variance over the noise that the differences of
   neighbouring residuals measure (its F). Ideal 1 whatever the counting
   statistics (a spectrum multiplied by 10, a dead time), 1σ = 1/√n. Above

@@ -1,5 +1,5 @@
 """The Fit quality tab's numbers (fit_quality): the S rows with their F,
-MISFIT, and the ideals and 1σ of χ² and D.
+MISFIT, and the ideals and 1σ of χ², D and D (norm).
 
 Pure functions on made-up spectra -- Poisson counts drawn around a known model
 -- each against an independent reference: a hand computation, the scale
@@ -317,8 +317,8 @@ def test_deviance_moments_are_the_poisson_sums():
 
 def test_chi2_and_d_rows_are_the_fit_s_with_their_poisson_spreads():
     """χ² and D carry the fit's values; χ²'s 1σ is sqrt(sum(2 + 1/m))/nu, D's
-    ideal 1 + sum(E[d] - 1)/nu -- above 1 for a spectrum of few counts. They
-    have no F."""
+    ideal 1 + sum(E[d] - 1)/nu -- above 1 for a spectrum of few counts; D (norm)
+    is D and its 1σ over that ideal, ideal 1. They have no F."""
     v, m, baseline = _sextet()
     y = np.random.default_rng(9).poisson(m).astype(float)
     rows = _rows(_quality(v, y, m, baseline, n_free=8, chi2=1.234, deviance=1.111))
@@ -327,5 +327,11 @@ def test_chi2_and_d_rows_are_the_fit_s_with_their_poisson_spreads():
     assert rows[fq.CHI2][3] is None and rows[fq.DEVIANCE][3] is None and rows[fq.MISFIT][3] is None
 
     few = m / N0 * 3                      # about 3 counts per point
-    rows = _rows(_quality(v, np.random.default_rng(9).poisson(few).astype(float), few, baseline / N0 * 3))
-    assert rows[fq.DEVIANCE][0] > 1.05
+    rows = _rows(_quality(v, np.random.default_rng(9).poisson(few).astype(float), few, baseline / N0 * 3,
+                          deviance=1.111))
+    ideal, value, sigma = rows[fq.DEVIANCE][:3]
+    assert ideal > 1.05
+    assert rows[fq.DEVIANCE_NORM][0] == 1.0 and rows[fq.DEVIANCE_NORM][3] is None
+    assert np.isclose(rows[fq.DEVIANCE_NORM][1], value / ideal, rtol=1e-12)
+    assert np.isclose(rows[fq.DEVIANCE_NORM][2], sigma / ideal, rtol=1e-12)
+    assert rows[fq.DEVIANCE_NORM][1] < value

@@ -9,6 +9,7 @@ Per spectrum, in velocity order, at the fitted points:
 
   χ²            Pearson's chi-square per degree of freedom -- the fit's
   D             the Poisson deviance per degree of freedom -- what the fit minimised
+  D (norm)      D over its ideal: 1 at any counting statistics
   S (fit)       χ² over the F of the fit's residual: the noise that the
                 differences of neighbouring residuals measure. 1 when the
                 residual is noise only, whatever the counting statistics
@@ -41,6 +42,7 @@ from syncmoss.constants import NAT_WIDTH
 # The names of the rows, as the tab shows them
 CHI2 = 'χ²'
 DEVIANCE = 'D'
+DEVIANCE_NORM = 'D (norm)'
 STRUCTURE = 'S (fit)'
 STRUCTURE_FREE = 'S (no model)'
 STRUCTURE_SG = 'S (SG)'
@@ -474,9 +476,11 @@ def fit_quality(spectra, chi2, deviance, n_free, noises=None):
     if dof_total <= 0 or not np.all(np.isfinite(models) & (models > 0)):
         return [None] * len(arrays)
     mean, variance = deviance_moments(models)
+    deviance_ideal = 1 + np.sum(mean - 1) / dof_total
+    deviance_sigma = np.sqrt(np.sum(variance)) / dof_total
     fit_rows = [(CHI2, 1.0, chi2, np.sqrt(np.sum(2 + 1 / models)) / dof_total, None, None),
-                (DEVIANCE, 1 + np.sum(mean - 1) / dof_total, deviance, np.sqrt(np.sum(variance)) / dof_total,
-                 None, None)]
+                (DEVIANCE, deviance_ideal, deviance, deviance_sigma, None, None),
+                (DEVIANCE_NORM, 1.0, deviance / deviance_ideal, deviance_sigma / deviance_ideal, None, None)]
     qualities = []
     for (v, y, m, baseline, fitted), n, noise in zip(arrays, counts, noises or [None] * len(arrays)):
         if n < 3:

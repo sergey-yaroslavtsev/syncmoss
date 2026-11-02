@@ -45,7 +45,7 @@ from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortc
 from syncmoss.constants import numco, contrast_text_color
 from syncmoss.support_math import calculate_intensity_percentage_error
 from syncmoss.spectrum_parameters import substitute
-from syncmoss.fit_quality import CHI2, DEVIANCE, STRUCTURE, STRUCTURE_FREE, STRUCTURE_SG, MISFIT
+from syncmoss.fit_quality import CHI2, DEVIANCE, DEVIANCE_NORM, STRUCTURE, STRUCTURE_FREE, STRUCTURE_SG, MISFIT
 from syncmoss.spectrum_plotter import CHI2_DECIMALS
 # Expression texts are evaluated by eval_expr, as in the fit.
 from syncmoss.expression_eval import eval_expr
@@ -61,6 +61,7 @@ _PRESET_ATOL = 1e-4
 _QUALITY_TIPS = {
     CHI2: "Pearson's χ² per degree of freedom",
     DEVIANCE: "Poisson deviance per degree of freedom, what the fit minimised",
+    DEVIANCE_NORM: "D over its ideal: 1 at any counts per point",
     STRUCTURE: "χ² over the noise of neighbouring residuals: 1 = no misfit, whatever the counting",
     STRUCTURE_FREE: "χ² over the counting noise of the counts alone: 1 = χ² is noise",
     STRUCTURE_SG: "the same with a Savitzky–Golay smooth: holds at very high counts, less precise",
@@ -316,14 +317,14 @@ class ResultsTable(QWidget):
         """Show a fit's Fit quality: *qualities* one dict per spectrum
         (fit_quality.fit_quality; None for a spectrum without one), *labels*
         the spectra's file names when there are several. One spectrum: its rows.
-        Several: the fit's χ² and D once, then every spectrum's own rows under a
-        blue row with its file name."""
+        Several: the fit's χ², D and D (norm) once, then every spectrum's own rows
+        under a blue row with its file name."""
         self.clear_quality()
         qualities = list(qualities or [])
         shown = [(k, quality) for k, quality in enumerate(qualities) if quality is not None]
         if not shown:
             return
-        fit_rows = (CHI2, DEVIANCE)
+        fit_rows = (CHI2, DEVIANCE, DEVIANCE_NORM)
         if len(qualities) == 1:
             entries = list(shown[0][1]['rows'])
         else:

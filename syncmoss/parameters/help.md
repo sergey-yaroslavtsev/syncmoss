@@ -180,6 +180,7 @@ it is real. Each S comes with the F it divides χ² by (F = 1: Poisson).
 |---|---|---|
 | χ² | 1 | model and counting together (Poisson counts) |
 | D | ≈ 1 | the deviance the fit minimised |
+| D (norm) | 1 | D over its ideal: reads like χ² at any counts |
 | S (fit) | 1 | look first: above 1 the model misses something, whatever the counting |
 | S (no model) | 1 | χ² over the counting noise of the counts alone; its F: is the counting Poisson? |
 | S (SG) | 1 | the same with another smooth: a cross-check, holds at very high counts |
