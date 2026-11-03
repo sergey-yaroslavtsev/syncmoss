@@ -21,6 +21,7 @@ from syncmoss.spectrum_parameters import path_box_entries
 from syncmoss.Library_window import open_library_model_dialog
 from syncmoss.expressions_window import open_expressions_dialog
 from syncmoss.spectrum_reference_window import SPECTRUM_TOOL_COLOR, choose_reference
+from syncmoss.experimental_features import EXPERIMENTAL_COLOR, EXPERIMENTAL_FEATURES, warn_if_experimental
 
 # Absolute path to the icons directory.
 # Used to build absolute url() paths in Qt stylesheets so they work both
@@ -474,7 +475,8 @@ class ParametersTable(QWidget):
         # Add menu to model_btn
         model_menu = QMenu(self)
         model_options = MODEL_OPTIONS
-        # Background colors for menu item groups
+        # Background colors for menu item groups; a new, not well-tested
+        # feature (experimental_features) is shown in EXPERIMENTAL_COLOR instead
         _menu_colors = {
             'Insert': '#cc4444', 'Delete': '#cc4444',
             'Nbaseline': '#224477',
@@ -488,10 +490,11 @@ class ParametersTable(QWidget):
         for option in model_options:
             if option in _MENU_SEPARATOR_BEFORE:
                 model_menu.addSeparator()
-            if option in _menu_colors:
+            color = EXPERIMENTAL_COLOR if option in EXPERIMENTAL_FEATURES else _menu_colors.get(option)
+            if color:
                 wa = QWidgetAction(self)
                 lbl = QPushButton(option)
-                lbl.setStyleSheet(f"QPushButton {{ background-color: {_menu_colors[option]}; color: white; border: none; padding: 4px 20px; text-align: left; font: 12px Arial; }} QPushButton:hover {{ background-color: {_menu_colors[option]}; color: yellow; }}")
+                lbl.setStyleSheet(f"QPushButton {{ background-color: {color}; color: white; border: none; padding: 4px 20px; text-align: left; font: 12px Arial; }} QPushButton:hover {{ background-color: {color}; color: yellow; }}")
                 lbl.setCursor(Qt.CursorShape.PointingHandCursor)
                 lbl.clicked.connect(lambda checked=False, opt=option, btn=model_btn, m=model_menu: (self.select_model_by_button(opt, btn), m.close()))
                 wa.setDefaultWidget(lbl)
@@ -586,6 +589,7 @@ class ParametersTable(QWidget):
                     return
                 if opt == 'Spectrum':
                     # The reference (.dat) first: the row is written by its window's OK
+                    warn_if_experimental(self.main_window, opt)
                     choose_reference(self.main_window, r)
                     return
                 if opt == 'Copy':
@@ -640,6 +644,7 @@ class ParametersTable(QWidget):
                     if refused:
                         self.main_window.set_status(f"'{opt}' cannot be added: {refused}.", "orange")
                         return
+                warn_if_experimental(self.main_window, opt)
                 self.select_model(r, opt)
                 return
 

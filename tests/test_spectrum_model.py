@@ -319,13 +319,15 @@ def test_distributions_and_references_the_line_set_refuses(physics_app):
 
 @pytest.mark.gui
 def test_reference_window_fits_refits_and_writes_the_row(physics_app, tmp_path, monkeypatch):
-    """The menu's "Spectrum" (after Load model, in its own colour): the .dat
+    """The menu's "Spectrum" (after Load model, red: a new feature, with a
+    warning first): the .dat
     (its header's SMS instrumental function, no question; an SMS reference has
     no Nnr), the window with its disclaimer, the automatic fit, Refit with
     another number of lines, OK writes the row -- T = Σ T_q, the line set in
     its hidden column -- and the app is free."""
     from PySide6.QtWidgets import QApplication, QWidgetAction
     import syncmoss.spectrum_reference_window as srw
+    import syncmoss.experimental_features as ef
     from syncmoss.model_io import read_model
     from syncmoss.spectrum_io import save_spectrum_with_metadata
     app = physics_app
@@ -338,14 +340,17 @@ def test_reference_window_fits_refits_and_writes_the_row(physics_app, tmp_path, 
     save_spectrum_with_metadata(path, REF_X, _reference(REF_TRUTH), header)
     monkeypatch.setattr(srw.QFileDialog, 'getOpenFileName', lambda *args, **kwargs: (path, ''))
     monkeypatch.setattr(srw.QMessageBox, 'exec', lambda self: pytest.fail("asked SMS or CMS"))
+    warned = []
+    monkeypatch.setattr(ef.QMessageBox, 'warning', lambda parent, title, text: warned.append(text))
     pt = app.params_table
-    # the menu: after Load model, in the tool's own colour
+    # the menu: after Load model, red as a new feature
     entries = [action.defaultWidget() if isinstance(action, QWidgetAction) else action
                for action in _model_btn(pt, 1).menu().actions() if not action.isSeparator()]
     names = [entry.text() for entry in entries]
     assert names.index('Spectrum') == names.index('Load model') + 1
-    assert srw.SPECTRUM_TOOL_COLOR in entries[names.index('Spectrum')].styleSheet()
+    assert ef.EXPERIMENTAL_COLOR in entries[names.index('Spectrum')].styleSheet()
     pt.select_model_by_button('Spectrum', _model_btn(pt, 1))
+    assert len(warned) == 1 and "'Spectrum' is a new feature" in warned[0]
     window = app.spectrum_reference_window
     assert pt.model_name_at(1) == 'None'                # nothing written before OK
     assert window.disclaimer.text() == srw.DISCLAIMER and not window.disclaimer.isHidden()

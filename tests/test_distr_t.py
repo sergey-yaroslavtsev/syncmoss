@@ -105,7 +105,7 @@ _NUM = 200
 
 
 @pytest.mark.parametrize("name, values, L, R, cv", [
-    # a centre 3 times the rim (docs/thickness_distribution.md, section 3.9)
+    # a centre 3 times the rim (docs/thickness_distribution.md, section 1.6)
     ("Thickness PDF, pressed window (membrane)", {}, 1.0, 3.0, 2 / (np.sqrt(3) * 4)),
     ("Thickness PDF, pressed window (clamped plate)", {'{rim}': '1'}, 1.0 + 2.0 / (2 * _NUM), 3.0,
      2 * np.sqrt(4 / 45) / (1 + 2 / 3)),
@@ -166,8 +166,17 @@ def test_the_row_and_what_read_model_makes_of_it(physics_app):
 
 
 @pytest.mark.gui
-def test_placement(physics_app):
+def test_placement(physics_app, monkeypatch):
+    """Where a Distr_T may go. The menu shows it as a new feature: red, and a
+    warning once it is placed (none before a refusal)."""
+    from PySide6.QtWidgets import QWidgetAction
+    import syncmoss.experimental_features as ef
+    warned = []
+    monkeypatch.setattr(ef.QMessageBox, 'warning', lambda parent, title, text: warned.append(text))
     pt = physics_app.params_table
+    entry = next(action.defaultWidget() for action in _model_btn(pt, 1).menu().actions()
+                 if isinstance(action, QWidgetAction) and action.defaultWidget().text() == 'Distr_T')
+    assert ef.EXPERIMENTAL_COLOR in entry.styleSheet()
     pt.select_model(1, 'Distr_T')
     pt.select_model_by_button('Distr', _model_btn(pt, 2))
     assert _model_btn(pt, 2).text() == 'None'            # a Distr has no component there
@@ -181,12 +190,16 @@ def test_placement(physics_app):
     pt.select_model_by_button('Distr_T', _model_btn(pt, 3))
     assert _model_btn(pt, 3).text() != 'Distr_T'         # it would cut the Distr off its Sextet
     pt.select_model(5, 'Nbaseline')
+    assert warned == []                                   # no warning before a refusal
     pt.select_model_by_button('Distr_T', _model_btn(pt, 6))
     assert _model_btn(pt, 6).text() == 'Distr_T'         # the second spectrum takes its own
+    assert len(warned) == 1 and "'Distr_T' is a new feature" in warned[0]
 
 
 @pytest.mark.gui
-def test_no_distr_t_with_a_layer(physics_app):
+def test_no_distr_t_with_a_layer(physics_app, monkeypatch):
+    import syncmoss.experimental_features as ef
+    monkeypatch.setattr(ef.QMessageBox, 'warning', lambda *args: pytest.fail("warned before a refusal"))
     pt = physics_app.params_table
     pt.select_model(1, 'Layer')
     pt.select_model_by_button('Distr_T', _model_btn(pt, 2))
