@@ -2322,12 +2322,14 @@ class PhysicsApp(QMainWindow):
     def check_user_expressions(self, action_label):
         """Validate the model before starting a fit or a show-model run.
 
-        Seven checks run up front:
+        Eight checks run up front:
 
         * no active numeric parameter slot may be empty or hold a half-written
           link (a =[X,y] reference to a deleted parameter leaves its field empty,
           and '=[,1]' is a link the user has not finished typing; read_model
           would silently read either as 0.0),
+        * a Distr_T: one per spectrum, no Layer row, and no Distr/Corr/Recon
+          right after it (ParametersTable.get_distr_t_problems),
         * no two Distr/Corr/Recon rows of one chain may share a 'par' (they would
           overwrite each other in the same parameter slot),
         * every Distr/Corr/Recon must take a parameter its component has, not
@@ -2338,7 +2340,8 @@ class PhysicsApp(QMainWindow):
           the link would copy a number the model never uses),
         * no chain of links may go round in a loop (ParametersTable.
           get_link_loops; a chain that ends is fine, read_model follows it),
-        * every user-typed Expression/Distr/Corr text must evaluate, and
+        * every user-typed Expression/Distr/Corr text must evaluate, and a
+          Distr_T's PDF must have a positive sum and mean on its grid, and
         * no Expression may use one calculated after it, nor itself
           (model_io.validate_expression_order).
 
@@ -2366,6 +2369,17 @@ class PhysicsApp(QMainWindow):
                 f"{action_label} was not started — empty or unfinished "
                 f"parameter(s) (fill them in; a value referenced by =[...] may "
                 f"have been deleted):\n" + "\n".join(lines),
+                "red",
+            )
+            return False
+
+        distr_t = self.params_table.get_distr_t_problems()
+        if distr_t:
+            for problem in distr_t:
+                self.params_table.mark_parameter_error(problem['row'], 0)
+            self.set_status(
+                f"{action_label} was not started — the model with a Distr_T has:\n"
+                + "\n".join(f"table row {problem['row']}: {problem['what']}" for problem in distr_t),
                 "red",
             )
             return False
@@ -3865,7 +3879,7 @@ class PhysicsApp(QMainWindow):
                 model_list = self.params_table.get_model_list()
             
                 # Special models that don't produce individual subspectra
-                non_subspectrum_models = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
+                non_subspectrum_models = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Distr_T', 'Expression', 'Variables'}
             
                 # Skip special models when counting subspectra
                 # Count how many actual subspectra appear before this component
@@ -4461,7 +4475,7 @@ class PhysicsApp(QMainWindow):
             return None
         model = fit.template['model']
         name = model[position - 1]
-        not_drawn = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
+        not_drawn = {'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Distr_T', 'Expression', 'Variables'}
         if name in not_drawn:
             self.set_status(f"Cannot reorder {name}", "orange")
             return None
@@ -5432,7 +5446,7 @@ class PhysicsApp(QMainWindow):
         # plotting filters: 'Layer' is a boundary marker that draws no curve of its
         # own (FS has no entry for it), so it is excluded here just like
         # Nbaseline/Distr/Corr/Recon/Expression/Variables.
-        excluded = {'baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables'}
+        excluded = {'baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Distr_T', 'Expression', 'Variables'}
         model_names = [m for m in section_model if m not in excluded]
         while len(model_names) < len(FS):
             model_names.append(f'Submodel{len(model_names) + 1}')

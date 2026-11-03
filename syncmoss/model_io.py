@@ -21,7 +21,8 @@ from syncmoss.constants import (numco, number_of_baseline_parameters, mdl_color_
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
 from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
 from syncmoss.expression_eval import eval_expr
-from syncmoss.spectrum_model import distr_texts, spectrum_texts, parse_spectrum_lines
+from syncmoss.spectrum_model import distr_texts, distr_t_texts, spectrum_texts, parse_spectrum_lines
+from syncmoss.thickness_distribution import thickness_points
 from syncmoss.spectrum_parameters import (
     substitute, names_used, missing_names, first_spectrum_parameters)
 
@@ -67,8 +68,10 @@ def mod_len_def(mod, include_special=True):
         # The Num free reconstruction weights ride in a parallel list (like a
         # Distr's PDF string in Distri), so parameter counting / =[links] / p[i]
         # expressions never shift with Num. See read_model's 'Recon' branch.
+        # 'Distr_T' (the sample's thickness distribution): lambda, L, R, Num and the
+        # placeholder of its PDF text, the layout of a Distr.
         base_params += (5 * (mod == 'Distr') + 2 * (mod == 'Corr') + 1 * (mod == 'Expression')
-                        + 7 * (mod == 'Recon'))
+                        + 7 * (mod == 'Recon') + 5 * (mod == 'Distr_T'))
 
     return base_params
 
@@ -476,7 +479,7 @@ def model_file_rows(main_window):
 # Components whose LAST slot is a text — the expression, the PDF string, the
 # Recon weight vector or a Spectrum's line set — with only a placeholder entry
 # in the flat parameters.
-TEXT_SLOT_MODELS = ('Expression', 'Distr', 'Corr', 'Recon', 'Spectrum')
+TEXT_SLOT_MODELS = ('Expression', 'Distr', 'Corr', 'Recon', 'Spectrum', 'Distr_T')
 
 
 def fitted_model_rows(model_rows, parameters, recon_weights=(), keep_independent=False):
@@ -980,8 +983,8 @@ def read_model(main_window, spectrum_parameters=None, substitute_names=True):
             NExpr = np.append(NExpr, len(p))
             p = np.append(p, 0)
 
-        elif model_name == 'Distr':
-            # Distribution has 4 numeric parameters plus the expression
+        elif model_name in ('Distr', 'Distr_T'):
+            # 4 numeric parameters (par or lambda, L, R, Num) plus the expression
             for j in range(1, 5):
                 if j < row_widget.layout().count():
                     _append_param(_field_text(row_widget, j))
@@ -1138,7 +1141,9 @@ def validate_user_expressions(main_window):
     rejected up front instead of crashing mid-procedure. Each expression is
     evaluated as the real computation does, through expression_eval.eval_expr
     (its bare numpy names + the parameter array ``p``); Distr/Corr also get the
-    distribution axis ``X`` (mimicking ``eval_expr(...) + 0*X`` in models.TImod).
+    distribution axis ``X`` (mimicking ``eval_expr(...) + 0*X`` in models.TImod),
+    and a Distr_T's thickness PDF is evaluated on its own grid, where it needs a
+    positive sum and mean (thickness_distribution.thickness_points, as the model).
     A text that writes a parameter other than as p[<number>] is a problem too
     (p_spelling_problem), even though it evaluates, and so is one that reads a
     parameter a Distr/Corr/Recon sets or the text column of one
@@ -1156,7 +1161,8 @@ def validate_user_expressions(main_window):
     """
     model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
     typed = read_model(main_window, substitute_names=False)
-    typed = {'Expression': typed[7], 'Distr': distr_texts(typed[0], typed[5]), 'Corr': typed[6]}
+    typed = {'Expression': typed[7], 'Distr': distr_texts(typed[0], typed[5]), 'Corr': typed[6],
+             'Distr_T': distr_t_texts(typed[0], typed[5])}
     parameters = first_spectrum_parameters(main_window)
     X = np.linspace(-1.0, 1.0, 8)
     rows = main_window.params_table.get_expression_rows()
@@ -1195,6 +1201,17 @@ def validate_user_expressions(main_window):
         _check('Distr', k, text, lambda s: eval_expr(s, p, X) + 0 * X)
     for k, text in enumerate(Cor):
         _check('Corr', k, text, lambda s: eval_expr(s, p, X) + 0 * X)
+    # A thickness distribution on its own grid, as the model evaluates it
+    # (lambda, L, R, Num open the row)
+    starts = []
+    V = number_of_baseline_parameters
+    for name in model:
+        if name == 'Distr_T':
+            starts.append(V)
+        V += mod_len_def(name, include_special=True)
+    for k, text in enumerate(distr_t_texts(model, Distri)):
+        V = starts[k]
+        _check('Distr_T', k, text, lambda s, V=V: thickness_points(s, p, p[V], p[V + 1], p[V + 2], p[V + 3])[0])
     for k, text in enumerate(spectrum_texts(model, Distri)):
         if not len(parse_spectrum_lines(text)):
             kind_rows = rows.get('Spectrum', [])

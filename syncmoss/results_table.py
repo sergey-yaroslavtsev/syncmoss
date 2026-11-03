@@ -525,8 +525,8 @@ class ResultsTable(QWidget):
                         # text itself is kept in self.expression_texts)
                         lines = parse_spectrum_lines(self.expression_texts.get(component, ''))
                         self.labels[value_row][col].setText(f'{len(lines)} lines')
-                    elif model_name in ['Distr', 'Corr'] and col == num_params - 1:
-                        # Show expression text for Distr/Corr
+                    elif model_name in ['Distr', 'Distr_T', 'Corr'] and col == num_params - 1:
+                        # Show expression text for Distr/Distr_T/Corr
                         if component in self.expression_texts:
                             self.labels[value_row][col].setText(self.expression_texts[component])
                         else:
@@ -580,7 +580,7 @@ class ResultsTable(QWidget):
             self.buttons[base_row].setStyleSheet(f"background-color: {color}; color: {text_color};")
             
             # Row 1: Intensity percentage (or model name for baseline/Nbaseline)
-            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables']:
+            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Distr_T', 'Expression', 'Variables']:
                 self.buttons[base_row + 1].setText('')  # Empty for baseline/Nbaseline
             elif self.buttons[base_row + 1].text() == 'Impurity':
                 pass
@@ -592,7 +592,7 @@ class ResultsTable(QWidget):
             self.buttons[base_row + 1].setStyleSheet(f"background-color: {color}; color: {text_color};")
             
             # Row 2: Intensity error (or model name for baseline/Nbaseline)
-            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables']:
+            if model_name in ['baseline', 'Nbaseline', 'Layer', 'Distr', 'Corr', 'Recon', 'Distr_T', 'Expression', 'Variables']:
                 self.buttons[base_row + 2].setText('')  # Empty for baseline/Nbaseline
             elif self.buttons[base_row + 2].text() == 'no %':
                 pass
@@ -634,7 +634,7 @@ class ResultsTable(QWidget):
                 continue
             
             # Skip models without T parameter
-            if model_name in ['Layer', 'Distr', 'Corr', 'Recon', 'Expression', 'Variables']:
+            if model_name in ['Layer', 'Distr', 'Corr', 'Recon', 'Distr_T', 'Expression', 'Variables']:
                 param_index += len(param_names)
                 continue
             
@@ -854,6 +854,7 @@ class ResultsTable(QWidget):
             'Expression': 1,
             'Corr': 2,
             'Distr': 5,
+            'Distr_T': 5,
         }
 
         for i, model_name in enumerate(self.model_list):

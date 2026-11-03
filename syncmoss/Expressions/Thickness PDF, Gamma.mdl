@@ -1,0 +1,7 @@
+#@Comment A smooth spread of the thickness around its mean (a Gamma distribution).
+#@Comment $P(X) \propto X^{1/\mathrm{CV}^2-1}\,e^{-X/(\mathrm{CV}^2 m)}$. {CV} - the relative width (standard deviation over mean); {mean} - the mean thickness $m$ in the unit of X (any value while λ is large). L from 0, R about $m(1 + 5\,\mathrm{CV})$.
+#@Comment For a Distr_T: copy the text into its Probability density function, then delete this row (an Expression holding X stops a fit).
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+X**(1/{CV}**2-1)*exp(-X/({CV}**2*{mean}))				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

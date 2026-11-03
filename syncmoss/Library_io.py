@@ -53,6 +53,7 @@ MODEL_PARAMETER_NAMES = {
 	'Distr': ['par', 'L', 'R', 'Num', 'Probability density function'],
 	'Corr': ['par', 'Dependency function'],
 	'Recon': ['par', 'L', 'R', 'Num', 'D_dif', 'D_dif2', 'weights'],
+	'Distr_T': ['λ, X', 'L', 'R', 'Num', 'Probability density function'],
 	'Layer': [],
 }
 

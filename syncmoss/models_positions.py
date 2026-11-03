@@ -969,6 +969,12 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
             if model[i] == 'Corr':
                 SET.append([])
                 V += 2
+            if model[i] == 'Distr_T':
+                # The sample's thickness distribution moves no line. It opens a
+                # component's sub-model (fitting_io.create_subspectra), so it adds
+                # no entry: the component's own set stays the first one, which the
+                # plot draws.
+                V += 5
             if model[i] == 'Recon':
                 # Reconstructed distribution: like Distr, the base component has no
                 # single line set (it is spread over the grid), so drop its markers
@@ -1021,7 +1027,8 @@ def mod_pos(p, model, INS, Met=0):
                     + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15 * (model[j] == 'ASM') + 27 * (model[j] == 'SCDW')\
                     + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                     + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
-                    + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression') + 4 * (model[j] == 'Spectrum')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
+                    + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression') + 4 * (model[j] == 'Spectrum')
+                    + 5 * (model[j] == 'Distr_T')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
                 # print('V is equal to ', V)
                 if model[j] == 'Distr':
                     Di += 1

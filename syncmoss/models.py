@@ -65,6 +65,8 @@ from numpy import abs
 import syncmoss.sms_theory as smst
 # The 'Spectrum' row's line set arrives as its text in Distri.
 from syncmoss.spectrum_model import DISTRI_TEXT_MODELS, distri_count, parse_spectrum_lines
+# The 'Distr_T' row's patches (its thickness PDF arrives in Distri too).
+from syncmoss.thickness_distribution import thickness_points
 
 T = 1
 
@@ -2572,6 +2574,82 @@ _COMPONENT_SLOTS = {'Singlet': 4, 'Doublet': 9, 'Sextet': 14, 'Sextet(rough)': 1
                     'Hamilton_mc': 12, 'Hamilton_pc': 9, 'Spectrum': 4}
 
 
+def _polarised_readout(Tprod, Mett, sms_pol):
+    """The detected fraction of a stack's 2x2 amplitude operator Tprod (per energy).
+
+    Tprod = expm(-Smat_n/2) ... expm(-Smat_1/2) is the stack's 2x2 amplitude
+    transmission operator (beam order, last layer leftmost). The detected
+    intensity for an incident beam with polarization density matrix
+    rho = diag(rho11, rho22) is
+        C_a = tr[Tprod rho Tprod^H] = tr[rho . Tprod^H Tprod]
+            = rho11 * Gram[0,0] + rho22 * Gram[1,1],  Gram = Tprod^H Tprod,
+    i.e. C_a = sum_i rho_ii ||Tprod e_i||^2. Propagating the amplitude (half
+    cross-section) and only then forming the intensity is what makes the layer
+    order visible to a polarized source. Limits: whenever the absorptive and
+    dispersive parts of Smat commute (a single line, n_z = 0, theta_h = 0/180, a
+    single doublet, a powder, scalar components, or COMPLEX_VOIGT_METHOD ==
+    'off') the Gram reduces to expm(-Re Smat) and this readout coincides with the
+    dispersion-truncated (Hermitian) one; otherwise they differ -- the nuclear
+    Faraday rotation -- and the difference survives the CMS half-trace as well.
+
+    rho = diag(rho11, rho22). A CMS (radioactive source, Mett == 1) is
+    unpolarized -> fixed rho = I/2 (half the trace). An SMS is linearly
+    polarized to the degree ``sms_pol`` (p=1 -> pure (1,1)).
+
+    The branch keys on ``Mett`` (the source CLASS), NOT ``Met`` (which also
+    encodes the source-line shape and the recursion sentinel). ``Mett == 1`` is
+    the sole unpolarized (CMS) source; every other value is polarized SMS:
+      * Mett == 0                -> SMS (the GUI's only SMS value);
+      * Mett == 2, 3             -> currently unreachable source-line variants
+                                    (no caller sets Met 2/3), SMS-type, so they
+                                    read out polarized;
+      * Met == -1 (per-energy recursion) does not touch Mett -- the parent
+        forwards its own Mett here, so a CMS *or* SMS parent is classified
+        correctly inside the recursion.
+    """
+    if Mett == 1:
+        rho11 = rho22 = 0.5
+    else:
+        # SMS beam linear polarization degree, passed in from TI (which
+        # forwards the GUI value into the pool workers). Default SMS_POL_DEFAULT.
+        pol = sms_pol
+        rho11 = 0.5 * (1.0 + pol)
+        rho22 = 0.5 * (1.0 - pol)
+    Tdag = np.conjugate(np.transpose(Tprod, (0, 2, 1)))   # per-energy Hermitian conjugate
+    Gram = np.matmul(Tdag, Tprod)                         # Gram = Tprod^H Tprod (Hermitian, PSD)
+    return rho11 * np.real(Gram[:, 0, 0]) + rho22 * np.real(Gram[:, 1, 1])
+
+
+def _thickness_average(CH, Smat, thick, p, Mett, sms_pol, n):
+    """The transmission of a Distr_T's patches averaged with their shares of
+    the detected beam (thickness_distribution.thickness_points), at one node.
+
+    *CH* and *Smat* are the scalar transmission and the cross-section matrix of
+    the components below the row: a patch of relative thickness s scales their
+    optical depths by s (CH**s, s*Smat). thick['CH_above'] and
+    thick['Smat_above'] are those of the rows above it, which no patch scales.
+    The patch's matrix is read out as TImod reads out a layer. NaN over the *n*
+    points when the PDF has no positive sum or mean (a fit refuses such a trial
+    step; check_user_expressions refuses such a start)."""
+    try:
+        s, w = thickness_points(thick['text'], p, thick['lam'], thick['L'], thick['R'], thick['Num'])
+    except ValueError:
+        return np.full(n, np.nan)
+    above, Smat_above = thick['CH_above'], thick['Smat_above']
+    average = 0
+    for sj, wj in zip(s, w):
+        if wj == 0:
+            continue
+        Tr = above * np.power(CH, sj)
+        if Smat is not None or Smat_above is not None:
+            S = sj * Smat if Smat is not None else 0
+            if Smat_above is not None:
+                S = S + Smat_above
+            Tr = Tr * _polarised_readout(_expm_neg(S / 2), Mett, sms_pol)
+        average = average + wj * Tr
+    return average
+
+
 def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SMS_POL_DEFAULT, Mett = -2, O=[], Di=0, Co=0, V=number_of_baseline_parameters, return_layer_matrix=False, Recon=[], Re=0, JN=64, recon_cache=None, source_line=None, absorber_shift=None):
         # SCR = np.array(x_exp)
         SCR = x_exp
@@ -2706,6 +2784,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
         Smat = None       # 2x2 cross-section accumulator for the CURRENT layer (thick components)
         Smat_old = None   # mirrors CHold for the matrix path (used by the Distr reset)
         Tprod = None      # running product of completed-layer AMPLITUDE matrices expm(-Smat/2) (None = identity)
+        thick = None      # a Distr_T row: its lambda, L, R, Num, PDF text and the rows above it (not scaled)
 
         for i in range (0, len(model)):
             Smat_t = Smat
@@ -3271,6 +3350,21 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 V += 1
                 CHt = CH
 
+            if model[i] == 'Distr_T':
+                # The sample's thickness distribution (thickness_distribution):
+                # a patch scales every component BELOW this row by its relative
+                # thickness s; the rows above it (the beamline's Be/KB impurity
+                # doublets) are not scaled. Keep the part above apart and start
+                # the scaled part empty; the patches are averaged after the loop.
+                if thick is not None:
+                    raise ValueError("a spectrum can have one Distr_T only")
+                thick = dict(lam=p[V], L=p[V + 1], R=p[V + 2], Num=p[V + 3], text=Distri[Di],
+                             CH_above=CH, Smat_above=Smat)
+                Di += 1
+                V += 5
+                CHt = 1
+                Smat_t = None
+
             if model[i] == 'Distr':
                 Num = int(p[V + 3])
                 CH = CHold
@@ -3509,53 +3603,19 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
             # carries any scalar (thin) part. model_d never contains a 'Layer', so
             # Tprod is None here and Smat holds the whole distributed cross-section.
             return (CH, Smat)
-        if Smat is not None:
-            layerT = _expm_neg(Smat / 2)
-            Tprod = layerT if Tprod is None else np.matmul(layerT, Tprod)
-        if Tprod is not None:
-            # Amplitude readout. Tprod = expm(-Smat_n/2) ... expm(-Smat_1/2) is
-            # the stack's 2x2 amplitude transmission operator (beam order, last
-            # layer leftmost). The detected intensity for an incident beam with
-            # polarization density matrix rho = diag(rho11, rho22) is
-            #     C_a = tr[Tprod rho Tprod^H] = tr[rho . Tprod^H Tprod]
-            #         = rho11 * Gram[0,0] + rho22 * Gram[1,1],  Gram = Tprod^H Tprod,
-            # i.e. C_a = sum_i rho_ii ||Tprod e_i||^2. Propagating the amplitude
-            # (half cross-section) and only then forming the intensity is what
-            # makes the layer order visible to a polarized source. Limits:
-            # whenever the absorptive and dispersive parts of Smat commute
-            # (a single line, n_z = 0, theta_h = 0/180, a single doublet, a
-            # powder, scalar components, or COMPLEX_VOIGT_METHOD == 'off') the
-            # Gram reduces to expm(-Re Smat) and this readout coincides with the
-            # dispersion-truncated (Hermitian) one; otherwise they differ -- the
-            # nuclear Faraday rotation -- and the difference survives the CMS
-            # half-trace as well.
-            #
-            # rho = diag(rho11, rho22). A CMS (radioactive source, Mett == 1) is
-            # unpolarized -> fixed rho = I/2 (half the trace). An SMS is linearly
-            # polarized to the degree ``sms_pol`` (p=1 -> pure (1,1)).
-            #
-            # The branch keys on ``Mett`` (the source CLASS), NOT ``Met`` (which
-            # also encodes the source-line shape and the recursion sentinel).
-            # ``Mett == 1`` is the sole unpolarized (CMS) source; every other
-            # value is polarized SMS:
-            #   * Mett == 0                -> SMS (the GUI's only SMS value);
-            #   * Mett == 2, 3             -> currently unreachable source-line
-            #                                 variants (no caller sets Met 2/3),
-            #                                 SMS-type, so they read out polarized;
-            #   * Met == -1 (per-energy recursion) does not touch Mett -- the
-            #     parent forwards its own Mett here, so a CMS *or* SMS parent is
-            #     classified correctly inside the recursion.
-            if Mett == 1:
-                rho11 = rho22 = 0.5
-            else:
-                # SMS beam linear polarization degree, passed in from TI (which
-                # forwards the GUI value into the pool workers). Default SMS_POL_DEFAULT.
-                pol = sms_pol
-                rho11 = 0.5 * (1.0 + pol)
-                rho22 = 0.5 * (1.0 - pol)
-            Tdag = np.conjugate(np.transpose(Tprod, (0, 2, 1)))   # per-energy Hermitian conjugate
-            Gram = np.matmul(Tdag, Tprod)                         # Gram = Tprod^H Tprod (Hermitian, PSD)
-            CH = CH * (rho11 * np.real(Gram[:, 0, 0]) + rho22 * np.real(Gram[:, 1, 1]))
+        if thick is not None:
+            # The patches of the sample's thickness distribution, averaged with
+            # their shares of the detected beam. One layer only: the fit refuses
+            # a Layer row with a Distr_T (syncmoss_main.check_user_expressions).
+            if Tprod is not None:
+                raise ValueError("Distr_T cannot be used with Layer rows")
+            CH = _thickness_average(CH, Smat, thick, p_texts, Mett, sms_pol, len(SCR))
+        else:
+            if Smat is not None:
+                layerT = _expm_neg(Smat / 2)
+                Tprod = layerT if Tprod is None else np.matmul(layerT, Tprod)
+            if Tprod is not None:
+                CH = CH * _polarised_readout(Tprod, Mett, sms_pol)
         if Met == 0:
             CH = CH * N * 2 / (1 - (EE) ** 2)
         elif Met == 1 or Met == 2 or Met == 3:
@@ -3726,7 +3786,8 @@ def _spectrum_sections(x_exp, p, model, JN, x0, MulCo, INS, Distri, Cor, Met, No
                 + 14 * (model[j] == 'Relax_2S') + 11 * (model[j] == 'Average_H') + 11 * (model[j] == 'Relax_MS') + 15*(model[j]=='ASM') + 27*(model[j]=='SCDW')\
                 + 15 * (model[j] == 'Hamiltonian') + 12 * (model[j] == 'Hamilton_mc') + 9 * (model[j] == 'Hamilton_pc')\
                 + 5 * (model[j] == 'Distr') + 2 * (model[j] == 'Corr') + 7 * (model[j] == 'Recon') \
-                + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression') + 4 * (model[j] == 'Spectrum')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
+                + numco * (model[j] == 'Variables') + 1*(model[j] =='Expression') + 4 * (model[j] == 'Spectrum')
+                + 5 * (model[j] == 'Distr_T')) # + number_of_baseline_parameters * (model[j] == 'Nbaseline')
             if model[j] in DISTRI_TEXT_MODELS:
                 Di += 1
             if model[j] == 'Corr':

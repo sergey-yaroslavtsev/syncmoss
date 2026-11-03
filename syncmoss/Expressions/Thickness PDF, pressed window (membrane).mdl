@@ -1,0 +1,7 @@
+#@Comment Thickness of a powder pressed under a flexible window that bulges like a membrane (paraboloid): uniform between the rim and the centre thickness.
+#@Comment $P(X) = \frac{1}{d_c - d_e}$ on $[d_e, d_c]$: set L = $d_e$ (rim), R = $d_c$ (centre).
+#@Comment For a Distr_T: copy the text into its Probability density function, then delete this row (an Expression holding X stops a fit).
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1+0*X				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

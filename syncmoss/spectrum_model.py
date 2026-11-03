@@ -10,13 +10,13 @@ list T_1, δ_1, G_1, T_2, δ_2, G_2, ... Its optical depth is
 so T is the reference's whole thickness (Σ T_q when it is made), δ shifts every
 line and G broadens every line. The flat parameters hold only a placeholder for
 the text, like a Distr's PDF string: the text itself travels in read_model's
-Distri list, one entry per Distr AND per Spectrum row, in model order.
+Distri list, one entry per Distr, Distr_T AND Spectrum row, in model order.
 """
 import numpy as np
 
 # Rows with one entry each in read_model's Distri list, in model order: a
-# Distr's PDF string, a Spectrum's line set.
-DISTRI_TEXT_MODELS = ('Distr', 'Spectrum')
+# Distr's PDF string, a Spectrum's line set, a Distr_T's thickness PDF.
+DISTRI_TEXT_MODELS = ('Distr', 'Spectrum', 'Distr_T')
 
 
 def distri_count(model):
@@ -24,17 +24,27 @@ def distri_count(model):
     return sum(1 for name in model if name in DISTRI_TEXT_MODELS)
 
 
+def distri_texts_of(model, Distri, kinds):
+    """The entries of a Distri list (*model*'s) that rows of *kinds* hold, in
+    model order."""
+    rows = [name for name in model if name in DISTRI_TEXT_MODELS]
+    return [text for kind, text in zip(rows, [] if Distri is None else Distri) if kind in kinds]
+
+
 def distr_texts(model, Distri):
     """The Distr PDF strings of a Distri list (*model*'s), without the
-    Spectrum line sets it also holds."""
-    kinds = [name for name in model if name in DISTRI_TEXT_MODELS]
-    return [text for kind, text in zip(kinds, [] if Distri is None else Distri) if kind == 'Distr']
+    Spectrum line sets and Distr_T texts it also holds."""
+    return distri_texts_of(model, Distri, ('Distr',))
 
 
 def spectrum_texts(model, Distri):
     """The Spectrum line sets of a Distri list (*model*'s)."""
-    kinds = [name for name in model if name in DISTRI_TEXT_MODELS]
-    return [text for kind, text in zip(kinds, [] if Distri is None else Distri) if kind == 'Spectrum']
+    return distri_texts_of(model, Distri, ('Spectrum',))
+
+
+def distr_t_texts(model, Distri):
+    """The Distr_T thickness PDFs of a Distri list (*model*'s)."""
+    return distri_texts_of(model, Distri, ('Distr_T',))
 
 
 def parse_spectrum_lines(text):

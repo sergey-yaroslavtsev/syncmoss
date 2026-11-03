@@ -277,6 +277,18 @@ Parameters:
 - weights: the reconstructed distribution, comma-separated; empty = uniform
   start, the fit writes the result here.
 
+### Distr_T
+Distribution of the sample's thickness: spreads every component below it (its
+`T` is then the mean); the rows above it are not scaled. One per spectrum, no
+`Layer`. Extended help 13.11.
+
+Parameters:
+- λ, X: attenuation length at 14.4 keV, in the unit of X, from the composition (fixed; 1000 = almost none).
+- L: thinnest point of the thickness axis X.
+- R: thickest point.
+- Num: number of grid points.
+- Probability density function: expression in X (the thickness), e.g. `X**5.25*exp(-6.25*X/2)`.
+
 ### Expression
 A formula in `p[i]`; its result is a parameter of its own — link to it with
 `=[X,Y]`.

@@ -83,7 +83,15 @@ SAMPLE_VALUES = {
         {'{H_0}': '50', '{mu}': '1000', '{H_ext}': '1', 'N1': '300'},
     "Neel relaxation time vs temperature":
         {'{tau_0}': '1e-9', '{K}': '1e4', '{V}': '100', 'N1': '300'},
+    # the Distr_T densities, in the thickness X
+    "Thickness PDF, pressed window (membrane)": {},
+    "Thickness PDF, pressed window (clamped plate)": {'{rim}': '1'},
+    "Thickness PDF, Gamma": {'{CV}': '0.4', '{mean}': '2'},
 }
+
+# The thickness axis a Distr_T density is evaluated on (above the clamped
+# plate's rim, where its density is infinite); the other expressions ignore it.
+_THICKNESS = np.linspace(1.1, 3.0, 9)
 
 
 def _value(name, **changes):
@@ -92,7 +100,7 @@ def _value(name, **changes):
     values = dict(SAMPLE_VALUES[name])
     for key, value in changes.items():
         values[key if key.startswith('N') and key[1:].isdigit() else f'{{{key}}}'] = str(value)
-    return eval_expr(substitute_expression(_shipped(name)['expression'], values), np.zeros(1))
+    return eval_expr(substitute_expression(_shipped(name)['expression'], values), np.zeros(1), _THICKNESS)
 
 
 def test_every_shipped_expression_is_listed():
@@ -106,7 +114,7 @@ def test_a_shipped_expression_offers_its_names_and_evaluates(name):
     expression = _shipped(name)
     assert substitutable_names(expression['expression']) == list(SAMPLE_VALUES[name])
     assert '$' in expression['comment']                   # its formula, rendered
-    assert np.isfinite(_value(name))
+    assert np.all(np.isfinite(_value(name)))
 
 
 def test_the_numbers_are_those_of_constants():

@@ -1,0 +1,7 @@
+#@Comment Thickness of a powder pressed under a stiff window clamped at the rim (a bent plate): most of the area near the rim thickness.
+#@Comment $P(X) \propto \frac{1}{\sqrt{X - d_e}}$ on $[d_e, d_c]$. {rim} - the rim thickness $d_e$. It is infinite at the rim, so start L half a step above it: L = $d_e + (d_c - d_e)/(2\,\mathrm{Num})$, R = $d_c$.
+#@Comment For a Distr_T: copy the text into its Probability density function, then delete this row (an Expression holding X stops a fit).
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+1/sqrt(X-{rim})				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

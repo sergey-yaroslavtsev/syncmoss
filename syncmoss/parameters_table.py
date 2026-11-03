@@ -226,6 +226,9 @@ MODEL_OPTIONS = [
     # syncmoss.legacy rewrites both to 'Hamiltonian' when a model file is opened.
     # presets / structural / utility
     'Be', 'KB_nano', 'Layer', 'Distr', 'Corr', 'Recon',
+    # 'Distr_T': the sample's thickness distribution; it scales every component
+    # below it (thickness_distribution)
+    'Distr_T',
     # 'Library' picks a model out of the internal Library folder, 'Load model'
     # picks any .mdl through a file browser; both ADD the chosen model's
     # components to the current one (see model_io.load_model_from_path).
@@ -477,7 +480,7 @@ class ParametersTable(QWidget):
             'Nbaseline': '#224477',
             'Library': "#319B00", 'Load model': "#1F6600",
             'Expression': '#5599cc', 'Variables': '#5599cc', 'Load expression': '#336f99',
-            'Distr': '#774488', 'Corr': '#774488', 'Recon': '#774488',
+            'Distr': '#774488', 'Corr': '#774488', 'Recon': '#774488', 'Distr_T': '#774488',
             'KB_nano': '#aaaaaa', 'Be': '#aaaaaa',
             'Layer': '#2a8a8a',
             'Spectrum': SPECTRUM_TOOL_COLOR,
@@ -592,10 +595,11 @@ class ParametersTable(QWidget):
                     self.paste_model_from_memory(r)
                     return
                 # Distr/Corr/Recon attach to the PRECEDING component, so they cannot
-                # follow the baseline, a Layer marker, an Expression, or an empty
-                # row. Corr is stricter: it may only follow a Distr/Corr/Recon
-                # (the distribution it correlates onto). Recon places like Distr.
-                # If the placement is invalid, do nothing (the row stays as it was).
+                # follow the baseline, a Layer marker, an Expression, a Distr_T or
+                # an empty row. Corr is stricter: it may only follow a
+                # Distr/Corr/Recon (the distribution it correlates onto). Recon
+                # places like Distr. If the placement is invalid, do nothing (the
+                # row stays as it was).
                 if opt in _DISTRIBUTION_MODELS:
                     prev_model = ''
                     if r > 0:
@@ -604,7 +608,7 @@ class ParametersTable(QWidget):
                     if opt == 'Corr':
                         allowed = prev_model in _DISTRIBUTION_MODELS
                     else:  # Distr / Recon
-                        allowed = prev_model not in ('baseline', 'Layer', 'Expression', 'None', '')
+                        allowed = prev_model not in ('baseline', 'Layer', 'Expression', 'Distr_T', 'None', '')
                     if not allowed:
                         self.main_window.set_status(
                             f"'{opt}' cannot be placed after '{prev_model or 'nothing'}' "
@@ -612,6 +616,29 @@ class ParametersTable(QWidget):
                             + ("'Distr'/'Corr'/'Recon'" if opt == 'Corr' else "fittable component") + ").",
                             "orange",
                         )
+                        return
+                # A Distr_T between a component and its Distr/Corr/Recon would cut
+                # the chain off its component.
+                if opt == 'Distr_T' and self.model_name_at(r + 1) in _DISTRIBUTION_MODELS:
+                    self.main_window.set_status(
+                        f"'Distr_T' cannot be placed before '{self.model_name_at(r + 1)}' "
+                        f"(that row belongs to the component above).", "orange")
+                    return
+                # One Distr_T per spectrum, and none with a Layer. What is built
+                # otherwise (an Nbaseline deleted afterwards) check_user_expressions
+                # refuses at Show model / Fit.
+                if opt in ('Distr_T', 'Layer'):
+                    others = [self.model_name_at(row) for row in range(1, len(self.row_widgets)) if row != r]
+                    spectra = 1 + others.count('Nbaseline')
+                    refused = None
+                    if opt == 'Distr_T' and 'Layer' in others:
+                        refused = "the model has a Layer row"
+                    elif opt == 'Distr_T' and others.count('Distr_T') >= spectra:
+                        refused = f"the model has a Distr_T for each of its {spectra} spectra"
+                    elif opt == 'Layer' and 'Distr_T' in others:
+                        refused = "the model has a Distr_T"
+                    if refused:
+                        self.main_window.set_status(f"'{opt}' cannot be added: {refused}.", "orange")
                         return
                 self.select_model(r, opt)
                 return
@@ -942,9 +969,9 @@ class ParametersTable(QWidget):
             # Distr/Corr target parameter highlighting.
             self.update_distr_corr_highlights()
 
-            # Apply expression expansion for Distr/Corr/Expression models
+            # Apply expression expansion for Distr/Distr_T/Corr/Expression models
             # (their trailing column holds a free-text PDF/dependency/expression).
-            if model in ['Distr', 'Corr', 'Expression']:
+            if model in ['Distr', 'Distr_T', 'Corr', 'Expression']:
                 last_col = self.row_params[row] - 1  # 0-based last meaningful column
                 self._apply_expression_expansion(row, last_col)
             elif model in ('Recon', 'Spectrum'):
@@ -1052,6 +1079,38 @@ class ParametersTable(QWidget):
             chains.append((base_row, markers))
         return chains
 
+    def get_distr_t_problems(self):
+        """What a model with a Distr_T may not hold; Show model / Fit refuse it:
+
+        * a second Distr_T in one spectrum (between its baseline and the next
+          Nbaseline) -- one thickness distribution per sample;
+        * a Layer row anywhere: the patches are averaged over one layer;
+        * a Distr/Corr/Recon right after a Distr_T: it has no component to act on.
+
+        Returns:
+            list of dicts ``{'row', 'what'}`` in table order.
+        """
+        rows = [(row, self.model_name_at(row)) for row in range(1, len(self.row_widgets))]
+        rows = [(row, name) for row, name in rows if name != 'None']
+        if not any(name == 'Distr_T' for _, name in rows):
+            return []
+        problems = []
+        in_spectrum = False
+        previous = 'baseline'
+        for row, name in rows:
+            if name == 'Nbaseline':
+                in_spectrum = False
+            elif name == 'Distr_T':
+                if in_spectrum:
+                    problems.append({'row': row, 'what': "a second Distr_T in one spectrum"})
+                in_spectrum = True
+            elif name == 'Layer':
+                problems.append({'row': row, 'what': "a Layer row, which a model with a Distr_T cannot have"})
+            elif name in _DISTRIBUTION_MODELS and previous == 'Distr_T':
+                problems.append({'row': row, 'what': f"a {name} right after the Distr_T: it must follow its component"})
+            previous = name
+        return problems
+
     def get_conflicting_distr_targets(self):
         """Distr/Corr/Recon rows of one chain that claim the SAME 'par'.
 
@@ -1087,11 +1146,11 @@ class ParametersTable(QWidget):
                     })
         return conflicts
 
-    # The last column of a Distr / Corr / Recon / Spectrum row holds a text; its
-    # flat parameter is only a placeholder, with no number in it.
+    # The last column of a Distr / Corr / Recon / Spectrum / Distr_T row holds a
+    # text; its flat parameter is only a placeholder, with no number in it.
     _PLACEHOLDER_COLUMNS = {'Distr': 'probability density function',
                             'Corr': 'dependency function', 'Recon': 'weights',
-                            'Spectrum': 'line set'}
+                            'Spectrum': 'line set', 'Distr_T': 'probability density function'}
 
     def _flat_starts(self):
         """``{row: flat index of its first parameter}`` for the baseline and
@@ -1133,10 +1192,11 @@ class ParametersTable(QWidget):
         starts = self._flat_starts()
         sources = {}
         for row in starts:
-            if row > 0 and self.model_name_at(row) == 'Spectrum':
-                sources[starts[row] + mod_len_def('Spectrum') - 1] = {
-                    'reason': 'placeholder', 'marker_row': row, 'marker_model': 'Spectrum',
-                    'column': self._PLACEHOLDER_COLUMNS['Spectrum']}
+            model_name = self.model_name_at(row) if row > 0 else 'baseline'
+            if model_name in ('Spectrum', 'Distr_T'):
+                sources[starts[row] + mod_len_def(model_name) - 1] = {
+                    'reason': 'placeholder', 'marker_row': row, 'marker_model': model_name,
+                    'column': self._PLACEHOLDER_COLUMNS[model_name]}
         for base_row, marker_rows in self.get_distribution_chains():
             distribution_model = None
             for row in marker_rows:
@@ -1705,6 +1765,17 @@ class ParametersTable(QWidget):
             lowers = ['1', '', '', '1', '0', '0', '']
             uppers = ['', '', '', '1000', '1', '1', '']
             fixes = [True, False, False, True, True, True, True]
+        elif model == 'Distr_T':
+            # The sample's thickness distribution (thickness_distribution):
+            # lambda, the 14.4 keV attenuation length in the unit of X (known
+            # from the composition, so fixed; 1000 is next to no absorption);
+            # the physical thickness X from L to R in Num points; its
+            # probability density in X.
+            names = ['λ, X', 'L', 'R', 'Num', 'Probability density function']
+            values = ['1000', '0', '1', '20', 'X']
+            lowers = ['0.1', '0', '0', '1', '']
+            uppers = ['', '', '', '1000', '']
+            fixes = [True, True, True, True, True]
         elif model == 'Layer':
             # Layer boundary marker: no parameters.
             self.row_params[row] = 0
@@ -1749,6 +1820,8 @@ class ParametersTable(QWidget):
         elif model == 'Distr':
             for idx in [0, len(names) - 2]:              # first 'par' and 'Num'
                 _hard_lock_fix_checkbox(idx)
+        elif model == 'Distr_T':
+            _hard_lock_fix_checkbox(len(names) - 2)      # 'Num'
         elif model == 'Corr':
             _hard_lock_fix_checkbox(0)                   # first 'par'
         elif model == 'Recon':
@@ -2012,19 +2085,7 @@ class ParametersTable(QWidget):
             model_name = model_btn.text()
             if model_name != 'None':
                 component_idx += 1
-                if model_name == 'Expression':
-                    param_widget = row_widget.layout().itemAt(1).widget()
-                    value_input = param_widget.layout().itemAt(1).widget()
-                    texts[component_idx] = value_input.text()
-                elif model_name == 'Distr':
-                    param_widget = row_widget.layout().itemAt(5).widget()
-                    value_input = param_widget.layout().itemAt(1).widget()
-                    texts[component_idx] = value_input.text()
-                elif model_name == 'Corr':
-                    param_widget = row_widget.layout().itemAt(2).widget()
-                    value_input = param_widget.layout().itemAt(1).widget()
-                    texts[component_idx] = value_input.text()
-                elif model_name in ('Recon', 'Spectrum'):
+                if model_name in self._EXPRESSION_COLUMNS:
                     param_widget = row_widget.layout().itemAt(self._EXPRESSION_COLUMNS[model_name]).widget()
                     value_input = param_widget.layout().itemAt(1).widget()
                     texts[component_idx] = value_input.text()
@@ -2033,7 +2094,7 @@ class ParametersTable(QWidget):
     # Column (layout index) of the free-text field per model type: an Expression /
     # PDF / dependency string, (Recon) the reconstruction weight vector, or
     # (Spectrum) the reference's line set.
-    _EXPRESSION_COLUMNS = {'Expression': 1, 'Distr': 5, 'Corr': 2, 'Recon': 7, 'Spectrum': 4}
+    _EXPRESSION_COLUMNS = {'Expression': 1, 'Distr': 5, 'Corr': 2, 'Recon': 7, 'Spectrum': 4, 'Distr_T': 5}
 
     def get_expression_rows(self):
         """
@@ -2044,7 +2105,7 @@ class ParametersTable(QWidget):
                   table order — the same order read_model() collects the
                   Expr/Distri/Cor lists in.
         """
-        rows = {'Expression': [], 'Distr': [], 'Corr': [], 'Recon': [], 'Spectrum': []}
+        rows = {'Expression': [], 'Distr': [], 'Corr': [], 'Recon': [], 'Spectrum': [], 'Distr_T': []}
         for row_idx in range(1, len(self.row_widgets)):
             row_widget = self.row_widgets[row_idx]
             start_widget = row_widget.layout().itemAt(0).widget()

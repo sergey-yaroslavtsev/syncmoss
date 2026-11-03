@@ -410,9 +410,9 @@ class OneModelResult:
         """Expression/Distr/Corr texts of every section (renumbered, with that
         spectrum's N values) and the Recon weights, keyed by component index."""
         texts = {}
-        distri = iter(self.inputs['Distri'])        # Distr texts and Spectrum line sets
+        distri = iter(self.inputs['Distri'])        # Distr/Distr_T texts and Spectrum line sets
         sources = {'Expression': iter(self.inputs['Expr']),
-                   'Distr': distri, 'Spectrum': distri,
+                   'Distr': distri, 'Spectrum': distri, 'Distr_T': distri,
                    'Corr': iter(self.inputs['Cor'])}
         weights = iter(self.result.get('Recon', []))
         for component, name in enumerate(self.expanded_model_list()):

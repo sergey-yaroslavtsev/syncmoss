@@ -1,6 +1,6 @@
 {
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
-"measured": "2026-10-29 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"measured": "2026-11-02 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
 "typical_test_mb": 76,
 "accumulated_mb": 640,
@@ -1109,6 +1109,78 @@
 15.6,
 72
 ],
+"tests/test_distr_t.py::test_a_fit_fixes_the_text_slot_and_draws_the_component": [
+2.68,
+103
+],
+"tests/test_distr_t.py::test_no_distr_t_with_a_layer": [
+1.86,
+54
+],
+"tests/test_distr_t.py::test_no_mean_or_a_zero_attenuation_length_gives_nan[0.0-X]": [
+0.0,
+0
+],
+"tests/test_distr_t.py::test_no_mean_or_a_zero_attenuation_length_gives_nan[1000.0-0*X]": [
+0.01,
+0
+],
+"tests/test_distr_t.py::test_placement": [
+2.26,
+86
+],
+"tests/test_distr_t.py::test_the_axis_may_run_either_way": [
+0.01,
+0
+],
+"tests/test_distr_t.py::test_the_checks_before_a_fit[Layer]": [
+2.18,
+59
+],
+"tests/test_distr_t.py::test_the_checks_before_a_fit[no mean]": [
+1.87,
+36
+],
+"tests/test_distr_t.py::test_the_checks_before_a_fit[two]": [
+2.0,
+25
+],
+"tests/test_distr_t.py::test_the_checks_before_a_fit[valid]": [
+1.86,
+77
+],
+"tests/test_distr_t.py::test_the_checks_before_a_fit[zero lambda]": [
+2.08,
+82
+],
+"tests/test_distr_t.py::test_the_components_curves_carry_the_distr_t": [
+0.0,
+5
+],
+"tests/test_distr_t.py::test_the_model_is_the_sum_of_its_patches[0]": [
+0.73,
+0
+],
+"tests/test_distr_t.py::test_the_model_is_the_sum_of_its_patches[1]": [
+0.02,
+0
+],
+"tests/test_distr_t.py::test_the_row_and_what_read_model_makes_of_it": [
+2.23,
+84
+],
+"tests/test_distr_t.py::test_the_shipped_thickness_densities_give_their_width[Thickness PDF, Gamma-values2-0.0-6.0-0.4]": [
+0.0,
+5
+],
+"tests/test_distr_t.py::test_the_shipped_thickness_densities_give_their_width[Thickness PDF, pressed window (clamped plate)-values1-1.005-3.0-0.3577708763999664]": [
+0.02,
+5
+],
+"tests/test_distr_t.py::test_the_shipped_thickness_densities_give_their_width[Thickness PDF, pressed window (membrane)-values0-1.0-3.0-0.2886751345948129]": [
+0.01,
+5
+],
 "tests/test_distr_targets.py::test_a_link_from_another_component_to_a_distributed_parameter_is_refused": [
 2.08,
 25
@@ -1611,27 +1683,27 @@
 ],
 "tests/test_expressions.py::test_a_compound_value_goes_in_parentheses": [
 0.0,
-2
+1
 ],
 "tests/test_expressions.py::test_a_field_holds_one_line": [
 0.0,
-2
+1
 ],
 "tests/test_expressions.py::test_a_missing_folder_holds_no_expressions": [
 0.0,
-3
+10
 ],
 "tests/test_expressions.py::test_a_model_without_expression_row_is_reported": [
-0.02,
-3
+0.01,
+10
 ],
 "tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Central shift vs temperature]": [
 0.01,
-0
+1
 ],
 "tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Hyperfine field in applied field, Langevin]": [
 0.01,
-0
+1
 ],
 "tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Hyperfine field vs temperature, Bloch]": [
 0.01,
@@ -1669,9 +1741,21 @@
 0.01,
 0
 ],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Thickness PDF, Gamma]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Thickness PDF, pressed window (clamped plate)]": [
+0.01,
+0
+],
+"tests/test_expressions.py::test_a_shipped_expression_offers_its_names_and_evaluates[Thickness PDF, pressed window (membrane)]": [
+0.01,
+0
+],
 "tests/test_expressions.py::test_an_unsubstituted_placeholder_is_named_in_the_log": [
-2.73,
-56
+1.99,
+83
 ],
 "tests/test_expressions.py::test_bloch_law_vanishes_above_the_transition": [
 0.01,
@@ -1679,35 +1763,35 @@
 ],
 "tests/test_expressions.py::test_central_shift_adds_the_isomer_shift_at_room_temperature": [
 0.01,
-7
+6
 ],
 "tests/test_expressions.py::test_central_shift_at_high_temperature_is_the_classical_law": [
 0.0,
-0
+6
 ],
 "tests/test_expressions.py::test_central_shift_at_low_temperature_is_the_zero_point_plus_the_t4_law": [
 0.0,
-0
+6
 ],
 "tests/test_expressions.py::test_central_shift_follows_the_debye_model[1000-100]": [
 0.0,
-0
+6
 ],
 "tests/test_expressions.py::test_central_shift_follows_the_debye_model[1000-400]": [
 0.0,
-0
+6
 ],
 "tests/test_expressions.py::test_central_shift_follows_the_debye_model[1500-100]": [
 0.0,
-0
+6
 ],
 "tests/test_expressions.py::test_central_shift_follows_the_debye_model[300-400]": [
 0.0,
-0
+6
 ],
 "tests/test_expressions.py::test_central_shift_follows_the_debye_model[3000-50]": [
 0.0,
-0
+6
 ],
 "tests/test_expressions.py::test_central_shift_follows_the_debye_model[4.2-400]": [
 0.0,
@@ -1719,7 +1803,7 @@
 ],
 "tests/test_expressions.py::test_comment_formulas_are_rendered_and_a_broken_one_shown_as_typed": [
 0.02,
-24
+0
 ],
 "tests/test_expressions.py::test_critical_field_vanishes_above_the_transition": [
 0.01,
@@ -1727,7 +1811,7 @@
 ],
 "tests/test_expressions.py::test_doublet_quadrupole_splitting_is_twice_the_shift": [
 0.0,
-7
+6
 ],
 "tests/test_expressions.py::test_empirical_field_with_alpha_3_2_and_beta_1_is_blochs_law": [
 0.01,
@@ -1735,11 +1819,11 @@
 ],
 "tests/test_expressions.py::test_every_shipped_expression_is_listed": [
 0.0,
-0
+1
 ],
 "tests/test_expressions.py::test_insert_renumbers_only_what_moves": [
-2.37,
-64
+2.0,
+49
 ],
 "tests/test_expressions.py::test_lamb_mossbauer_factor_at_high_temperature_is_the_classical_law": [
 0.0,
@@ -1758,11 +1842,11 @@
 0
 ],
 "tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[1000-400]": [
-0.01,
+0.0,
 0
 ],
 "tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[300-400]": [
-0.01,
+0.0,
 0
 ],
 "tests/test_expressions.py::test_lamb_mossbauer_factor_follows_the_debye_model[3000-50]": [
@@ -1790,20 +1874,20 @@
 0
 ],
 "tests/test_expressions.py::test_load_substitutes_and_renumbers_with_the_insert": [
-2.79,
-76
+2.24,
+74
 ],
 "tests/test_expressions.py::test_n_itself_and_names_inside_other_names_are_not_offered": [
 0.0,
-2
+1
 ],
 "tests/test_expressions.py::test_names_a_file_cannot_hold_are_refused": [
 0.0,
-2
+1
 ],
 "tests/test_expressions.py::test_names_are_offered_in_order_of_appearance_once_each": [
-0.0,
-2
+0.78,
+1
 ],
 "tests/test_expressions.py::test_neel_relaxation_time": [
 0.0,
@@ -1822,16 +1906,16 @@
 0
 ],
 "tests/test_expressions.py::test_save_refuses_a_name_a_file_cannot_hold": [
-2.51,
-47
+2.09,
+48
 ],
 "tests/test_expressions.py::test_save_writes_a_model_file_the_window_and_load_model_read": [
-2.67,
-81
+2.3,
+72
 ],
 "tests/test_expressions.py::test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift[0.0-0.0-0.0]": [
-0.44,
-0
+0.25,
+4
 ],
 "tests/test_expressions.py::test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift[0.0-90.0-0.0]": [
 0.0,
@@ -1842,32 +1926,32 @@
 0
 ],
 "tests/test_expressions.py::test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift[0.8-70.0-60.0]": [
-0.0,
+0.01,
 0
 ],
 "tests/test_expressions.py::test_substitution_is_one_pass_and_keeps_empty_boxes": [
 0.0,
-2
+1
 ],
 "tests/test_expressions.py::test_the_menu_offers_load_expression_after_expression": [
-0.56,
-6
+0.0,
+10
 ],
 "tests/test_expressions.py::test_the_new_constants_are_the_sourced_values": [
 0.0,
 0
 ],
 "tests/test_expressions.py::test_the_numbers_are_those_of_constants": [
-0.02,
+0.01,
 0
 ],
 "tests/test_expressions.py::test_the_typed_comment_is_folded_until_asked_for": [
-2.44,
-86
+2.09,
+73
 ],
 "tests/test_expressions.py::test_the_window_reads_the_folder_next_to_the_library": [
-2.41,
-91
+2.08,
+100
 ],
 "tests/test_find_bar.py::test_a_new_search_starts_at_the_text_cursor": [
 0.0,

@@ -3,7 +3,7 @@ import os
 import numpy as np
 from syncmoss.constants import model_colors, number_of_baseline_parameters
 from syncmoss.model_io import mod_len_def
-from syncmoss.spectrum_model import distr_texts
+from syncmoss.spectrum_model import distri_texts_of
 from syncmoss.expression_eval import eval_expr
 
 # Default theme (original dark mode colors)
@@ -17,7 +17,11 @@ _DEFAULT_THEME = {
     'legend_textcolor': 'white',
 }
 
-_NON_SUBSPECTRUM_MODELS = {'Distr', 'Corr', 'Recon', 'Expression', 'Variables', 'Layer'}
+_NON_SUBSPECTRUM_MODELS = {'Distr', 'Corr', 'Recon', 'Distr_T', 'Expression', 'Variables', 'Layer'}
+
+# Rows the Distribution view draws: a Distr's or a Distr_T's PDF (their L, R and
+# Num share the slots 1-3), a Recon's weights.
+_DRAWN_DISTRIBUTIONS = ('Distr', 'Recon', 'Distr_T')
 
 
 def _tc(theme):
@@ -1262,13 +1266,14 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
     figure.clear()
     figure.patch.set_facecolor(tc['figure_facecolor'])
     Recon = list(Recon) if Recon is not None else []
-    Distri = distr_texts(model, Distri)          # without the Spectrum line sets
+    Distri = distri_texts_of(model, Distri, ('Distr', 'Distr_T'))      # without the Spectrum line sets
 
     model_np = np.array(model)
-    # A parametric Distr and a model-independent Recon are both distributions to
-    # draw; keep the indices sorted so the correlation-grouping sentinel logic and
-    # the per-row Di_idx/Re_idx cursors below stay aligned with table order.
-    distr_indices = np.where((model_np == 'Distr') | (model_np == 'Recon'))[0]
+    # A parametric Distr, a model-independent Recon and the sample's thickness
+    # distribution (Distr_T) are distributions to draw; keep the indices sorted so
+    # the correlation-grouping sentinel logic and the per-row Di_idx/Re_idx
+    # cursors below stay aligned with table order.
+    distr_indices = np.flatnonzero(np.isin(model_np, _DRAWN_DISTRIBUTIONS))
 
     if len(distr_indices) == 0:
         return False
@@ -1371,7 +1376,10 @@ def plot_distribution(figure, model, p, Distri, Cor, parameter_names, model_colo
             ax.set_ylabel('Probability Density', color=tc['axes_text_color'])
         
         # X-axis label
-        xlabel = _get_distribution_xlabel(model, Distri_D[j], parameter_names)
+        if model[int(Distri_D[j])] == 'Distr_T':
+            xlabel = 'Distr_T thickness X'
+        else:
+            xlabel = _get_distribution_xlabel(model, Distri_D[j], parameter_names)
         ax.set_xlabel(xlabel, color=tc['axes_text_color'])
         
         # Plot correlations for this distribution
@@ -1429,10 +1437,10 @@ def distribution_curves(model, p, Distri, Cor, Recon=None):
     distributions.
     """
     Recon = list(Recon) if Recon is not None else []
-    Distri = distr_texts(model, Distri) if Distri is not None else []
+    Distri = distri_texts_of(model, Distri, ('Distr', 'Distr_T')) if Distri is not None else []
     Cor = list(Cor) if Cor is not None else []
     model_np = np.array(model)
-    distr_indices = np.where((model_np == 'Distr') | (model_np == 'Recon'))[0]
+    distr_indices = np.flatnonzero(np.isin(model_np, _DRAWN_DISTRIBUTIONS))
     if len(distr_indices) == 0:
         return []
     boundaries = np.append(distr_indices, len(model_np) * 2)
@@ -1440,7 +1448,7 @@ def distribution_curves(model, p, Distri, Cor, Recon=None):
 
     columns = []
     Di_idx = Co_idx = Re_idx = 0
-    d_count = r_count = c_count = 0
+    d_count = r_count = c_count = t_count = 0
     for j in range(len(distr_indices)):
         idx = int(distr_indices[j])
         is_recon = (model[idx] == 'Recon')
@@ -1474,9 +1482,14 @@ def distribution_curves(model, p, Distri, Cor, Recon=None):
             except Exception:
                 y = np.full(n_points, np.nan)
             Di_idx += 1
-            d_count += 1
-            columns.append((f'Distr_x_{d_count}', X))
-            columns.append((f'Distr_y_{d_count}', y))
+            if model[idx] == 'Distr_T':
+                t_count += 1
+                columns.append((f'Distr_T_x_{t_count}', X))
+                columns.append((f'Distr_T_y_{t_count}', y))
+            else:
+                d_count += 1
+                columns.append((f'Distr_x_{d_count}', X))
+                columns.append((f'Distr_y_{d_count}', y))
 
         # Correlations attached to this distribution (contiguous, in model order).
         for k in range(len(corr_indices)):

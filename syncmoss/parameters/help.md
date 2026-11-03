@@ -37,6 +37,7 @@ baseline (`p[0]` … `p[7]`) and shift when rows are added or removed.
 | `Distr` | density in `X`, from `L` to `R` in `Num` steps | `exp(-X**2/2)` |
 | `Corr` | a second parameter as a function of `X` | `0.3*X` |
 | `Recon` | the shape is fitted; `D_dif`, `D_dif2` (0…1) smooth it | `weights` empty = uniform start |
+| `Distr_T` | the sample's thickness: density in the thickness `X`, from `L` to `R` in `Num` steps | `X**5.25*exp(-6.25*X/2)` |
 
 - Functions: `exp`, `log`, `sqrt`, `sin`, `arctan`, `abs`, … by name, any other
   NumPy one as `np.<name>`.
@@ -46,6 +47,8 @@ baseline (`p[0]` … `p[7]`) and shift when rows are added or removed.
   the driven parameter gets a grey frame. `T` cannot be distributed.
 - `Distr`/`Recon` directly under a component, `Corr` under a
   `Distr`/`Corr`/`Recon`; a different `par` for each.
+- `Distr_T` spreads every component below it; each `T` is then the mean
+  thickness. One per spectrum, no `Layer` (section 13.11 of the extended help).
 - Nothing may read a driven parameter or a text column: put shared values in
   `Variables`.
 - Expressions are calculated from the top: use only Expressions above.

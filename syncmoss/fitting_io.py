@@ -212,9 +212,21 @@ def create_subspectra(model, Distri, Cor, p):
     }
 
     V = number_of_baseline_parameters  # index of the next unread slot in p
+    # The sample's thickness distribution (a Distr_T row) above the components:
+    # its 5 slots and its text, put in front of every component below it, so
+    # each is drawn averaged over the same patches. It ends with its spectrum.
+    thickness = None
     for model_name in model:
         if model_name in passthrough_non_spectral:
+            if model_name == 'Nbaseline':
+                thickness = None
             V += passthrough_non_spectral[model_name]
+            continue
+
+        if model_name == 'Distr_T':
+            thickness = (np.array(p[V:V + 5], dtype=float), _substitute_p_refs(Distri[Di], p))
+            V += 5
+            Di += 1
             continue
 
         if model_name == 'Distr':
@@ -253,11 +265,16 @@ def create_subspectra(model, Distri, Cor, p):
         # Ordinary spectral component: it is computed standalone on top of the
         # shared baseline parameters, followed by its own parameter slots.
         ps = np.array(p[:number_of_baseline_parameters], dtype=float)
+        names = [model_name]
+        if thickness is not None:
+            ps = np.append(ps, thickness[0])
+            names = ['Distr_T', model_name]
+            Distri_t.append(thickness[1])
         for _ in range(mod_len_def(model_name, include_special=False)):
             ps = np.append(ps, p[V])
             V += 1
         Ps.append(ps)
-        Psm.append([model_name])
+        Psm.append(names)
         if model_name == 'Spectrum':
             # Its line set, in Distri with the Distr texts (spectrum_model)
             Distri_t.append(Distri[Di])

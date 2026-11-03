@@ -96,6 +96,9 @@ These rows take **text**, not numbers:
   start; the fit fills it in. `D_dif`/`D_dif2` (0…1) are the smoothness
   (Tikhonov) knobs on the first and second derivative of the reconstructed
   distribution — raise them if the result oscillates.
+- `Distr_T`: the probability density of the sample's **thickness** `X`, from
+  `L` to `R` in `Num` steps, e.g. `X**5.25*exp(-6.25*X/2)` (a Gamma of CV 0.4).
+  It spreads every component below it; section 13.11.
 
 **Predefined expressions.** *Load expression* in a row's model menu opens the
 expressions of the `Expressions` folder — each one a `.mdl` model file with a
@@ -1078,3 +1081,63 @@ $(3n_{\rm lines} - 1)(N_{s,\rm target}/N_{s,\rm ref})(T/T_{\rm ref})^2$ to the
 target's $\chi^2$, so count the reference longer than the target and use it near
 its own thickness. A texture of the reference cannot be undone (isotropic
 samples only). Energy domain only.
+
+### 13.11 Distr_T: a distribution of the sample's thickness
+
+Across the beam an uneven sample is a set of patches; the detector adds their
+counts. `Distr_T` gives the probability density $P(X)$ of the physical
+thickness $X$, from `L` to `R` in `Num` points. A patch of thickness $X$ scales
+every component below the row by $s = X/\langle X\rangle$, $\langle X\rangle$
+being the mean of $P$ over the area, so each component's `T` is the **mean** of
+its local `T`. The sample is taken as homogeneous: every component follows the
+same thickness. Its share of the detected beam is
+
+$$
+w(X) \propto P(X)\, e^{-X/\lambda}.
+$$
+
+- `λ, X`: the attenuation length at 14.4 keV (the thickness that lowers the
+  beam by $e$), in the unit of `X`, from the composition. Where something fills
+  the gap where the sample is thinner (the pressure medium in a diamond-anvil
+  cell), $1/\lambda$ is the sample's minus the filler's, negative when the filler
+  absorbs more. The default 1000 is next to no absorption: every patch weighs as
+  its area. Fixed by default: a spectrum cannot measure it. For a Gamma-shaped
+  $P$ it is exactly a common factor on all `T`, and for other shapes nearly so.
+  A free `λ` shows as a correlation near 1 with `T`. A wrong fixed value shows
+  nothing: without absorption the `T` found is the mean over the detected
+  photons (natural α-Fe at `T` = 10–20 in a pressed window: 11–23 % below the
+  area mean). For enriched samples the two are the same.
+- `L`, `R`, `Num`: the grid of $X$, in your unit of thickness (only the shape
+  counts while $\lambda$ is large). `R` below `L` is fine. `Num` stays fixed
+  during a fit.
+- Nnr is not split over the patches: it is added after the transmission, so
+  any split gives the same spectrum.
+
+Where it goes: it acts on the components below it in its spectrum. The rows
+above it are not scaled, so put the beamline's `Be`/`KB_nano` doublets there.
+One `Distr_T` per spectrum (after each `Nbaseline` its own), and no `Layer`
+in a model with one; a `Distr`/`Corr`/`Recon` cannot follow it directly. Each
+component's curve is drawn averaged over the same patches, and the
+Distribution view shows $P(X)$.
+
+Examples:
+- a window pressed into a paraboloid (a membrane) gives a uniform $P$: `1` with
+  `L` = rim and `R` = centre thickness;
+- a smooth spread of CV 0.4 and mean 2: `X**5.25*exp(-6.25*X/2)` (a Gamma,
+  $X^{1/CV^2-1}e^{-X/(CV^2 m)}$ for mean $m$).
+
+What the data can tell: the mean thickness and the width (CV) of $P$, not its
+shape. A free `L` takes up a spread in singlets and doublets, so keep it
+natural. Thin samples do not show a spread at all, and weight at $X = 0$ (holes)
+is exactly `Nnr`.
+
+How many points: what matters is the area thinner than about 1/(peak optical
+depth); those patches carry the transmission at the line centres.
+- no weight near zero thickness and CV up to 0.4: 12–20;
+- CV 0.7 reaching zero thickness: about 40 at `T` = 10, 320 at `T` = 30–80;
+- a density finite at zero thickness (CV 1, a wedge to 0): no uniform grid is
+  enough.
+
+A grid that is too coarse shows in the parameters, not in $\chi^2$. Refit once
+with twice `Num`: if `T` or the width moves by more than its error, `Num` was
+too small. Energy domain only.
