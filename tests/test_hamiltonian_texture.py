@@ -96,8 +96,9 @@ def _dipoles(Q, Hhf, eta, tet, phi):
              - Hhf * gex * mun * (nB[0] * Ix + nB[1] * Iy + nB[2] * Iz))
     gx, gy, gz = _spin_ops(0.5)
     Hgr_m = -Hhf * ggr * mun * (nB[0] * gx + nB[1] * gy + nB[2] * gz)
-    Hex, Vex = np.linalg.eig(Hex_m)
-    Hgr, Vgr = np.linalg.eig(Hgr_m)
+    # Hermitian solver: orthonormal eigenvectors also inside a degenerate level
+    Hex, Vex = np.linalg.eigh(Hex_m)
+    Hgr, Vgr = np.linalg.eigh(Hgr_m)
     Hex, Hgr = np.real(Hex), np.real(Hgr)
     axes = []
     for u in (np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), np.array([0, 0, 1.0])):
@@ -228,6 +229,41 @@ def test_thin_intensities_are_convention_independent():
     Pref, _ = _textbook_blocks(0.37, 28.4, 0.43, 37.0, 64.0, R)
     I, _ = m5.Ham_mono(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['phir'], _GEO['tetr'])
     assert np.allclose(np.asarray(I), Pref[:, 0, 0].real, rtol=0, atol=1e-12)
+
+
+def _summed_per_position(S, P, tol=1e-9):
+    """Blocks summed over coincident lines: inside a degenerate level the
+    eigenvectors are arbitrary, so only that sum is physical."""
+    o = np.argsort(np.asarray(S, float))
+    pos, blk = [], []
+    for s, b in zip(np.asarray(S, float)[o], np.asarray(P)[o]):
+        if pos and abs(s - pos[-1]) <= tol:
+            blk[-1] = blk[-1] + b
+        else:
+            pos.append(s)
+            blk.append(b)
+    return np.array(pos), np.array(blk)
+
+
+@pytest.mark.parametrize("cms", [False, True])
+@pytest.mark.parametrize("eta", [0.35, 0.7, 0.99])
+def test_zero_field_blocks_match_first_principles(eta, cms):
+    """At H = 0 every level is a Kramers doublet: only the blocks summed over the
+    coincident lines are physical, and by time reversal they carry no axial
+    (Faraday) part. The general eig returned NON-orthogonal eigenvectors for such
+    a doublet at these eta (not at all eta -- it depends on LAPACK's rounding),
+    which left a spurious Faraday term of up to ~3% of the depth of a thick
+    single-crystal spectrum; the Hermitian eigh cannot do that."""
+    R = _lab_axes(_GEO['tetr'], _GEO['phir'], 0.0 if cms else _GEO['alfak'], cms=cms)
+    P, S = m5.Ham_mosaic(0.8, 0.0, eta, 30.0, 40.0, _GEO['tetr'], _GEO['phir'],
+                         _GEO['alfak'], 1.0, 1.0, 1.0, cms)
+    Pref, Sref = _textbook_blocks(0.8, 0.0, eta, 40.0, 30.0, R)
+    S, P = _summed_per_position(S, P)
+    Sref, Pref = _summed_per_position(Sref, Pref)
+    assert len(S) == len(Sref) == 2, "zero field: the lines sit at +-epsilon only"
+    assert np.max(np.abs(S - Sref)) < 1e-12
+    assert np.max(np.abs(P.imag)) < 1e-12, "a summed zero-field block has no Faraday part"
+    assert np.max(np.abs(P - Pref)) < 1e-12
 
 
 def test_pure_zeeman_blocks_equal_the_sextet_building_blocks():
@@ -448,11 +484,14 @@ def test_alfak_is_redundant_under_cms_but_observable_under_sms(order):
 
 def test_alfak_drops_out_when_the_azimuth_is_disordered():
     """At Ah = 0 the crystal is uniformly spun about the reference axis, so the
-    reference azimuth alpha_k can no longer matter, even under SMS."""
+    reference azimuth alpha_k can no longer matter, even under SMS -- to
+    round-off: alpha_k still rotates the reference axes inside the average and
+    drops out of it only analytically (it moves the spectrum by ~5e-2 at Ah = 1)."""
     ref = _run(['Hamiltonian'], _HAMQ0 + [0.5, 0.2, 0.0], 0, 1.0)
     par = list(_HAMQ0)
     par[11] = 137.0
-    assert np.array_equal(_run(['Hamiltonian'], par + [0.5, 0.2, 0.0], 0, 1.0), ref)
+    assert np.allclose(_run(['Hamiltonian'], par + [0.5, 0.2, 0.0], 0, 1.0), ref,
+                       rtol=0, atol=1e-13)
 
 
 def test_parameter_block_is_fifteen_slots_wide():

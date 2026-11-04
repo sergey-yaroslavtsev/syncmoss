@@ -54,7 +54,7 @@ from syncmoss.constants import (
     NAT_WIDTH, E0_J, c, ggr, gex, mun, MMS_PER_T_PER_G, SMS_POL_DEFAULT,
     LINE_SHIFT_16, LINE_SHIFT_25, LINE_SHIFT_34, TESLA_PER_MMS,
     LINE_RATIO_25, LINE_RATIO_34)
-from numpy.linalg import eig
+from numpy.linalg import eigh
 from numpy import linalg as LA
 # from numpy.linalg import inv
 from numpy import abs
@@ -1131,8 +1131,13 @@ def _ham_mono_core(Q, Hhf, etto, phi, tet):
     Hagr[1][0] = -bet / 2 * np.sin(tet) * np.exp(1j * phi)
     Hagr[1][1] = bet / 2 * np.cos(tet)
 
-    Hex, Vex = eig(Haex)#LA.eig(Haex)
-    Hgr, Vgr = eig(Hagr)#LA.eig(Hagr)
+    # Hermitian solver: orthonormal eigenvectors also inside a degenerate level.
+    # The general eig returned NON-orthogonal ones for the Kramers doublets at
+    # H = 0 for some eta (not all -- LAPACK rounding), which broke the sums over
+    # the coincident lines: a spurious Faraday term of up to ~3% of the depth of
+    # a thick single-crystal spectrum (fixed 2026-11-04).
+    Hex, Vex = eigh(Haex)
+    Hgr, Vgr = eigh(Hagr)
     Hex = np.real(Hex)
     Hgr = np.real(Hgr) 
 
@@ -1227,8 +1232,8 @@ def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
     Hagr[1][0] = -bet / 2 * np.sin(tet) * np.exp(1j * phi)
     Hagr[1][1] = bet / 2 * np.cos(tet)
 
-    Hex, Vex = eig(Haex)
-    Hgr, Vgr = eig(Hagr)
+    Hex, Vex = eigh(Haex)
+    Hgr, Vgr = eigh(Hagr)
     Hex = np.real(Hex)
     Hgr = np.real(Hgr)
 
@@ -1306,8 +1311,8 @@ def Ham_poly(Q, Hhf, etto, phi, tet):
     Hagr[1][0] = -bet / 2 * np.sin(tet) * np.exp(1j * phi)
     Hagr[1][1] = bet / 2 * np.cos(tet)
 
-    Hex, Vex = eig(Haex)
-    Hgr, Vgr = eig(Hagr)
+    Hex, Vex = eigh(Haex)
+    Hgr, Vgr = eigh(Hagr)
     Hex = np.real(Hex)
     Hgr = np.real(Hgr)
 

@@ -39,7 +39,7 @@ import platform
 import time
 from numba import njit, prange
 
-from numpy.linalg import eig
+from numpy.linalg import eigh
 from numpy import linalg as LA
 # from numpy.linalg import inv
 from numpy import abs
@@ -316,8 +316,8 @@ def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
     Hagr[1][0] = -bet / 2 * np.sin(tet) * np.exp(1j * phi)
     Hagr[1][1] = bet / 2 * np.cos(tet)
 
-    Hex, Vex = eig(Haex)#LA.eig(Haex)
-    Hgr, Vgr = eig(Hagr)#LA.eig(Hagr)
+    Hex, Vex = eigh(Haex)
+    Hgr, Vgr = eigh(Hagr)
     Hex = np.real(Hex)
     Hgr = np.real(Hgr)
 
@@ -383,8 +383,8 @@ def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
     Hagr[1][0] = -bet / 2 * np.sin(tet) * np.exp(1j * phi)
     Hagr[1][1] = bet / 2 * np.cos(tet)
 
-    Hex, Vex = eig(Haex)
-    Hgr, Vgr = eig(Hagr)
+    Hex, Vex = eigh(Haex)
+    Hgr, Vgr = eigh(Hagr)
     Hex = np.real(Hex)
     Hgr = np.real(Hgr)
 
@@ -452,8 +452,8 @@ def Ham_poly(Q, Hhf, etto, phi, tet):
     Hagr[1][0] = -bet / 2 * np.sin(tet) * np.exp(1j * phi)
     Hagr[1][1] = bet / 2 * np.cos(tet)
 
-    Hex, Vex = eig(Haex)
-    Hgr, Vgr = eig(Hagr)
+    Hex, Vex = eigh(Haex)
+    Hgr, Vgr = eigh(Hagr)
     Hex = np.real(Hex)
     Hgr = np.real(Hgr)
 
