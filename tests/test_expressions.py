@@ -191,7 +191,7 @@ def test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift(eta
     +epsilon; the expression turns that back into Q/2 sqrt(1 + eta^2/3)."""
     from syncmoss import models
     Q = 1e-3
-    lines = models._ham_mono_core(Q, 33.0, eta, phi, theta)[3]
+    lines = models._ham_tensor_core(Q, 33.0, eta, phi, theta)[2]
     epsilon = (lines.min() + lines.max()) / 2
     splitting = _value("Quadrupole splitting, sextet", eps=epsilon, eta=eta, theta=theta, phi=phi)
     assert splitting == pytest.approx(Q / 2 * math.sqrt(1 + eta**2 / 3), rel=1e-3)
@@ -201,7 +201,7 @@ def test_sextet_quadrupole_splitting_from_the_hamiltonians_first_order_shift(eta
 def test_paramagnetic_shift_is_where_the_hamiltonian_puts_the_lines(Q, eta):
     """At zero field the Hamiltonian's lines sit at +-epsilon (its Q is eQV_zz)."""
     from syncmoss import models
-    lines = models._ham_mono_core(Q, 0.0, eta, 0.0, 0.0)[3]
+    lines = models._ham_tensor_core(Q, 0.0, eta, 0.0, 0.0)[2]
     epsilon = _value("Paramagnetic quadrupole shift from Hamiltonian", Q=Q, eta=eta)
     assert epsilon == pytest.approx(lines.max(), rel=1e-9)
     assert -epsilon == pytest.approx(lines.min(), rel=1e-9)

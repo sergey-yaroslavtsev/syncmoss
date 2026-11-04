@@ -191,7 +191,7 @@ class HyperfineSite:
            - g_e mu_N B_s (m . I)                                  (I = 3/2)
 
     with z || c || V_zz and m in the basal plane, so the magnetic and quadrupole
-    axes are at 90 deg.  Identical to models._ham_mono_core, whose Q parameter is
+    axes are at 90 deg.  Identical to the Hamiltonian of models.Ham_mosaic, whose Q parameter is
     the same eQV_zz (checked to 2e-15 mm/s in tests/test_sms_theory.py).
 
     PARAMETRISATION. The material constants of FeBO3 are the quadrupole COUPLING

@@ -278,14 +278,15 @@ def Voigt(gL, gG, S): # doi.org/10.1107/S0021889800010219
         + cp * (1/2/(WP/2/np.log(2**(1/2)+1)))*(4/(np.exp(S/(WP/2/np.log(2**(1/2)+1)))+np.exp(-S/(WP/2/np.log(2**(1/2)+1))))**2)
     return(Voi)
 
+# Eigensolver version, not called; kept for reuse (closed form: Ham_positions).
 @njit(cache=True)
-def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
-    """Local copy of models.Ham_mono; ONLY the returned positions S are consumed.
+def Ham_mono_classic(Q, Hhf, etto, phi, tet, phir, tetr):
+    """Local copy of models.Ham_mono_classic; ONLY the returned positions S were consumed.
 
     ``pos_ac`` draws line-position markers, so the returned intensities are never
     used and this copy deliberately keeps the old amplitude/azimuth convention
     (which is exact for |amplitude|^2 anyway). The one convention that matters
-    for the spectrum lives in models._ham_mono_core -- do not build a 2x2
+    for the spectrum lives in models._ham_mono_core_classic -- do not build a 2x2
     cross-section matrix from this copy.
     """
     Q = Q / c * E0_J
@@ -353,8 +354,9 @@ def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
 
     return (I, S)
 
+# Eigensolver version, not called; kept for reuse (closed form: Ham_positions).
 @njit(cache=True)
-def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
+def Ham_mono_CMS_classic(Q, Hhf, etto, phi, tet, phir, tetr):
     Q = Q / c * E0_J
     phi = phi / 180 * np.pi
     tet = tet / 180 * np.pi
@@ -422,8 +424,9 @@ def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
 
     return (I, S)
 
+# Eigensolver version, not called; kept for reuse (closed form: Ham_positions).
 @njit(cache=True)
-def Ham_poly(Q, Hhf, etto, phi, tet):
+def Ham_poly_classic(Q, Hhf, etto, phi, tet):
     Q = Q / c * E0_J
     phi = phi / 180 * np.pi
     tet = tet / 180 * np.pi
@@ -474,6 +477,62 @@ def Ham_poly(Q, Hhf, etto, phi, tet):
     I = np.real(aM[0] * np.conjugate(aM[0]) + aM[1] * np.conjugate(aM[1]) + aM[2] * np.conjugate(aM[2]))
 
     return (I, S)
+
+@njit(cache=True)
+def Ham_positions(Q, Hhf, etto, phi, tet):
+    """Line positions S (mm/s) of the Hamiltonian components, for the markers.
+
+    Local copy of models._ham_tensor_core up to where the positions are known:
+    the four excited levels as the roots of the quartic of Szymanski (2026),
+    eq. (10), solved as in its Appendix A, then eq. (28) -- no intensities, no
+    eigensolver. The lines in the order of the model: ground level k // 4 (the
+    lower first), excited level k % 4 ascending.
+    """
+    b = Hhf * gex * mun * c / E0_J              # excited and ground Zeeman, mm/s
+    bg = Hhf * ggr * mun * c / E0_J
+    # the levels in units of a power of two near max(|Q|, |b|): exact, and it
+    # keeps p^3 and Z^3, sixth powers of that scale, inside the float range
+    sc = np.abs(Q) if np.abs(Q) > np.abs(b) else np.abs(b)
+    sc = 2.0 ** np.floor(np.log2(sc)) if sc > 0.0 else 1.0
+    Q = Q / sc
+    b = b / sc
+    t = tet / 180 * np.pi
+    f = phi / 180 * np.pi
+    m = np.array([np.sin(t) * np.cos(f), np.sin(t) * np.sin(f), np.cos(t)])
+    Vd = np.array([-(1 - etto) / 2 * Q, -(1 + etto) / 2 * Q, Q])
+    Vm = Vd * m
+    V2m = Vd * Vm
+    sm = np.sum(m * Vm)
+    Sm = np.sum(m * V2m)
+    D2 = Q * Q * (3 + etto * etto) / 12
+    # eq. (10): the excited levels are the roots of lambda^4 + p lambda^2 + q lambda + r
+    p = -(5 * b * b + D2) / 2
+    q = -b * b * sm
+    r = (9 * b ** 4 + D2 * D2 + b * b * (6 * D2 - 4 * Sm)) / 16
+    S = np.zeros(8)
+    if p == 0.0:                       # Q = H = 0: one line
+        return S
+    # Appendix A; the clips only absorb rounding at a double root
+    Z = np.sqrt(p * p + 12 * r)
+    Y = (2 * p ** 3 + 27 * q * q - 72 * p * r) / (2 * Z ** 3)
+    if Y > 1.0:
+        Y = 1.0
+    if Y < -1.0:
+        Y = -1.0
+    X = -p / 6 + Z / 6 * np.cos(np.arccos(Y) / 3)
+    xi1 = np.sqrt(X)
+    xi2 = q / (4 * xi1)
+    xi3 = -(X + p / 2)
+    xi4 = np.sqrt(xi3 + xi2) if xi3 + xi2 > 0.0 else 0.0
+    xi5 = np.sqrt(xi3 - xi2) if xi3 - xi2 > 0.0 else 0.0
+    lam = np.sort(np.array([xi1 + xi5, xi1 - xi5, -xi1 + xi4, -xi1 - xi4]))
+    for jb in range(2):
+        beta = 1.0 - 2.0 * jb
+        if bg > 0.0:                    # the lower ground level first
+            beta = -beta
+        for a in range(4):
+            S[4 * jb + a] = sc * lam[a] - beta * bg / 2
+    return S
 
 # def Average(X, MulCo, Sig, eps, H, Ep, L, G, alf):
 #     Num = len(H)
@@ -822,7 +881,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 eto = p[V+6]
                 tet = p[V+7]
                 phi = p[V+8]
-                S = Ham_poly(Q, H, eto, phi, tet)[1]
+                S = Ham_positions(Q, H, eto, phi, tet)
                 S += delt
                 SET.append(S)
                 V += 9
@@ -889,9 +948,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 eto = p[V + 6]
                 tet = p[V + 7]
                 phi = p[V + 8]
-                tetr = p[V + 9]
-                phir = p[V + 10]
-                S = Ham_mono(Q, H, eto, phi, tet, phir, tetr)[1]
+                S = Ham_positions(Q, H, eto, phi, tet)
                 S += delt
                 SET.append(S)
                 V += 12
@@ -905,9 +962,7 @@ def pos_ac (p, model, INS, Met = 0, V=number_of_baseline_parameters):
                 eto = p[V + 6]
                 tet = p[V + 7]
                 phi = p[V + 8]
-                tetr = p[V + 9]
-                phir = p[V + 10]
-                S = Ham_mono(Q, H, eto, phi, tet, phir, tetr)[1]
+                S = Ham_positions(Q, H, eto, phi, tet)
                 S += delt
                 SET.append(S)
                 V += 15

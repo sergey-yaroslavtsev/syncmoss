@@ -1074,8 +1074,16 @@ def Voigt_c(gL, gG, S):
     return Voigt(gL, gG, S) + 0j          # 'off': real Voigt, no dispersion
 
 
+# ---------------------------------------------------------------------------
+# The Hamiltonian family by diagonalisation (*_classic). Not called any more:
+# TImod uses the closed form (_ham_tensor_core, Ham_mosaic, further below), which
+# returns the same lines without an eigensolver. Kept as the reference and for
+# reuse.
+# ---------------------------------------------------------------------------
+
+# Eigensolver version, not called; kept for reuse (closed form: _ham_tensor_core).
 @njit(cache=True)
-def _ham_mono_core(Q, Hhf, etto, phi, tet):
+def _ham_mono_core_classic(Q, Hhf, etto, phi, tet):
     """Shared SMS-Hamiltonian core: everything EXCEPT the polarization projection.
 
     Builds and diagonalises the combined quadrupole + magnetic Hamiltonian and
@@ -1167,8 +1175,9 @@ def _ham_mono_core(Q, Hhf, etto, phi, tet):
     return (g0, g1, g2, S)
 
 
+# Eigensolver version, not called; kept for reuse (closed form: _ham_tensor_core).
 @njit(cache=True)
-def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
+def Ham_mono_classic(Q, Hhf, etto, phi, tet, phir, tetr):
     """SMS single-crystal line intensities/positions for one linear polarization.
 
     Thin-sample projection of the shared core onto the radiation magnetic field
@@ -1176,11 +1185,11 @@ def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
 
     F2/F4/F6 are the (-1)^q h_{-q} polarization factors of the q = +1, 0, -1
     channels for h at (tetr, phir): c_{+-1}/c_0 = -+(1/sqrt2) sin(tetr)
-    exp(-+i*phir), the standard right-handed convention (see _ham_mono_core).
+    exp(-+i*phir), the standard right-handed convention (see _ham_mono_core_classic).
     The returned INTENSITIES are unchanged by that convention fix -- the old
     (mirrored) F's compensated the old (conjugated) g's exactly.
     """
-    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+    g0, g1, g2, S = _ham_mono_core_classic(Q, Hhf, etto, phi, tet)
 
     phir = phir / 180 * np.pi
     tetr = tetr / 180 * np.pi
@@ -1193,15 +1202,16 @@ def Ham_mono(Q, Hhf, etto, phi, tet, phir, tetr):
 
     return (I, S)
 
+# Eigensolver version, not called; kept for reuse (closed form: _ham_tensor_core).
 @njit(cache=True)
-def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
+def Ham_mono_CMS_classic(Q, Hhf, etto, phi, tet, phir, tetr):
     """UNUSED (no caller): thin CMS single-crystal intensities, kept for reference.
 
     Duplicates the Hamiltonian construction instead of sharing
-    ``_ham_mono_core``, and still carries the old (conjugated) amplitude
+    ``_ham_mono_core_classic``, and still carries the old (conjugated) amplitude
     convention -- harmless because it only ever returns |amplitude|^2 sums, which
     that convention leaves exact, but do NOT build a 2x2 matrix from it without
-    switching it over first (see _ham_mono_core). Delete with the deprecated
+    switching it over first (see _ham_mono_core_classic). Delete with the deprecated
     'Hamilton_mc'/'Hamilton_pc' branches.
     """
     Q = Q / c * E0_J
@@ -1271,8 +1281,9 @@ def Ham_mono_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
 
     return (I, S)
 
+# Eigensolver version, not called; kept for reuse (closed form: Ham_mosaic at 0, 0, 0).
 @njit(cache=True)
-def Ham_poly(Q, Hhf, etto, phi, tet):
+def Ham_poly_classic(Q, Hhf, etto, phi, tet):
     """DEPRECATED: random-powder Hamiltonian line intensities/positions.
 
     Only the deprecated scalar 'Hamilton_pc' component (and its line-position
@@ -2082,8 +2093,9 @@ def _expm_neg11(Sig):
     return np.real(_expm_neg(Sig)[:, 0, 0])
 
 
+# Eigensolver version, not called; kept for reuse (closed form: Ham_mosaic at 1, 1, 1).
 @njit(cache=True)
-def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
+def Ham_mono_thick_classic(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
     """Per-transition 2x2 cross-section matrices for the SMS Hamiltonian.
 
     DEPRECATED (2026-08-26): only the deprecated 'Hamilton_mc' component uses
@@ -2100,7 +2112,7 @@ def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
     scalar ``Ham_mono`` intensity I[k] for the same (phir, tetr), so the thin
     limit reduces to the scalar SMS model.
     """
-    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+    g0, g1, g2, S = _ham_mono_core_classic(Q, Hhf, etto, phi, tet)
 
     # e1 = h at (tetr, phir); e2 = k x h with k rotated by alfak around h.
     tetr1 = tetr / 180 * np.pi
@@ -2134,8 +2146,9 @@ def Ham_mono_thick(Q, Hhf, etto, phi, tet, phir, tetr, alfak):
     return (P, S)
 
 
+# Eigensolver version, not called; kept for reuse (closed form: Ham_mosaic at 1, 1, 1).
 @njit(cache=True)
-def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
+def Ham_mono_thick_CMS_classic(Q, Hhf, etto, phi, tet, phir, tetr):
     """Per-transition 2x2 cross-section matrices for the CMS (unpolarized) Hamiltonian.
 
     DEPRECATED (2026-08-26) exactly like ``Ham_mono_thick``: superseded by
@@ -2156,7 +2169,7 @@ def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
     CMS spectrum (the user leaves it fixed). The thin limit (1/2)tr P[k] equals
     the scalar ``Ham_mono_CMS`` intensity I[k] for the same beam (phir, tetr).
     """
-    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+    g0, g1, g2, S = _ham_mono_core_classic(Q, Hhf, etto, phi, tet)
 
     # (phir, tetr) is the beam direction k; e1 = theta_hat, e2 = phi_hat are the
     # spherical-basis unit vectors perpendicular to k (any orthonormal pair works,
@@ -2234,7 +2247,7 @@ def Ham_mono_thick_CMS(Q, Hhf, etto, phi, tet, phir, tetr):
 # distribution scales its m-components by <d^(l)_mm(chi)>, and
 # d^(1)_00 = cos chi, d^(1)_11 = (1+cos chi)/2, d^(2)_00 = P2(cos chi),
 # d^(2)_11 = (1+cos chi)(2cos chi - 1)/2, d^(2)_22 = ((1+cos chi)/2)^2.
-# So ONE diagonalisation still suffices: the average is closed in the moments.
+# So ONE set of the 8 lines still suffices: the average is closed in the moments.
 #
 # The lab reference axis f is the axis that (tetr, phir) points at: the radiation
 # field h = e1 for an SMS source, the BEAM k for a CMS one (which is exactly how
@@ -2315,8 +2328,9 @@ def _rank2_scale(X, axis, lam0, lam1, lam2):
     return L @ Xp @ Lt
 
 
+# Eigensolver version, not called; kept for reuse (closed form: Ham_mosaic).
 @njit(cache=True)
-def Ham_mosaic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
+def Ham_mosaic_classic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
     """Per-transition 2x2 cross-section matrices of the mosaic textured Hamiltonian.
 
     Returns ``(P, S)`` exactly like ``Ham_mono_thick``: ``P[k]`` the ODF-averaged
@@ -2327,7 +2341,7 @@ def Ham_mosaic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
     ``Ham_mono_thick_CMS`` (CMS) to round-off; ``(0, 0, 0)`` the random powder
     ``Ham_poly``; ``Ah = 0`` a fiber texture about the reference axis.
     """
-    g0, g1, g2, S = _ham_mono_core(Q, Hhf, etto, phi, tet)
+    g0, g1, g2, S = _ham_mono_core_classic(Q, Hhf, etto, phi, tet)
     R0 = _R0_rows(tetr, phir, alfak, cms)
     # Lab reference (fiber) axis f: h = e1 for SMS, the beam k for CMS.
     fl = np.zeros(3)
@@ -2361,7 +2375,7 @@ def Ham_mosaic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
     P = np.zeros((8, 2, 2), dtype=np.complex128)
     for n in range(8):
         # complex dipole vector d in EFG coords: A(e) = sqrt(2)*1j * (d . e), so
-        # P = pi*A A^dagger = 2*pi * d d^dagger (see _ham_mono_core for the F_q).
+        # P = pi*A A^dagger = 2*pi * d d^dagger (see _ham_mono_core_classic for the F_q).
         dx = g2[n] - g0[n]
         dy = 1j * (g0[n] + g2[n])
         dz = g1[n] + 0j
@@ -2386,6 +2400,293 @@ def Ham_mosaic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
         P[n, 1, 1] = 2.0 * np.pi * (s / 3.0 + T3[1, 1])
         P[n, 0, 1] = 2.0 * np.pi * (T3[0, 1] + 1j * wl[2])
         P[n, 1, 0] = 2.0 * np.pi * (T3[0, 1] - 1j * wl[2])
+    return (P, S)
+
+
+# ---------------------------------------------------------------------------
+# The Hamiltonian family in closed form: K. R. Szymanski, J. Synchrotron Rad.
+# 33, 931 (2026); derivation, checks and the treatment of coincident levels in
+# docs/Hamiltonian_analytical.md. No eigensolver: the four excited levels are
+# the roots of the quartic of eq. (10), solved as in its Appendix A, and every
+# line comes as its symmetric tensor It (3x3) and its axial vector Gc, eqs.
+# (17)-(20) -- all that the 2x2 blocks and the mosaic average need. The lines
+# are those of the *_classic versions above to round-off, in the same order.
+#
+# Eq. (17) divides by w = prod(lambda_a - lambda_nu), 0/0 where two levels
+# coincide (B = 0 always, crossings in special geometries). Two exact additions
+# keep it finite: the closest pair of levels (and the other two when they are
+# neighbours as well) takes its half-distance rho from the matrix,
+# rho^2 = -det(lb - H)/R(lb), and its two lines from their sum and first moment,
+# which do not divide by rho. The one threshold, rho = 0 below a rounding unit of
+# the level scale, acts where every split gives the same spectrum, so the model
+# stays smooth for the minimizer. Three levels never come close
+# (p^2 + 12r >= (b^4 + Delta^4)/2), so the other denominators stay finite.
+# ---------------------------------------------------------------------------
+
+_FLOAT_EPS = np.finfo(float).eps
+
+
+@njit(cache=True)
+def _ham_det4(A):
+    """Determinant of a 4x4 complex matrix by Gaussian elimination with partial
+    pivoting (backward stable; np.linalg.det would call LAPACK). Overwrites A."""
+    det = 1.0 + 0.0j
+    for col in range(4):
+        piv = col
+        best = np.abs(A[col, col])
+        for r in range(col + 1, 4):
+            if np.abs(A[r, col]) > best:
+                best = np.abs(A[r, col])
+                piv = r
+        if best == 0.0:
+            return 0.0 + 0.0j
+        if piv != col:
+            for cc in range(4):
+                tmp = A[col, cc]
+                A[col, cc] = A[piv, cc]
+                A[piv, cc] = tmp
+            det = -det
+        det *= A[col, col]
+        for r in range(col + 1, 4):
+            fct = A[r, col] / A[col, col]
+            for cc in range(col + 1, 4):
+                A[r, cc] -= fct * A[col, cc]
+    return det
+
+
+@njit(cache=True)
+def _ham_single(CI, CG, lam, a, It, Gc, k):
+    """Line k from the isolated level lam[a], eq. (17): the numerators (CI, CG:
+    coefficients of lambda^0..3) at lam[a] over prod(lam[a] - lam[nu])."""
+    L = lam[a]
+    w = 1.0
+    for n in range(4):
+        if n != a:
+            w *= L - lam[n]
+    for i in range(3):
+        for j in range(3):
+            It[k, i, j] = (CI[0, i, j] + L * (CI[1, i, j] + L * (CI[2, i, j] + L * CI[3, i, j]))) / w
+        Gc[k, i] = -(CG[0, i] + L * (CG[1, i] + L * (CG[2, i] + L * CG[3, i]))) / w
+
+
+@njit(cache=True)
+def _ham_pair(CI, CG, lb, rho2, l1, l2, It, Gc, klo, khi):
+    """Lines klo, khi of the close levels lb -+ rho (l1, l2: the other two levels).
+
+    Eq. (17) for both lines together: their sum and rho*(difference) come from the
+    even and odd parts of the numerators about lb without dividing by rho, so they
+    stay exact at a coincidence (rho = 0: two equal halves)."""
+    rho = np.sqrt(rho2)
+    Re = (lb - l1) * (lb - l2) + rho2
+    Ro = 2.0 * lb - l1 - l2
+    den = Re * Re - rho2 * Ro * Ro
+    e2 = lb * lb + rho2
+    e3 = lb * (lb * lb + 3.0 * rho2)
+    o2c = 3.0 * lb * lb + rho2
+    half = 0.0
+    if rho > 0.0:
+        half = 0.5 / rho
+    for i in range(3):
+        for j in range(3):
+            Ne = CI[0, i, j] + CI[1, i, j] * lb + CI[2, i, j] * e2 + CI[3, i, j] * e3
+            No = CI[1, i, j] + 2.0 * CI[2, i, j] * lb + CI[3, i, j] * o2c
+            s = (No * Re - Ne * Ro) / den
+            m1 = (Ne * Re - rho2 * No * Ro) / den
+            It[klo, i, j] = 0.5 * s - half * m1
+            It[khi, i, j] = 0.5 * s + half * m1
+        Ne = CG[0, i] + CG[1, i] * lb + CG[2, i] * e2 + CG[3, i] * e3
+        No = CG[1, i] + 2.0 * CG[2, i] * lb + CG[3, i] * o2c
+        s = (No * Re - Ne * Ro) / den
+        m1 = (Ne * Re - rho2 * No * Ro) / den
+        Gc[klo, i] = -(0.5 * s - half * m1)
+        Gc[khi, i] = -(0.5 * s + half * m1)
+
+
+@njit(cache=True)
+def _ham_tensor_core(Q, Hhf, etto, phi, tet):
+    """The 8 lines of the Hamiltonian in closed form, without an eigensolver.
+
+    Returns It (8, 3, 3), the symmetric intensity tensor of each line, Gc (8, 3),
+    its axial (Faraday) vector with the program's sign (-G of the paper), and
+    S (8), the positions in mm/s -- in the principal axes of the EFG, the lines in
+    the order of _ham_mono_core_classic (ground level k // 4, the lower first;
+    excited level k % 4, ascending). Normalised as sum_k It[k] = 1: the thin
+    intensity for a field h is h.It[k].h, and the 2x2 block in (e1, e2) with the
+    beam k = e1 x e2 is [[e1.It.e1, e1.It.e2 + i k.Gc], [e1.It.e2 - i k.Gc, e2.It.e2]].
+    """
+    b = Hhf * gex * mun * c / E0_J              # excited and ground Zeeman, mm/s
+    bg = Hhf * ggr * mun * c / E0_J
+    # the excited levels in units of a power of two near max(|Q|, |b|): exact, and it
+    # keeps p^3 and Z^3, sixth powers of that scale, inside the float range
+    sc = np.abs(Q) if np.abs(Q) > np.abs(b) else np.abs(b)
+    sc = 2.0 ** np.floor(np.log2(sc)) if sc > 0.0 else 1.0
+    Q = Q / sc
+    b = b / sc
+    t = tet / 180 * np.pi
+    f = phi / 180 * np.pi
+    m = np.array([np.sin(t) * np.cos(f), np.sin(t) * np.sin(f), np.cos(t)])
+    Vd = np.array([-(1 - etto) / 2 * Q, -(1 + etto) / 2 * Q, Q])
+    Vm = Vd * m
+    V2m = Vd * Vm
+    sm = np.sum(m * Vm)
+    Sm = np.sum(m * V2m)
+    D2 = Q * Q * (3 + etto * etto) / 12
+    # eq. (10): the excited levels are the roots of lambda^4 + p lambda^2 + q lambda + r
+    p = -(5 * b * b + D2) / 2
+    q = -b * b * sm
+    r = (9 * b ** 4 + D2 * D2 + b * b * (6 * D2 - 4 * Sm)) / 16
+    It = np.zeros((8, 3, 3))
+    Gc = np.zeros((8, 3))
+    S = np.zeros(8)
+    if p == 0.0:                       # Q = H = 0: one line, the 8 tensors sum to 1
+        for k in range(8):
+            for i in range(3):
+                It[k, i, i] = 1.0 / 8
+        return It, Gc, S
+    # Appendix A; the clips only absorb rounding at a double root
+    Z = np.sqrt(p * p + 12 * r)
+    Y = (2 * p ** 3 + 27 * q * q - 72 * p * r) / (2 * Z ** 3)
+    if Y > 1.0:
+        Y = 1.0
+    if Y < -1.0:
+        Y = -1.0
+    X = -p / 6 + Z / 6 * np.cos(np.arccos(Y) / 3)
+    xi1 = np.sqrt(X)
+    xi2 = q / (4 * xi1)
+    xi3 = -(X + p / 2)
+    xi4 = np.sqrt(xi3 + xi2) if xi3 + xi2 > 0.0 else 0.0
+    xi5 = np.sqrt(xi3 - xi2) if xi3 - xi2 > 0.0 else 0.0
+    lam = np.sort(np.array([xi1 + xi5, xi1 - xi5, -xi1 + xi4, -xi1 - xi4]))
+    # close pairs: the closest neighbours, and the other two when they are
+    # neighbours as well; columns lo, hi, and the other two levels
+    g01 = lam[1] - lam[0]
+    g12 = lam[2] - lam[1]
+    g23 = lam[3] - lam[2]
+    if g12 < g01 and g12 <= g23:
+        pairs = np.array([[1, 2, 0, 3]])
+    else:
+        pairs = np.array([[0, 1, 2, 3], [2, 3, 0, 1]])
+    # the half-distance of each pair from the matrix of eq. (5) (the Haex of
+    # _ham_mono_core_classic, in the units above): rho^2 = -det(lb - H)/R(lb)
+    ct = np.cos(t)
+    st = np.sin(t)
+    eip = np.cos(f) - 1j * np.sin(f)
+    H = np.zeros((4, 4), dtype=np.complex128)
+    H[0, 0] = Q / 4 - 1.5 * b * ct
+    H[1, 1] = -Q / 4 - 0.5 * b * ct
+    H[2, 2] = -Q / 4 + 0.5 * b * ct
+    H[3, 3] = Q / 4 + 1.5 * b * ct
+    H[0, 1] = -np.sqrt(3) / 2 * b * st * eip
+    H[1, 2] = -b * st * eip
+    H[2, 3] = H[0, 1]
+    H[0, 2] = Q * etto / (4 * np.sqrt(3))
+    H[1, 3] = H[0, 2]
+    for i in range(4):
+        for j in range(i):
+            H[i, j] = np.conj(H[j, i])
+    Om = np.abs(lam[0]) if np.abs(lam[0]) > np.abs(lam[3]) else np.abs(lam[3])
+    lb = np.empty(len(pairs))
+    rho2 = np.empty(len(pairs))
+    for n in range(len(pairs)):
+        lo, hi, o1, o2 = pairs[n, 0], pairs[n, 1], pairs[n, 2], pairs[n, 3]
+        lb[n] = 0.5 * (lam[lo] + lam[hi])
+        A = -H.copy()
+        for i in range(4):
+            A[i, i] += lb[n]
+        rho2[n] = -_ham_det4(A).real / ((lb[n] - lam[o1]) * (lb[n] - lam[o2]))
+        if rho2[n] <= (_FLOAT_EPS * Om) ** 2:     # closer than float64 resolves: coincident
+            rho2[n] = 0.0
+    # the numerators of eqs. (17)-(20) by powers of lambda, per ground level beta
+    CI = np.empty((4, 3, 3))
+    CG = np.empty((4, 3))
+    for jb in range(2):
+        beta = 1.0 - 2.0 * jb
+        if bg > 0.0:                    # the lower ground level first, as eigh orders them
+            beta = -beta
+        u = Vm + 3 * b * beta * m
+        for i in range(3):
+            for j in range(3):
+                d = 1.0 if i == j else 0.0
+                CI[0, i, j] = (2 * b * beta * (d * Vd[i] * Vd[i] - u[i] * u[j])
+                               + d * ((3 * b * b + D2) * Vd[i] + 2 * b * beta * (Sm - 3 * D2))) / 32
+                CI[1, i, j] = (-4 * b * beta * (u[i] * m[j] + m[i] * u[j])
+                               + d * (-4 * b * beta * Vd[i] + 8 * b * beta * sm - 4 * (3 * b * b + D2))) / 32
+                CI[2, i, j] = (-8 * b * beta * m[i] * m[j] + d * (16 * b * beta - 4 * Vd[i])) / 32
+                CI[3, i, j] = d / 2
+            CG[0, i] = (beta * (4 * b * b + p) * Vm[i] + 3 * b * (b * b + p) * m[i] + b * V2m[i]) / 16
+            CG[1, i] = (4 * b * Vm[i] + 2 * beta * (4 * b * b + p) * m[i]) / 16
+            CG[2, i] = (2 * beta * Vm[i] + 10 * b * m[i]) / 16
+            CG[3, i] = beta * m[i] / 4
+        k0 = 4 * jb
+        for a in range(4):
+            S[k0 + a] = sc * lam[a] - beta * bg / 2
+        if len(pairs) == 1:                  # the middle pair; the outer levels alone
+            _ham_single(CI, CG, lam, 0, It, Gc, k0)
+            _ham_single(CI, CG, lam, 3, It, Gc, k0 + 3)
+        for n in range(len(pairs)):
+            lo, hi, o1, o2 = pairs[n, 0], pairs[n, 1], pairs[n, 2], pairs[n, 3]
+            _ham_pair(CI, CG, lb[n], rho2[n], lam[o1], lam[o2], It, Gc, k0 + lo, k0 + hi)
+            S[k0 + lo] = sc * (lb[n] - np.sqrt(rho2[n])) - beta * bg / 2
+            S[k0 + hi] = sc * (lb[n] + np.sqrt(rho2[n])) - beta * bg / 2
+    return It, Gc, S
+
+
+@njit(cache=True)
+def Ham_mosaic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
+    """Per-transition 2x2 cross-section matrices of the mosaic textured
+    Hamiltonian ('Hamiltonian'), the closed-form Ham_mosaic_classic: ``P[k]`` in
+    the (e1, e2) basis of _R0_rows and the positions ``S[k]`` (mm/s), averaged
+    over the ODF of the three order parameters (the block comment above
+    _R0_rows). ``(Atex, Am, Ah) = (1, 1, 1)`` is the single crystal, ``(0, 0, 0)``
+    the random powder, ``Ah = 0`` a fiber texture about the reference axis."""
+    It, Gc, S = _ham_tensor_core(Q, Hhf, etto, phi, tet)
+    R0 = _R0_rows(tetr, phir, alfak, cms)
+    # Lab reference (fiber) axis f: h = e1 for SMS, the beam k for CMS.
+    fl = np.zeros(3)
+    if cms:
+        fl[2] = 1.0
+    else:
+        fl[0] = 1.0
+    n0 = np.ascontiguousarray(R0[2] if cms else R0[0])   # same axis in EFG coords
+
+    # order parameters -> the four moments of the two ODF stages
+    c2 = (1.0 + 2.0 * Atex) / 3.0                # <cos^2 chi>
+    if c2 < 0.0:                                 # guard an out-of-range A
+        c2 = 0.0
+    c1 = Am * np.sqrt(c2)                        # <cos chi> = S1
+    r1 = Ah                                      # <cos alpha>
+    r2 = Ah * Ah                                 # <cos 2 alpha>
+    lam0 = 0.5 * (3.0 * c2 - 1.0)                # <d2_00> = <P2(cos chi)> = A
+    lam1 = 0.5 * (2.0 * c2 + c1 - 1.0)           # <d2_11>
+    lam2 = 0.25 * (1.0 + 2.0 * c1 + c2)          # <d2_22>
+
+    # l = 1 Cartesian moment matrix <R> = <W> R0 <Z> (for the axial/Faraday part)
+    AW = np.empty((3, 3))
+    AZ = np.empty((3, 3))
+    for i in range(3):
+        for j in range(3):
+            dij = 1.0 if i == j else 0.0
+            AW[i, j] = c1 * fl[i] * fl[j] + 0.5 * (1.0 + c1) * (dij - fl[i] * fl[j])
+            AZ[i, j] = n0[i] * n0[j] + r1 * (dij - n0[i] * n0[j])
+    Rm = AW @ R0 @ AZ
+
+    P = np.zeros((8, 2, 2), dtype=np.complex128)
+    for n in range(8):
+        # It = s/3 * 1 + T (isotropic + symmetric traceless), Gc the axial part
+        s = It[n, 0, 0] + It[n, 1, 1] + It[n, 2, 2]
+        T = np.empty((3, 3))
+        for i in range(3):
+            for j in range(3):
+                T[i, j] = It[n, i, j] - (s / 3.0 if i == j else 0.0)
+        wl = Rm @ np.ascontiguousarray(Gc[n])             # <R> Gc, in lab coords
+        T1 = _rank2_scale(T, n0, 1.0, r1, r2)             # azimuth stage (about n0, EFG)
+        T2 = R0 @ T1 @ np.ascontiguousarray(R0.T)         # to the lab frame
+        T3 = _rank2_scale(T2, fl, lam0, lam1, lam2)       # wobble stage (about f, lab)
+        # transverse 2x2 block of  s/3*I + T3 + 1j*(axial from wl)
+        P[n, 0, 0] = s / 3.0 + T3[0, 0]
+        P[n, 1, 1] = s / 3.0 + T3[1, 1]
+        P[n, 0, 1] = T3[0, 1] + 1j * wl[2]
+        P[n, 1, 0] = T3[0, 1] - 1j * wl[2]
     return (P, S)
 
 
@@ -2868,8 +3169,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 # one; verified to 3e-17 per transition). Kept only so a
                 # hand-written model file with the old name still evaluates; it
                 # is gone from the GUI dropdown and syncmoss.legacy rewrites it
-                # to 'Hamiltonian' on load. Remove this branch and Ham_poly in a
-                # later release.
+                # to 'Hamiltonian' on load. Its lines are those of 'Hamiltonian'
+                # at (0, 0, 0). Remove this branch in a later release.
                 I = abs(p[V])
                 delt = p[V+1] * MulCo
                 Q = p[V+2]
@@ -2879,7 +3180,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 eto = p[V+6]
                 tet = p[V+7]
                 phi = p[V+8]
-                Itmp, S = Ham_poly(Q, H, eto, phi, tet)
+                Pmat, S = Ham_mosaic(Q, H, eto, phi, tet, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, False)
+                Itmp = Pmat[:, 0, 0].real
                 I = Itmp * I
                 S = S * MulCo
                 S += delt
@@ -3097,8 +3399,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 # (A, Am, Ah) = (1, 1, 1). Kept only so a hand-written model
                 # file with the old name still evaluates; it is gone from the GUI
                 # dropdown and syncmoss.legacy rewrites it (plus its 11-parameter
-                # pre-alfak form) to 'Hamiltonian' on load. Remove this branch,
-                # Ham_mono_thick and Ham_mono_thick_CMS in a later release.
+                # pre-alfak form) to 'Hamiltonian' on load. Remove this branch in
+                # a later release.
                 I = abs(p[V])
                 delt = p[V + 1] * MulCo
                 Q = p[V + 2]
@@ -3114,11 +3416,10 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 # SMS (Mett != 1): (tetr, phir) is the radiation field h and
                 # alfak rotates the beam k about h. CMS (Mett == 1, unpolarized):
                 # (tetr, phir) is the beam k itself and alfak is redundant -- the
-                # half-trace readout (below) is basis-invariant. Same shared core.
-                if Mett == 1:
-                    Pmat, S = Ham_mono_thick_CMS(Q, H, eto, phi, tet, phir, tetr)
-                else:
-                    Pmat, S = Ham_mono_thick(Q, H, eto, phi, tet, phir, tetr, alfak)
+                # half-trace readout (below) is basis-invariant. The lines are
+                # those of 'Hamiltonian' at (1, 1, 1).
+                Pmat, S = Ham_mosaic(Q, H, eto, phi, tet, tetr, phir, alfak,
+                                     1.0, 1.0, 1.0, Mett == 1)
                 S = S * MulCo + delt
                 add = np.zeros((len(E), 2, 2), dtype=complex)
                 for k in range(0, 8):

@@ -25,13 +25,19 @@ Two things are pinned here.
     are checked against the models they replace (Hamilton_mc / Hamilton_pc /
     the textured Sextet).
 
+(3) THE CLOSED FORM. The family no longer diagonalises (Szymanski 2026, see
+    docs/Hamiltonian_analytical.md); section (6) checks its lines against first
+    principles and against the *_classic eigensolver versions -- also where two
+    excited levels coincide, which the paper's formulas cannot do -- and that it
+    stays smooth through those points.
+
 Pure NumPy/Numba path -- no Qt, no multiprocessing.
 """
 import numpy as np
 import pytest
 
 import syncmoss.models as m5
-from syncmoss.constants import c, E0_J, ggr, gex, mun
+from syncmoss.constants import c, E0_J, ggr, gex, mun, NAT_WIDTH
 
 _E = np.linspace(-11.0, 11.0, 160)
 
@@ -199,15 +205,17 @@ def _brute_force_blocks(Q, Hhf, eta, tet, phi, R0, fl, Atex, Am, Ah,
 # (1) the convention: code vs first principles
 # --------------------------------------------------------------------------
 def test_single_crystal_blocks_match_first_principles():
-    """Ham_mono_thick must equal the textbook blocks -- NOT their transpose.
+    """The single-crystal blocks (Ham_mosaic at (1, 1, 1)) must equal the textbook
+    blocks -- NOT their transpose.
 
-    Before the 2026-08-26 convention fix it equalled the transpose, which is the
+    Before the 2026-08-26 convention fix they equalled the transpose, which is the
     same spectrum for one homogeneous non-dispersive layer but the opposite
     Faraday polarity everywhere else.
     """
     R = _lab_axes(**_GEO)
     Pref, Sref = _textbook_blocks(0.37, 28.4, 0.43, 37.0, 64.0, R)
-    P, S = m5.Ham_mono_thick(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['phir'], _GEO['tetr'], _GEO['alfak'])
+    P, S = m5.Ham_mosaic(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['tetr'], _GEO['phir'], _GEO['alfak'],
+                         1.0, 1.0, 1.0, False)
     P, S = np.asarray(P), np.asarray(S)
     assert np.max(np.abs(S - Sref)) < 1e-12
     assert np.max(np.abs(P - Pref)) < 1e-12
@@ -218,16 +226,18 @@ def test_single_crystal_blocks_match_first_principles():
 def test_cms_blocks_match_first_principles():
     R = _lab_axes(_GEO['tetr'], _GEO['phir'], 0.0, cms=True)
     Pref, _ = _textbook_blocks(0.37, 28.4, 0.43, 37.0, 64.0, R)
-    P, _ = m5.Ham_mono_thick_CMS(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['phir'], _GEO['tetr'])
+    P, _ = m5.Ham_mosaic(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['tetr'], _GEO['phir'], _GEO['alfak'],
+                         1.0, 1.0, 1.0, True)
     assert np.max(np.abs(np.asarray(P) - Pref)) < 1e-12
 
 
 def test_thin_intensities_are_convention_independent():
     """The scalar SMS intensity is |amplitude|^2, so it is the SAME before and
-    after the convention fix -- it equals P[0,0] of the matrix form."""
+    after the convention fix -- it equals P[0,0] of the matrix form (checked on
+    Ham_mono_classic, the eigensolver version kept for reuse)."""
     R = _lab_axes(**_GEO)
     Pref, _ = _textbook_blocks(0.37, 28.4, 0.43, 37.0, 64.0, R)
-    I, _ = m5.Ham_mono(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['phir'], _GEO['tetr'])
+    I, _ = m5.Ham_mono_classic(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['phir'], _GEO['tetr'])
     assert np.allclose(np.asarray(I), Pref[:, 0, 0].real, rtol=0, atol=1e-12)
 
 
@@ -459,7 +469,7 @@ def test_closed_form_average_matches_brute_force_cms(Atex, Am, Ah):
 def test_powder_blocks_are_isotropic_and_match_ham_poly():
     P, _ = m5.Ham_mosaic(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['tetr'], _GEO['phir'],
                          _GEO['alfak'], 0.0, 0.0, 0.0, False)
-    I, _ = m5.Ham_poly(0.37, 28.4, 0.43, 64.0, 37.0)
+    I, _ = m5.Ham_poly_classic(0.37, 28.4, 0.43, 64.0, 37.0)
     P, I = np.asarray(P), np.asarray(I)
     assert np.allclose(I.sum(), 1.0, rtol=0, atol=1e-12)     # normalisation sum rule
     for k in range(8):
@@ -527,3 +537,170 @@ def test_line_position_markers_match_the_single_crystal():
                  ['Hamiltonian'], np.array([]), Met=-1)
     ref = pos_ac(np.array(base + _HAM12, float), ['Hamilton_mc'], np.array([]), Met=-1)
     assert np.allclose(np.asarray(got, float), np.asarray(ref, float), rtol=0, atol=1e-12)
+
+
+# --------------------------------------------------------------------------
+# (6) the closed form (Szymanski 2026) against the eigensolver
+# --------------------------------------------------------------------------
+_B_TO_b = gex * mun * c / E0_J          # the excited Zeeman scale b per tesla, mm/s
+
+
+def _tensors_ref(Q, Hhf, eta, phi, tet):
+    """First principles: M = (3/4) D D^dagger per line, = It + i [Gc]x."""
+    D, S = _dipoles(Q, Hhf, eta, tet, phi)
+    return np.array([0.75 * np.outer(d, d.conj()) for d in D]), S
+
+
+def _tensors(Q, Hhf, eta, phi, tet):
+    """The same M from the closed-form core."""
+    It, Gc, S = m5._ham_tensor_core(Q, Hhf, eta, phi, tet)
+    It, Gc = np.asarray(It), np.asarray(Gc)
+    E = np.zeros((8, 3, 3))
+    E[:, 0, 1], E[:, 1, 0] = Gc[:, 2], -Gc[:, 2]
+    E[:, 2, 0], E[:, 0, 2] = Gc[:, 1], -Gc[:, 1]
+    E[:, 1, 2], E[:, 2, 1] = Gc[:, 0], -Gc[:, 0]
+    return It + 1j * E, np.asarray(S)
+
+
+def _spectrum_error(Q, Hhf, eta, phi, tet):
+    """The 8 lines of M on natural-width Lorentzians -- every consumer (thin
+    intensities, 2x2 blocks, the mosaic average) is linear in M. Close lines
+    differ between methods only in how they share their intensity, which no
+    spectrum sees, so a spectrum compares them without a merging rule.
+    Returns (error / peak, worst position error in mm/s)."""
+    M, S = _tensors(Q, Hhf, eta, phi, tet)
+    assert np.all(np.isfinite(M)) and np.all(np.isfinite(S))
+    Mr, Sr = _tensors_ref(Q, Hhf, eta, phi, tet)
+    grid = np.linspace(Sr.min() - 1.0, Sr.max() + 1.0, 801)
+
+    def spectrum(M_, S_):
+        L = (NAT_WIDTH / 2 / np.pi) / ((grid[None, :] - S_[:, None]) ** 2 + (NAT_WIDTH / 2) ** 2)
+        return np.einsum('kx,kab->xab', L, M_)
+
+    ref = spectrum(Mr, Sr)
+    return (np.max(np.abs(spectrum(M, S) - ref)) / np.max(np.abs(ref)),
+            np.max(np.abs(np.sort(S) - np.sort(Sr))))
+
+
+def test_closed_form_lines_match_the_eigensolver_one_by_one():
+    """Generic geometries, line by line in the same order: the closed-form core
+    against first principles, and Ham_mosaic against Ham_mosaic_classic (the
+    eigensolver version), SMS and CMS, crystal and mosaic."""
+    rng = np.random.default_rng(2026)
+    for _ in range(100):
+        Q, H, eta = rng.uniform(-3, 3), rng.uniform(-60, 60), rng.uniform(0, 1)
+        phi, tet = rng.uniform(0, 360), rng.uniform(0, 180)
+        tetr, phir, alfak = rng.uniform(0, 180), rng.uniform(0, 360), rng.uniform(0, 360)
+        mosaic = (rng.uniform(-0.5, 1), rng.uniform(-1, 1), rng.uniform(0, 1))
+        M, S = _tensors(Q, H, eta, phi, tet)
+        Mr, Sr = _tensors_ref(Q, H, eta, phi, tet)
+        assert np.max(np.abs(S - Sr)) < 1e-12
+        assert np.max(np.abs(M - Mr)) < 1e-12
+        for order in ((1.0, 1.0, 1.0), mosaic):
+            for cms in (False, True):
+                args = (Q, H, eta, phi, tet, tetr, phir, alfak) + order + (cms,)
+                P, S = m5.Ham_mosaic(*args)
+                Pc, Sc = m5.Ham_mosaic_classic(*args)
+                assert np.max(np.abs(np.asarray(S) - np.asarray(Sc))) < 1e-12
+                assert np.max(np.abs(np.asarray(P) - np.asarray(Pc))) < 1e-12
+
+
+# the paper's curve (40): m along the second principal axis, field per mm/s of V_zz
+_ETA40 = 0.5
+_V40 = np.sqrt(72 / (13 * _ETA40 ** 2 + 30 * _ETA40 + 9))
+_B40 = np.sqrt(0.4 - _V40 ** 2 * (3 + _ETA40 ** 2) / 60) / _V40 / abs(_B_TO_b)
+
+# coincident and close excited levels: (Q, H, eta, phi, theta)
+_CLOSE_LEVELS = {
+    "B = 0, Kramers doublets": (0.8, 0.0, 0.35, 30.0, 40.0),
+    "B = 0, axial EFG": (0.8, 0.0, 0.0, 0.0, 0.0),
+    "Q = H = 0, one line": (0.0, 0.0, 0.0, 0.0, 0.0),
+    "theta 90, eta 0, 1 T: the +-3/2 pair splits as B^3": (0.6, 1.0, 0.0, 0.0, 90.0),
+    "the same, 0.01 T": (0.6, 0.01, 0.0, 0.0, 90.0),
+    "the same, 0.001 T": (0.6, 0.001, 0.0, 0.0, 90.0),
+    "the near-degenerate case of test_sms_theory": (0.31, 0.02, 0.0, 0.0, 90.0),
+    "1e-6 T, generic angles": (0.6, 1e-6, 0.3, 64.0, 37.0),
+    "theta 0, eta 0, at the crossing |b/V_zz| = 1/2": (0.6, 0.5 * 0.6 / abs(_B_TO_b), 0.0, 0.0, 0.0),
+    "the same, off by 1e-6": (0.6, 0.5 * 0.6 / abs(_B_TO_b) * (1 + 1e-6), 0.0, 0.0, 0.0),
+    "theta 0, eta 0, at the crossing |b/V_zz| = 1/4 (the middle pair)": (0.6, 0.25 * 0.6 / abs(_B_TO_b), 0.0, 0.0, 0.0),
+    "the paper's point s0: eta 1, theta 45, phi 90, b/V_zz = 1/3": (0.6, 0.6 / 3 / _B_TO_b, 1.0, 90.0, 45.0),
+    "the paper's curve (40), eta 0.5": (1.0, _B40, _ETA40, 90.0, 90.0),
+}
+
+
+@pytest.mark.parametrize("case", list(_CLOSE_LEVELS))
+def test_closed_form_is_exact_where_levels_coincide(case):
+    """Where two excited levels coincide or nearly do, the paper's formulas give
+    0/0: NaN, or intensities off by up to the whole line. With the pair formulas
+    every spectrum follows first principles to round-off, and every position."""
+    Q, H, eta, phi, tet = _CLOSE_LEVELS[case]
+    _, Sr = _dipoles(Q, H, eta, tet, phi)
+    assert np.min(np.diff(Sr[:4])) <= 0.05 * (Sr[3] - Sr[0]), "the case must have close levels"
+    err, dpos = _spectrum_error(Q, H, eta, phi, tet)
+    assert dpos < 1e-12
+    assert err < 1e-12
+
+
+def test_marker_positions_match_first_principles():
+    """models_positions keeps its own copy of the closed form, only up to the
+    levels: the 8 positions of first principles, line by line on generic sets.
+    Where two levels coincide they carry the rounding of the quartic's double
+    root, sqrt(eps) of the level scale -- the core removes it with the
+    determinant; a marker cannot show it."""
+    from syncmoss.models_positions import Ham_positions
+    rng = np.random.default_rng(7)
+    for _ in range(100):
+        Q, H, eta = rng.uniform(-3, 3), rng.uniform(-60, 60), rng.uniform(0, 1)
+        phi, tet = rng.uniform(0, 360), rng.uniform(0, 180)
+        _, Sr = _dipoles(Q, H, eta, tet, phi)
+        assert np.max(np.abs(np.asarray(Ham_positions(Q, H, eta, phi, tet)) - Sr)) < 1e-12
+    for case, (Q, H, eta, phi, tet) in _CLOSE_LEVELS.items():
+        _, Sr = _dipoles(Q, H, eta, tet, phi)
+        S = np.asarray(Ham_positions(Q, H, eta, phi, tet))
+        tol = 2 * np.sqrt(np.finfo(float).eps) * np.max(np.abs(Sr))
+        assert np.max(np.abs(np.sort(S) - np.sort(Sr))) <= tol, case
+
+
+@pytest.mark.parametrize("Q,eta,phi,tet,Bs", [
+    (0.6, 0.0, 0.0, 90.0, np.linspace(-2e-3, 2e-3, 41)),
+    (0.6, 0.0, 0.0, 0.0, 0.5 * 0.6 / abs(_B_TO_b) * (1 + np.linspace(-1e-9, 1e-9, 41))),
+    (1.0, _ETA40, 90.0, 90.0, _B40 * (1 + np.linspace(-1e-6, 1e-6, 41))),
+], ids=["through B = 0", "through a crossing", "through the curve (40)"])
+def test_closed_form_is_smooth_through_coincidences(Q, eta, phi, tet, Bs):
+    """Nothing in the closed form switches on a threshold: along a scan of B
+    through a coincidence the spectrum follows first principles to round-off at
+    every step -- what a finite-difference Jacobian needs."""
+    for B in Bs:
+        err, _ = _spectrum_error(Q, B, eta, phi, tet)
+        assert err < 1e-12, f"B = {B!r}"
+
+
+def test_closed_form_is_smooth_where_the_closest_pair_changes():
+    """The one discrete choice, which pair of levels is the closest, changes
+    where both choices are accurate: no step in the spectrum across it."""
+    Q, eta, phi, tet = 0.6, 0.3, 64.0, 37.0
+    Bs = np.linspace(1.36, 1.375, 61)
+    closest = {int(np.argmin(np.diff(_dipoles(Q, B, eta, tet, phi)[1][:4]))) for B in Bs}
+    assert len(closest) == 2, "the scan must cross a change of the closest pair"
+    for B in Bs:
+        err, _ = _spectrum_error(Q, B, eta, phi, tet)
+        assert err < 1e-12, f"B = {B!r}"
+
+
+@pytest.mark.parametrize("params,mett", [
+    (_HAM12 + [1.0, 1.0, 1.0], 0), (_HAM12 + [1.0, 1.0, 1.0], 1),
+    (_HAM12 + [0.6, 0.3, 0.4], 0), (_HAM12 + [0.6, 0.3, 0.4], 1),
+    (_HAM12 + [0.0, 0.0, 0.0], 0),
+    ([8.0, 0.0, 0.8, 0.0, 0.098, 0.12, 0.35, 40.0, 30.0, 54.0, 71.0, 23.0, 1.0, 1.0, 1.0], 0),
+    ([8.0, 0.0, 0.6, 0.5 * 0.6 / abs(_B_TO_b), 0.098, 0.12, 0.0, 0.0, 0.0, 54.0, 71.0, 23.0,
+      1.0, 1.0, 1.0], 0),
+], ids=["crystal SMS", "crystal CMS", "mosaic SMS", "mosaic CMS", "powder SMS", "B = 0 SMS",
+        "at a crossing SMS"])
+def test_closed_form_spectra_equal_the_eigensolver_ones(params, mett, monkeypatch):
+    """Thick 'Hamiltonian' spectra through TImod are those of the eigensolver
+    version Ham_mosaic_classic to round-off."""
+    new = _run(['Hamiltonian'], params, mett)
+    monkeypatch.setattr(m5, 'Ham_mosaic', m5.Ham_mosaic_classic)
+    old = _run(['Hamiltonian'], params, mett)
+    assert 1 - old.min() > 0.1, "the reference case must be genuinely thick"
+    assert np.allclose(new, old, rtol=0, atol=1e-12)

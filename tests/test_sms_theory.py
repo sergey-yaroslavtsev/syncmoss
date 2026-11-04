@@ -3,8 +3,8 @@
 Three groups:
 
 * the physics -- the hyperfine Hamiltonian of ``sms_theory`` against the one
-  ``models.Ham_mono`` ('Hamiltonian' component) uses, which is the validated
-  implementation; plus the module's own selftest suite;
+  the 'Hamiltonian' component (``models.Ham_mosaic``) uses, which is the
+  validated implementation; plus the module's own selftest suite;
 * the INS encoding -- round-trips, the legacy form still being recognised as
   legacy, and the shape/tail/centroid helpers agreeing with quadrature;
 * the integration -- models.TImod, models.limits, models_positions.pos_ac and
@@ -40,15 +40,15 @@ _LEGACY_X0, _LEGACY_MULCO = 0.00433441914897599, 3.1552701198151407
 # ======================================================================
 
 def _sms_lines(Q_mmps, Hhf, tet_deg, phi_deg, tetr_deg, phir_deg, eta=0.0):
-    """Line positions [mm/s] and intensities from sms_theory, in Ham_mono terms.
+    """Line positions [mm/s] and intensities from sms_theory, in the model's terms.
 
-    models.Ham_mono  H_e = (Q/12)[3Iz^2 - I(I+1) + eta(Ix^2-Iy^2)] - gex mun H (m.I)
+    the model        H_e = (Q/12)[3Iz^2 - I(I+1) + eta(Ix^2-Iy^2)] - gex mun H (m.I)
     sms_theory       H_e = (dEQ/6)[3Iz^2 - I(I+1)]                 - gex MU_N B (m.I)
     so dEQ = Q/2: sms_theory's dEQ is the quadrupole SPLITTING (the |+-3/2> to
     |+-1/2> separation), which is what the doublet line spacing measures.
 
-    Intensities: Ham_mono returns pi*|<e|I.h|g>|^2, sms_theory carries the factor
-    3/(2(2Ig+1)) = 3/4 on the amplitude, so I[k] == (3/4)|W(b)|^2.
+    Intensities: the model's thin intensity is pi*|<e|I.h|g>|^2, sms_theory
+    carries the factor 3/(2(2Ig+1)) = 3/4 on the amplitude, so I[k] == (3/4)|W(b)|^2.
     """
     t, p = np.deg2rad(tet_deg), np.deg2rad(phi_deg)
     m_hat = np.array([np.sin(t) * np.cos(p), np.sin(t) * np.sin(p), np.cos(t)])
@@ -61,12 +61,23 @@ def _sms_lines(Q_mmps, Hhf, tet_deg, phi_deg, tetr_deg, phir_deg, eta=0.0):
     return (site.dE / MMPS_TO_NEV).ravel(), (0.75 * np.abs(W) ** 2).ravel()
 
 
-def _merge_degenerate(S, I, tol=1e-9):
+def _model_lines(Q, H, eta, phi, tet, phir, tetr):
+    """Thin SMS intensities and positions of the 'Hamiltonian' model for the
+    radiation field h at (tetr, phir): P[k][0, 0] of the single crystal."""
+    P, S = m5.Ham_mosaic(Q, H, eta, phi, tet, tetr, phir, 0.0, 1.0, 1.0, 1.0, False)
+    return np.asarray(P)[:, 0, 0].real, np.asarray(S)
+
+
+def _merge_degenerate(S, I, tol=1e-6):
     """Sort by position and merge coincident lines.
 
     Inside a degenerate multiplet the eigenvectors are arbitrary, so only the
     summed intensity of a group is physical -- and that is all the transmission
-    integral can see, since the lines coincide.
+    integral can see, since the lines coincide. The same holds for lines closer
+    than ``tol`` (1e-5 of the natural width): no spectrum resolves them, and the
+    model's closed form fixes their split only to about
+    eps * (level scale) / (distance) -- ~1e-11 for the 1.55e-7 mm/s pair of the
+    near-degenerate case below (docs/Hamiltonian_analytical.md, section 8.2).
     """
     o = np.argsort(np.asarray(S, float))
     S, I = np.asarray(S, float)[o], np.asarray(I, float)[o]
@@ -91,8 +102,8 @@ def _merge_degenerate(S, I, tol=1e-9):
     (0.31, 0.02, 90, 0, 90, 90),               # near-degenerate small field
 ])
 def test_hyperfine_site_matches_hamiltonian_model(Q, H, tet, phi, tetr, phir):
-    """sms_theory's site == models.Ham_mono, to machine precision."""
-    Im, Sm = m5.Ham_mono(Q, H, 0.0, phi, tet, phir, tetr)
+    """sms_theory's site == the 'Hamiltonian' model, to machine precision."""
+    Im, Sm = _model_lines(Q, H, 0.0, phi, tet, phir, tetr)
     Ss, Is = _sms_lines(Q, H, tet, phi, tetr, phir)
     Sm, Im = _merge_degenerate(Sm, Im)
     Ss, Is = _merge_degenerate(Ss, Is)
@@ -129,14 +140,14 @@ def test_sextet_reproduces_syncmoss_line_positions():
     (-0.9, 17.0, 71, 13, 29, 47, 1.00),        # eta at its maximum
 ])
 def test_efg_asymmetry_matches_hamiltonian_model(Q, H, tet, phi, tetr, phir, eta):
-    """The EFG asymmetry term must agree with models.Ham_mono's too.
+    """The EFG asymmetry term must agree with the model's too.
 
     eta = (V_xx - V_yy)/V_zz is a material constant of the crystal, not a
     per-spectrum knob, and it is zero for an ideal FeBO3 site (symmetry -3). It
     is implemented so that assumption can be TESTED, which means the term itself
     has to be right.
     """
-    Im, Sm = m5.Ham_mono(Q, H, eta, phi, tet, phir, tetr)
+    Im, Sm = _model_lines(Q, H, eta, phi, tet, phir, tetr)
     Ss, Is = _sms_lines(Q, H, tet, phi, tetr, phir, eta=eta)
     Sm, Im = _merge_degenerate(Sm, Im)
     Ss, Is = _merge_degenerate(Ss, Is)
