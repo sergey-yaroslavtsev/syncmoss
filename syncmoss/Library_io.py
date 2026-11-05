@@ -49,7 +49,6 @@ MODEL_PARAMETER_NAMES = {
 	'Variables': [f'V{i + 1}' for i in range(numco)],
 	'Nbaseline': ['Ns', 'Os', 'c²s', 'lins', 'Nnr', 'Onr', 'c²nr', 'linnr'],
 	'Expression': ['Expression'],
-	'Average_H': ['T', 'δ, mm/s', 'ε, mm/s', 'Hin, T', 'L, mm/s', 'G, mm/s', 'Hex, T', 'K', 'J', 'θ, °', 'N'],
 	'Distr': ['par', 'L', 'R', 'Num', 'Probability density function'],
 	'Corr': ['par', 'Dependency function'],
 	'Recon': ['par', 'L', 'R', 'Num', 'D_dif', 'D_dif2', 'weights'],

@@ -1742,12 +1742,6 @@ class ParametersTable(QWidget):
             lowers = ['']
             uppers = ['']
             fixes = [True]
-        elif model == 'Average_H':
-            names = ['T', 'δ, mm/s', 'ε, mm/s', 'Hin, T', 'L, mm/s', 'G, mm/s', 'Hex, T', 'K', 'J', 'θ, °', 'N']
-            values = ['1.0', '0.0', '0.0', '15.0', _NAT, '0.1', '5', '1', '-1', '90', '100']
-            lowers = ['0', '', '', '', _NAT, '0', '0', '0', '0', '0', '1']
-            uppers = ['', '', '', '', '', '', '', '', '', '90', '']
-            fixes = [False, False, False, False, True, False, False, False, False, False, True]
         elif model == 'Distr':
             names = ['par', 'L', 'R', 'Num', 'Probability density function']
             values = ['1', '0', '1', '20', 'X']  # par depends on previous

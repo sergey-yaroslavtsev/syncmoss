@@ -15,16 +15,13 @@ from syncmoss.model_io import mod_len_def, _remap_reference_text
 # uniaxial texture parameter A. 'Hamiltonian' keeps its crystal angles + alpha_k
 # and carries three mosaic order parameters (A, Am, Ah); it supersedes
 # Hamilton_mc/_pc, whose counts must keep working for old files. Singlet is
-# isotropic (no angles/texture); Sextet(rough)/Average_H had no polarized twin
-# and keep their counts.
+# isotropic (no angles/texture).
 EXPECTED_PARAM_COUNTS = {
     "Singlet": 4,
     "Doublet": 9,
     "Sextet": 14,
-    "Sextet(rough)": 14,
     "MDGD": 17,
     "Relax_2S": 14,
-    "Average_H": 11,
     "Relax_MS": 11,
     "ASM": 15,
     "SCDW": 27,

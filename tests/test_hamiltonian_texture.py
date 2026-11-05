@@ -27,7 +27,8 @@ Two things are pinned here.
 
 (3) THE CLOSED FORM. The family no longer diagonalises (Szymanski 2026, see
     docs/Hamiltonian_analytical.md); section (6) checks its lines against first
-    principles and against the *_classic eigensolver versions -- also where two
+    principles and against the *_classic eigensolver versions (models_removed)
+    -- also where two
     excited levels coincide, which the paper's formulas cannot do -- and that it
     stays smooth through those points.
 
@@ -37,6 +38,7 @@ import numpy as np
 import pytest
 
 import syncmoss.models as m5
+import syncmoss.models_removed as mr
 from syncmoss.constants import c, E0_J, ggr, gex, mun, NAT_WIDTH
 
 _E = np.linspace(-11.0, 11.0, 160)
@@ -237,7 +239,7 @@ def test_thin_intensities_are_convention_independent():
     Ham_mono_classic, the eigensolver version kept for reuse)."""
     R = _lab_axes(**_GEO)
     Pref, _ = _textbook_blocks(0.37, 28.4, 0.43, 37.0, 64.0, R)
-    I, _ = m5.Ham_mono_classic(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['phir'], _GEO['tetr'])
+    I, _ = mr.Ham_mono_classic(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['phir'], _GEO['tetr'])
     assert np.allclose(np.asarray(I), Pref[:, 0, 0].real, rtol=0, atol=1e-12)
 
 
@@ -469,7 +471,7 @@ def test_closed_form_average_matches_brute_force_cms(Atex, Am, Ah):
 def test_powder_blocks_are_isotropic_and_match_ham_poly():
     P, _ = m5.Ham_mosaic(0.37, 28.4, 0.43, 64.0, 37.0, _GEO['tetr'], _GEO['phir'],
                          _GEO['alfak'], 0.0, 0.0, 0.0, False)
-    I, _ = m5.Ham_poly_classic(0.37, 28.4, 0.43, 64.0, 37.0)
+    I, _ = mr.Ham_poly_classic(0.37, 28.4, 0.43, 64.0, 37.0)
     P, I = np.asarray(P), np.asarray(I)
     assert np.allclose(I.sum(), 1.0, rtol=0, atol=1e-12)     # normalisation sum rule
     for k in range(8):
@@ -600,7 +602,7 @@ def test_closed_form_lines_match_the_eigensolver_one_by_one():
             for cms in (False, True):
                 args = (Q, H, eta, phi, tet, tetr, phir, alfak) + order + (cms,)
                 P, S = m5.Ham_mosaic(*args)
-                Pc, Sc = m5.Ham_mosaic_classic(*args)
+                Pc, Sc = mr.Ham_mosaic_classic(*args)
                 assert np.max(np.abs(np.asarray(S) - np.asarray(Sc))) < 1e-12
                 assert np.max(np.abs(np.asarray(P) - np.asarray(Pc))) < 1e-12
 
@@ -700,7 +702,7 @@ def test_closed_form_spectra_equal_the_eigensolver_ones(params, mett, monkeypatc
     """Thick 'Hamiltonian' spectra through TImod are those of the eigensolver
     version Ham_mosaic_classic to round-off."""
     new = _run(['Hamiltonian'], params, mett)
-    monkeypatch.setattr(m5, 'Ham_mosaic', m5.Ham_mosaic_classic)
+    monkeypatch.setattr(m5, 'Ham_mosaic', mr.Ham_mosaic_classic)
     old = _run(['Hamiltonian'], params, mett)
     assert 1 - old.min() > 0.1, "the reference case must be genuinely thick"
     assert np.allclose(new, old, rtol=0, atol=1e-12)
