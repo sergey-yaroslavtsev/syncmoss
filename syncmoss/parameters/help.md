@@ -121,7 +121,13 @@ all; `Recon` refused.
 
 ### 7.5 The calibration file
 
-First line `# <method> <n1> <n2>`: `sin` or `lin` folding, raw-channel range.
+First line `# <method> <n1> <n2> <δ>`: `sin` or `lin` folding, raw-channel range,
+fold offset δ (7.9).
+
+The velocity axis is the **transducer velocity**, each point at its channel's
+average velocity — what the calibration writes and a laser measures; the
+channel average and Δθ work from it. Calibrate with the Δθ and the channel
+average you fit with.
 
 *Calibrate* menu: *Start calibration* careful it also affects the centroid of the instrumental function for SMS; what its final fit adds to α-Fe:
 *Impurity sextet* ON/OFF and *Contain Be* / *Contain KB* / *No impurity from
@@ -155,6 +161,8 @@ channel (Linux, `bliss` installed).
 
 *Supp → Average model over each channel* (ON by default): every point is the
 model averaged over the velocities the drive runs through while it is counted.
+A folded point is two channels δ of a channel apart, averaged each over its own
+window (δ: from the calibration, `#@Fold δ` in a `.dat`; none means 0).
 Find the instrumental function and calibrate with the setting you fit with.
 
 ## 8. Exclusion regions
@@ -163,7 +171,8 @@ Find the instrumental function and calibrate with the setting you fit with.
 **Pick on plot** and click both ends (**Esc** cancels). Excluded points are not
 fitted. Off at every start; a change voids the fit on screen. For good:
 *Change spectrum(a) → Save spectrum without excluded points* (their counts
-become `nan`; the velocities stay).
+become `nan`; the velocities stay). A result's `_result_model.mdl` keeps its
+regions: *Load model* asks whether to apply them.
 
 ## 9. Errors, χ² and the correlation matrix
 

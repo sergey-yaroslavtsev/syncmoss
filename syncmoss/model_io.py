@@ -16,6 +16,7 @@ import os
 import numpy as np
 import re
 from PySide6.QtWidgets import QFileDialog, QMessageBox
+from syncmoss import exclusion_regions
 from syncmoss.constants import (numco, number_of_baseline_parameters, mdl_color_names,
                                 contrast_text_color, model_colors)
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
@@ -123,7 +124,32 @@ def load_model(main_window):
         main_window.set_status("Selection was canceled", "orange")
         return
 
-    _load_model_from_path_impl(main_window, file_path)
+    if _load_model_from_path_impl(main_window, file_path):
+        offer_exclusion_regions(main_window, file_path)
+
+
+def offer_exclusion_regions(main_window, file_path):
+    """After *Load model*: the exclusion regions a fit result's model carries
+    (exclusion_regions.model_line) are offered. No changes nothing; Yes makes
+    them the regions in use (PhysicsApp.apply_exclusion_regions_from)."""
+    name = os.path.basename(file_path)
+    try:
+        regions = exclusion_regions.read_model_file(file_path)
+    except (OSError, ValueError) as e:
+        main_window.set_status(f"Model loaded; its exclusion regions were not read: {e}", "orange")
+        return
+    if regions and ask_apply_exclusion_regions(main_window, regions):
+        main_window.apply_exclusion_regions_from(regions, name)
+
+
+def ask_apply_exclusion_regions(main_window, regions):
+    """Yes/No: apply the exclusion regions saved with the model just loaded?"""
+    reply = QMessageBox.question(
+        main_window, 'Exclusion regions',
+        f"Apply the exclusion regions saved with this model?\n{exclusion_regions.format_regions(regions)}",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.Yes)
+    return reply == QMessageBox.StandardButton.Yes
 
 
 def append_model_via_dialog(main_window, insert_row):
@@ -305,7 +331,7 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
             appended = len(active_src_indices)
             main_window.set_status(
                 f"Added {appended} submodel(s) from {os.path.basename(file_path)}", "green")
-            return
+            return True
 
         # Clear existing models by setting them to None (instead of deleting to preserve color order)
         for i in range(1, len(main_window.params_table.row_widgets)):  # Skip baseline
@@ -420,9 +446,11 @@ def _load_model_from_path_impl(main_window, file_path, insert_row=None):
         # textChanged, so re-draw the grey frames once the whole table is in.
         main_window.params_table.update_distr_corr_highlights()
         main_window.set_status("Model loaded successfully", "green")
+        return True
 
     except Exception as e:
         main_window.set_status(f"Could not load model: {str(e)}", "red")
+        return False
 
 
 def model_file_rows(main_window):
@@ -528,8 +556,9 @@ def fitted_model_rows(model_rows, parameters, recon_weights=(), keep_independent
     return model_names, colors, fitted_rows
 
 
-def _write_model_file(main_window, file_path, model_rows, comment=None, metadata=None):
-    """Write *model_rows* (see :func:`model_file_rows`) as the .mdl *file_path*.
+def _write_model_file(main_window, file_path, model_rows, comment=None, metadata=None, exclusion=()):
+    """Write *model_rows* (see :func:`model_file_rows`) as the .mdl *file_path*;
+    *exclusion*, a fit result's exclusion regions (:func:`_write_model_lines`).
 
     Returns True when the file was written, False when that failed.
     """
@@ -547,7 +576,7 @@ def _write_model_file(main_window, file_path, model_rows, comment=None, metadata
                 for line in str(comment).splitlines():
                     f.write(f"#@Comment {line}\n")
 
-            _write_model_lines(f, model_rows)
+            _write_model_lines(f, model_rows, exclusion)
 
         main_window.set_status("Model saved successfully", "green")
         return True
@@ -557,9 +586,13 @@ def _write_model_file(main_window, file_path, model_rows, comment=None, metadata
         return False
 
 
-def _write_model_lines(f, model_rows):
-    """Model names (first row), colors (second row), then one line of
+def _write_model_lines(f, model_rows, exclusion=()):
+    """The exclusion regions a fit result's model carries, when there are any
+    (exclusion_regions.model_line: a '#' line, which the model reader skips);
+    then model names (first row), colors (second row), then one line of
     parameter data per kept row."""
+    if exclusion:
+        f.write(exclusion_regions.model_line(exclusion) + '\n')
     model_names, colors, rows = model_rows
     f.write('\t'.join(model_names) + '\n')
     f.write('\t'.join(colors) + '\n')
@@ -567,12 +600,13 @@ def _write_model_lines(f, model_rows):
         f.write('\t'.join(text for field in row_data for text in field) + '\n')
 
 
-def write_result_model(file_path, model_rows):
+def write_result_model(file_path, model_rows, exclusion=()):
     """Write a fit result's model (:func:`fitted_model_rows`) to *file_path*
-    without asking or reporting -- a sequence writes one for every spectrum.
+    without asking or reporting -- a sequence writes one for every spectrum --
+    with the exclusion regions its fit left out (*exclusion*).
     Raises OSError when it cannot."""
     with open(file_path, 'w', encoding='utf-8') as f:
-        _write_model_lines(f, model_rows)
+        _write_model_lines(f, model_rows, exclusion)
 
 
 def _save_model_to_file(main_window, file_path, comment=None, metadata=None):
@@ -671,14 +705,15 @@ def save_model(main_window):
     return _save_model_to_file(main_window, file_path)
 
 
-def save_result_model(main_window, file_path, model_rows):
-    """Write a fit result's model (:func:`fitted_model_rows`) to *file_path*.
+def save_result_model(main_window, file_path, model_rows, exclusion=()):
+    """Write a fit result's model (:func:`fitted_model_rows`) to *file_path*,
+    with the exclusion regions its fit left out (*exclusion*).
 
     Asks before overwriting, like "Save model". True when the file was written.
     """
     if not _confirm_overwrite(main_window, file_path):
         return False
-    return _write_model_file(main_window, file_path, model_rows)
+    return _write_model_file(main_window, file_path, model_rows, exclusion=exclusion)
 
 
 def save_model_as(main_window):

@@ -19,6 +19,12 @@ import numpy as np
 FILE_SUFFIX = '_exclusion.txt'
 FILE_HEADER = '# SYNCmoss exclusion regions, velocity in mm/s'
 
+# A fit result's model (<base>_result_model.mdl) carries the regions its fit
+# left out, on a line of their own: model_line writes it, read_model_file reads
+# it. The model reader skips every line starting with '#', so a model with this
+# line loads as before, in versions without it too.
+MODEL_TAG = '#@Exclusion regions'
+
 
 def normalize(pairs):
     """The regions of *pairs* (each in either order): sorted, overlapping or
@@ -143,3 +149,20 @@ def read_file(path):
     with open(path, 'r', encoding='utf-8') as f:
         lines = [line.strip() for line in f]
     return parse('; '.join(line for line in lines if line and not line.startswith('#')))
+
+
+def model_line(regions):
+    """The line of a model file that carries *regions* (read_model_file reads it)."""
+    return f'{MODEL_TAG} {format_regions(regions)}'
+
+
+def read_model_file(path):
+    """The regions a model file carries (model_line); () when it carries none.
+    Raises ValueError for a line that does not parse (OSError when the file
+    cannot be read)."""
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(MODEL_TAG):
+                return parse(line[len(MODEL_TAG):])
+    return ()

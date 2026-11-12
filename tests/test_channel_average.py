@@ -30,7 +30,8 @@ from scipy.interpolate import CubicSpline
 import syncmoss.models as m5
 import syncmoss.sms_theory as smst
 from syncmoss import instrumental_io as iio
-from syncmoss.Calibration import MulCoCMS, _fold_sinusoidal, _fold_triangular, _raw_drive
+from syncmoss.Calibration import (MulCoCMS, _fold_offset, _fold_sinusoidal, _fold_triangular, _raw_drive,
+                                  _write_calibration_dat)
 from syncmoss.constants import NAT_WIDTH, number_of_baseline_parameters as NB
 
 from conftest import FROZEN_PARAMETERS, SerialPool
@@ -101,6 +102,20 @@ def _drive(kind, V0):
     else:
         moments = _V_C + V0 * np.cos(np.pi * t / _POINTS)
     return moments.mean(axis=1), moments
+
+
+def _visits(kind, V0, fold):
+    """A folded half period whose two visits to every point are *fold*
+    channels apart: the drive's velocity at _TIMES moments of each visit's
+    channel (points x 2 visits x _TIMES), and the velocity written for each
+    point -- the mean of its two channels' time averages."""
+    t = (np.arange(_POINTS)[:, None, None] + np.array([-0.5, 0.5])[None, :, None] * fold
+         + (np.arange(_TIMES) + 0.5)[None, None, :] / _TIMES)
+    if kind == "triangular":
+        moments = _V_C + V0 - 2 * V0 / _POINTS * t
+    else:
+        moments = _V_C + V0 * np.cos(np.pi * t / _POINTS)
+    return moments.mean(axis=(1, 2)), moments
 
 
 # --- the drive and its channel widths -------------------------------------------------
@@ -309,29 +324,149 @@ def _rays(dtheta):
     return np.asarray(y), np.asarray(w)
 
 
+# the fold offset of the repository's SMS alpha-Fe spectrum (tests/data), as
+# its calibration measures it: the two visits summed into each point 0.406 of a
+# channel apart
+_FOLD = 0.406
+
+
+@pytest.mark.parametrize("fold", [0.0, _FOLD])
 @pytest.mark.parametrize("name, kind, dtheta", [
     ("CMS", "triangular", 0.0), ("CMS", "sine", 0.0), ("CMS", "triangular", _DTHETA), ("CMS", "sine", _DTHETA),
     ("SMS Gaussians", "triangular", 0.0), ("SMS Gaussians", "sine", 0.0),
     ("SMS theory", "triangular", 0.0), ("SMS theory", "sine", 0.0)])
-def test_the_average_follows_the_brute_force(name, kind, dtheta):
+def test_the_average_follows_the_brute_force(name, kind, dtheta, fold):
     """Brute force: the exact spectrum of the photons each ray takes from the
-    drive's velocity at every moment of the channel (the transducer's velocity,
-    the rays from where it is at rest), averaged over the channel and the rays.
-    TI with the channel average -- its widths from the drive fitted to the axis
-    -- is as close to it as TI without is to the exact spectrum at the written
-    velocities: the average adds no error of its own; and what it changes is
-    more than 10 times that (24 to 1300)."""
+    drive's velocity at every moment of the two channels summed into a point
+    -- the drive's two visits, *fold* channels apart -- (the transducer's
+    velocity, the rays from where it is at rest), averaged over both channels
+    and the rays. TI with the channel average -- the two windows of every point
+    from the drive fitted to the axis and the fold offset -- is as close to it
+    as TI without is to the exact spectrum at the written velocities: the
+    average adds no error of its own; and what it changes is more than 10
+    times that (24 to 1900). With the visits apart, one window at the point's
+    velocity (the fold offset taken as 0) misses the brute force by more than
+    5 times that error (11 to 590)."""
     C = _exact(name)
-    x, moments = _drive(kind, 12.0)                # steps up to 0.15 mm/s: wider than a natural line
+    x, moments = _visits(kind, 12.0, fold)         # steps up to 0.15 mm/s: wider than a natural line
     y, w = _rays(dtheta)
     point = C(_V_C + (x[:, None] - _V_C) * (1 - y[None, :])) @ w
-    brute = (C(_V_C + (moments[:, :, None] - _V_C) * (1 - y[None, None, :])) @ w).mean(axis=1)
+    every = moments.reshape(len(x), -1)
+    brute = (C(_V_C + (every[:, :, None] - _V_C) * (1 - y[None, None, :])) @ w).mean(axis=1)
     p = _singlets(_LINES)
     model = ['Singlet'] * len(_LINES)
     plain_error = np.abs(_ti(x, p, model, _method(name, x, dtheta, averaged=False), _JN) - point).max()
-    error = np.abs(_ti(x, p, model, _method(name, x, dtheta), _JN) - brute).max()
+    error = np.abs(_ti(x, p, model, _method(name, x, dtheta, fold_offset=fold), _JN) - brute).max()
     assert error < 1.25 * plain_error
     assert np.abs(brute - point).max() > 10 * error
+    if fold:
+        one_window = np.abs(_ti(x, p, model, _method(name, x, dtheta), _JN) - brute).max()
+        assert one_window > 5 * error
+
+
+# --- the fold: two windows per point --------------------------------------------------
+
+@pytest.mark.parametrize("phase, expected", [(0.0, 0.0), (0.3, 0.3), (37.5, 0.5), (200.25, 0.25), (511.0, 0.0)])
+def test_a_sine_fold_s_offset_and_the_windows_on_its_visits(phase, expected):
+    """The calibration's fold of a raw sine sweep pairs whole channels: the two
+    visits summed into a point are as far apart as the drive's phase is from a
+    channel boundary, 0 to 1/2 of a channel -- what _fold_offset measures (to
+    1e-7: the visits' difference over the width is the offset to second order
+    in a channel's phase step). From the folded axis and that offset alone,
+    channel_windows puts each window on its visit: centre and width. Offset 0:
+    both windows the point's own."""
+    p = [13.48, np.pi / _N_CH * phase, 0.69]
+    v = _sin_cal(p)
+    fold = _fold_offset(v, 0, [None, None, p[2]])
+    assert fold == pytest.approx(expected, abs=1e-6)
+    folded, _, _, difference, _, _ = _fold_sinusoidal(v, v, v, p[2])
+    drive = m5.fit_drive(folded)
+    shifts, widths = m5.channel_windows(folded, drive, fold)
+    order = np.argsort(folded + shifts, axis=0)
+    visits = np.sort(np.stack((folded - difference / 2, folded + difference / 2)), axis=0)
+    step = 2 * p[0] * np.sin(np.pi / _N_CH)
+    assert np.abs(np.take_along_axis(folded + shifts, order, axis=0) - visits).max() < 1e-4 * step
+    assert np.abs(np.take_along_axis(widths, order, axis=0) - _sine_widths(p, visits)).max() < 1e-4 * step
+    shifts, widths = m5.channel_windows(folded, drive, 0.0)
+    assert not shifts.any() and np.array_equal(widths, np.stack([m5.channel_widths(folded, drive)] * 2))
+
+
+@pytest.mark.parametrize("phase, expected", [(0.0, 0.0), (0.5, 0.5), (2.25, 0.25)])
+def test_a_triangular_fold_s_offset_and_its_windows(phase, expected):
+    """Two ramps a fraction of a channel out of step: the visits that far
+    apart, whatever the one pair at the turning point (two channels of one
+    ramp, a whole channel apart); every window one step wide, half the offset
+    in steps from the point."""
+    p = [10.0, 10.0 - 20.0 / 512 * phase, 20.0 / 512]
+    v = _lin_cal(p)
+    fold = _fold_offset(v, 1, p)
+    assert fold == pytest.approx(expected, abs=1e-9)
+    folded = _fold_triangular(v, v, v, p)[0]
+    shifts, widths = m5.channel_windows(folded, m5.fit_drive(folded), fold)
+    np.testing.assert_allclose(np.abs(shifts), 0.5 * fold * p[2], rtol=1e-4, atol=0)
+    np.testing.assert_allclose(widths, p[2], rtol=1e-4)
+
+
+def test_the_fold_offset_goes_with_the_calibration_and_the_dat_files(tmp_path):
+    """The calibration writes it after n1 n2 -- a file written before has none:
+    not known -- and raw counts folded with that calibration take it; a .dat
+    carries it in its #@Fold line (none: not known, 0 for the windows). The
+    lines carried from a .dat keep it, Overwrite instrumental function leaves
+    it, half points halves it (two neighbouring channels a point: the visits
+    as far apart in a channel twice as wide)."""
+    from syncmoss.spectrum_io import (_read_calibration_axis, process_half_spectrum, read_calibration_header,
+                                      save_spectrum_with_metadata)
+    v = np.linspace(-10.0, 10.0, 8)
+    calibration = str(tmp_path / "Calibration.dat")
+
+    class App:
+        calibration_path = calibration
+        dir_path = str(tmp_path)
+
+    raw = str(tmp_path / "raw.mca")                    # only its kind matters here
+    _write_calibration_dat(tmp_path, 0, 0, 15, v, np.ones(8))
+    assert read_calibration_header(calibration) == ('sin', 0, 15, None)
+    assert iio.fold_offset_of(App(), raw) is None
+    _write_calibration_dat(tmp_path, 0, 0, 15, v, np.ones(8), _FOLD)
+    assert read_calibration_header(calibration) == ('sin', 0, 15, _FOLD)
+    assert _read_calibration_axis(calibration, False) == (list(v), 'sin', 0, 15)
+    assert iio.fold_offset_of(App(), raw) == _FOLD
+
+    dat, half, plain = (str(tmp_path / name) for name in ("spectrum.dat", "half.dat", "plain.dat"))
+    save_spectrum_with_metadata(dat, v, np.ones(8), ['#@GCMS 0.1'] + iio.fold_lines(_FOLD))
+    assert iio.fold_offset_of(App(), dat) == _FOLD
+    assert iio.drive_values(App(), v, "spectrum.dat", iio.fold_offset_of(App(), dat))['fold_offset'] == _FOLD
+    assert iio.read_dat_metadata_lines(dat) == ['#@GCMS 0.1', f'#@Fold {_FOLD}']
+    assert iio.write_dat_instrumental_lines(dat, ['#@GCMS 0.2'])
+    assert iio.read_dat_metadata_lines(dat) == ['#@GCMS 0.2', f'#@Fold {_FOLD}']
+    assert process_half_spectrum(App(), dat, half)
+    assert iio.read_dat_metadata_lines(half) == ['#@GCMS 0.2', f'#@Fold {_FOLD / 2}']
+    save_spectrum_with_metadata(plain, v, np.ones(8), [])
+    assert iio.fold_offset_of(App(), plain) is None and iio.fold_lines(None) == []
+    assert iio.drive_values(App(), v, "plain.dat", None)['fold_offset'] == 0.0
+
+
+def test_a_search_takes_each_spectrum_s_fold_offset(tmp_path):
+    """search_data: every spectrum's windows from its own drive and fold offset
+    -- a .dat with #@Fold its visits apart, one without at the point's
+    velocity."""
+    from syncmoss.spectrum_io import save_spectrum_with_metadata
+    x, _ = _drive("sine", 12.0)
+    folded, plain = str(tmp_path / "folded.dat"), str(tmp_path / "plain.dat")
+    save_spectrum_with_metadata(folded, x, np.full(len(x), 1e4), iio.fold_lines(_FOLD))
+    save_spectrum_with_metadata(plain, x, np.full(len(x), 1e4), [])
+
+    class App:
+        calibration_path = str(tmp_path / "Calibration.dat")
+        dir_path = str(tmp_path)
+        channel_average = True
+
+    data = iio.search_data(App(), {'files': [folded, plain]})
+    shifts, widths = data['channel_windows']
+    a = data['A_list'][0]
+    expected = m5.channel_windows(a, m5.fit_drive(a), _FOLD)
+    assert np.array_equal(shifts[:, :len(a)], expected[0]) and np.array_equal(widths[:, :len(a)], expected[1])
+    assert shifts[:, :len(a)].any() and not shifts[:, len(a):].any()
 
 
 # --- off, a part of the points, Nbaseline, the callers --------------------------------
@@ -485,7 +620,7 @@ def test_supp_switches_the_average_and_warns(physics_app, monkeypatch):
     answers = [True, False, True]
     monkeypatch.setattr(supp_menu, 'keep_channel_average', lambda window, on: asked.append(on) or answers.pop(0))
     assert not iio.channel_average(app)                              # the suite's
-    assert iio.drive_values(app, x) == {'v_center': iio.drive_rest_velocity(x), 'drive': None}
+    assert iio.drive_values(app, x) == {'v_center': iio.drive_rest_velocity(x), 'drive': None, 'fold_offset': 0.0}
     entries = {action.text(): action for action in app.supp_menu.actions()}
     entries[channel_average_text(False)].trigger()                   # ON, kept
     assert iio.channel_average(app) and app.channel_average_action.text() == channel_average_text(True)

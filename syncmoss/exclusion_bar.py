@@ -243,9 +243,14 @@ class ExclusionBar(QWidget):
             self.main_window.set_status(f"Exclusion regions not loaded from "
                                         f"{os.path.basename(path)}: {e}", "red")
             return False
+        return self.replace_with(regions, os.path.basename(path))
+
+    def replace_with(self, regions, source):
+        """Replace the regions with *regions*, read from the file named
+        *source*. False when they cannot change now."""
         self.text.setText(er.format_regions(regions))
         if not self.commit():
             return False
-        self.main_window.set_status(f"Exclusion regions loaded from {os.path.basename(path)}: "
+        self.main_window.set_status(f"Exclusion regions loaded from {source}: "
                                     f"{er.format_regions(regions) or 'none'}", "green")
         return True

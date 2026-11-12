@@ -45,8 +45,8 @@ import numpy as np
 
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
-from syncmoss.Calibration import (Calibration, MulCoCMS, _fold_sinusoidal, _fold_triangular, _load_raw_counts,
-                                  _raw_drive, _write_calibration_dat)
+from syncmoss.Calibration import (Calibration, MulCoCMS, _fold_offset, _fold_sinusoidal, _fold_triangular,
+                                  _load_raw_counts, _raw_drive, _write_calibration_dat)
 from syncmoss.constants import ALPHA_FE_FIELD, NAT_WIDTH, number_of_baseline_parameters as NB
 from syncmoss.instrumental_io import compute_norm, drive_rest_velocity, r_ratio_of, write_gcms_file
 from syncmoss.spectrum_io import estimate_edge_background, load_spectrum
@@ -352,7 +352,8 @@ def calibrate_source(params_dir, files, pool, JN, vel_start, G, dtheta, diameter
                 for raw, fit in ((alpha_raw, model[:n_ch]), (line_raw, model[n_ch:]))]
     alpha, line = folded(JN)
     v_f, n1, n2 = alpha[0], alpha[4], alpha[5]
-    _write_calibration_dat(params_dir, details['method'], n1, n2, v_f, alpha[1])
+    _write_calibration_dat(params_dir, details['method'], n1, n2, v_f, alpha[1],
+                           _fold_offset(v_axis, details['method'], q[DRIVE]))
     write_gcms_file(params_dir, G, dtheta, *diameters)
     fine = folded(4 * JN)
     # each spectrum's model with its baseline as folded (two channels to a

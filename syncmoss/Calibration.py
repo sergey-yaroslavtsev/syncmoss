@@ -471,18 +471,21 @@ def _fold_triangular(v_axis, counts, fit_curve, pS):
 #  Output                                                                   #
 # ========================================================================= #
 
-def _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded):
+def _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded, fold_offset=None):
     """Write ``Calibration.dat``: the folded velocity/counts table.
 
-    The header line records the drive waveform (``sin``/``lin``) and the fold
-    window ``n1 n2`` so that measurement spectra recorded with the same drive
-    can be folded identically (see spectrum_io.load_spectrum).
+    The header line records the drive waveform (``sin``/``lin``), the fold
+    window ``n1 n2`` and the fold offset (_fold_offset) so that measurement
+    spectra recorded with the same drive can be folded identically (see
+    spectrum_io.load_spectrum) and the two visits summed into each of their
+    points averaged where they are (models.channel_windows).
     """
     rpath = os.path.join(str(dir_path), 'Calibration.dat')
     with open(rpath, "w") as f:
         f.write(str('#') + '\t' + str('lin ') * (method == 1)
                 + str('sin ') * (method == 0)
-                + '\t' + str(n1) + '\t' + str(n2) + '\n')
+                + '\t' + str(n1) + '\t' + str(n2)
+                + ('' if fold_offset is None else '\t' + str(float(fold_offset))) + '\n')
         for i in range(0, int(len(v_folded))):
             f.write(str(v_folded[i]) + '\t' + str(data_folded[i]) + '\n')
         f.write('\n')
@@ -532,6 +535,26 @@ def _save_sms_diagnostic_plot(dir_path, channels, counts, final_curve, flat_coun
 
     fig.savefig(os.path.join(dir_path, 'calibr.png'), bbox_inches='tight')
     plt.close()
+
+
+def _fold_offset(v_axis, method, pS):
+    """How many channels apart the two visits summed into one folded point are
+    -- the same for every point, 0 to 1/2: the fold pairs whole channels,
+    while the turning point lies where the drive's phase puts it. Folding the
+    channels' velocities *v_axis* themselves, as the counts are folded
+    (_fold_sinusoidal / _fold_triangular with *pS*), gives every pair's
+    velocity difference as the fold's residual: the fold offset times the
+    channel width (_raw_drive's). Its median over the pairs: a triangular
+    fold's turning point pairs two channels of one ramp, a whole channel
+    apart."""
+    v_axis = np.asarray(v_axis, dtype=float)
+    if method == 0:
+        v_pair, _, _, difference, _, _ = _fold_sinusoidal(v_axis, v_axis, v_axis, pS[2])
+    else:
+        v_pair, _, _, difference, _, _ = _fold_triangular(v_axis, v_axis, v_axis, pS)
+    widths = m5.channel_widths(v_pair, _raw_drive(v_axis))
+    counted = widths > 0
+    return float(np.median(np.abs(difference[counted]) / widths[counted]))
 
 
 def _raw_drive(x):
@@ -1062,6 +1085,8 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
         v_folded, data_folded, fit_folded, fold_residual, n1, n2 = \
             _fold_triangular(v_axis, counts, final_curve, pS)
     v_folded = v_folded + INS_shift
+    fold_offset = _fold_offset(v_axis, method, pS)
+    print('Fold offset (channels between the two visits of a point):', fold_offset)
 
     # --------------------------------------------------------------------- #
     # STEP 12: diagnostics and output files.                                #
@@ -1083,7 +1108,7 @@ def Calibration(dir_path, Cal_file, pool, VVV, INS, JN, x0, MulCo, Vel_start=1, 
               'or ', max(np.abs(data_folded - fit_folded)) / pCAL[0], '%')
         print('Texture parameter is', pS[10], 'should be 0 for isotropic')
 
-    _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded)
+    _write_calibration_dat(dir_path, method, n1, n2, v_folded, data_folded, fold_offset)
 
     if details is not None:
         details.update(method=method, velocity=cal, pS=np.copy(pS), model=np.copy(pCAL), counts=np.copy(counts))

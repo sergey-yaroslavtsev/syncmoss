@@ -547,28 +547,37 @@ def disc_rule(dtheta, r_ratio, nodes=DISC_NODES_MIN):
     return mean + std * t, weights
 
 
-def Voigt_disc(gL, gG, S, U, dtheta, r_ratio, channel=None):
+def Voigt_disc(gL, gG, S, U, dtheta, r_ratio, channel=None, visits=None):
     """Voigt(gL, gG, .) averaged over the rays of a disc source of r/R =
     r_ratio about their mean (see above), and that mean <y>:
     sum_k w_k Voigt(S + U*(y_k - <y>)), U = MulCo*(v - v_c) (signed; S and U
     broadcast) and y_k = 1 - cos(theta) at the nodes of disc_rule. The node
     count follows the widest box of the point source with the same dtheta,
     |U|*(1 - cos dtheta), in units of the line width.
-    *channel*, MulCo times the channel width (broadcast with S and U): each
-    ray's line is also averaged over the channel as that ray sees it, a box
-    (1 - y_k)*channel wide (Voigt_box) -- the channel average inside the
-    average over the rays (see "Channel average" below)."""
+    *visits*, the two windows of every point (channel_windows) in MulCo units:
+    (shifts, widths), each with a first axis of 2 -- each visit's offset from
+    the point's velocity and its channel width -- the rest broadcast with S and
+    U. Each ray sees both times its cos(theta): its line is averaged over two
+    boxes, (1 - y_k)*width wide about (1 - y_k)*shift (Voigt_box), and the two
+    averaged -- the channel average inside the average over the rays (see
+    "Channel average" below). *channel*, MulCo times one channel width, is a
+    point of one channel: both visits at its velocity."""
     widths = float(np.max(np.abs(U))) * 2 * np.sin(dtheta / 2) ** 2 / float(np.min(gL + gG))
     y, weights = disc_rule(dtheta, r_ratio, max(DISC_NODES_MIN, int(np.ceil(DISC_NODES_PER_WIDTH * widths))))
     mean = np.dot(weights, y)
     S, U = np.broadcast_arrays(np.asarray(S, dtype=float), np.asarray(U, dtype=float))
+    if visits is None and channel is not None:
+        visits = (np.zeros((2,) + np.shape(channel)), np.stack((channel, channel)))
     out = 0.0
-    if channel is None:
+    if visits is None:
         for yk, wk in zip(y - mean, weights):
             out = out + wk * Voigt(gL, gG, (S + U * yk).ravel()).reshape(S.shape)
     else:
+        shift, span = visits
         for yk, ck, wk in zip(y - mean, 1 - y, weights):
-            out = out + wk * Voigt_box(gL, gG, S + U * yk, ck * channel)
+            centre = S + U * yk
+            out = out + wk * (0.5 * (Voigt_box(gL, gG, centre - ck * shift[0], ck * span[0])
+                                     + Voigt_box(gL, gG, centre - ck * shift[1], ck * span[1])))
     return out, mean
 
 
@@ -584,21 +593,34 @@ def Voigt_disc(gL, gG, S, U, dtheta, r_ratio, channel=None):
 # is taken as a box of width W_i about the written velocity (a sine's is
 # tilted, which moves a line by ~1e-6 mm/s).
 #
+# A folded point is two channels: the counts of the drive's two visits to its
+# velocity, summed. The fold pairs whole channels, while the turning point lies
+# where the drive's phase puts it, so the two visits are a fraction of a
+# channel apart -- the fold offset delta, 0 to 1/2, the same for every point
+# (the calibration measures it, a .dat carries it in its #@Fold line). Each
+# visit has its own box, about v -/+ delta*W/2 with its own width
+# (channel_windows), and the point is the average of the two: two windows,
+# always -- with delta = 0 they coincide, and the average of the same box
+# twice is that box, bit for bit.
+#
 # Averaging the model over the box is the same as averaging the SOURCE line
 # over it: shift the source variable by the box variable and swap the two
 # integrals -- exact, for any absorber:
 #     (1/W) int dw int S(u) T(MulCo*(v + w) + u) du = int B_W[S](u) T(MulCo*v + u) du,
 #     B_W[S](u) = (1/W) int_{|w| < W/2} S(u - MulCo*w) dw
 #               = [F(u + MulCo*W/2) - F(u - MulCo*W/2)] / (MulCo*W),
-# F the cumulative of S. So the absorber is computed as for a point, once per
-# integration node, and only the source line at the node changes -- one value
-# per point. TI's caller prepares it with the cosine smearing (source_smearing,
+# F the cumulative of S. A visit's box off the point's velocity by d is the
+# same with S(u - MulCo*d) in place of S(u). So the absorber is computed as for
+# a point, once per integration node, and only the source line at the node
+# changes -- one value per point, the mean over the two visits' boxes. TI's
+# caller prepares it with the cosine smearing (source_smearing,
 # instrumental_io.source_for), with the Norm of that source, one per point.
 #
 # With the cosine smearing a ray at y = 1 - cos(theta) sees the channel's range
-# of transducer velocities times cos(theta): its box is (1 - y)*W wide, and the
-# channel is averaged INSIDE the average over the rays -- a box per ray node
-# (Voigt_disc's channel). The ray nodes stay those of the rays alone.
+# of transducer velocities times cos(theta): each visit's box is (1 - y)*W
+# wide, (1 - y)*d off, and the channel is averaged INSIDE the average over the
+# rays -- the two boxes per ray node (Voigt_disc's visits). The ray nodes stay
+# those of the rays alone.
 #
 # The box itself:
 # * CMS, the pseudo-Voigt: from its cumulative, term by term (_voigt_cdf,
@@ -771,6 +793,31 @@ def channel_widths(x, drive):
     return w * np.sqrt(np.clip(A ** 2 - (x - c) ** 2, 0.0, None))
 
 
+def channel_windows(x, drive, fold_offset=0.0):
+    """The two windows of every point of *x* (see "Channel average"): a folded
+    point sums the counts of the drive's two visits to its velocity, and as
+    the fold pairs whole channels they are *fold_offset* channels apart (0 to
+    1/2, the same for every point; the calibration measures it). Returns
+    (shifts, widths), each of shape (2, len(x)): every visit's offset from the
+    point's velocity -- the mean of the two -- and its channel width
+    (channel_widths at the visit). A triangular drive's visits sit
+    +-fold_offset*s/2 from the point; a sine's at the phases +-w*fold_offset/2
+    from the point's, +-tan(w*fold_offset/2)/w times its channel width, on a
+    cosine 1/cos(w*fold_offset/2) times as wide as the folded axis (the mean of
+    two). With fold_offset 0 both windows are the point's own."""
+    x = np.asarray(x, dtype=float)
+    widths = channel_widths(x, drive)
+    if drive[0] == 'triangular':
+        half = 0.5 * fold_offset * widths
+        visits = drive
+    else:
+        _sine, c, A, w = drive
+        half = np.tan(0.5 * w * fold_offset) / w * widths
+        visits = ('sine', c, A / np.cos(0.5 * w * fold_offset), w)
+    shifts = np.stack((-half, half))
+    return shifts, np.stack([channel_widths(x + shift, visits) for shift in shifts])
+
+
 def _node_grid(Met, JN):
     """TI's integration nodes EE for the method Met, JN of them."""
     return np.linspace(-1 + (10 ** -2)*(Met == 1 or Met ==2) + 10**-3, 1 - (10 ** -2)*(Met == 1 or Met ==2) - 10**-3, JN)
@@ -797,29 +844,33 @@ def node_energy(SCR, EE, x0, MulCo, Met, JN):
 
 
 def source_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=None, channel_widths=None,
-                    x0=0.0):
+                    x0=0.0, windows=None):
     """The smearing of the source TI takes (smearing=), prepared by its caller
     with the other instrumental inputs (Norm): for the spectrum x on TI's grid
     of JN nodes, the pair (lines, shift) -- at every node the source line as
     each point sees it (a row per node): averaged over the rays about their
     mean (the CMS cosine smearing, Voigt_disc at the node's source offset)
-    and/or over each point's channel (*channel_widths*, the channel average,
-    one per point of x: see "Channel average"); and MulCo*(x - v_center)*<y>,
-    the shift that puts the absorber at the mean ray's velocity (None without
-    cosine smearing). None when nothing smears the source: no channel widths,
-    and not CMS or dtheta = 0. v_center is where the drive is at rest, the
-    middle of the spectrum's WHOLE velocity range
-    (instrumental_io.drive_rest_velocity), and the channel widths those of its
-    drive at the points of x (fit_drive of the whole axis, channel_widths), so
-    that a part of the points gives the same values. x0 is the SMS grid's
-    (TI's).
+    and/or over the two windows of each point (*windows*, the channel average:
+    channel_windows, see "Channel average"); and MulCo*(x - v_center)*<y>, the
+    shift that puts the absorber at the mean ray's velocity (None without
+    cosine smearing). None when nothing smears the source: no windows, and not
+    CMS or dtheta = 0. *channel_widths*, one width per point of x, are the
+    windows of points of one channel each (both visits at the point's
+    velocity). v_center is where the drive is at rest, the middle of the
+    spectrum's WHOLE velocity range (instrumental_io.drive_rest_velocity), and
+    the windows those of its drive at the points of x (fit_drive of the whole
+    axis, channel_windows), so that a part of the points gives the same
+    values. x0 is the SMS grid's (TI's).
     With *lengths* (the spectra of an Nbaseline model, one after the other): a
     list with one per spectrum, or None when none is smeared. The values are
     given as TI takes them: MulCo, INS, Met and x0 per spectrum when Met is a
-    list, dtheta, v_center and r_ratio each a value or a list, the channel
-    widths over all of x."""
+    list, dtheta, v_center and r_ratio each a value or a list, the windows (or
+    the channel widths) over all of x."""
+    if windows is None and channel_widths is not None:
+        widths = np.asarray(channel_widths, dtype=float)
+        windows = (np.zeros((2,) + widths.shape), np.stack((widths, widths)))
     if lengths is None:
-        return _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, channel_widths, x0)
+        return _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, windows, x0)
     per_section = isinstance(Met, (list, tuple, np.ndarray))
 
     def own(value, i):
@@ -827,27 +878,38 @@ def source_smearing(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, lengths=N
 
     edges = np.cumsum(lengths)[:-1]
     pieces = np.split(np.asarray(x, dtype=float), edges)
-    widths = [None] * len(pieces) if channel_widths is None else np.split(np.asarray(channel_widths, dtype=float),
-                                                                           edges)
+    sections = [None] * len(pieces) if windows is None else list(zip(
+        np.split(np.asarray(windows[0], dtype=float), edges, axis=-1),
+        np.split(np.asarray(windows[1], dtype=float), edges, axis=-1)))
     smearings = [_smearing_of_spectrum(xi, JN, *((MulCo[i], INS[i], Met[i]) if per_section else (MulCo, INS, Met)),
-                                       own(dtheta, i), own(v_center, i), own(r_ratio, i), widths[i], own(x0, i))
+                                       own(dtheta, i), own(v_center, i), own(r_ratio, i), sections[i], own(x0, i))
                  for i, xi in enumerate(pieces)]
     return None if all(s is None for s in smearings) else smearings
 
 
-def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, channel_widths, x0):
-    """source_smearing of one spectrum."""
+def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, windows, x0):
+    """source_smearing of one spectrum: *windows* its points' two windows,
+    (shifts, widths), or None."""
     x = np.asarray(x, dtype=float)
-    if channel_widths is not None and np.shape(channel_widths) != x.shape:
-        raise ValueError(f"channel widths given for {np.size(channel_widths)} points, the spectrum has {x.size}")
-    widths = None if channel_widths is None else np.asarray(channel_widths, dtype=float)
-    # A triangular drive: every channel as wide, so without the cosine smearing
-    # a node's line is the same at every point -- computed once per node.
-    same = widths is not None and np.all(widths == widths[0])
-    columns = widths[:1] if same else widths
+    shifts = widths = None
+    if windows is not None:
+        shifts, widths = (np.asarray(part, dtype=float) for part in windows)
+        if np.shape(widths) != (2, x.size) or np.shape(shifts) != (2, x.size):
+            raise ValueError(f"channel widths given for {np.shape(widths)[-1]} points, the spectrum has {x.size}")
+    # A triangular drive: every point's two windows alike, so without the
+    # cosine smearing a node's line is the same at every point -- computed
+    # once per node.
+    same = windows is not None and np.all(widths == widths[:, :1]) and np.all(shifts == shifts[:, :1])
+    columns = (shifts[:, :1], widths[:, :1]) if same else (shifts, widths)
 
     def every_point(lines):
         return np.broadcast_to(lines, (lines.shape[0], x.size)) if same else lines
+
+    def both(line):
+        """The source line averaged over the two windows of the points
+        (columns): line(shift, width) of each visit, a row per node."""
+        shift, width = columns
+        return 0.5 * (line(shift[0], width[0]) + line(shift[1], width[1]))
 
     if Met == 1:
         EE = _node_grid(1, JN)
@@ -855,30 +917,36 @@ def _smearing_of_spectrum(x, JN, MulCo, INS, Met, dtheta, v_center, r_ratio, cha
         offsets = cof[0] * np.log((1 + EE) / (1 - EE)) + cof[1] * np.log((2 + EE) / (2 - EE)) \
             + cof[2] * np.log((3 + EE) / (3 - EE))
         if dtheta == 0:
-            if widths is None:
+            if windows is None:
                 return None
-            return every_point(Voigt_box(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None],
-                                         MulCo * columns[None, :])), None
+            return every_point(both(lambda d, W: Voigt_box(NAT_WIDTH * MulCo, INS * MulCo,
+                                                           offsets[:, None] - MulCo * d[None, :],
+                                                           MulCo * W[None, :]))), None
         U = (x - v_center) * MulCo
         lines, mean = Voigt_disc(NAT_WIDTH * MulCo, INS * MulCo, offsets[:, None], U[None, :], dtheta, r_ratio,
-                                 None if widths is None else MulCo * widths[None, :])
+                                 visits=None if windows is None else (MulCo * shifts[:, None, :],
+                                                                       MulCo * widths[:, None, :]))
         return lines, U * mean
-    if Met != 0 or widths is None:
+    if Met != 0 or windows is None:
         return None
-    # SMS: TImod's source offsets s = MulCo*x0 + log((1 + EE)/(1 - EE)), the
-    # box MulCo*W wide about them
+    # SMS: TImod's source offsets s = MulCo*x0 + log((1 + EE)/(1 - EE)); each
+    # window MulCo*W wide about s - MulCo*shift
     EE = _node_grid(0, JN)
     log_EE = np.log((1 + EE) / (1 - EE))
     if smst.ins_kind(INS) == smst.KIND_GAUSS:
-        return every_point(_gauss_sum_box(INS, MulCo, MulCo * x0 + log_EE[:, None],
-                                          MulCo * columns[None, :] / 2)), None
-    # the theoretical shape S(v)/MulCo (TImod's), at the channel nodes
+        return every_point(both(lambda d, W: _gauss_sum_box(INS, MulCo, MulCo * x0 + log_EE[:, None]
+                                                            - MulCo * d[None, :], MulCo * W[None, :] / 2))), None
+    # the theoretical shape S(v)/MulCo (TImod's), at the channel nodes of each
+    # window, their number set by the widest window
     t, g = _channel_rule(float(np.max(widths)) / NAT_WIDTH)
     v = log_EE / MulCo + x0
-    lines = 0.0
-    for tm, gm in zip(t, g):
-        lines = lines + gm * smst.ins_shape(INS, v[:, None] + columns[None, :] * tm / 2)
-    return every_point(lines / MulCo), None
+
+    def at_nodes(d, W):
+        lines = 0.0
+        for tm, gm in zip(t, g):
+            lines = lines + gm * smst.ins_shape(INS, v[:, None] - d[None, :] + W[None, :] * tm / 2)
+        return lines
+    return every_point(both(at_nodes) / MulCo), None
 
 
 def _smearing_rows(smearing, x, JN):

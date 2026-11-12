@@ -50,12 +50,32 @@ def save_spectrum_with_metadata(save_path, A, B, metadata_lines):
         np.savetxt(f, np.column_stack((A, B)), delimiter='\t', fmt='%.6f')
 
 
+def read_calibration_header(calibration_path):
+    """The calibration file's first line, ``# <method> <n1> <n2> <fold offset>``:
+    ``(method, n1, n2, fold_offset)`` -- how the raw channels are folded ('sin'
+    or 'lin', and the raw-channel range) and how many channels apart the two
+    visits summed into a folded point are (Calibration writes it; None in a
+    file written before). None when the file has no such line or cannot be
+    read."""
+    try:
+        with open(calibration_path, 'r') as f:
+            fields = f.readline().split()[1:]
+        method, n1, n2 = fields[0], int(fields[1]), int(fields[2])
+    except (OSError, IndexError, ValueError):
+        return None
+    try:
+        fold_offset = float(fields[3])
+    except (IndexError, ValueError):
+        fold_offset = None
+    return method, n1, n2, fold_offset
+
+
 def _read_calibration_axis(calibration_path, skip_angle_brackets):
     """Read the calibrated velocity axis and folding metadata.
 
     Returns ``(A_list_single, cal_method, n1, n2)``: the first-column velocity
     values and the raw-channel folding recipe from the calibration header line
-    ``# <method> <n1> <n2>`` (method 'sin' or 'lin'; defaults to 'sin' over the
+    (read_calibration_header: method 'sin' or 'lin'; defaults to 'sin' over the
     full channel range when the header is absent/malformed).
 
     ``skip_angle_brackets`` also treats lines starting with ``<`` as comments
@@ -71,16 +91,11 @@ def _read_calibration_axis(calibration_path, skip_angle_brackets):
             if not skip:  # skipping column labels
                 A_list_single.append(float(column[0]))
 
-    with open(calibration_path, 'r') as cal_type:
-        try:
-            cal_info = (cal_type.readline()).split()[1:]
-            cal_method = cal_info[0]
-            n1 = int(cal_info[1])
-            n2 = int(cal_info[2])
-        except Exception:
-            cal_method = 'sin'
-            n1 = 0
-            n2 = int(len(A_list_single)) * 2 - 1
+    header = read_calibration_header(calibration_path)
+    if header is None:
+        cal_method, n1, n2 = 'sin', 0, int(len(A_list_single)) * 2 - 1
+    else:
+        cal_method, n1, n2, _fold_offset = header
 
     return A_list_single, cal_method, n1, n2
 
@@ -461,10 +476,11 @@ def subtract_model_from_spectrum(main_window):
         # UI-selected method with the internal values.
         JN = int(main_window.jn0_input.text())
         pol = float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT))  # SMS beam polarization degree
-        from syncmoss.instrumental_io import resolve_instrumental_for_file, drive_values, source_for
+        from syncmoss.instrumental_io import resolve_instrumental_for_file, drive_values, source_for, fold_offset_of
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(main_window, spectrum_path, use_dat_metadata=use_dat_metadata)
-        method_params.update(drive_values(main_window, A, os.path.basename(spectrum_path)))
+        method_params.update(drive_values(main_window, A, os.path.basename(spectrum_path),
+                                          fold_offset_of(main_window, spectrum_path)))
 
         # Calculate model spectrum
         try:
@@ -503,9 +519,12 @@ def subtract_model_from_spectrum(main_window):
             main_window.set_status("Save canceled", "orange")
             return
 
-        # Save the subtracted spectrum, preserving the source's instrumental metadata
-        from syncmoss.instrumental_io import read_dat_metadata_lines
+        # Save the subtracted spectrum, preserving the source's instrumental
+        # metadata and fold offset (raw counts: the calibration's, which folded them)
+        from syncmoss.instrumental_io import read_dat_metadata_lines, fold_lines
         metadata_lines = read_dat_metadata_lines(spectrum_path)
+        if not read_as_text(spectrum_path):
+            metadata_lines = metadata_lines + fold_lines(fold_offset_of(main_window, spectrum_path))
         save_spectrum_with_metadata(save_path, A, B_subtracted, metadata_lines)
 
         # Auto-load the saved spectrum
@@ -568,7 +587,7 @@ def prepare_model_spectrum(main_window):
             return None
         A = np.asarray(A_list[0], dtype=float)
 
-    from syncmoss.instrumental_io import (resolve_instrumental_for_file, drive_values,
+    from syncmoss.instrumental_io import (resolve_instrumental_for_file, drive_values, fold_offset_of, fold_lines,
                                           read_dat_metadata_lines, build_dat_metadata_lines)
     try:
         model, p, con1, con2, con3, Distri, Cor, Expr, NExpr, DistriN, Recon, ReconN = read_model(main_window)
@@ -580,11 +599,15 @@ def prepare_model_spectrum(main_window):
         use_dat_metadata = bool(getattr(main_window, 'use_dat_instrumental_metadata', True))
         method_params = resolve_instrumental_for_file(
             main_window, os.path.abspath(path) if path else None, use_dat_metadata=use_dat_metadata)
-        method_params.update(drive_values(main_window, A, source))
+        fold_offset = fold_offset_of(main_window, os.path.abspath(path) if path else None)
+        method_params.update(drive_values(main_window, A, source, fold_offset))
+        # the header the spectrum is calculated with: its instrumental function
+        # and its fold offset (a .dat's own lines carry both)
         if method_params['source'] == 'file':
             header = read_dat_metadata_lines(path)
         else:
             header, _method = build_dat_metadata_lines(main_window)
+            header = header + fold_lines(fold_offset)
     except Exception as e:
         main_window.set_status(f"{action} was not started — {e}", "red")
         return None
@@ -722,9 +745,15 @@ def process_half_spectrum(main_window, spectrum_path, save_path, auto_load=False
             A_half[i] = (A[i*2] + A[i*2+1]) / 2  # Average velocity
             B_half[i] = B[i*2] + B[i*2+1]  # Sum intensity
 
-        # Save the half-points spectrum, preserving the source's instrumental metadata
-        from syncmoss.instrumental_io import read_dat_metadata_lines
-        metadata_lines = read_dat_metadata_lines(spectrum_path)
+        # Save the half-points spectrum, preserving the source's instrumental
+        # metadata. Its fold offset halves: a point joins two neighbouring
+        # channels of each visit, and the visits stay as far apart in a channel
+        # twice as wide.
+        from syncmoss.instrumental_io import read_dat_metadata_lines, fold_lines, fold_offset_of, DAT_FOLD_PREFIX
+        fold_offset = fold_offset_of(main_window, spectrum_path)
+        metadata_lines = [line for line in read_dat_metadata_lines(spectrum_path)
+                          if not line.startswith(DAT_FOLD_PREFIX)]
+        metadata_lines = metadata_lines + fold_lines(None if fold_offset is None else fold_offset / 2)
         save_spectrum_with_metadata(save_path, A_half, B_half, metadata_lines)
 
         # Auto-load if requested
@@ -893,7 +922,7 @@ def process_without_excluded(main_window, spectrum_path, save_path, regions):
     The instrumental function goes into the header: a .dat keeps the one it
     carries (none if it has none); raw counts (an .mca, ...), calibrated just
     now, get the one in use -- CMS or SMS as the checkboxes say -- exactly as
-    the RAW -> .dat conversion writes it.
+    the RAW -> .dat conversion writes it, with the calibration's fold offset.
     """
     A_list, B_list = load_spectrum(main_window, [spectrum_path], calibration_path=main_window.calibration_path)
     if not A_list or not B_list:
@@ -902,11 +931,13 @@ def process_without_excluded(main_window, spectrum_path, save_path, regions):
     keep = fitted(A, B, regions)
     if not keep.any():
         return 0
-    from syncmoss.instrumental_io import read_dat_metadata_lines, build_dat_metadata_lines
+    from syncmoss.instrumental_io import (read_dat_metadata_lines, build_dat_metadata_lines, fold_lines,
+                                          fold_offset_of)
     if read_as_text(spectrum_path):
         metadata_lines = read_dat_metadata_lines(spectrum_path)
     else:
         metadata_lines, _method = build_dat_metadata_lines(main_window)
+        metadata_lines = metadata_lines + fold_lines(fold_offset_of(main_window, spectrum_path))
     metadata_lines = metadata_lines + [f"# Excluded regions, mm/s: {format_regions(regions)}"]
     save_spectrum_with_metadata(save_path, A, np.where(keep, B, np.nan), metadata_lines)
     return int(keep.sum())

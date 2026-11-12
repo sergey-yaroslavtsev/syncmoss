@@ -237,7 +237,10 @@ an explicit message and reddened fields rather than failing halfway through.
   `#@INSth` (theoretical shape), with `#@INSint`, an SMS one.
   SYNCmoss writes those lines when it converts a spectrum — for SMS only the
   instrumental function **in use** — and reads them back per spectrum, so a
-  batch may mix CMS and SMS files, and Gaussian and theoretical ones. Switch the
+  batch may mix CMS and SMS files, and Gaussian and theoretical ones. A
+  `#@Fold δ` line is not an instrumental function: the fold offset of the
+  spectrum's points (7.9). Every spectrum operation keeps it (*half points*
+  halves it) and *Overwrite instrumental function* leaves it. Switch the
   behaviour with *Instrumental function -> Switch to the global instrumental
   function* (and back with *Switch to the instrumental function from .dat
   files*); the button's caption says which is in use.
@@ -394,8 +397,22 @@ an explicit message and reddened fields rather than failing halfway through.
 
 ### 7.5 The calibration file
 
-- The calibration file's first line is `# <method> <n1> <n2>`: `sin` or `lin`
-  folding and the raw-channel range. Without it, `sin` folding over all channels
+- **The velocity axis is the transducer velocity**: the velocity of the drive
+  along its axis, in mm/s, with its zero where the α-Fe calibration puts it
+  (the drive is at rest in the middle of the range, not at 0). Each point
+  carries the average velocity of its channel — of its two channels after
+  folding. That is what the calibration writes (`Calibration.dat`, and every
+  spectrum converted with it) and what a laser calibration measures. The model
+  works from it: the channel average (7.9) spreads a point over the velocities
+  its channel runs through, and the cosine smearing (7.2) gives a ray at the
+  angle θ the rest velocity plus cos θ times the point's distance from it. An
+  axis made another way is not this one — an α-Fe calibration at another Δθ
+  (7.2), an axis rebinned or interpolated by another program, or one with
+  points missing (7.9): calibrate the raw spectrum in SYNCmoss, with the Δθ
+  and the channel-average setting you fit with.
+- The calibration file's first line is `# <method> <n1> <n2> <δ>`: `sin` or
+  `lin` folding, the raw-channel range and the fold offset δ (7.9; a file
+  written before has none). Without the line, `sin` folding over all channels
   is assumed.
 - *Calibrate* opens a menu. *Start calibration* calibrates the raw α-Fe spectrum
   of the path box. Its final fit holds the α-Fe sextet and what the menu adds:
@@ -507,7 +524,8 @@ an explicit message and reddened fields rather than failing halfway through.
   point's **channel**: the velocity step of a triangular drive; for a sine, a
   width shrinking to nothing at the turning points. With *Supp → Average model
   over each channel* ON (the default) every point is the model averaged over its
-  channel; OFF, the model at the point's velocity, as before. Fits, Show model,
+  channel, about the point's velocity — its channel's average transducer
+  velocity (7.5); OFF, the model at that velocity, as before. Fits, Show model,
   the instrumental-function searches, the calibrations and *Create spectrum from
   model* all follow it; *Save settings as default* keeps it. Switching it warns:
   an instrumental function or a calibration found with the other setting does
@@ -516,6 +534,15 @@ an explicit message and reddened fields rather than failing halfway through.
   over it (for any absorber), so the source is averaged before the transmission
   integral, as for the cosine smearing, and a calculation takes about as long as
   without. With Δθ, each ray sees its channel times cos θ.
+- A folded point is two channels: the drive's two visits to its velocity,
+  summed. The fold pairs whole channels while the drive turns where its phase
+  puts it, so the visits are a fraction δ of a channel apart — 0 to ½, the same
+  for every point (0.41 for the SMS α-Fe spectrum of the test data). Each visit
+  is averaged over its own channel and the point is the mean of the two
+  windows; with Δθ, each ray sees both. The calibration measures δ and writes
+  it in `Calibration.dat`'s first line (7.5); a spectrum read through it takes
+  it, and RAW → .dat writes it as `#@Fold δ` (7.1). A file without it is taken
+  with δ = 0: one window, as before.
 - The widths come from the drive: every point is counted for the same time, so
   a spectrum's velocities, sorted, are a line (triangular drive: every channel
   one step wide) or a cosine (sine drive: the channel at the velocity v is
@@ -572,6 +599,12 @@ the plot toolbar; a bar appears above the plot.
 - **Clean** removes every region (**Apply exclusion** stays on).
 - **Save** / **Load** write and read the regions as a small text file
   (`<name>_exclusion.txt`); **Load** replaces the current regions.
+- A fit result's model (`<base>_result_model.mdl`, section 10) carries the
+  regions its fit left out, on a line of its own (`#@Exclusion regions -3:-2;
+  1:2`). **Load model** of such a file asks whether to apply them: *No* changes
+  nothing; *Yes* puts them in place of the current regions and turns **Apply
+  exclusion** on. Adding a model at a row (*Library*, the row's *Load model*)
+  never asks.
 - The background (`Ns`) a sequence starts from is still estimated from the
   whole spectrum.
 
@@ -713,7 +746,8 @@ save path without the spectrum's extension: `Fe_4.2K.dat` gives
   and the links, fixed values, bounds and expressions exactly as they were
   fitted; a `Recon` gets its fitted weights. Changing the table after the fit
   does not reach it. Loading it puts the result back into the table, ready for
-  another fit. Its own name, so it never overwrites the `.mdl` you are working
+  another fit; when the fit left out exclusion regions, the file carries them
+  too and *Load model* offers them (section 8). Its own name, so it never overwrites the `.mdl` you are working
   on with **Save model**. It is saved last and asks its **own** overwrite
   question, separate from the one for the result files: answering "no" there
   keeps the older file and leaves the five result files as they were just

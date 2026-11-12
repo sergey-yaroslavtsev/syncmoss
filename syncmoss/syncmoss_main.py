@@ -137,6 +137,8 @@ from syncmoss.instrumental_io import (
     read_gcms_file,
     write_gcms_file,
     drive_values,
+    fold_offset_of,
+    fold_lines,
 )
 from syncmoss.CMS_source_geometry_calibration import calibrate_source, refusal as source_calibration_refusal
 from syncmoss.Library_window import save_to_library_via_dialog
@@ -800,13 +802,14 @@ class ShowModelThread(QThread):
 
             use_dat_metadata = bool(getattr(self.main_window, 'use_dat_instrumental_metadata', True))
             # each section's whole velocity axis: where its cosine smearing
-            # starts, and its points' channel widths
+            # starts, and its points' channel windows (with its fold offset)
             section_axes = A_list if num_nbaseline > 0 else [A]
             method_params_list = []
             for section_file, axis in zip(section_files, section_axes):
                 mp_section = resolve_instrumental_for_file(self.main_window, section_file, use_dat_metadata=use_dat_metadata)
                 mp_section.update(drive_values(self.main_window, axis,
-                                               os.path.basename(section_file) if section_file else 'model'))
+                                               os.path.basename(section_file) if section_file else 'model',
+                                               fold_offset_of(self.main_window, section_file)))
                 method_params_list.append(mp_section)
 
             note_lines = [mp_section['note'] for mp_section in method_params_list]
@@ -952,7 +955,11 @@ class RawToDatThread(QThread):
             if not raw_files:
                 self.error.emit("No RAW files found in selection")
                 return
-            
+            # how far apart the two visits summed into each point are: the
+            # calibration's, which folds them all
+            metadata_lines = metadata_lines + fold_lines(
+                fold_offset_of(self.main_window, raw_files[0], self.calibration_path))
+
             # Determine output directory and base names
             if is_single_file:
                 # Single file case
@@ -1741,6 +1748,18 @@ class PhysicsApp(QMainWindow):
             self.exclusion_bar.cancel_pick()
         self.exclusion_bar.setVisible(checked)
         self._on_exclusion_changed()
+
+    def apply_exclusion_regions_from(self, regions, source):
+        """*regions*, read from the file named *source* (a fit result's model),
+        become the regions in use: they replace the current ones, and "Apply
+        exclusion" is turned on when it is off. False when they cannot change
+        now (a calculation runs)."""
+        if not self.toolbar.exclusion_action.isChecked():
+            self.toolbar.exclusion_action.setChecked(True)
+            self.toggle_exclusion_regions(True)
+            if not self.toolbar.exclusion_action.isChecked():      # refused
+                return False
+        return self.exclusion_bar.replace_with(regions, source)
 
     def _commit_exclusion_regions(self, action_label):
         """Apply what is typed in the regions box before *action_label* starts
@@ -4736,7 +4755,8 @@ class PhysicsApp(QMainWindow):
             if model_rows is not None:
                 model_path = result_model_path(base_path)
                 try:
-                    write_result_model(model_path, model_rows)
+                    write_result_model(model_path, model_rows,
+                                       exclusion=self.results_table.current_exclusion_regions)
                 except OSError as e:
                     problems.append((model_path, _write_problem(model_path, e)))
             if not hasattr(self, '_sequence_save_problems'):
@@ -5205,7 +5225,7 @@ class PhysicsApp(QMainWindow):
             model_path = result_model_path(base_path)
             if model_rows is None:
                 self.set_status(f"{message}. Model NOT saved: no fitted model with this result", "orange")
-            elif save_result_model(self, model_path, model_rows):
+            elif save_result_model(self, model_path, model_rows, exclusion=regions):
                 self.set_status(f"{message}; model saved as {os.path.basename(model_path)}",
                                 "orange" if problems else "green")
             else:

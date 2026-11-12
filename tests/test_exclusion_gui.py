@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 import syncmoss.models as m5
 from syncmoss import exclusion_regions as er
-from syncmoss import fitting_io, spectrum_io
+from syncmoss import fitting_io, model_io, spectrum_io
 from syncmoss import instrumental_io as iio
 from syncmoss.instrumental_io import build_dat_metadata_lines, resolve_instrumental_for_file
 from syncmoss.model_io import model_file_rows
@@ -313,6 +313,7 @@ def test_save_result_writes_the_regions_only_when_applied(physics_app, tmp_path,
     assert graf.dtype.names[-1] == 'Fitted'
     assert np.array_equal(graf['Fitted'] == 1, er.kept(result['A'], regions))
     assert er.read_file(str(tmp_path / "out" / "with_exclusion.txt")) == regions
+    assert er.read_model_file(str(tmp_path / "out" / "with_result_model.mdl")) == regions
 
     app.toolbar.exclusion_action.trigger()                  # off
     _fit(app, path, monkeypatch)
@@ -322,6 +323,47 @@ def test_save_result_writes_the_regions_only_when_applied(physics_app, tmp_path,
     assert names[-1] == 'χ²'
     assert 'Fitted' not in open(tmp_path / "out" / "without_graf.txt", encoding='utf-8').readline()
     assert not os.path.exists(tmp_path / "out" / "without_exclusion.txt")
+    assert er.read_model_file(str(tmp_path / "out" / "without_result_model.mdl")) == ()
+
+
+def test_load_model_offers_the_regions_of_a_result_model(physics_app, tmp_path, monkeypatch):
+    """No changes nothing; Yes puts the result's regions in place of the
+    current ones and turns Apply exclusion on. A model without regions loads
+    without the question."""
+    app = physics_app
+    path, = _spectra(app, tmp_path)
+    regions = _apply(app, REGIONS)
+    _fit(app, path, monkeypatch)
+    app.save_path.setText(str(tmp_path / "out" / "with"))
+    app._save_result_files('new')
+    saved = str(tmp_path / "out" / "with_result_model.mdl")
+
+    app.toolbar.exclusion_action.trigger()                  # off, and other regions committed
+    app.exclusion_bar.text.setText("5:6")
+    assert app.exclusion_bar.commit()
+    monkeypatch.setattr(model_io, '_pick_model_file', lambda *args: saved)
+    asked = []
+    monkeypatch.setattr(model_io, 'ask_apply_exclusion_regions',
+                        lambda window, offered: asked.append(offered) or False)
+    model_io.load_model(app)
+    assert asked == [regions]
+    assert app.params_table.get_model_list()[:2] == ['baseline', 'Sextet']    # the model loaded
+    assert not app.toolbar.exclusion_action.isChecked() and app.exclusion_bar.isHidden()
+    assert app.exclusion_bar.regions == ((5.0, 6.0),) and app.exclusion_bar.text.text() == "5:6"
+
+    monkeypatch.setattr(model_io, 'ask_apply_exclusion_regions', lambda window, offered: True)
+    model_io.load_model(app)
+    assert app.toolbar.exclusion_action.isChecked() and not app.exclusion_bar.isHidden()
+    assert app.exclusion_regions_in_use() == regions
+    assert app.exclusion_bar.text.text() == "-3:-2; 1:2"
+
+    plain = str(tmp_path / "plain.mdl")
+    model_io.write_result_model(plain, model_file_rows(app))
+    monkeypatch.setattr(model_io, '_pick_model_file', lambda *args: plain)
+    monkeypatch.setattr(model_io, 'ask_apply_exclusion_regions',
+                        lambda *args: pytest.fail('a model without regions must not ask'))
+    model_io.load_model(app)
+    assert app.exclusion_regions_in_use() == regions
 
 
 def test_save_and_load_and_load_replaces(physics_app, tmp_path, monkeypatch):

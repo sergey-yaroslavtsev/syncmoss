@@ -146,3 +146,21 @@ def test_a_bad_file_is_refused(tmp_path):
     path.write_text("1,5:2\n", encoding='utf-8')
     with pytest.raises(ValueError):
         er.read_file(str(path))
+
+
+def test_a_model_file_carries_the_regions_on_a_comment_line(tmp_path):
+    regions = er.parse("-3.05:-1.95; 0.95:2.05")
+    line = er.model_line(regions)
+    assert line.startswith('#')                         # the model reader skips it
+    path = tmp_path / "Fe_result_model.mdl"
+    path.write_text(f"{line}\nbaseline\tSextet\nred\tblue\n", encoding='utf-8')
+    assert er.read_model_file(str(path)) == regions
+
+    plain = tmp_path / "plain.mdl"
+    plain.write_text("#@Comment hand made\nbaseline\tSextet\nred\tblue\n", encoding='utf-8')
+    assert er.read_model_file(str(plain)) == ()
+
+    bad = tmp_path / "bad.mdl"
+    bad.write_text(f"{er.MODEL_TAG} 1,5:2\nbaseline\n", encoding='utf-8')
+    with pytest.raises(ValueError):
+        er.read_model_file(str(bad))

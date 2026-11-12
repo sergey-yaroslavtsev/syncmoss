@@ -32,6 +32,7 @@ from syncmoss.instrumental_io import (
     same_method_params,
     hires_model_diff,
     drive_values,
+    fold_offset_of,
     chi2_correction,
 )
 
@@ -572,10 +573,10 @@ def fit_model(app, inputs, spectrum_files, pool):
         method_params_list = []
         for ins_file, a in zip(files_for_ins, A_list):
             mp_i = resolve_instrumental_for_file(app, ins_file, use_dat_metadata=use_dat_metadata)
-            # where the cosine smearing starts and the drive the channel widths
-            # come from: each spectrum's own (whole) axis, also when the rest is
-            # shared
-            mp_i.update(drive_values(app, a, os.path.basename(str(ins_file))))
+            # where the cosine smearing starts and the drive the channel windows
+            # come from: each spectrum's own (whole) axis and fold offset, also
+            # when the rest is shared
+            mp_i.update(drive_values(app, a, os.path.basename(str(ins_file)), fold_offset_of(app, ins_file)))
             method_params_list.append(mp_i)
         mp0 = method_params_list[0]
 

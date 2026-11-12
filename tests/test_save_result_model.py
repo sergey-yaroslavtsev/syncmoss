@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 
 from syncmoss.constants import number_of_baseline_parameters as NB
+from syncmoss import exclusion_regions as er
 from syncmoss import model_io
 import syncmoss.syncmoss_main as syncmoss_main
 
@@ -357,8 +358,9 @@ def test_a_sequence_continues_its_page_of_pictures(physics_app, tmp_path):
 
 @pytest.mark.gui
 def test_a_sequence_saves_every_spectrum_s_fitted_model(physics_app, tmp_path, monkeypatch):
-    """Under the spectrum's own name, as Save result writes it -- without its
-    overwrite question: a sequence never stops to ask."""
+    """Under the spectrum's own name, as Save result writes it, with the
+    exclusion regions its fit left out -- without its overwrite question: a
+    sequence never stops to ask."""
     app = physics_app
     _fit(app)
     app.save_path.setText(os.path.join(str(tmp_path), 'run.dat'))
@@ -368,13 +370,16 @@ def test_a_sequence_saves_every_spectrum_s_fitted_model(physics_app, tmp_path, m
     monkeypatch.setattr(syncmoss_main.QMessageBox, 'question',
                         lambda *a, **k: pytest.fail('a sequence must not ask'))
     app._sequence_rows_written = 0
+    regions = ((-3.0, -2.0), (1.0, 2.0))
+    app.results_table.current_exclusion_regions = regions          # as the sequence's fit sets it
 
     app._save_sequential_result_files(os.path.join('elsewhere', 'Fe_4.2K.dat'))
 
     saved = os.path.join(str(tmp_path), 'saved_by_save_result.mdl')
-    assert model_io.save_result_model(app, saved, app.results_table.current_model_rows)
+    assert model_io.save_result_model(app, saved, app.results_table.current_model_rows, exclusion=regions)
     with open(model_file, encoding='utf-8') as f, open(saved, encoding='utf-8') as g:
         assert f.read() == g.read()
+    assert er.read_model_file(model_file) == regions
 
 
 @pytest.mark.gui

@@ -23,7 +23,7 @@ from matplotlib.figure import Figure
 import syncmoss.models as m5
 from syncmoss.constants import NAT_WIDTH, SMS_POL_DEFAULT, model_colors, number_of_baseline_parameters as NB
 from syncmoss.fit_quality import CHI2, MISFIT, STRUCTURE_FREE
-from syncmoss.instrumental_io import drive_values, resolve_instrumental_for_file, source_for
+from syncmoss.instrumental_io import drive_values, fold_offset_of, resolve_instrumental_for_file, source_for
 from syncmoss.models_positions import mod_pos
 from syncmoss.result_window import _Canvas
 from syncmoss.spectrum_io import load_spectrum
@@ -101,7 +101,7 @@ def prepare_reference(main_window, path, method):
     A, B = load_spectrum(main_window, path, calibration_path=main_window.calibration_path)
     A, B = np.asarray(A[0], dtype=float), np.asarray(B[0], dtype=float)
     mp = dict(method)
-    mp.update(drive_values(main_window, A, os.path.basename(path)))
+    mp.update(drive_values(main_window, A, os.path.basename(path), fold_offset_of(main_window, path)))
     x, y = fitted_points(A, B)
     return {'path': path, 'x': x, 'y': y, 'mp': mp, 'JN': int(main_window.JN0),
             'pol': float(getattr(main_window, 'SMS_pol', SMS_POL_DEFAULT))}

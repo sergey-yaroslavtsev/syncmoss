@@ -17,7 +17,8 @@ from syncmoss.minimi_lib import chi2_spread, poisson_deviance
 from syncmoss.expression_eval import eval_expr
 import syncmoss.sms_theory as smst
 from syncmoss.spectrum_io import (load_spectrum, estimate_edge_background,
-                                  resolve_calibration_path, calculate_backgrounds)
+                                  resolve_calibration_path, calculate_backgrounds,
+                                  read_as_text, read_calibration_header)
 from syncmoss.model_io import read_model, read_bounds_and_fix
 from syncmoss.exclusion_regions import fitted
 
@@ -41,6 +42,10 @@ DAT_INS_TH_PREFIX = '#@INSth'
 # Read-only legacy spelling. Files written before the rename carry #@INSacc and
 # must keep loading; nothing writes it any more.
 DAT_INS_ACC_PREFIX_LEGACY = '#@INSacc'
+# Not an instrumental function: how many channels apart the drive's two visits
+# summed into each point of a folded spectrum are (models.channel_windows; the
+# calibration measures it, fold_offset_of). A .dat without it: 0.
+DAT_FOLD_PREFIX = '#@Fold'
 
 # Global store of the theoretical instrumental function, next to INSexp/INSint.
 # BOTH are kept: INSth.txt holds the simulated shape and INSexp.txt the Gaussian
@@ -95,7 +100,8 @@ def parse_dat_instrumental_metadata(file_path):
     #@GCMS marks a spectrum converted in CMS mode: the Gaussian width G of the
     source line, its cosine smearing Δθ ('dtheta') and the source and aperture
     diameters d and D, whose ratio d/D is the 'r_ratio'; a file written before
-    carries G alone (cms_source_numbers).
+    carries G alone (cms_source_numbers). Also #@Fold, the fold offset
+    ('fold_offset', None without the line).
     """
     result = {
         'INS': None,
@@ -111,6 +117,7 @@ def parse_dat_instrumental_metadata(file_path):
         'has_insint': False,
         'has_gcms': False,
         'has_insacc': False,
+        'fold_offset': None,
     }
 
     if not file_path or not os.path.exists(file_path):
@@ -164,6 +171,12 @@ def parse_dat_instrumental_metadata(file_path):
                         result.update(GCMS=g, dtheta=dtheta, source_diameter=source,
                                       aperture_diameter=aperture, r_ratio=r_ratio_of(source, aperture),
                                       has_gcms=True)
+                    continue
+
+                if stripped.startswith(DAT_FOLD_PREFIX):
+                    parsed = _parse_float_sequence(stripped[len(DAT_FOLD_PREFIX):].strip())
+                    if parsed.size > 0:
+                        result['fold_offset'] = float(parsed[0])
                     continue
     except Exception as e:
         print(f"[Instrumental function] Could not read DAT metadata from {file_path}: {e}")
@@ -508,13 +521,37 @@ def drive_rest_velocity(A):
     return 0.5 * (float(np.min(A)) + float(np.max(A)))
 
 
-def drive_values(app, A, name=''):
+def fold_offset_of(app, spectrum_file, calibration_path=None):
+    """How many channels apart the drive's two visits summed into each point of
+    *spectrum_file* are (models.channel_windows): a .dat says it in its #@Fold
+    line; raw counts (an .mca, ...) are folded as they are read, with the
+    calibration file (*calibration_path*, resolved as load_spectrum resolves
+    it), whose first line carries it (Calibration writes it). None when it is
+    not known: a .dat without the line, a calibration without it, no file."""
+    if not spectrum_file:
+        return None
+    path = str(spectrum_file)
+    if read_as_text(path):
+        return parse_dat_instrumental_metadata(path)['fold_offset'] if path.lower().endswith('.dat') else None
+    header = read_calibration_header(resolve_calibration_path(app, calibration_path, [path]))
+    return None if header is None else header[3]
+
+
+def fold_lines(fold_offset):
+    """The #@Fold line a .dat carries for *fold_offset* (fold_offset_of); none
+    when it is not known (None)."""
+    return [] if fold_offset is None else [f'{DAT_FOLD_PREFIX} {float(fold_offset)}']
+
+
+def drive_values(app, A, name='', fold_offset=None):
     """What the WHOLE velocity axis A of a spectrum gives the source of its TI
     calls (source_for), to add to its resolved method
     (resolve_instrumental_for_file): 'v_center', where the drive is at rest
-    (drive_rest_velocity), and 'drive', the drive fitted to the axis
-    (models.fit_drive), whose channel widths the channel average takes -- None
-    with it off (Supp). An axis that is not a drive's is refused, *name* (the
+    (drive_rest_velocity); 'drive', the drive fitted to the axis
+    (models.fit_drive), whose channel windows the channel average takes -- None
+    with it off (Supp); and 'fold_offset', how many channels apart the two
+    visits to each point are (*fold_offset*, fold_offset_of; 0 when not known:
+    they coincide). An axis that is not a drive's is refused, *name* (the
     spectrum's file) saying which."""
     drive = None
     if channel_average(app):
@@ -523,7 +560,8 @@ def drive_values(app, A, name=''):
         except ValueError as e:
             raise ValueError(f"{name or 'spectrum'}: {e}; the channel average (Supp) needs the whole velocity "
                              f"axis") from None
-    return {'v_center': drive_rest_velocity(A), 'drive': drive}
+    return {'v_center': drive_rest_velocity(A), 'drive': drive,
+            'fold_offset': 0.0 if fold_offset is None else float(fold_offset)}
 
 
 def _smearing_note(dtheta, r_ratio=0.0):
@@ -715,15 +753,16 @@ def source_for(pool, x, JN, method_params):
     resolved method with its drive values (drive_values), as TI takes it:
     (Norm, smearing) -- the source's smearing (models.source_smearing: the
     cosine smearing, CMS with Δθ, and the channel average when the method
-    carries a drive, its channel widths at x; None for neither) and the Norm of
-    the source with it (compute_norm). Prepared before TI is called, for
-    exactly that call's x and JN -- any part of the spectrum's points."""
+    carries a drive, the two windows of every point of x with its fold offset;
+    None for neither) and the Norm of the source with it (compute_norm).
+    Prepared before TI is called, for exactly that call's x and JN -- any part
+    of the spectrum's points."""
     mp = method_params
     drive = mp.get('drive')
     smearing = m5.source_smearing(x, JN, mp['MulCo'], mp['INS'], mp['Met'], mp.get('dtheta', 0.0),
-                                  mp.get('v_center', 0.0), mp.get('r_ratio', 0.0),
-                                  channel_widths=None if drive is None else m5.channel_widths(x, drive),
-                                  x0=mp['x0'])
+                                  mp.get('v_center', 0.0), mp.get('r_ratio', 0.0), x0=mp['x0'],
+                                  windows=None if drive is None else m5.channel_windows(x, drive,
+                                                                                        mp.get('fold_offset', 0.0)))
     return compute_norm(pool, JN, mp, x, smearing), smearing
 
 
@@ -807,12 +846,14 @@ def build_dat_metadata_lines(app):
 
 def read_dat_metadata_lines(file_path):
     """Verbatim instrumental header lines (#@INSexp/#@INSint/#@GCMS) of a .dat
-    file, without trailing newlines. Empty list when the file has none. The
-    header is every line above the first data line (see is_data_line).
+    file, and its #@Fold line, without trailing newlines. Empty list when the
+    file has none. The header is every line above the first data line (see
+    is_data_line).
 
     Used to carry instrumental metadata across spectrum-processing operations
     (subtract model, half points, sum) so a converted .dat does not silently
-    lose its #@GCMS / #@INSexp / #@INSint header.
+    lose its #@GCMS / #@INSexp / #@INSint header, nor its fold offset (half
+    points halves it: fold_lines).
     """
     lines = []
     if not file_path or not os.path.exists(file_path):
@@ -832,7 +873,7 @@ def read_dat_metadata_lines(file_path):
                 # metadata forward
                 if stripped.startswith((DAT_INS_EXP_PREFIX, DAT_INS_INT_PREFIX,
                                         DAT_GCMS_PREFIX, DAT_INS_TH_PREFIX,
-                                        DAT_INS_ACC_PREFIX_LEGACY)):
+                                        DAT_INS_ACC_PREFIX_LEGACY, DAT_FOLD_PREFIX)):
                     lines.append(stripped)
     except Exception as e:
         print(f"[Instrumental function] Could not read DAT metadata lines from {file_path}: {e}")
@@ -1164,9 +1205,10 @@ def search_data(app, request):
     the points that are fitted -- those outside the exclusion regions -- as
     'A_fit'/'B_fit'/'lengths_fit'. TI is point by point in velocity
     (tests/test_model_pointwise.py), so fitting the kept points IS the fit with
-    the regions left out. 'channel_widths' and 'channel_widths_fit': the
-    channel widths of those points, from the drive of every spectrum's whole
-    axis (drive_values); None with the channel average off (Supp).
+    the regions left out. 'channel_windows' and 'channel_windows_fit': the two
+    windows of those points (models.channel_windows: shifts and widths, a row
+    per visit), from the drive of every spectrum's whole axis and its fold
+    offset (drive_values); None with the channel average off (Supp).
     """
     files = list(request['files'])
     A_list, B_list = load_spectrum(app, files, calibration_path=app.calibration_path)
@@ -1177,11 +1219,15 @@ def search_data(app, request):
         raise SearchRefused(f"every point of {', '.join(emptied)} is excluded")
     joint = len(files) > 1
     try:
-        drives = [drive_values(app, a, os.path.basename(f))['drive'] for a, f in zip(A_list, files)]
+        values = [drive_values(app, a, os.path.basename(f), fold_offset_of(app, f)) for a, f in zip(A_list, files)]
     except ValueError as e:
         raise SearchRefused(str(e)) from None
-    averaged = drives[0] is not None
-    widths = [m5.channel_widths(a, d) for a, d in zip(A_list, drives)] if averaged else None
+    averaged = values[0]['drive'] is not None
+    windows = ([m5.channel_windows(a, v['drive'], v['fold_offset']) for a, v in zip(A_list, values)]
+               if averaged else None)
+
+    def joined(pieces):
+        return tuple(np.concatenate([piece[row] for piece in pieces], axis=1) for row in (0, 1))
     return {
         'files': files, 'regions': regions, 'A_list': A_list, 'B_list': B_list,
         'A': np.concatenate(A_list), 'B': np.concatenate(B_list),
@@ -1189,8 +1235,9 @@ def search_data(app, request):
         'A_fit': np.concatenate([a[k] for a, k in zip(A_list, keeps)]),
         'B_fit': np.concatenate([b[k] for b, k in zip(B_list, keeps)]),
         'lengths_fit': [int(k.sum()) for k in keeps] if joint else None,
-        'channel_widths': np.concatenate(widths) if averaged else None,
-        'channel_widths_fit': np.concatenate([w[k] for w, k in zip(widths, keeps)]) if averaged else None,
+        'channel_windows': joined(windows) if averaged else None,
+        'channel_windows_fit': (joined([(s[:, k], w[:, k]) for (s, w), k in zip(windows, keeps)])
+                                if averaged else None),
     }
 
 
@@ -1649,10 +1696,11 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
     # detector's static noise of the alpha-Fe Δθ search
     offset = extra.get('offset', 0.0)
 
-    def sms_smearing(x_exp, p, lengths, widths):
+    def sms_smearing(x_exp, p, lengths, windows):
         # SMS: the Gaussians are being fitted, so their channel average is
         # prepared for every call (None with it off)
-        return m5.source_smearing(x_exp, JN, MulCo, p[mod_p_len:], 0, 0.0, 0.0, 0.0, lengths, widths, x0)
+        return m5.source_smearing(x_exp, JN, MulCo, p[mod_p_len:], 0, 0.0, 0.0, 0.0, lengths, x0=x0,
+                                  windows=windows)
 
     if CMS_ch == 1:
         # every reference (single line, model, pure alpha-Fe) the same way: the
@@ -1660,13 +1708,13 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
         def cms_source(p):
             return (p[-1], dtheta) if dtheta_search is None else (g_cms, p[-1])
 
-        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+        def INSSS(x_exp, p, lengths=lengths, windows=data['channel_windows_fit']):
             # G or Δθ is being fitted: the source -- its smearing (the cosine
             # smearing, the channel average) and, with it, its Norm, one per
             # spectrum -- is prepared for every call. Without smearing, the
             # plain Norm of G (cms_norm).
             g, th = cms_source(p)
-            smearing = m5.source_smearing(x_exp, JN, MulCoCMS, g, 1, th, v_center, r_ratio, lengths, widths)
+            smearing = m5.source_smearing(x_exp, JN, MulCoCMS, g, 1, th, v_center, r_ratio, lengths, windows=windows)
             if smearing is None:
                 norm = cms_norm(JN, g)
             else:
@@ -1679,19 +1727,19 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
             return spectrum + offset if offset else spectrum
 
     elif mode == 1:
-        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+        def INSSS(x_exp, p, lengths=lengths, windows=data['channel_windows_fit']):
             return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], Distri, Cor, Recon=Recon, lengths=lengths,
-                         smearing=sms_smearing(x_exp, p, lengths, widths))
+                         smearing=sms_smearing(x_exp, p, lengths, windows))
 
     elif mode == 0:
-        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+        def INSSS(x_exp, p, lengths=lengths, windows=data['channel_windows_fit']):
             return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths,
-                         smearing=sms_smearing(x_exp, p, lengths, widths))
+                         smearing=sms_smearing(x_exp, p, lengths, windows))
 
     elif mode == 2:
-        def INSSS(x_exp, p, lengths=lengths, widths=data['channel_widths_fit']):
+        def INSSS(x_exp, p, lengths=lengths, windows=data['channel_windows_fit']):
             return m5.TI(x_exp, p[:mod_p_len], model, JN, pool, x0, MulCo, p[mod_p_len:], lengths=lengths,
-                         smearing=sms_smearing(x_exp, p, lengths, widths))
+                         smearing=sms_smearing(x_exp, p, lengths, windows))
 
     # Normalization function
     # to insure sum of amplitudes squared = 1 in case of SMS
@@ -1822,10 +1870,10 @@ def instrumental(app, ref, mode=0, pool=None, request=None, dtheta_search=None):
         print('G:', g_out, ' dtheta:', dtheta_out, ' d/D:', r_ratio)
 
     # Calculate fitted spectra for plotting: every point, the excluded ones too
-    F = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
+    F = INSSS(data['A'], p, data['lengths'], data['channel_windows'])
     JN_save = np.copy(JN)
     JN = JN * 4
-    F2 = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
+    F2 = INSSS(data['A'], p, data['lengths'], data['channel_windows'])
     JN = JN_save
 
     # Save instrumental function parameters
@@ -2342,7 +2390,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
     x0, MulCo = m5.limits(pool, JN, make_ins(p0))
     print(f"[Instrumental function: theory] integration grid: x0={x0:.5f}, MulCo={MulCo:.5f}")
 
-    def INSSS(x_exp, pp, lengths=lengths, widths=data['channel_widths_fit']):
+    def INSSS(x_exp, pp, lengths=lengths, windows=data['channel_windows_fit']):
         # COOPERATIVE INTERRUPT. "! INTERRUPT !" terminates and recreates the
         # multiprocessing pool, which stops an ordinary fit because an ordinary
         # fit spends its time IN the pool. This search does not: the cost is
@@ -2355,7 +2403,7 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
         # the shape is being fitted: its channel average is prepared for every
         # call (None with it off)
         ins = make_ins(pp[mod_p_len:])
-        smearing = m5.source_smearing(x_exp, JN, MulCo, ins, 0, 0.0, 0.0, 0.0, lengths, widths, x0)
+        smearing = m5.source_smearing(x_exp, JN, MulCo, ins, 0, 0.0, 0.0, 0.0, lengths, x0=x0, windows=windows)
         return m5.TI(x_exp, pp[:mod_p_len], model, JN, pool, x0, MulCo,
                      ins, Distri, Cor, Recon=Recon,
                      lengths=lengths, smearing=smearing)
@@ -2675,10 +2723,10 @@ def instrumental_theory(app, ref=0, mode=0, pool=None, n_rational=2,
               f"({e}); INSexp.txt is left as it was")
 
     # every point, the excluded ones too
-    F = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
+    F = INSSS(data['A'], p, data['lengths'], data['channel_windows'])
     JN_save = int(JN)
     JN = JN * HIRES_INTEGRATION_FACTOR
-    F2 = INSSS(data['A'], p, data['lengths'], data['channel_widths'])
+    F2 = INSSS(data['A'], p, data['lengths'], data['channel_windows'])
     JN = JN_save
 
     # Convergence of the transmission integral. The integration grid is uniform
