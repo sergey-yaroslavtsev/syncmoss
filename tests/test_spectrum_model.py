@@ -165,10 +165,13 @@ def _reference(truth, method='SMS', seed=5, fraction=None):
 @pytest.mark.parametrize("method", ["CMS", "SMS"])
 @pytest.mark.parametrize("smeared", [False, True])
 def test_lines_model_is_ti(method, smeared):
-    """The node sum prepared once (models.node_parts) gives TI's counts, and a
-    Jacobian's vectors (counts_of_many, a moved line computed alone) each its
-    own; Interrupt stops it."""
-    from syncmoss.spectrum_reference import with_links
+    """The node sum prepared once (models.node_parts) gives TI's counts. The
+    fitter's derivatives -- exact, through the links of its own vector (Nnr =
+    the fraction times Ns, the non-resonant shape the resonant one's) -- are
+    the counts' own in every free value: central differences, but forward
+    ones (from above) for a G at 0. A new line's column is the derivative in
+    its T at 0. Interrupt stops it."""
+    from syncmoss.spectrum_reference import ReferenceFitter, fraction_vector, with_links
     smearing = _smearing(method, REF_X) if smeared else None
     model, norm = _lines_model(method, smearing)
     mp = METHODS[method]
@@ -177,17 +180,37 @@ def test_lines_model_is_ti(method, smeared):
     ti = np.asarray(m5.TI(REF_X, p, ['Singlet'] * 3, JN, SerialPool(), mp['x0'], mp['MulCo'], mp['INS'], [0], [0],
                           Met=mp['Met'], Norm=norm, smearing=smearing), float)
     assert np.allclose(model.counts(p), ti, rtol=1e-12, atol=0)
-    bumped = []
-    for i in (0, 2, 3, NB, NB + 1, NB + 3, NB + 9):
-        b = p.copy()
-        b[i] *= 1 + 1e-6
-        bumped.append(with_links(np.append(b, 0.67)))
-    for got, b in zip(model.counts_of_many(bumped), bumped):
-        assert np.allclose(got, model.counts(b), rtol=1e-12, atol=0)
+    fitter = ReferenceFitter(REF_X, ti, model, method)
+    q = fraction_vector(p)
+    free = fitter.free_indices(3)
+    rows = fitter.jacobian(q)
+    assert not np.any(rows[[i for i in range(len(q)) if i not in free]])
+    for i in free:
+        # at 0 the step is small: the counts curve fast in a G leaving 0 (the
+        # forward difference's error falls as its step, 3.7 at 1e-6)
+        h = 1e-8 if q[i] == 0 else 1e-6 * max(abs(q[i]), 1.0)
+        up, down = q.copy(), q.copy()
+        up[i] += h
+        down[i] -= h
+        if q[i] == 0:
+            want = (model.counts(with_links(up)) - model.counts(with_links(q))) / h
+        else:
+            want = (model.counts(with_links(up)) - model.counts(with_links(down))) / (2 * h)
+        assert np.allclose(rows[i], want, rtol=1e-5, atol=1e-6 * np.max(np.abs(rows))), i
+    # a new line's column: the T row of that line added at T = 0
+    joint = np.prod(model.transmissions(p), axis=0)
+    column = model.new_line_columns(p, joint, [0.5], 0.2)[0]
+    q_new = fraction_vector(np.concatenate([p, [0.0, 0.5, NAT_WIDTH, 0.2]]))
+    assert np.allclose(column, fitter.jacobian(q_new)[NB + 3 * 4], rtol=1e-10, atol=0)
+    assert np.max(np.abs(column)) > 1e-3 * p[0]
     m5.FIT_CANCEL.set()
     try:
         with pytest.raises(m5.FitInterrupted):
             model.counts(p)
+        with pytest.raises(m5.FitInterrupted):
+            fitter.jacobian(q)
+        with pytest.raises(m5.FitInterrupted):
+            model.new_line_columns(p, joint, [0.5], 0.2)
     finally:
         m5.FIT_CANCEL.clear()
 

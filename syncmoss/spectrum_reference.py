@@ -29,14 +29,19 @@ score test whatever their gain, or the least significant removed, until the
 number is reached; a vanished line is placed anew instead of removed.
 
 Everything is computed through LinesModel: TI's node sum for the reference's
-velocities, prepared once, in which a line moved is the only one computed again.
+velocities, prepared once. Every fit has the exact derivatives of the counts
+(LinesModel.with_derivatives: a line's Voigt with its derivatives in one
+compiled pass, the baseline and the links on dual numbers), no differences.
 """
 import numpy as np
 
+import syncmoss.dual_numbers as dn
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
 from syncmoss.constants import CMS_NNR_RATIO, NAT_WIDTH, number_of_baseline_parameters as NB
+from syncmoss.dual_kernels import _voigt_parts, voigt_value
 from syncmoss.fit_quality import MISFIT, STRUCTURE_FREE, counts_noise, fit_quality
+from syncmoss.models_dual import section_counts
 from syncmoss.spectrum_io import estimate_edge_background, ns_for_background
 
 # A line set describes the reference when its S (no model) and MISFIT are
@@ -53,9 +58,6 @@ GAIN = 11.34
 SPAN_SIGMAS = 5.0
 # The widths the score test tries for a new line, mm/s
 CANDIDATE_G = (0.0, 0.15, 0.4, 1.0, 2.0, 3.0)
-# A candidate's column is the change of the counts by a line this thin (its
-# optical depth at most PROBE_T): the derivative to that relative accuracy
-PROBE_T = 1e-3
 # minimi_hi's schedule, the fit's (fitting_io)
 MI, MI2, TAU0, EPS = 20, 10, 1e-3, 1e-6
 # The non-resonant counts of a CMS reference, Nnr/Ns, are fitted within these
@@ -101,11 +103,12 @@ def with_links(q):
     """The flat parameters of the fitter's own vector *q* -- the flat ones and
     Nnr/Ns after them (fraction_vector): Nnr = that fraction times Ns, and the
     non-resonant part's shape following the resonant one (Onr, c²nr, linnr =
-    Os, c²s, lins)."""
-    p = np.array(q[:-1], dtype=float)
+    Os, c²s, lins). An array; a list when q holds Duals (dual_numbers): the
+    links then carry their derivatives."""
+    p = list(q[:-1])
     p[_NNR] = q[-1] * p[0]
     p[5:NB] = p[1:4]
-    return p
+    return p if any(isinstance(v, dn.Dual) for v in p) else np.array(p, dtype=float)
 
 
 def fraction_vector(p):
@@ -197,6 +200,14 @@ def start_lines(x, a, threshold, fraction):
     return np.array(lines, dtype=float).reshape(-1, 3)
 
 
+def at_an_end(places, ends, x):
+    """Which lines' *places* have run to an end of the range *ends* (low,
+    high): within a tenth of the step between the points x of either."""
+    at_end = abs(np.median(np.diff(x))) / 10
+    places = np.asarray(places, dtype=float)
+    return (places - ends[0] < at_end) | (ends[1] - places < at_end)
+
+
 def fitted_points(x, y):
     """The points of a reference that are fitted, velocities ascending: those
     with counts (a spectrum saved without excluded points has nan). Its source
@@ -207,34 +218,57 @@ def fitted_points(x, y):
     return x[counted], y[counted]
 
 
+def singlet_depth(E, mulco, T, delta, G):
+    """The optical depth of a Singlet (T, δ, the natural width, G) at the node
+    energies E: TImod's own expression, π (Γ0/2) MulCo |T| times the program's
+    Voigt (in one pass: dual_kernels.voigt_value), without TImod's bookkeeping
+    for every model -- a fit computes a line many times (the tests pin it to
+    TI)."""
+    S = np.ravel(E - delta * mulco)
+    return np.pi * (NAT_WIDTH / 2 * mulco) * abs(T) * voigt_value(NAT_WIDTH * mulco, abs(G) * mulco, S).reshape(
+        np.shape(E))
+
+
+def singlet_parts(E, mulco, delta, G):
+    """The optical depth of a Singlet of T = 1 (singlet_depth's) and its
+    derivatives in δ and G: (3, *E.shape), from dual_kernels' twin of the
+    program's Voigt, which gives the value (the Voigt's to rounding) and the
+    derivatives in one compiled pass. At G = 0, where |G| has its kink, the
+    derivative from above: G is bounded at 0."""
+    k = np.pi * (NAT_WIDTH / 2 * mulco)
+    A, _ = _voigt_parts(NAT_WIDTH * mulco, abs(G) * mulco, np.ravel(E - delta * mulco), False)
+    A = A.reshape((4,) + np.shape(E))           # the Voigt and its derivatives in its widths gL, gG and in E
+    A[0] *= k
+    A[1] = A[3] * (-k * mulco)
+    A[2] *= k * mulco if G >= 0 else -k * mulco
+    return A[:3]
+
+
 class LinesModel:
     """The reference's counts for a baseline and lines (flat p), through TI's
     node sum of its velocities x prepared once (models.node_parts, with the
     source *norm* and *smearing* source_for prepared): a line's transmission at
-    the nodes is TImod's, so a line moved is the only one computed again.
-    Interrupt (models.FIT_CANCEL) stops every evaluation."""
+    the nodes is TImod's Singlet (singlet_depth). The counts of a node sum are
+    TI's for that spectrum (models_dual.section_counts of its section, made
+    once). Interrupt (models.FIT_CANCEL) stops every evaluation."""
 
     def __init__(self, x, JN, method, norm, smearing, pol):
         self.x, self.JN, self.method, self.norm, self.pol = np.asarray(x, dtype=float), JN, method, norm, pol
         self.E, self.W = m5.node_parts(self.x, JN, method['x0'], method['MulCo'], method['INS'], method['Met'],
                                        pol, smearing)
+        self.section = m5._spectrum_sections(self.x, np.zeros(NB), [], JN, method['x0'], method['MulCo'],
+                                             method['INS'], [0], [0], method['Met'], norm, pol, [0], None, None)[0]
 
     def transmission(self, line):
         """A line's (T, δ, G) transmission at every node and velocity."""
         if m5.FIT_CANCEL.is_set():
             raise m5.FitInterrupted()
-        mp = self.method
-        return np.asarray(m5.TImod(self.x, np.array([line[0], line[1], NAT_WIDTH, line[2]]), ['Singlet'],
-                                   self.E.ravel(), mp['x0'], mp['MulCo'], mp['INS'], [0], [0], -1),
-                          dtype=float).reshape(self.W.shape)
+        return np.exp(-singlet_depth(self.E, self.method['MulCo'], line[0], line[1], line[2]))
 
     def spectrum(self, p, transmission):
         """The counts for the baseline p[:NB] and the lines' joint transmission."""
-        mp = self.method
         H = np.sum(self.W * transmission, axis=0)
-        return np.asarray(m5.spectrum_of_node_sum(self.x, np.asarray(p[:NB], dtype=float), H, self.JN, mp['x0'],
-                                                  mp['MulCo'], mp['INS'], mp['Met'], self.norm, self.pol),
-                          dtype=float)
+        return np.asarray(section_counts(np.asarray(p[:NB], dtype=float), 0, self.section, H), dtype=float)
 
     def transmissions(self, p):
         return [self.transmission(line) for line in lines_of(p)]
@@ -242,26 +276,43 @@ class LinesModel:
     def counts(self, p):
         return self.spectrum(p, _product(self.transmissions(p), self.W.shape))
 
-    def counts_of_many(self, ps):
-        """The counts of each of *ps*: minimi_hi's Jacobian vectors (batch_eval),
-        each the fit's point with one parameter moved (and what is linked to
-        it). The point they share is where, at every slot, two of the first
-        three agree (a slot is moved in one vector at most); its lines are
-        computed once, a moved line once per vector."""
-        ps = [np.asarray(p, dtype=float) for p in ps]
-        if len(ps) < 3:
-            return [self.counts(p) for p in ps]
-        shared = np.where(ps[0] == ps[1], ps[0], ps[2])
-        lines = lines_of(shared)
-        base = self.transmissions(shared)
-        out = []
-        for p in ps:
-            moved = np.flatnonzero(np.any(lines_of(p) != lines, axis=1))
-            parts = list(base)
-            for q in moved:
-                parts[q] = self.transmission(lines_of(p)[q])
-            out.append(self.spectrum(p, _product(parts, self.W.shape)))
-        return out
+    def line_parts(self, delta, G):
+        """The optical depth of a line of T = 1 at δ with the Gaussian G at
+        every node and velocity, and its derivatives in δ and G (singlet_parts)."""
+        if m5.FIT_CANCEL.is_set():
+            raise m5.FitInterrupted()
+        return singlet_parts(self.E, self.method['MulCo'], delta, G)
+
+    def with_derivatives(self, p):
+        """The counts of the flat parameters *p* -- numbers, and Duals
+        (dual_numbers) where derivatives are wanted -- as a Dual: the lines'
+        node sum with its derivatives in their T, δ and G (line_parts; a line's
+        L is the natural width), then the baseline (section_counts). The plain
+        counts when p holds no Dual."""
+        rows = [p[k:k + _PER_LINE] for k in range(NB, len(p), _PER_LINE)]
+        parts = [self.line_parts(dn.value(d), dn.value(G)) for _, d, _, G in rows]
+        T = [abs(dn.value(row[0])) for row in rows]
+        joint = self.W * np.exp(-sum((t * part[0] for t, part in zip(T, parts)), np.zeros(self.W.shape)))
+        slopes, args = [], []
+        for (Tq, d, _, G), t, part in zip(rows, T, parts):
+            along = np.einsum('mj,kmj->kj', joint, part)          # Σ over the nodes, per unit T
+            slopes += [-(1.0 if dn.value(Tq) >= 0 else -1.0) * along[0], -t * along[1], -t * along[2]]
+            args += [Tq, d, G]
+        H = dn.chain(joint.sum(axis=0), slopes, args)
+        return section_counts(p, 0, self.section, H)
+
+    def new_line_columns(self, p, joint, places, G):
+        """The derivatives of the counts of the baseline p[:NB] and the joint
+        transmission *joint* of the lines there in the T of a new line at each
+        of *places* with the Gaussian G, at T = 0: (places, NV)."""
+        if m5.FIT_CANCEL.is_set():
+            raise m5.FitInterrupted()
+        base = np.asarray(p[:NB], dtype=float)
+        slope = section_counts(base, 0, self.section, 1.0) - section_counts(base, 0, self.section, 0.0)   # dμ/dH
+        weighted = self.W * joint
+        mulco = self.method['MulCo']
+        return np.array([-slope * np.einsum('mj,mj->j', weighted, singlet_depth(self.E, mulco, 1.0, d, G))
+                         for d in places])
 
 
 def _product(parts, shape):
@@ -374,12 +425,20 @@ class ReferenceFitter:
         fix = np.array(sorted(set(range(len(q0))) - set(self.free_indices(n))), dtype=int)
         q, errors, _, covariance, chi2 = mi.minimi_hi(
             lambda _x, v: self.model.counts(with_links(v)), self.x, self.y, q0, fix=fix,
-            bounds=self.bounds(n), MI=MI, MI2=MI2, tau0=TAU0, eps=EPS,
-            batch_eval=lambda vs: self.model.counts_of_many([with_links(v) for v in vs]), weights='P')
+            bounds=self.bounds(n), MI=MI, MI2=MI2, tau0=TAU0, eps=EPS, jacobian=self.jacobian, weights='P')
         self.fits += 1
         p = with_links(q)
         model = self.model.counts(p)
         return LineFit(p, errors, covariance, model, mi.poisson_deviance(self.y, model), chi2)
+
+    def jacobian(self, q):
+        """The derivatives of the counts in every value of the fitter's own
+        vector *q* (minimi_hi's jacobian=): exact, through the links
+        (LinesModel.with_derivatives); zero rows for the values held."""
+        free = self.free_indices((len(q) - NB - 1) // _PER_LINE)
+        rows = np.zeros((len(q), len(self.x)))
+        rows[free] = dn.jacobian(self.model.with_derivatives(with_links(dn.seed(q, free))), free)
+        return rows
 
     def quality(self, fit):
         """The Fit quality of *fit* (fit_quality's dict for one spectrum)."""
@@ -401,24 +460,17 @@ class ReferenceFitter:
 
     def _weighted_jacobian(self, fit, w):
         """The weighted Jacobian of the fit's free values, in its own vector."""
-        q0 = fraction_vector(fit.p)
-        bumped, steps = [], []
-        for i in self.free_indices(len(fit.lines)):
-            q = q0.copy()
-            steps.append(1e-6 * max(abs(q[i]), 1.0))
-            q[i] += steps[-1]
-            bumped.append(with_links(q))
-        return np.array([(m - fit.model) / h * w
-                         for m, h in zip(self.model.counts_of_many(bumped), steps)]).T
+        return (self.jacobian(fraction_vector(fit.p))[self.free_indices(len(fit.lines))] * w).T
 
     def best_candidate(self, fit, exclude=()):
         """The line the score test finds most useful: for every width of
         CANDIDATE_G and position where the absorption is significant (the span
         without its widening: a line offered at its ends is pushed onto them
         and vanishes), the deviance its best positive T would gain with the
-        fit's other parameters re-adjusting linearly (its column projected out
-        of the fit's Jacobian); a coarse grid, then a quarter of a natural width
-        about the best. (gain, [T, δ, G]) or (0, None)."""
+        fit's other parameters re-adjusting linearly (its column -- the
+        counts' derivative in its T at 0 -- projected out of the fit's
+        Jacobian); a coarse grid, then a quarter of a natural width about the
+        best. (gain, [T, δ, G]) or (0, None)."""
         inner = (self.span[0] + 2 * NAT_WIDTH, self.span[1] - 2 * NAT_WIDTH)
         if inner[0] >= inner[1]:
             inner = self.span
@@ -433,8 +485,7 @@ class ReferenceFitter:
                                   if all(abs(xi - gone) > NAT_WIDTH for gone in exclude)])
             if len(positions) == 0:
                 return None
-            cols = np.array([(self.model.spectrum(fit.p, joint * self.model.transmission([PROBE_T, xi, G]))
-                              - fit.model) / PROBE_T * w for xi in positions]).T
+            cols = (self.model.new_line_columns(fit.p, joint, positions, G) * w).T
             cols = cols - Q @ (Q.T @ cols)
             num, den = cols.T @ r, np.sum(cols ** 2, axis=0)
             amp = num / np.where(den > 0, den, np.inf)
@@ -463,10 +514,7 @@ class ReferenceFitter:
 
     def vanished(self, fit):
         """The lines that vanished: T_q below its 1σ, or at the span's end."""
-        lines = fit.lines
-        at_end = abs(np.median(np.diff(self.x))) / 10
-        return ((fit.significance() < 1.0) | (lines[:, 1] - self.span[0] < at_end)
-                | (self.span[1] - lines[:, 1] < at_end))
+        return (fit.significance() < 1.0) | at_an_end(fit.lines[:, 1], self.span, self.x)
 
     def clean(self, fit, nudged, keep_number=False):
         """Step 4, repeated until nothing changes. *nudged* holds (place, limit)

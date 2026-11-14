@@ -165,6 +165,18 @@ A folded point is two channels δ of a channel apart, averaged each over its own
 window (δ: from the calibration, `#@Fold δ` in a `.dat`; none means 0).
 Find the instrumental function and calibrate with the setting you fit with.
 
+### 7.10 Components of many spectra
+
+*Supp → Find principal components…* (new): the path box's spectra — a series
+or a map, one velocity axis, one instrumental function — described by
+components, each a set of lines found in the data, and every spectrum's T of
+each. Asked: a results folder; Be or KB_nano in every spectrum; a CMS
+spectrum's Nnr ($k\,N_s$, or $f_{LM}$, C_high, static noise); a map's layout
+(X_Y in the file names, or columns × rows). *Supp → Show found components…*
+opens a results folder: lines, components, the series or an RGB map, a pixel's
+fit; select spectra by threshold or brush and sum them. A component is lines,
+not a phase: naming it is yours.
+
 ## 8. Exclusion regions
 
 **Apply exclusion** (plot toolbar), then `lo:hi; lo:hi` in mm/s + **Enter**, or

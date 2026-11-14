@@ -34,6 +34,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import QLocale, QPointF, QRectF, Qt
 
+from syncmoss.components_window import find_components, show_components
 from syncmoss.constants import AUTHOR_EMAIL, ISSUES_URL
 from syncmoss.error_reporter import app_version
 from syncmoss.Library_io import export_library, import_library
@@ -224,6 +225,11 @@ def build_supp_menu(main_window):
     plot_ins_memory_action.triggered.connect(lambda: plot_instrumental_from_memory(main_window))
     plot_ins_spectrum_action = QAction("Plot instrumental function from spectrum", main_window)
     plot_ins_spectrum_action.triggered.connect(lambda: plot_instrumental_from_spectrum(main_window))
+    find_components_action = QAction("Find principal components...", main_window)
+    find_components_action.setToolTip("Components of the spectra in the path box (a series or a map)")
+    find_components_action.triggered.connect(lambda: find_components(main_window))
+    show_components_action = QAction("Show found components...", main_window)
+    show_components_action.triggered.connect(lambda: show_components(main_window))
     export_lib_action = QAction("Export Library", main_window)
     export_lib_action.triggered.connect(lambda: export_library_pressed(main_window))
     import_lib_action = QAction("Import Library", main_window)
@@ -270,6 +276,9 @@ def build_supp_menu(main_window):
     menu.addSeparator()
     menu.addAction(plot_ins_memory_action)
     menu.addAction(plot_ins_spectrum_action)
+    menu.addSeparator()
+    menu.addAction(find_components_action)
+    menu.addAction(show_components_action)
     menu.addSeparator()
     menu.addAction(export_lib_action)
     menu.addAction(import_lib_action)

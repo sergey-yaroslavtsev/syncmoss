@@ -560,6 +560,124 @@ an explicit message and reddened fields rather than failing halfway through.
   the instrumental function (G for CMS, the Gaussians or the theoretical shape
   for SMS) again with the setting you fit with.
 
+### 7.10 Components of many spectra
+
+*Supp → Find principal components…* (a new feature, not well tested yet)
+describes many spectra of one sample — an operando series, a map — by a few
+**components**. A component is a set of lines (Singlets of the natural width,
+each with its own position and Gaussian) with fixed relative strengths, and
+every spectrum holds component $k$ with the weight $w_k$, its T. No physical
+model is assumed: recognising a sextet, a doublet or a relaxation spectrum in a
+component is your step (fit `component_<k>.dat`, below). The name is the
+familiar one; it is not a PCA, which counts components well but gets their
+weights wrong when the lines saturate.
+
+**What goes in.** The spectra of the path box, two or more: one velocity axis
+and one instrumental function (their `.dat` headers or the one in memory, as
+for a fit), the points every fit takes (exclusion regions and points without
+counts left out). The dialog asks:
+- the **results folder** (everything goes there);
+- what **every spectrum holds besides the sample**: nothing, Be or KB_nano —
+  the current presets (*Supp → Set parameters of …*), added as a known part,
+  never searched for;
+- a CMS spectrum's **non-resonant counts**: $N_{nr} = k\,N_s$ ($k$ = 0.67 to
+  start), or the source's form of the Δθ dialogs, $N_{nr} = N_s (1 - f_{LM})/f_{LM} + C_{high}$
+  with the static noise added flat; SMS has none;
+- the **layout** of a map: X_Y at the end of every file name, or its columns ×
+  rows with the files row by row (zig-zag) or every second row backwards
+  (snake). A series is the path box's order. The search itself uses no layout.
+
+**What it does.** Every fit is a Poisson fit of the counts; every test is at the
+99 % level (11.34, the 'Spectrum' row's own rule).
+1. The lines of the summed spectrum, by the 'Spectrum' row's own fit (13.10);
+   two closer than a natural width are one. Every spectrum has its own
+   baseline — $N_s$ and its curvature (lins, c²s), started from the summed
+   spectrum's.
+2. Missing lines, round after round: every spectrum fitted with every line's own
+   T; the spectra of equal composition grouped; in every group the sum of the
+   spectra whose D (norm) is too high, and the sum of the others, fitted by the
+   'Spectrum' row's own fit; a line found there away from every line is added.
+3. The components from all the lines at once: the lines of one component go up
+   and down together over the spectra, a line of two components is a mix of
+   both (anchors, then a non-negative factorisation of the lines' T). A line
+   in two components is copied into each.
+4. Round after round: the components fitted on the counts (the line positions
+   free); two whose weights are proportional merged; one whose weights are a
+   mix of others dissolved into them; components recombined to fewer lines
+   (when every line of component $j$ is in component $k$ too, $k$ less a part
+   of $j$ describes the same counts with fewer lines in $k$); a line's extra
+   copies removed while the counts do not need them (only copies: never a
+   line, never a component); then every spectrum searched for a component
+   still missing — chosen on one half of its counts, confirmed on the other
+   half. When the counts are fitted worse than their noise (D/dof above 1),
+   every level is raised by that factor.
+5. The components fitted all at once; every spectrum's weights and baseline on
+   all its counts. Many spectra (more than the joint fit can hold in memory)
+   are first grouped by equal composition on one half of their counts, and the
+   components fitted on the sums of the other half.
+
+It takes minutes: 100 simulated SMS spectra 0.5–2 min, 1000 spectra 1–2.5 min
+on a desktop; measured spectra, with more lines, longer.
+*! INTERRUPT !* stops it.
+
+**The results folder.**
+- `lines.mdl`: every line, one Singlet each; `component_<k>.mdl`: component $k$
+  as one *Spectrum* row (its line set), T its mean where it is significant — a
+  row for your own fits; `component_<k>.dat`: what *Create spectrum from model*
+  makes of that row, the instrumental function in its header, its baseline the
+  summed counts of the spectra where it is significant (so a fit's errors show
+  roughly what they support).
+- `components_T.txt`, `lines_T.txt`: every component's and every line's T in
+  every spectrum with its error, the coordinates, the baseline, D (norm).
+- `run.json`, `result.npz`: the settings and the record of every step; what
+  *Show found components…* reads.
+
+**The window** (*Supp → Show found components…* on a results folder):
+- *Components*: each through the instrumental function at its mean T (its
+  transmission, the default), or its lines alone (area 1); the table gives
+  every component's lines with their G. *Combine selected* makes the T's of
+  the components selected in the table one image (one phase in two
+  components);
+- *Lines*: every line scaled to 1, marked under it with the colours of the
+  components that hold it; the table gives its strength in each;
+- *Evolution* (a series): every T with its error, and under it every
+  spectrum's D (norm) — how well the components fit it; or *Map*: up to three images
+  in red, green and blue — component T's, line T's, D (norm); a channel shows the
+  sum of the images ticked for it, shown from–to a % of its largest value
+  (*Full range*: 0–100 %). *One scale for R, G, B* makes equal brightness equal
+  T in every colour; *Dark where not significant* (on) hides values below 2.32
+  times their error; a pixel without a spectrum is grey;
+- moving over a pixel (a point) tells its values; a click shows its spectrum
+  with the fit as the main window shows a fit, every component on the
+  baseline (*Spectrum*);
+- **Summed spectrum**: the selection, and the sum of its spectra with the fit.
+  *Select* takes the spectra where an image is above (below) a level; the
+  *Brush* adds the pixels within its radius on a map, or the spectra dragged
+  over on a series (*erase*: removes them). The mean T of every component over
+  them is shown. **Save summed spectrum…** is *Sum all spectra* of those files:
+  saved where you say and loaded to fit;
+- *Scatter*: two images against each other;
+- *Save picture…* (the tab shown), *Save table…* (the images shown: spectrum,
+  X, Y, value and error of each), *Save spectra by layout…* (the input spectra
+  in a folder, named X_Y.dat on a map or by their number in a series, with the
+  instrumental function in the header: a sequence for your own fits).
+
+**How to read it.**
+- The solution shown is a good and relatively simple one, not the only one:
+  a line copied into a second component can fit the counts as well (the copies
+  the counts do not need are removed, and components are recombined to fewer
+  lines where the counts allow).
+- A component's T is the sum of the peak optical depths of the lines it has: a
+  weak line the data could not show is missing from it, and its T is low by
+  that line's share.
+- Two components whose lines are the six of one sextet (1, 3, 4, 6 in one, 2, 5
+  in the other): one phase whose orientation varies. Two with the same lines
+  slightly shifted, whose weights trade: one phase whose line shifts (a
+  drifting parameter, or two places the data cannot tell apart) — their
+  weights summed are its T.
+- Limits: powders and textures symmetric about the beam; one velocity axis; a
+  weak phase in a few of very many spectra can be missed.
+
 ## 8. Exclusion regions
 
 Velocity regions whose points are **not fitted**: they are left out of χ², the

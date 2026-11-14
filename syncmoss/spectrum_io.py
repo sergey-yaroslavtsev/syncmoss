@@ -354,23 +354,28 @@ def load_spectrum(main_window, file_paths, calibration_path=None, points_match=T
 
 
 def sum_all_spectra(main_window):
-    """Sum all selected spectra into one and save it"""
-    try:
-        # Parse the current content of process_path
-        main_window.path_list = main_window.parse_process_path()
+    """Sum all spectra of the path box into one and save it (sum_spectra)."""
+    main_window.path_list = main_window.parse_process_path()
+    sum_spectra(main_window, main_window.path_list)
 
-        if not main_window.path_list:
+
+def sum_spectra(main_window, paths):
+    """Sum the spectra *paths* into one, ask where it goes, save it and load
+    it into the window: "Sum all spectra" with the path box's, the window of
+    the found components with the spectra selected on its map."""
+    try:
+        if not paths:
             main_window.set_status("No spectra selected", "orange")
             return
 
-        if len(main_window.path_list) < 2:
+        if len(paths) < 2:
             main_window.set_status("Need at least 2 spectra to sum", "orange")
             return
 
-        main_window.set_status(f"Loading {len(main_window.path_list)} spectra for summing...", "blue")
+        main_window.set_status(f"Loading {len(paths)} spectra for summing...", "blue")
 
         # Load all spectra
-        A_list, B_list = load_spectrum(main_window, main_window.path_list, calibration_path=main_window.calibration_path)
+        A_list, B_list = load_spectrum(main_window, paths, calibration_path=main_window.calibration_path)
 
         if not A_list or not B_list or len(A_list) == 0 or len(B_list) == 0:
             main_window.set_status("Failed to load spectra", "red")
@@ -401,7 +406,7 @@ def sum_all_spectra(main_window):
         # Carry instrumental metadata over only if every input that has metadata
         # agrees; mismatched metadata is dropped (the sum is then ambiguous).
         from syncmoss.instrumental_io import shared_dat_metadata_lines
-        metadata_lines = shared_dat_metadata_lines(main_window.path_list)
+        metadata_lines = shared_dat_metadata_lines(paths)
 
         # Save the summed spectrum
         save_spectrum_with_metadata(save_path, summed_A, summed_B, metadata_lines)
@@ -411,7 +416,7 @@ def sum_all_spectra(main_window):
         main_window.show_pressed()  # This will load and display the summed spectrum
 
         metadata_note = '' if metadata_lines else ' (instrumental metadata not carried over)'
-        main_window.set_status(f"Summed {len(main_window.path_list)} spectra and saved to {os.path.basename(save_path)}{metadata_note}", "green")
+        main_window.set_status(f"Summed {len(paths)} spectra and saved to {os.path.basename(save_path)}{metadata_note}", "green")
 
     except Exception as e:
         main_window.set_status(f"Error summing spectra: {str(e)}", "red")

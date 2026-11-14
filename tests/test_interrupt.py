@@ -18,6 +18,7 @@ ThreadPool stands in for the process pool (except in one test that needs a
 real terminate), so this runs in seconds.
 """
 import multiprocessing as mp
+import os
 import threading
 import time
 from multiprocessing.pool import ThreadPool
@@ -115,6 +116,22 @@ def test_a_terminated_pool_does_not_leave_the_thread_stuck():
         pool.terminate()
         t.join(2)
         assert outcome == ['interrupted'] and not t.is_alive()
+    finally:
+        pool.terminate()
+        pool.join()
+
+
+def test_the_program_pool_runs_blas_in_one_thread(monkeypatch):
+    """new_pool (main.py's, and the one Interrupt makes anew): its processes
+    start with BLAS in one thread -- they all compute at once -- and this
+    process keeps its own setting."""
+    monkeypatch.setattr(sm.mp, 'cpu_count', lambda: 1)
+    before = [os.getenv(name) for name in sm._BLAS_THREADS]
+    pool = sm.new_pool()
+    try:
+        assert pool._processes == 1
+        assert [os.getenv(name) for name in sm._BLAS_THREADS] == before
+        assert pool.map(os.getenv, sm._BLAS_THREADS) == ['1'] * len(sm._BLAS_THREADS)
     finally:
         pool.terminate()
         pool.join()

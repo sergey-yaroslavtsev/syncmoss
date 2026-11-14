@@ -53,7 +53,7 @@ from PySide6.QtCore import Qt, QTimer
 
 from syncmoss import model_io
 from syncmoss.model_io import save_model_to_library
-from syncmoss.syncmoss_main import PhysicsApp
+from syncmoss.syncmoss_main import PhysicsApp, new_pool
 
 # pytest is NOT bundled into the frozen binaries; import it lazily so that
 # `syncmoss --test` can import this module without it.
@@ -640,8 +640,7 @@ def run_gui_smoke() -> int:
     """
     mp.freeze_support()
 
-    num_processes = mp.cpu_count() if mp.cpu_count() <= 4 else mp.cpu_count() - 1
-    pool = mp.Pool(processes=max(1, num_processes))
+    pool = new_pool()                    # the program's own (main.py)
 
     app = QApplication.instance() or QApplication(sys.argv)
     window = PhysicsApp(pool=pool)

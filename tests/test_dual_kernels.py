@@ -35,6 +35,16 @@ def test_the_twin_has_the_value_of_the_kernel(gL, gG):
     assert not np.any(dk._voigt_parts(gL, gG, S, False)[1])              # no dispersion asked for
 
 
+@pytest.mark.parametrize('gL, gG', WIDTHS + [(0.097, 0.0)])
+def test_the_value_alone_is_the_kernel(gL, gG):
+    """voigt_value, the one-pass value, is models.Voigt's to rounding, out to
+    the far wings of a narrow line."""
+    reference = m5.Voigt(gL, gG, S)
+    assert np.max(np.abs(dk.voigt_value(gL, gG, S) - reference)) < 100 * EPS * np.max(reference)
+    far = np.array([-1e3, -1.0, 0.0, 1.0, 1e3])
+    assert np.allclose(dk.voigt_value(1e-3, 5e-4, far), m5.Voigt(1e-3, 5e-4, far), rtol=1e-12, atol=0)
+
+
 @pytest.mark.parametrize('gL, gG', WIDTHS)
 def test_the_twin_has_the_derivatives_of_the_kernel(gL, gG):
     A, D = dk._voigt_parts(gL, gG, S, True)

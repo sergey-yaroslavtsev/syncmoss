@@ -781,11 +781,17 @@ def TI(p, prepared, pool, Distri=[0], Cor=[0], Recon=[0]):
             H = np.sum([value for value, _ in mine], axis=0)
             if idx:
                 H = _resolved(dn.Dual(H, np.sum([slopes for _, slopes in mine], axis=0), idx), deferred)
-        # The baseline, as models._spectrum_sections has it
-        V = s['V'] - number_of_baseline_parameters
-        x = s['x']
-        N0 = p[V] + p[V + 3] * p[V] / 10 ** 2 * ((-1) * p[V + 1] + x) + p[V + 2] * p[V] / 10 ** 4 * ((-1) * p[V + 1] + x) ** 2
-        N1 = (p[V + 4] + p[V + 7] * p[V + 4] / 10 ** 2 * ((-1) * p[V + 5] + x)
-              + p[V + 6] * p[V + 4] / 10 ** 4 * ((-1) * p[V + 5] + x) ** 2)
-        spectra.append(m5._section_spectrum(dict(s, N0=N0, N1=N1), H))
+        spectra.append(section_counts(p, s['V'] - number_of_baseline_parameters, s, H))
     return spectra[0] if len(spectra) == 1 else np.concatenate(spectra)
+
+
+def section_counts(p, V, s, H):
+    """The counts of a spectrum (a section of models._spectrum_sections, *s*)
+    from its node sum H with the baseline p[V:V + 8]: N0 and N1 as
+    models._spectrum_sections has them, the source's normalisation of
+    models._section_spectrum. p's values and H may be Duals."""
+    x = s['x']
+    N0 = p[V] + p[V + 3] * p[V] / 10 ** 2 * ((-1) * p[V + 1] + x) + p[V + 2] * p[V] / 10 ** 4 * ((-1) * p[V + 1] + x) ** 2
+    N1 = (p[V + 4] + p[V + 7] * p[V + 4] / 10 ** 2 * ((-1) * p[V + 5] + x)
+          + p[V + 6] * p[V + 4] / 10 ** 4 * ((-1) * p[V + 5] + x) ** 2)
+    return m5._section_spectrum(dict(s, N0=N0, N1=N1), H)

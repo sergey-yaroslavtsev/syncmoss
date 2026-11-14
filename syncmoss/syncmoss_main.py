@@ -184,6 +184,34 @@ def _instrumental_label(use_dat_metadata):
     return f"Instrumental function\n({'use IF from file' if use_dat_metadata else 'use global IF'})"
 
 
+# What sets the threads of numpy's linear algebra (BLAS) in a process: read
+# once, when the process loads it
+_BLAS_THREADS = ('OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS')
+
+
+def new_pool():
+    """The program's pool: a process per core, one core left free above four.
+    Its processes run at the same time, so each does its linear algebra in one
+    thread: by default BLAS would start a thread per core in every process,
+    and those wait for each other (a 512 x 512 eigh, as the Fit quality's
+    smoother has, takes 10 to 20 times longer in every process). A fit's work
+    in a process -- TImod, the dual kernels -- holds no linear algebra large
+    enough to be threaded, so it does not change. The variables are set while
+    the processes start (they read them then; a forked one is the copy of this
+    one and keeps its BLAS) and this process keeps its own."""
+    processes = mp.cpu_count() if mp.cpu_count() <= 4 else mp.cpu_count() - 1
+    saved = {name: os.environ.get(name) for name in _BLAS_THREADS}
+    os.environ.update({name: '1' for name in _BLAS_THREADS})
+    try:
+        return mp.Pool(processes=processes)
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 class CustomNavigationToolbar(NavigationToolbar):
     """Custom matplotlib toolbar with toggle button for model line positions and legend."""
     
@@ -3144,8 +3172,7 @@ class PhysicsApp(QMainWindow):
                 self.pool.terminate()
                 self.pool.join()
                 # Create a new pool
-                num_processes = mp.cpu_count() if mp.cpu_count() <= 4 else mp.cpu_count() - 1
-                self.pool = mp.Pool(processes=num_processes)
+                self.pool = new_pool()
                 self._pool_killed = True
             except Exception as e:
                 self.set_status(f"Error during interrupt: {str(e)}", "red")

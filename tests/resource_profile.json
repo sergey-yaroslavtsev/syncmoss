@@ -1,8 +1,8 @@
 {
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
-"measured": "2026-11-04 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"measured": "2026-11-12 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
-"typical_test_mb": 75,
+"typical_test_mb": 76,
 "accumulated_mb": 640,
 "tests": {
 "tests/syncmoss_test.py::test_gui_library_round_trip": [
@@ -560,6 +560,62 @@
 "tests/test_cms_source_geometry_calibration.py::test_unusable_fields_start_from_the_usual_source": [
 0.0,
 9
+],
+"tests/test_components_search.py::test_complete_linkage_is_the_plain_one": [
+0.0,
+2
+],
+"tests/test_components_search.py::test_find_components_runs_from_the_path_box": [
+5.69,
+70
+],
+"tests/test_components_search.py::test_nonneg_fit_and_rank_one_against_exact_solutions": [
+0.02,
+1
+],
+"tests/test_components_search.py::test_nonresonant_refuses_what_the_dtheta_dialogs_refuse": [
+0.0,
+2
+],
+"tests/test_components_search.py::test_show_found_components_warns_first": [
+2.27,
+85
+],
+"tests/test_components_search.py::test_the_dialog_reads_its_choices": [
+2.2,
+93
+],
+"tests/test_components_search.py::test_the_line_model_is_ti[CMS-source2-False]": [
+0.01,
+2
+],
+"tests/test_components_search.py::test_the_line_model_is_ti[CMS-source3-True]": [
+0.02,
+2
+],
+"tests/test_components_search.py::test_the_line_model_is_ti[SMS-None-False]": [
+0.34,
+2
+],
+"tests/test_components_search.py::test_the_line_model_is_ti[SMS-None-True]": [
+0.01,
+2
+],
+"tests/test_components_search.py::test_the_model_rows_start_as_the_table_starts_them": [
+2.42,
+93
+],
+"tests/test_components_search.py::test_the_results_folder": [
+5.85,
+97
+],
+"tests/test_components_search.py::test_the_search_finds_the_two_phases": [
+3.06,
+4
+],
+"tests/test_components_search.py::test_the_window_selects_and_sums": [
+2.5,
+72
 ],
 "tests/test_contact_author.py::test_accent_differs_between_the_two_modes": [
 0.0,

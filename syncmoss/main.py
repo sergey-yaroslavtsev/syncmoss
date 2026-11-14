@@ -4,7 +4,7 @@ import sys
 import multiprocessing as mp
 from PySide6.QtWidgets import QApplication
 import syncmoss.error_reporter as error_reporter
-from syncmoss.syncmoss_main import PhysicsApp
+from syncmoss.syncmoss_main import PhysicsApp, new_pool
 from syncmoss.supp_menu import apply_saved_settings
 __VERSION__ = "0.7.1"
 
@@ -42,11 +42,10 @@ def main():
         sys.argv.remove('--test')
         return _run_gui_smoke()
 
-    # Create global pool once at startup (reused throughout application)
-    # Use same logic as original: all cores if <=4, else cores-1
-    num_processes = mp.cpu_count() if mp.cpu_count() <= 4 else mp.cpu_count() - 1
+    # Create global pool once at startup (reused throughout application):
+    # all cores if <=4, else cores-1, each process's BLAS in one thread (new_pool)
     global pool
-    pool = mp.Pool(processes=num_processes)
+    pool = new_pool()
 
     app = QApplication(sys.argv)
     app.setApplicationName("SYNCmoss")

@@ -1,14 +1,14 @@
 """New features that are not well tested yet.
 
 A feature named in EXPERIMENTAL_FEATURES has its model-menu entry in
-EXPERIMENTAL_COLOR (parameters_table), and choosing it shows
-warn_if_experimental's message first. Once a feature has proven itself, it is
-taken off the list and nothing else changes: its entry gets its usual colour
-back and the message is no longer shown.
+EXPERIMENTAL_COLOR (parameters_table; a Supp entry keeps its colour), and
+choosing it shows warn_if_experimental's message first. Once a feature has
+proven itself, it is taken off the list and nothing else changes: its entry
+gets its usual colour back and the message is no longer shown.
 """
 from PySide6.QtWidgets import QMessageBox
 
-EXPERIMENTAL_FEATURES = ('Distr_T', 'Spectrum')
+EXPERIMENTAL_FEATURES = ('Distr_T', 'Spectrum', 'Find principal components', 'Show found components')
 
 EXPERIMENTAL_COLOR = '#cc0000'
 

@@ -7,7 +7,7 @@ here does that work in one compiled pass over plain arrays:
   * Voigt, Voigt_complex -- the kernels' names and signatures. Their twin
     returns the value and its derivatives in the kernel's OWN arguments, and
     dual_numbers.chain makes the Dual of them, whatever fit parameters the
-    arguments depend on;
+    arguments depend on; voigt_value is the value alone, in one pass;
   * expm_neg, readout -- models._expm_neg and the readout of
     models._polarised_readout: the value and its derivatives along the
     derivatives of the matrix handed in.
@@ -169,6 +169,42 @@ def _voigt_parts(gL, gG, S, dispersion):
             D[2, i] = 2 / gL * b_G
             D[3, i] = 2 / gL * b_S
     return A, D
+
+
+@njit(cache=True)
+def voigt_value(gL, gG, S):
+    """models.Voigt(gL, gG, S) -- _voigt_parts' value alone -- in one pass
+    over the points of S (1-D), its factors made once: half the time of
+    models.Voigt's array expression, for a caller that computes a line many
+    times (the line fits of spectrum_reference and components_search). The
+    value is models.Voigt's to rounding."""
+    g = gL + gG
+    ro = gL / g
+    P, _ = _poly(_W_L, ro)
+    N0 = (1 - (1 - ro) * P) * g * _K[0]
+    P, _ = _poly(_W_G, ro)
+    N1 = (1 - ro * P) * g * _K[1]
+    P, _ = _poly(_W_I, ro)
+    N2 = P * g * _K[2]
+    P, _ = _poly(_W_P, ro)
+    N3 = P * g * _K[3]
+    P, _ = _poly(_C_L, ro)
+    cL = ro * (1 + (1 - ro) * P)
+    P, _ = _poly(_C_I, ro)
+    cI = ro * (1 - ro) * P
+    P, _ = _poly(_C_P, ro)
+    cP = ro * (1 - ro) * P
+    cG = 1 - cL - cI - cP
+    # the four shapes of _voigt_parts, L G I P, as factors times what varies
+    aL, aG, aI, aP = cL * N0 / np.pi, cG / N1 / np.sqrt(2 * np.pi), cI * N2 * N2 / 2, cP * 2 / N3
+    qG, qP = 1 / (2 * N1 * N1), 2 / N3
+    out = np.empty(len(S))
+    for i in range(len(S)):
+        s2 = S[i] * S[i]
+        r = N2 * N2 + s2
+        m = np.exp(-qP * np.abs(S[i]))           # sech^2 as 4m/(1 + m)^2: no overflow far out
+        out[i] = aL / (s2 + N0 * N0) + aG * np.exp(-s2 * qG) + aI / (r * np.sqrt(r)) + aP * m / ((1 + m) * (1 + m))
+    return out
 
 
 def Voigt_complex(gL, gG, S, C1, C2):
