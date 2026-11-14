@@ -14,6 +14,8 @@ import traceback
 import numpy as np
 import syncmoss.models as m5
 import syncmoss.minimi_lib as mi
+import syncmoss.dual_numbers as dn
+import syncmoss.models_dual as md
 from syncmoss.minimi_lib import chi2_spread
 from syncmoss.expression_eval import eval_expr
 from syncmoss import exclusion_regions
@@ -155,12 +157,13 @@ def _recon_penalty_rows(weight_tail, infos, reg_scale):
     Operates on the CHANNEL density g = w/Σw (scale-invariant) so D behaves the
     same regardless of the weight normalization; ``reg_scale`` makes the penalty
     commensurate with the data's (weighted) sum-of-squares. Zero λ (D=0) yields
-    zero rows that leave the fit unconstrained.
+    zero rows that leave the fit unconstrained. The weights may be dual numbers
+    (dual_numbers): the rows then carry their derivatives.
     """
     rows = []
     for info in infos:
         num = info['num']
-        w = np.asarray(weight_tail[info['wstart']:info['wstart'] + num], dtype=float)
+        w = dn.array(list(weight_tail[info['wstart']:info['wstart'] + num]), dtype=float)
         s = np.sum(w)
         g = w / s if s != 0 else np.full(num, 1.0 / num)
         if num >= 2:
@@ -710,10 +713,11 @@ def fit_model(app, inputs, spectrum_files, pool):
         base_len = len(p0)
         if recon_infos:
             def _rebuild_recon(pw):
+                # (the weights may be dual numbers: the exact derivatives below)
                 rl = list(Recon)
                 for info in recon_infos:
                     s = base_len + info['wstart']
-                    weights = np.asarray(pw[s:s + info['num']], dtype=float)
+                    weights = dn.array(list(pw[s:s + info['num']]), dtype=float)
                     for re in [info['re']] + info['followers']:
                         rl[re] = weights
                 return rl
@@ -771,6 +775,34 @@ def fit_model(app, inputs, spectrum_files, pool):
         if refusal:
             return {'success': False, 'message': f"{refusal}: the fit was not started"}
 
+        # The model's exact derivatives (models_dual) where the whole model is
+        # covered, else minimi_hi's own finite differences (jacobian=None).
+        # Called once here: what only the values tell (NotCovered) or a text
+        # that does not take dual numbers (TypeError) is known before the fit
+        # starts. The trial steps stay models.TI either way.
+        jacobian = None
+        if not md.uncovered(model):
+            sources = method_params_list if is_simultaneous and not uniform_method else [mp0]
+
+            def of(key):
+                return sources[0][key] if len(sources) == 1 else [mp_i[key] for mp_i in sources]
+            try:
+                prepared = md.prepare(A_data, model, JN, of('x0'), of('MulCo'), of('INS'), of('Met'),
+                                      norm_data, pol, lengths_data, smearing_data)
+                exact_fit = None
+                if recon_infos:
+                    def exact_fit(qw):
+                        # func_fit for dual numbers: the spectrum of the head with the
+                        # tail's weights, then the smoothness rows of those weights
+                        return np.concatenate([md.TI(qw[:base_len], prepared, pool, Distri, Cor, _rebuild_recon(qw)),
+                                               _recon_penalty_rows(qw[base_len:], recon_infos, reg_scale)])
+                jacobian = md.fit_jacobian(prepared, pool, Distri, Cor, Recon, fix, confu, Expr, NExpr, model=exact_fit)
+                jacobian(p0_fit)
+            except (md.NotCovered, TypeError) as reason:
+                print(f'[Fitting] Derivatives by differences: {reason}')
+                jacobian = None
+        print(f"[Fitting] Derivatives: {'exact' if jacobian is not None else 'differences'}")
+
         # Perform minimization
         tau0 = 10 ** -3
         eps = 10 ** -6
@@ -799,7 +831,8 @@ def fit_model(app, inputs, spectrum_files, pool):
             n_reg=n_reg,
             batch_eval=batch_eval,
             weights='P',
-            chi2_correction=chi2_correction(app)
+            chi2_correction=chi2_correction(app),
+            jacobian=jacobian
         )
         if hi2 > 1.25:
             print('hi2 is too high let me try to continue')
@@ -819,7 +852,8 @@ def fit_model(app, inputs, spectrum_files, pool):
                 n_reg=n_reg,
                 batch_eval=batch_eval,
                 weights='P',
-                chi2_correction=chi2_correction(app)
+                chi2_correction=chi2_correction(app),
+                jacobian=jacobian
             )
             if np.array_equal(pfit, pO) == True:
                 if len(er) == 1:

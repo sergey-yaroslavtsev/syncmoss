@@ -42,7 +42,38 @@ def test_grid_matches_direct_reference():
     truth = _L_direct(6000, **_WAVE)                 # dense direct sum = ground truth
     got = _L_grid(500, **_WAVE)
     rel = np.max(np.abs(got - truth)) / np.max(np.abs(truth))
-    assert rel < 3.0e-3, f"grid deviates from direct reference by {rel:.2e} of peak"
+    # 1.3e-5 with the cubic deposit on four nodes; the linear one on two gave 7e-4
+    assert rel < 1.0e-4, f"grid deviates from direct reference by {rel:.2e} of peak"
+
+
+@pytest.mark.parametrize('dg', [0.0125, 0.05])
+def test_the_deposit_keeps_every_position_and_its_square(dg):
+    # The cubic kernel's weights: the binned positions have the wave's own mean
+    # AND mean square, so the grid does not broaden a line (a split between two
+    # nodes keeps the mean only and adds up to dg^2/4 to the mean square)
+    v = m5.SDW_thick_terms_direct(Num=500, **_WAVE)[0]
+    g, w = m5._bin_positions(v, dg, float(len(v)))
+    assert np.ptp(v) > 20 * dg and w.min() < 0                       # a real grid; the outer weights are negative
+    assert w.sum() == pytest.approx(1.0, abs=1e-12)
+    assert (w * g).sum() == pytest.approx(v.mean(), abs=1e-12)
+    assert (w * g * g).sum() == pytest.approx((v * v).mean(), abs=1e-11)
+    assert g[0] < v.min() and g[-1] > v.max() and np.allclose(np.diff(g), dg)
+
+
+def test_the_deposit_is_smooth_as_the_grid_moves():
+    # A grid node crossing a position: the weights and their slope in the
+    # grid's step are continuous (the split between two nodes had a kink there,
+    # which the spectrum's derivative in the line width showed)
+    v = np.array([0.0, 0.37, 1.0])
+    steps = 0.37 / 3 * (1 + np.array([-2e-6, -1e-6, 0.0, 1e-6, 2e-6]))  # the position 0.37 on a node, and beside it
+
+    def line(dg):
+        g, w = m5._bin_positions(v, dg, 3.0)
+        return (m5.Voigt(0.3, 0.0, _E[:, None] - g[None, :]) * w[None, :]).sum(axis=1)
+    L = np.array([line(dg) for dg in steps])
+    below, above = (L[1] - L[0]) / (steps[1] - steps[0]), (L[4] - L[3]) / (steps[4] - steps[3])
+    assert np.max(np.abs(below)) > 0
+    assert np.max(np.abs(above - below)) < 1e-3 * np.max(np.abs(below))
 
 
 def test_grid_weights_are_normalised():

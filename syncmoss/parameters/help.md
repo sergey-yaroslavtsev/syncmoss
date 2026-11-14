@@ -181,6 +181,8 @@ regions: *Load model* asks whether to apply them.
 - Errors = statistical 1σ × √χ² (× 1 when χ² = 0: a spectrum without noise;
   *Supp → Empirical correction of errors by χ²* turns the factor off). A
   parameter with no error is redundant (see the log).
+- Fits take the model's exact derivatives (finite differences for a row they
+  do not cover); the log says which (`Derivatives:`).
 
 ### 9.1 Fit quality
 

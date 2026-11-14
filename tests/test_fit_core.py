@@ -14,6 +14,7 @@ import shutil
 import numpy as np
 import pytest
 
+import syncmoss.minimi_lib as mi
 from syncmoss import fitting_io, model_io
 from syncmoss.constants import number_of_baseline_parameters as NB
 
@@ -30,7 +31,7 @@ def _capture_minimiser(monkeypatch):
     calls = []
 
     def fake(func, x, y, p0, **kwargs):
-        calls.append({'x': np.array(x, dtype=float), 'y': np.array(y, dtype=float),
+        calls.append({'func': func, 'x': np.array(x, dtype=float), 'y': np.array(y, dtype=float),
                       'p0': np.array(p0, dtype=float), **kwargs})
         p0 = np.array(p0, dtype=float)
         fixed = {int(i) for i in np.ravel(kwargs['fix'])}
@@ -58,6 +59,28 @@ def _expected_start(app):
             p0[int(con1[c])] = p0[int(con2[c])] * con3[c]
     return {'model': model, 'p0': p0, 'fix': fix, 'bounds': bounds,
             'confu': np.array([con1, con2, con3]), 'Expr': Expr, 'NExpr': NExpr}
+
+
+def _assert_the_rows_are_the_models(call):
+    """The exact derivatives the fit hands to the minimiser (jacobian=) are
+    those of the model it hands with them: central differences of it, with
+    links and expressions followed as the minimiser sets a trial point. (Its
+    own forward differences are off by 2e-3 for a parameter that stands at 0:
+    their step is 1e-12 there.)"""
+    p0, x, f = call['p0'], call['x'], call['func']
+    fixed = {int(i) for i in np.ravel(call['fix'])}
+    free = [k for k in range(len(p0)) if k not in fixed]
+    rows = call['jacobian'](p0)
+    assert not np.any(rows[sorted(fixed)])
+    moving = 0
+    for k in free:
+        h = np.finfo(float).eps ** (1 / 3) * max(abs(p0[k]), 1.0)
+        central = (f(x, mi._bump_parameter(p0, k, h, call['confu'], call['Expr'], call['NExpr']))
+                   - f(x, mi._bump_parameter(p0, k, -h, call['confu'], call['Expr'], call['NExpr']))) / (2 * h)
+        # (a free parameter the model does not read -- one a distribution replaces -- has a zero row)
+        assert np.abs(rows[k] - central).max() <= 1e-6 * np.abs(central).max(), k
+        moving += bool(np.any(central))
+    assert moving > 3
 
 
 def _spectrum_copies(app, tmp_path, n):
@@ -101,6 +124,12 @@ def test_a_single_fit_hands_the_table_to_the_minimiser(physics_app, tmp_path, mo
     assert result['is_simultaneous'] is False
     assert len(result['FS']) == 1 and len(result['SPC_f']) == len(result['A'])
     assert np.array_equal(result['parameters'], expected['p0'])
+    # the model's exact derivatives go with it (an Expression and a link to it among them) ...
+    _assert_the_rows_are_the_models(call)
+    # ... unless a row of the model is not covered by them: the minimiser's own differences then
+    monkeypatch.setattr(fitting_io.md, 'uncovered', lambda model: ['a row with no exact derivatives'])
+    assert fitting_io.fit_single_spectrum(app, app.calibration_path, SerialPool())['success']
+    assert calls[1]['jacobian'] is None
 
 
 # --- TI cuts the joined spectra at their lengths -----------------------------------
@@ -278,3 +307,75 @@ def test_an_nbaseline_fit_hands_every_section(physics_app, tmp_path, monkeypatch
     assert [len(fs) for fs in result['FS_list']] == [1, 1]
     assert [len(s) for s in result['SPC_f_list']] == lengths
     assert result['spectrum_files'] == paths
+    _assert_the_rows_are_the_models(call)               # both sections' derivatives
+
+
+def test_a_fit_with_a_recon_hands_the_derivatives_in_its_weights_too(physics_app, tmp_path, monkeypatch):
+    """The Recon's weights follow the table's parameters in the fit's vector and
+    its smoothness rows follow the spectrum: the exact derivatives cover both."""
+    app = physics_app
+    redirect_params_dir_to_tmp(app, tmp_path)
+    pt = app.params_table
+    pt.select_model(1, 'Sextet')
+    pt.select_model(2, 'Recon')
+    for col, value in enumerate(('3', '31', '35', '5', '0.3', '0.3')):      # H over 5 values, both smoothness knobs
+        model_io._set_row_param(pt.row_widgets[2], col, value, '', '', 'True')
+    app.jn0_input.setText(str(JN))
+    app.initialize_parameters()
+    calls = _capture_minimiser(monkeypatch)
+
+    result = fitting_io.fit_single_spectrum(app, app.calibration_path, SerialPool())
+
+    assert result['success'], result.get('message')
+    call = calls[0]
+    assert len(call['p0']) == NB + SEXTET + 7 + 5 and call['n_reg'] == 4 + 3
+    assert len(call['x']) == len(result['A']) + call['n_reg']
+    _assert_the_rows_are_the_models(call)
+    weights = range(NB + SEXTET + 7, NB + SEXTET + 7 + 5)
+    rows = call['jacobian'](call['p0'])[list(weights)]
+    assert np.all(np.abs(rows[:, :-call['n_reg']]).max(axis=1) > 0)         # each moves the spectrum ...
+    assert np.all(np.abs(rows[:, -call['n_reg']:]).max(axis=1) > 0)         # ... and its smoothness rows
+
+
+@pytest.mark.parametrize('recon', [False, True], ids=['a Sextet', 'its field reconstructed'])
+def test_a_fit_with_exact_derivatives_ends_where_the_differences_end(physics_app, tmp_path, capsys, monkeypatch,
+                                                                     recon):
+    """The same fit with the model's exact derivatives and with the minimiser's
+    finite differences -- what a model with a row they do not cover falls back
+    to (Ns, T and delta of a Sextet free, as in the fit of two directions
+    above; and with the Sextet's field over 5 values, their weights free)."""
+    app = physics_app
+    redirect_params_dir_to_tmp(app, tmp_path)
+    pt = app.params_table
+    pt.select_model(1, 'Sextet')
+    for col in range(2, SEXTET):
+        fix_box = pt.row_widgets[1].layout().itemAt(col + 1).widget().layout().itemAt(0).layout().itemAt(1).widget()
+        fix_box.setChecked(True)
+    model_io._set_row_param(pt.row_widgets[1], 0, '6.5', '0', '', 'False')    # T
+    model_io._set_row_param(pt.row_widgets[0], 0, '6000', '1', '', 'False')   # Ns
+    if recon:
+        pt.select_model(2, 'Recon')
+        for col, value in enumerate(('3', '32', '34', '5', '0.5', '0.5')):
+            model_io._set_row_param(pt.row_widgets[2], col, value, '', '', 'True')
+    app.jn0_input.setText(str(JN))
+    app.initialize_parameters()
+    start = model_io.read_model(app)[1]
+
+    exact = fitting_io.fit_single_spectrum(app, app.calibration_path, SerialPool())
+    assert "[Fitting] Derivatives: exact" in capsys.readouterr().out
+    monkeypatch.setattr(fitting_io.md, 'uncovered', lambda model: ['a row with no exact derivatives'])
+    differences = fitting_io.fit_single_spectrum(app, app.calibration_path, SerialPool())
+    assert "[Fitting] Derivatives: differences" in capsys.readouterr().out
+
+    assert exact['success'] and differences['success'], exact.get('message')
+    assert exact['parameters'][0] != start[0]            # the fit did move
+    assert exact['chi2'] == pytest.approx(differences['chi2'], rel=1e-6)
+    if recon:
+        # a regularised fit: its valley is flat, the two ways stop a little apart in it
+        shares = [np.asarray(fit['Recon'][0]) / np.sum(fit['Recon'][0]) for fit in (exact, differences)]
+        assert np.ptp(shares[0]) > 0.01                  # not the flat start
+        assert np.allclose(shares[0], shares[1], atol=1e-4)
+        assert np.allclose(exact['parameters'], differences['parameters'], rtol=1e-4, atol=1e-9)
+        return
+    assert np.allclose(exact['parameters'], differences['parameters'], rtol=1e-5, atol=1e-9)
+    assert np.allclose(exact['errors'], differences['errors'], rtol=1e-3, equal_nan=True)

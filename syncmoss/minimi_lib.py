@@ -205,7 +205,7 @@ def _bump_parameter(params, k, perturbation, confu, Expr, NExpr):
 
 
 def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
-                     Expr, NExpr, verbose=False, batch_eval=None):
+                     Expr, NExpr, verbose=False, batch_eval=None, jacobian=None):
     """Forward-difference Jacobian of the model ``model_func(x_exp, params)``.
 
     For every free parameter ``k`` (not in ``fix``) we bump ``params[k]`` by a
@@ -226,6 +226,12 @@ def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
     evaluation happens while they are built), so the evaluation COUNT and ORDER
     are identical to the serial path.
 
+    ``jacobian``, when given, replaces the differences: ``jacobian(params)``
+    returns the model's derivative with respect to EVERY parameter, one row per
+    parameter (rows of fixed parameters are not used), on the scale of
+    ``model_func``. A linear constraint moves its target with its source, so the
+    source's row gains the target's row times the factor (the chain rule).
+
     Returns ``(jac, inactive)``:
       * ``jac``  : array (n_effective_free, n_data), one row per parameter that
                    actually moves the model.
@@ -235,6 +241,21 @@ def compute_jacobian(model_func, params, x_exp, fix, confu, model_base,
     n_data = len(x_exp)
     jac_rows = []        # Jacobian rows for parameters that move the model
     inactive = []            # indices of "inactive" parameters (all-zero column)
+
+    if jacobian is not None:
+        full = np.array(jacobian(params), dtype=float)              # (len(params), n_data)
+        for c_i in range(len(confu[0])):
+            if confu[0][c_i] >= 0:                                   # target confu[0] follows source confu[1]
+                full[int(confu[1][c_i])] += confu[2][c_i] * full[int(confu[0][c_i])]
+        for k in range(len(params)):
+            if np.any(fix == k):
+                continue
+            if np.all(full[k] == 0):
+                inactive.append(k)
+            else:
+                jac_rows.append(full[k])
+        jac = np.array(jac_rows, dtype=float) if jac_rows else np.empty((0, n_data), dtype=float)
+        return jac, np.array(inactive, dtype=int)
 
     plan = []            # (k, perturbation, bumped) -- built without evaluating
 
@@ -336,7 +357,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
               bounds=np.array([[], []], dtype=float), Expr=[],
               NExpr=np.array([], dtype=int), MI=10, MI2=20, nu0=2.618,
               tau0=0.001, eps=10 ** -10, fixCH=0, n_reg=0, batch_eval=None, weights='U',
-              chi2_correction=True):
+              chi2_correction=True, jacobian=None):
     """Levenberg-Marquardt least-squares fit of ``model_func(x_exp, params)`` to ``y_exp``.
 
     Optimised twin of the previous ``minimi_lib_old.minimi_hi`` — identical signature
@@ -372,6 +393,16 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
         counts (>= 0, model > 0);
       * one positive weight per data row -- fixed weights, variance 1/weight.
     Penalty rows (``n_reg``) keep the weight 1.
+
+    ``jacobian`` (default None: forward differences) -- the model's
+    derivatives given by the caller: ``jacobian(params)`` returns one row per
+    parameter (every parameter, fixed ones included; their rows are not used),
+    each as long as the model's output, unweighted. No model is evaluated for
+    the Jacobian then. Linear constraints (``confu``) are applied to it by the
+    chain rule. Linked expressions (``Expr``) are not: with them the caller's
+    rows must be TOTAL derivatives -- the row of a free parameter includes what
+    an expression of it moves (the rows of the expressions' own slots, which
+    are fixed, are not read), as models_dual.fit_jacobian gives them.
 
     ``chi2_correction`` (default True) multiplies the covariance -- so the
     errors -- by Pearson's reduced chi-square, the last value returned, for
@@ -451,6 +482,15 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             def batch_eval(_plist):
                 return [np.asarray(m, dtype=float) * scale for m in _raw_batch(_plist)]
 
+    _raw_jacobian = jacobian
+    if _raw_jacobian is not None:              # the caller's derivatives, weighted as the model is
+        if scale is None:
+            def jacobian(_p):
+                return np.asarray(_raw_jacobian(_p), dtype=float)
+        else:
+            def jacobian(_p):
+                return np.asarray(_raw_jacobian(_p), dtype=float) * scale[None, :]
+
     # --- Levenberg-Marquardt symbol map (textbook Greek -> name used here) --- #
     #   mu   ->  damping         per-parameter damping added to the Hessian diagonal
     #   tau  ->  damping_scale   scalar setting mu relative to diag(Hessian)
@@ -496,7 +536,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
         model_cur[:n_data] *= scale[:n_data]
     # (compute_jacobian copies params internally, so we can pass it directly)
     jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
-                                     batch_eval=batch_eval)
+                                     batch_eval=batch_eval, jacobian=jacobian)
     jac_params = _jacobian_parameters(len(params), fix, inactive)   # parameter of each row
     jac_T = jac.T
     hessian = np.matmul(jac, jac_T)           # Gauss-Newton Hessian J.J^T
@@ -536,7 +576,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             if strategy_count % 2 == 0:
                 # --- Strategy A: refresh Jacobian, damping = scale*diag(Hessian) --
                 jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
-                                                 batch_eval=batch_eval)
+                                                 batch_eval=batch_eval, jacobian=jacobian)
                 jac_params = _jacobian_parameters(len(params), fix, inactive)
                 if len(jac) == 0:
                     print('no move is found, J=0')
@@ -850,7 +890,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             params, errors, chi2_red, covariance, chi2_pearson = minimi_hi(
                 _raw_model, x_exp, y_raw, params, fix_orig, confu, bounds,
                 Expr, NExpr, np.maximum(int(MI / 2), 1), MI2, nu0, tau0, eps, 1, n_reg,
-                _raw_batch, weights, chi2_correction)
+                _raw_batch, weights, chi2_correction, _raw_jacobian)
             if np.all(params == params_bak):
                 errors, covariance = errors_bak, covariance_bak   # a pair: same rows
 

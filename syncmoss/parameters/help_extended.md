@@ -626,6 +626,13 @@ the plot toolbar; a bar appears above the plot.
   Poisson counts at its level — what a measurement with those counts would
   give. **Supp → Empirical correction of errors by χ²** turns the factor off
   (ON by default): the errors are then those of exactly Poisson counts.
+- A fit of spectra needs the derivative of the model in every free parameter.
+  It takes them exact, computed together with the model (several times
+  faster than one more model per parameter, and with no step to choose).
+  A model with a row the exact derivatives do not cover takes finite
+  differences instead, the way every fit worked before: the two end at the
+  same fit (the values differ by about 10⁻⁵ of themselves or less). The log
+  names which a fit used (`Derivatives:`).
 - The % intensities and the Expression rows get their errors from the same
   covariance, with the same factor; the correlation matrix does not depend on it.
 - A parameter the other free ones reproduce exactly — two that enter only as a
@@ -974,7 +981,8 @@ within the (1,6) and (3,4) pairs. Similar to the SpectrRelax SDW/CDW parameter l
 
 N/Γ, the grid resolution, is the number of grid steps per line width used to bin
 the wave positions. This is the accuracy↔speed knob (larger = finer grid = more
-Voigt evaluations = more accurate = slower; error ~ 1/(N/Γ)). Default 4.
+Voigt evaluations = more accurate = slower; the error falls about as
+1/(N/Γ)³: some 0.5 % of a line's peak at 4, 0.05 % at 8). Default 4.
 
 The wave-phase sampling count (the former ``Num``) is **not** settable: it is
 fixed internally at ``models.SDW_NUM = 2000``. Its cost is cheap O(Num)

@@ -1071,10 +1071,10 @@ def Voigt_complex(gL, gG, S, C1, C2): # doi.org/10.1107/S0021889800010219
     real Voigt() bit-for-bit; with (C1, C2) = (1, 1j*DISPERSION_SIGN) it
     returns V + 1j*DISPERSION_SIGN*D, the absorptive profile plus its
     (approximate) Kramers--Kronig dispersive partner, in one call. The dispersive
-    factor per component is C2/y * (x - <derivative-of-log-profile term>)."""
-    delt = gG / 2 / np.sqrt(2 * np.log(2)) + 0.01 * (gG == 0)
-    x = S / delt / np.sqrt(2)
-    y = gL / 2 / delt / np.sqrt(2)
+    part of each component f is 2/gL * (S*f + delt**2 * df/dS), the relation
+    that is exact for a Voigt profile of Gaussian sigma delt; with gG = 0 it is
+    the dispersion of the Lorentzian, 2*S/gL * f."""
+    delt = gG / 2 / np.sqrt(2 * np.log(2))
 
     ro = gL/(gL+gG)
     WG = (1 - ro*(0.66000 + 0.15021*ro - 1.24984*ro**2 + 4.74052*ro**3 - 9.48291*ro**4 + 8.48252*ro**5 - 2.95553*ro**6)) * (gG + gL)
@@ -1092,13 +1092,13 @@ def Voigt_complex(gL, gG, S, C1, C2): # doi.org/10.1107/S0021889800010219
     NP = WP/2/np.log(2**(1/2)+1)
 
     Voi = cl * WL / 2 / np.pi / (S ** 2 + (WL / 2) ** 2)\
-                    *(C1 + C2 / y * (x - S/(S**2 + (WL / 2) ** 2)*delt*np.sqrt(2)))\
+                    *(C1 + C2 * 2 / gL * (S - 2 * delt ** 2 * S/(S**2 + (WL / 2) ** 2)))\
         + cg * (np.exp((-1) * (S ** 2 / (2 * NG ** 2))) / NG / np.sqrt(2 * np.pi)) \
-                    *(C1 + C2 / y * (x - S * delt / NG ** 2 / np.sqrt(2)))\
+                    *(C1 + C2 * 2 / gL * (S - delt ** 2 * S / NG ** 2))\
         + ci * (1/2/NI)*(1 + (S/NI)**2)**(-3/2) \
-                    *(C1 + C2 / y * (x - 3*S/NI**2/(1+(S/NI)**2)*delt/np.sqrt(2)))\
+                    *(C1 + C2 * 2 / gL * (S - delt ** 2 * 3*S/NI**2/(1+(S/NI)**2)))\
         + cp * (1/2/NP)*(4/(np.exp(S/NP)+np.exp(-S/NP))**2)\
-                    *(C1 + C2 / y * (x - 2/NP*np.tanh(S/NP)*delt/np.sqrt(2)))
+                    *(C1 + C2 * 2 / gL * (S - delt ** 2 * 2/NP*np.tanh(S/NP)))
                     # ^ np.tanh(S/NP) is the EXACT identity for (e^{2 S/NP}-1)/(e^{2 S/NP}+1);
                     #   the raw-exponential form overflows to inf/inf = NaN in the far wings
                     #   of a narrow line, which the source integration reaches (poisoning Smat).
@@ -1111,9 +1111,7 @@ def Voigt_complex_easy(WL, WG, S, C1, C2):
     C2) convention as Voigt_complex: (1, 0) is the older 2-term real Voigt,
     (1, 1j*DISPERSION_SIGN) is V + 1j*DISPERSION_SIGN*D. Cheapest of the three;
     least accurate in both parts."""
-    delt = WG / 2 / np.sqrt(2 * np.log(2)) + 0.01 * (WG == 0)
-    x = S / delt / np.sqrt(2)
-    y = WL / 2 / delt / np.sqrt(2)
+    delt = WG / 2 / np.sqrt(2 * np.log(2))
 
     d = (WL-WG)/(WL+WG)
     W = (WL+WG)*(1 - 0.18121*(1-d**2)-(0.023665*np.exp(0.6*d)+0.00418*np.exp(-1.9*d))*np.sin(np.pi*d))
@@ -1121,9 +1119,9 @@ def Voigt_complex_easy(WL, WG, S, C1, C2):
     cl = 0.68188+0.61293*d-0.18384*d**2-0.11568*d**3
     cg = 0.32460-0.61825*d+0.17681*d**2+0.12109*d**3
     Voi = cl * W / 2 / np.pi / (S ** 2 + (W / 2) ** 2) \
-                    * (C1 + C2 / y * (x - S/(S**2 + (W / 2) ** 2)*delt*np.sqrt(2)))\
+                    * (C1 + C2 * 2 / WL * (S - 2 * delt ** 2 * S/(S**2 + (W / 2) ** 2)))\
          + cg * (np.exp((-1) * (S ** 2 / (2 * delt_n ** 2))) / delt_n / np.sqrt(2 * np.pi))\
-                    * (C1 + C2 / y * (x - S*delt/delt_n**2/np.sqrt(2)))
+                    * (C1 + C2 * 2 / WL * (S - delt ** 2 * S/delt_n**2))
     return(Voi)
 
 
@@ -2218,12 +2216,25 @@ SDW_NUM = 2000
 
 @njit(cache=True)
 def _bin_positions(vk, dg, norm):
-    """Linear-deposit positions ``vk`` onto a uniform grid of step ``dg``.
+    """Deposit positions ``vk`` onto a uniform grid of step ``dg``.
 
-    Returns ``(centres, weights)``: each point is split between its two nearest
-    grid nodes (piecewise-linear density estimate), weights summing to
-    ``len(vk)/norm``. Degenerate input (all equal) -> a single node. Explicit
-    loop (numba-friendly; ``np.bincount(minlength=)`` is unsupported under njit).
+    Returns ``(centres, weights)``: each point is split between the two grid
+    nodes around it and the next one on either side, with the weights of the
+    cubic convolution kernel (Keys; the Catmull-Rom spline) -- at the fraction
+    t of a step past the node below it
+        (-t^3 + 2t^2 - t)/2, (3t^3 - 5t^2 + 2)/2, (-3t^3 + 4t^2 + t)/2, (t^3 - t^2)/2.
+    They sum to 1, keep the point's position AND its square (the deposit does
+    not broaden the line: the error falls as the step cubed), and are
+    continuous WITH THEIR SLOPE as the point moves across the grid; the outer
+    two are negative (to -0.074). Two nodes, the linear split used before, are
+    continuous only in value -- the spectrum's derivative in what moves the grid
+    (the line width) had a kink at every crossing of a node, 2.5 % of scatter --
+    and broaden the line: their error is 4 to 30 times larger at the same step
+    (docs/dual_numbers/scdw_deposit_steps.py). The grid has one node beyond
+    each end; weights sum to ``len(vk)/norm``. Degenerate input (all equal) ->
+    a single node. Explicit loop (numba-friendly; ``np.bincount(minlength=)``
+    is unsupported under njit). models_dual._binned is the same deposit for
+    dual numbers.
     """
     lo = np.min(vk)
     hi = np.max(vk)
@@ -2234,20 +2245,22 @@ def _bin_positions(vk, dg, norm):
         weights = np.empty(1, dtype=np.float64)
         weights[0] = len(vk) / norm
         return centres, weights
-    nbins = int(np.ceil(span / dg)) + 1
-    centres = lo + dg * np.arange(nbins)
+    nbins = int(np.ceil(span / dg)) + 3
+    centres = lo + dg * (np.arange(nbins) - 1)
     weights = np.zeros(nbins)
     inv = 1.0 / dg
     for j in range(len(vk)):
-        x = (vk[j] - lo) * inv
+        x = (vk[j] - lo) * inv + 1.0
         i0 = int(np.floor(x))
-        if i0 < 0:
-            i0 = 0
-        elif i0 > nbins - 2:
-            i0 = nbins - 2
+        if i0 < 1:
+            i0 = 1
+        elif i0 > nbins - 3:
+            i0 = nbins - 3
         frac = x - i0
-        weights[i0] += 1.0 - frac
-        weights[i0 + 1] += frac
+        weights[i0 - 1] += (-frac ** 3 + 2 * frac ** 2 - frac) / 2
+        weights[i0] += (3 * frac ** 3 - 5 * frac ** 2 + 2) / 2
+        weights[i0 + 1] += (-3 * frac ** 3 + 4 * frac ** 2 + frac) / 2
+        weights[i0 + 2] += (frac ** 3 - frac ** 2) / 2
     return centres, weights / norm
 
 
