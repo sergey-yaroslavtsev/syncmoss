@@ -10,11 +10,16 @@ This module provides utility functions for mathematical operations including:
 import numpy as np
 import re
 
+from syncmoss import dual_numbers as dn
+from syncmoss.expression_eval import eval_expr
+
 
 def calculate_partial_derivative_numerical(func, x, param_index, h=1e-8):
     """
     Calculate partial derivative numerically using finite differences.
-    
+    Only for an expression that does not take dual numbers
+    (calculate_expression_error).
+
     Args:
         func: Function to differentiate (callable)
         x: Point at which to evaluate derivative (array-like)
@@ -85,6 +90,7 @@ def calculate_expression_error(expr_str, parameters, errors, covariance_matrix, 
     """
     Calculate error for an Expression model using covariance matrix.
     Handles the case where covariance_matrix only includes variable parameters.
+    The text is evaluated by expression_eval.eval_expr, as everywhere.
     
     Args:
         expr_str: Expression string (e.g., "p[5]*2 + p[10]" or "100*p[5]/(p[5]+p[10])")
@@ -124,20 +130,19 @@ def calculate_expression_error(expr_str, parameters, errors, covariance_matrix, 
     if not variable_param_indices:
         return 0.0  # All parameters in expression are fixed
     
-    # Define function for expression
-    def expr_func(p):
-        return eval(expr_str)
-
-    # Each numerical partial derivative is computed once. The double loop below
-    # used to recompute both of them for every pair -- ~4n^3 evaluations of an
-    # n-term expression for the % errors of n components of one spectrum.
-    derivatives = {}
+    # The expression's derivatives in its free parameters, all from ONE
+    # evaluation on dual numbers: exact. A text with a function that does not
+    # take them (dual_numbers raises TypeError) is differenced instead.
+    try:
+        value = eval_expr(expr_str, dn.seed(parameters, variable_param_indices))
+        derivatives = dict(zip(variable_param_indices, dn.jacobian(value, variable_param_indices)))
+    except TypeError:
+        derivatives = {k: calculate_partial_derivative_numerical(lambda p: eval_expr(expr_str, p), parameters, k)
+                       for k in variable_param_indices}
 
     def partial(k):
-        if k not in derivatives:
-            derivatives[k] = calculate_partial_derivative_numerical(expr_func, parameters, k)
         return derivatives[k]
-    
+
     # Calculate variance using covariance matrix
     variance = 0.0
     
@@ -154,7 +159,7 @@ def calculate_expression_error(expr_str, parameters, errors, covariance_matrix, 
             if cov_i >= covariance_matrix.shape[0] or cov_j >= covariance_matrix.shape[1]:
                 continue
             
-            # Numerical partial derivatives
+            # Partial derivatives
             df_di = partial(i)
             df_dj = partial(j)
             

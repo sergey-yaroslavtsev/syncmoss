@@ -135,11 +135,10 @@ def test_an_expression_of_one_parameter_has_its_error(weights):
                                                   weights=weights)
 
     assert chi2 > 3                                    # so a missing sqrt(chi2) would show
-    # rel 1e-3: support_math differentiates with an absolute step of 1e-8,
-    # a few hundred ulps of the 1e5 baseline
+    # (support_math takes the expression's exact derivatives)
     for k in range(3):
         assert calculate_expression_error('p[%d]' % k, p, errors, covariance) \
-            == pytest.approx(errors[k], rel=1e-3)
+            == pytest.approx(errors[k], rel=1e-12)
 
 
 def test_the_chi_squares_returned_by_each_weighting():

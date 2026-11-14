@@ -1,4 +1,5 @@
-"""Unit tests for support_math: numerical derivatives and error propagation.
+"""Unit tests for support_math: error propagation with the expressions' exact
+derivatives (dual numbers); finite differences for a text that does not take them.
 
 These back the intensity-percentage and expression error columns shown in the
 results table. They are pure numpy, so no GUI is required.
@@ -87,14 +88,18 @@ def test_intensity_percentage_zero_total_returns_zeros():
     assert np.all(errors == 0)
 
 
-# --- the error propagation, computed each derivative once ---------------------
+# --- the error propagation, against the one by finite differences --------------
 # The double loop over the parameter pairs used to recompute BOTH partial
 # derivatives for every pair: ~4n^3 evaluations of an n-term expression for the
 # % errors of n components of one spectrum -- 1.8 s for 20 components, minutes
-# for 60. Every derivative is now computed once; the numbers must not change.
+# for 60. All the derivatives now come from ONE evaluation on dual numbers,
+# exact; the forward differences they replaced (absolute step 1e-8) are good to
+# about 1e-7 of the error, which is how close the two must be.
+DIFFERENCES = 1e-5
+
 
 def _error_as_it_was(expr_str, parameters, errors, covariance_matrix, fixed_params=None):
-    """calculate_expression_error before each derivative was computed once."""
+    """calculate_expression_error by forward differences, as it was."""
     import re
     param_indices = sorted({int(m.group(1)) for m in re.finditer(r'p\[(\d+)\]', expr_str)})
     if not param_indices:
@@ -137,16 +142,33 @@ def _correlated_case(seed, n, fixed_share):
 
 @pytest.mark.parametrize("seed, fixed_share", [(1, 0.0), (2, 0.3), (3, 0.7)])
 @pytest.mark.parametrize("fixed_given", [False, True])
-def test_expression_error_is_unchanged(seed, fixed_share, fixed_given):
+def test_expression_error_is_that_of_the_differences(seed, fixed_share, fixed_given):
     params, errors, cov = _correlated_case(seed, 24, fixed_share)
     fixed = [i for i in range(len(errors)) if np.isnan(errors[i])] if fixed_given else None
     for expr in ("p[3]*2+p[7]", "100*p[2]/(p[2]+p[5]+p[11]+p[23])",
                  "sqrt(p[1]**2+p[4]**2)".replace("sqrt", "np.sqrt"), "p[0]"):
-        assert calculate_expression_error(expr, params, errors, cov, fixed) == \
-            _error_as_it_was(expr, params, errors, cov, fixed), expr
+        assert calculate_expression_error(expr, params, errors, cov, fixed) == pytest.approx(
+            _error_as_it_was(expr, params, errors, cov, fixed), rel=DIFFERENCES), expr
 
 
-def test_intensity_errors_are_unchanged():
+def test_the_derivatives_are_exact():
+    # f = p0**2 * p1 at a large p0: sigma_f = sqrt((2 p0 p1 s0)**2 + (p0**2 s1)**2), to rounding --
+    # a forward difference with the step 1e-8 is off by more than 1e-6 here (p0**2 = 1e10 has an ulp of 2e-6)
+    params, errors = np.array([1.0e5, 3.0]), np.array([20.0, 0.01])
+    cov = np.diag(errors ** 2)
+    exact = np.sqrt((2 * 1.0e5 * 3.0 * 20.0) ** 2 + (1.0e10 * 0.01) ** 2)
+    assert calculate_expression_error("p[0]**2*p[1]", params, errors, cov) == pytest.approx(exact, rel=1e-13)
+    assert abs(_error_as_it_was("p[0]**2*p[1]", params, errors, cov) / exact - 1) > 1e-6
+
+
+def test_a_text_that_does_not_take_dual_numbers_is_differenced():
+    # np.interp is not among the functions dual numbers take: the error comes from differences
+    params, errors, cov = np.array([0.4, 2.0]), np.array([0.1, 0.2]), np.diag([0.01, 0.04])
+    text = "np.interp(p[0], [0.0, 1.0], [0.0, 3.0]) + p[1]"       # 3 p0 + p1
+    assert calculate_expression_error(text, params, errors, cov) == pytest.approx(np.sqrt(0.09 + 0.04), rel=1e-6)
+
+
+def test_intensity_errors_are_those_of_the_differences():
     params, errors, cov = _correlated_case(4, 8 + 20, 0.3)
     t_indices = list(range(8, 28))                       # 20 components, one spectrum
     intensities, intensity_errors = calculate_intensity_percentage_error(
@@ -154,8 +176,8 @@ def test_intensity_errors_are_unchanged():
     assert intensities.sum() == pytest.approx(100.0)
     sum_expr = '+'.join(f'p[{i}]' for i in t_indices)
     for k in (0, 13, 19):
-        assert intensity_errors[k] == _error_as_it_was(
-            f'100*p[{t_indices[k]}]/({sum_expr})', params, errors, cov)
+        assert intensity_errors[k] == pytest.approx(_error_as_it_was(
+            f'100*p[{t_indices[k]}]/({sum_expr})', params, errors, cov), rel=DIFFERENCES)
 
 
 def test_intensity_errors_of_many_components_are_quick():

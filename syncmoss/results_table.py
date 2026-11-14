@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortcut, QTextDocument
 from syncmoss.constants import numco, contrast_text_color
-from syncmoss.support_math import calculate_intensity_percentage_error
+from syncmoss.support_math import calculate_expression_error, calculate_intensity_percentage_error
 from syncmoss.spectrum_parameters import substitute
 from syncmoss.fit_quality import CHI2, DEVIANCE, DEVIANCE_NORM, STRUCTURE, STRUCTURE_FREE, STRUCTURE_SG, MISFIT
 from syncmoss.spectrum_plotter import CHI2_DECIMALS
@@ -803,39 +803,10 @@ class ResultsTable(QWidget):
         
         if cov is None or errors is None:
             return value, 0.0
-        
-        # Build mapping from full parameter index to covariance matrix index
-        # (only free parameters are in the covariance matrix)
-        full_to_cov = {}
-        cov_idx = 0
-        for i in range(len(errors)):
-            if not np.isnan(errors[i]):
-                full_to_cov[i] = cov_idx
-                cov_idx += 1
-        
-        # Compute partial derivatives via numerical differentiation
-        n_free = cov.shape[0]
-        partials = np.zeros(n_free)
-        delta = 1e-6
-        
-        for full_idx, c_idx in full_to_cov.items():
-            p_plus = params.copy()
-            p_minus = params.copy()
-            h = max(abs(params[full_idx]) * delta, delta)
-            p_plus[full_idx] += h
-            p_minus[full_idx] -= h
-            try:
-                f_plus = float(eval_expr(expr_text, p_plus))
-                f_minus = float(eval_expr(expr_text, p_minus))
-                partials[c_idx] = (f_plus - f_minus) / (2 * h)
-            except Exception:
-                partials[c_idx] = 0.0
-        
-        # Error propagation: var(f) = J^T * Cov * J
-        variance = partials @ cov @ partials
-        error = np.sqrt(max(variance, 0))
-        
-        return value, error
+
+        # Error propagation, var(f) = J^T Cov J, with the expression's exact
+        # derivatives: the rule of the % intensities (support_math)
+        return value, float(calculate_expression_error(expr_text, params, errors, cov))
 
     def _apply_expression_spanning(self):
         """
