@@ -208,5 +208,6 @@ def test_a_sequence_shows_every_spectrum_with_its_own_correlation_matrix(physics
     assert window.parameters_line.text() == 'N = 2   N1 = 20'
     assert 'χ² = 2.000(50)' in window.figure.axes[0].get_title()  # spectrum 2's own chi2
     free = int(np.sum(~np.isnan(window.table.current_errors)))
+    window.table.tabs.setCurrentWidget(window.table.correlation_tab)
     assert window.table.correlation_table.rowCount() == free + 2
     assert app.inprogress is False

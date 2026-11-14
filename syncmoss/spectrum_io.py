@@ -221,7 +221,7 @@ def load_spectrum(main_window, file_paths, calibration_path=None, points_match=T
                     continue
             except:
                 if main_window is not None:
-                    main_window.set_status("Directory does not exist", "yellow")
+                    main_window.set_status("Directory does not exist", "orange")
                 continue
 
         is_channel = bliss_channel.is_channel(file)

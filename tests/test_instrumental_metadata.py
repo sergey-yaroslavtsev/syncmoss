@@ -20,6 +20,7 @@ from syncmoss.constants import NAT_WIDTH
 from syncmoss.instrumental_io import (
     parse_dat_instrumental_metadata,
     resolve_instrumental_for_file,
+    instrumental_notes,
     analyze_instrumental_methods,
     get_sms_instrumental_from_global_files,
     same_method_params,
@@ -159,6 +160,21 @@ def test_gcms_wins_when_file_has_both(physics_app, tmp_path):
     resolved = resolve_instrumental_for_file(physics_app, both_dat, use_dat_metadata=True)
     assert resolved["method"] == "CMS"
     assert resolved["INS"] == pytest.approx(0.111)
+
+
+def test_a_description_several_spectra_share_is_told_once(physics_app, tmp_path):
+    """The log of a fit of many spectra: a line per kind of instrumental
+    function, not one per spectrum."""
+    files = [write_dat_variant(tmp_path, f"plain_{k}.dat", physics_app.calibration_path, [])
+             for k in range(3)]
+    files.append(write_dat_variant(tmp_path, "cms.dat", physics_app.calibration_path, ["#@GCMS 0.123"]))
+    physics_app.SMS_fit.setChecked(True)
+    resolved = [resolve_instrumental_for_file(physics_app, f, use_dat_metadata=True) for f in files]
+    shared = resolved[0]["note"].split(": ", 1)[1]
+    assert resolved[1]["note"] == f"plain_1.dat: {shared}"
+    assert instrumental_notes(resolved, files) == [f"3 spectra: {shared}", resolved[3]["note"]]
+    model = resolve_instrumental_for_file(physics_app, None, use_dat_metadata=True)
+    assert instrumental_notes([model], [None]) == [model["note"]]
 
 
 # ---------------------------------------------------------------------------
@@ -317,8 +333,8 @@ def test_fit_two_sms_spectra_with_dedicated_metadata(physics_app, tmp_path):
     assert np.isfinite(result["chi2"])
 
     note = result["instrumental_note"]
-    assert "sms_default.dat: SMS" in note
-    assert "sms_alt.dat: SMS" in note
+    # each from its own file: one line for both (a fit of 300 spectra: one line)
+    assert note == "2 spectra: SMS — instrumental function from .dat metadata (#@INSexp/#@INSint)"
     assert "Mixed-method" not in note  # same method, only the values differ
 
 

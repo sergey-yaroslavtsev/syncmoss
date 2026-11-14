@@ -203,13 +203,20 @@ def test_more_components_than_the_parameters_table_has_rows(physics_app):
 
 
 def test_correlation_matrix_has_every_free_parameter(physics_app):
+    """... made when its tab is opened (a million cells after a fit of
+    hundreds of spectra), and made at once when the tab is open."""
     rt = physics_app.results_table
     result = _singlets(MANY)
     _fill(rt, result)
     n_free = int(np.sum(~np.isnan(result[5])))
     assert n_free == 1 + MANY
+    assert rt.correlation_table.rowCount() == 0
+    rt.tabs.setCurrentWidget(rt.correlation_tab)
     assert rt.correlation_table.rowCount() == n_free + 2
     assert rt.correlation_table.columnCount() == n_free + 2
+    assert rt.correlation_table.item(3, 3).text() == '1.0000'      # the diagonal
+    _fill(rt, _singlets(2))
+    assert rt.correlation_table.rowCount() == 3 + 2
 
 
 def test_a_click_on_any_row_reaches_replot(physics_app, monkeypatch):

@@ -36,12 +36,12 @@ results_table.fill_table(parameters, model_list, model_colors, parameter_names, 
 import os
 import numpy as np
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTableWidget, QTableWidgetItem, QTabWidget, QAbstractItemView,
     QApplication
 )
 from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortcut, QTextDocument
+from PySide6.QtGui import QFont, QColor, QImage, QPainter, QKeySequence, QShortcut
 from syncmoss.constants import numco, contrast_text_color
 from syncmoss.support_math import calculate_expression_error, calculate_intensity_percentage_error
 from syncmoss.spectrum_parameters import substitute
@@ -145,6 +145,7 @@ class ResultsTable(QWidget):
         # that may run before the first fit can rely on direct attribute access
         # instead of hasattr() guards.
         self.correlation_matrix = None
+        self._correlation_pending = False   # the correlation tab is still to be filled
         self.fit_parameters = None
         self.parameter_names = []
         self.covariance_matrix = None
@@ -196,6 +197,7 @@ class ResultsTable(QWidget):
         # Tab 3: Fit quality
         self.quality_tab = self.create_quality_tab()
         self.tabs.addTab(self.quality_tab, "Fit quality")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(self.tabs)
 
@@ -231,8 +233,11 @@ class ResultsTable(QWidget):
         for col in range(self.num_cols):
             self.interactive_table.setColumnWidth(col, 64)
 
-        # The widgets of each row: a model button and one label per parameter
-        # column (self.buttons[row], self.labels[row][col - 1])
+        # The cells of each row: a model button and one item per parameter
+        # column (self.buttons[row], self.labels[row][col - 1]); no wrapping,
+        # as a cell holds one line
+        self.interactive_table.setWordWrap(False)
+        self._cell_font = QFont('Arial', 10)
         self.buttons = []
         self.labels = []
 
@@ -242,9 +247,11 @@ class ResultsTable(QWidget):
     def _set_row_count(self, rows):
         """Give the interactive table exactly *rows* rows.
 
-        Every new row gets its widgets: the clickable model button in column 0
-        and a label in each parameter column. Rows that go take their widgets
-        with them (the table hides and deletes them).
+        Every new row gets the clickable model button in column 0 and an item
+        in each parameter column. Items, not label widgets: with a QLabel per
+        cell the table of a simultaneous fit of 300 spectra (1800 rows) took
+        over a minute to lay out, the window frozen. Rows that go take theirs
+        with them.
         """
         table = self.interactive_table
         table.setRowCount(rows)
@@ -258,16 +265,16 @@ class ResultsTable(QWidget):
             self.buttons.append(btn)
             table.setCellWidget(row, 0, btn)
 
-            # Remaining columns: labels for displaying results
-            row_widgets = []
+            # Remaining columns: a centred text per parameter
+            row_items = []
             for col in range(1, self.num_cols):
-                label = QLabel('')
-                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                label.setFont(QFont('Arial', 10))
-                label.setTextFormat(Qt.TextFormat.RichText)  # Support markup
-                row_widgets.append(label)
-                table.setCellWidget(row, col, label)
-            self.labels.append(row_widgets)
+                item = QTableWidgetItem('')
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setFont(self._cell_font)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                row_items.append(item)
+                table.setItem(row, col, item)
+            self.labels.append(row_items)
     
     def create_correlation_tab(self):
         """
@@ -382,10 +389,6 @@ class ResultsTable(QWidget):
         else:
             item = table.item(row, col)
             text = item.text() if item is not None else ''
-        if '<' in text:  # labels are RichText: strip markup for the clipboard
-            doc = QTextDocument()
-            doc.setHtml(text)
-            text = doc.toPlainText()
         return text.strip()
 
     def copy_selection(self, table):
@@ -480,6 +483,7 @@ class ResultsTable(QWidget):
         self.from_search = False
 
         # Clear correlation matrix
+        self._correlation_pending = False
         self.correlation_table.clear()
         self.correlation_table.setRowCount(0)
         self.correlation_table.setColumnCount(0)
@@ -811,8 +815,8 @@ class ResultsTable(QWidget):
     def _apply_expression_spanning(self):
         """
         Apply column spanning for Distr/Corr/Expression models in the results table.
-        The last meaningful parameter cell expands to span all remaining columns.
-        Uses QTableWidgetItem text instead of QLabel so text fills the full spanned area.
+        The last meaningful parameter cell expands to span all remaining columns,
+        its text from the left.
         """
         if not self.model_list:
             return
@@ -841,71 +845,64 @@ class ResultsTable(QWidget):
                     error_row = i * 3 + 2
 
                     # Apply span for all 3 rows (name, value, error)
-                    for table_row in [name_row, value_row, error_row]:
-                        self.interactive_table.setSpan(table_row, last_col, 1, span_cols)
-
-                    # Replace QLabel cell widgets with QTableWidgetItems for spanned cells
-                    # so the text naturally fills the full spanned width
                     label_idx = num_params - 1  # index into self.labels[row]
                     for table_row in [name_row, value_row, error_row]:
+                        self.interactive_table.setSpan(table_row, last_col, 1, span_cols)
                         if label_idx < len(self.labels[table_row]):
-                            text = self.labels[table_row][label_idx].text()
-                            # Remove the QLabel widget and use a QTableWidgetItem instead.
-                            # removeCellWidget only unregisters the label: it stays a
-                            # visible child of the table until Qt deletes it later, so
-                            # the picture of the table taken right after a fit drew it
-                            # under the item (the texts on top of each other). Hide it now.
-                            old_label = self.interactive_table.cellWidget(table_row, last_col)
-                            self.interactive_table.removeCellWidget(table_row, last_col)
-                            if old_label is not None:
-                                old_label.hide()
-                                old_label.deleteLater()
-                            item = QTableWidgetItem(text)
-                            item.setFont(QFont('Arial', 10))
-                            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-                            self.interactive_table.setItem(table_row, last_col, item)
+                            self.labels[table_row][label_idx].setTextAlignment(
+                                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
     def display_correlation_matrix(self, covariance_matrix):
         """
         Display correlation matrix in the correlation tab.
-        
+
         Args:
             covariance_matrix: Numpy array containing covariance matrix from fitting
-        
+
         The correlation matrix is calculated from the covariance matrix:
             correlation[i,j] = covariance[i,j] / sqrt(covariance[i,i] * covariance[j,j])
-        
+        (0 where that root is not positive). Its cells are made when the tab is
+        shown (_fill_correlation_table): a simultaneous fit of hundreds of
+        spectra has a million of them, tens of seconds to make.
+        """
+        if covariance_matrix is None:
+            return
+
+        # Convert to numpy array if needed
+        if not isinstance(covariance_matrix, np.ndarray):
+            covariance_matrix = np.array(covariance_matrix)
+
+        # Calculate correlation matrix from covariance matrix
+        diagonal = np.diag(covariance_matrix)
+        with np.errstate(invalid='ignore', divide='ignore'):
+            denom = np.sqrt(np.outer(diagonal, diagonal))
+            self.correlation_matrix = np.where(denom > 0, covariance_matrix / denom, 0.0)
+        self._correlation_pending = True
+        if self.tabs.currentWidget() is self.correlation_tab:
+            self._fill_correlation_table()
+
+    def _on_tab_changed(self, index):
+        """The correlation tab opened: make its cells if they are not made yet."""
+        if self._correlation_pending and self.tabs.widget(index) is self.correlation_tab:
+            self._fill_correlation_table()
+
+    def _fill_correlation_table(self):
+        """
+        Fill the correlation tab with self.correlation_matrix.
+
         Structure:
             - Row 0: Model names (shown at first parameter of each model)
             - Row 1: Parameter names
             - Col 0: Model names (shown at first parameter of each model)
             - Col 1: Parameter names
             - Data: (2+, 2+)
-        
+
         Only includes parameters where er[i] is not NaN (i.e., fitted parameters, not fixed).
         """
-        if covariance_matrix is None:
-            return
-        
-        # Convert to numpy array if needed
-        if not isinstance(covariance_matrix, np.ndarray):
-            covariance_matrix = np.array(covariance_matrix)
-        
-        # Calculate correlation matrix from covariance matrix
-        n_params = covariance_matrix.shape[0]
-        correlation_matrix = np.zeros_like(covariance_matrix)
-        
-        for i in range(n_params):
-            for j in range(n_params):
-                denom = np.sqrt(covariance_matrix[i, i] * covariance_matrix[j, j])
-                if denom > 0:
-                    correlation_matrix[i, j] = covariance_matrix[i, j] / denom
-                else:
-                    correlation_matrix[i, j] = 0.0
-        
-        # Store for later use
-        self.correlation_matrix = correlation_matrix
-        
+        self._correlation_pending = False
+        correlation_matrix = self.correlation_matrix
+        n_params = correlation_matrix.shape[0]
+
         # Build parameter labels and model labels, filtering based on errors array
         # Only include parameters where er[i] is not NaN
         param_labels = []

@@ -38,37 +38,66 @@ syncmoss
 
 ## Main features
 
-* User-friendly graphical interface (even better now)
-* Can extract instrumental function from spectrum of standard absorber
-* Sequence (batch) fitting
-* Simultaneous fitting
-* Full Hamiltonian model for the single crystal, mosaic textured and powder cases (one model, three order parameters)
-* 2-state relaxation model
-* Many-state superparamagnetic relaxation model
-* Anharmonic spin modulation (ASM) model
-* MDGD model (instead of xVBF https://doi.org/10.1016/j.nimb.2025.165669)
-* SCDW: spin- and charge-density-wave model
-* Multi-dimensional distributions with correlations (not reconstruction but functional)
-* Distribution reconstruction with regularization (on testing)
-* Expressions (which could be linked to parameters)
-* Online (along with experiment) fitting
-* Parallel calculations of full-transmission integral
-* Library with import/export - create your own and share it with others, ~50 reference phases included
-* Interactive spectrum image
-
+*Both kinds of Mössbauer source*
+* SMS — synchrotron Mössbauer source (polarized, settable polarization degree)
+  and CMS — conventional radioactive source (unpolarized)
+* Instrumental function found from a spectrum of a standard absorber (single
+  line, α-Fe, or any model, also jointly over several spectra); for SMS also a
+  simulated ⁵⁷FeBO₃ source; for CMS the source line width and the cosine
+  smearing of the source–aperture geometry
+* Each `.dat` file can carry its own instrumental function
 
 *Thick samples and proper handling of polarization*
-* Every model builds a 2x2 cross-section matrix,
-  so absorber thickness, polarization and multi-line interference are treated
-  together
-* Works in both source modes: polarized SMS
-  (with a settable linear polarization degree)
-  and unpolarized CMS
+* Full transmission integral, calculated in parallel on all cores
+* Every model builds a 2x2 cross-section matrix, so absorber thickness,
+  polarization and multi-line interference are treated together
 * `Layer` marker: stack layers of different orientation or composition, each with
   its own transmission matrix
 * Magnetic texture: uniaxial order `A` on every anisotropic component plus the
   magnetic polar order `Am` on the Faraday-active ones - a random powder,
   a textured foil and a single crystal are the same model at different values
+
+*Models*
+* Singlet, doublet, sextet
+* Full Hamiltonian for the single crystal, mosaic textured and powder cases (one
+  model, three order parameters)
+* 2-state relaxation and many-state superparamagnetic relaxation
+* Anharmonic spin modulation (ASM)
+* MDGD (instead of xVBF https://doi.org/10.1016/j.nimb.2025.165669)
+* SCDW: spin- and charge-density-wave model
+* A measured spectrum used as a component
+* Multi-dimensional functional distributions of any parameter, with correlations
+* Distribution reconstruction with regularization (on testing)
+* Thickness distribution of the sample
+* Expressions and links between parameters
+* Library with import/export - create your own and share it with others, ~50
+  reference phases included
+
+*Fitting*
+* Maximum-likelihood fits for Poisson counts, with the exact derivatives of
+  the model
+* Errors and correlation matrix; fit-quality statistics (χ², deviance,
+  misfit) telling a model problem from counting noise
+* Several spectra: sequence (batch) fitting, simultaneous fitting with one model
+  (shared and per-spectrum parameters) or with a model built spectrum by
+  spectrum
+* Components of many spectra (a series or a map): the spectral components
+  found in the data and their amount in every spectrum
+* Exclusion regions: velocity ranges left out of the fit
+* Simulation without a spectrum
+
+*Spectra*
+* RAW (`.mca`, `.cmca`, `.ws5`, `.w98`, `.moe`, `.m1`, `.mcs`) and folded `.dat`
+  files; online fitting along with the experiment (Bliss channel)
+* Velocity calibration with α-Fe (sinusoidal or linear drive), RAW → `.dat`
+* Each point modelled as the average over its channel's velocity range
+* Sum spectra, subtract a model, create a spectrum from a model
+
+*Interface*
+* Interactive plot: zoom, components, distributions, a result window per
+  spectrum after a simultaneous fit
+* Results saved as text tables, figures (PNG, SVG) and a ready-to-load model
+* Light and dark themes, built-in help and description of every model
 
 ## Bug report and Feature request
 

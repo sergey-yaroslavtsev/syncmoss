@@ -30,6 +30,7 @@ from syncmoss.spectrum_io import load_spectrum, ns_for_background
 from syncmoss.spectrum_parameters import first_spectrum_parameters, table_uses_names
 from syncmoss.instrumental_io import (
     resolve_instrumental_for_file,
+    instrumental_notes,
     source_for,
     same_method_params,
     hires_model_diff,
@@ -583,7 +584,7 @@ def fit_model(app, inputs, spectrum_files, pool):
             method_params_list.append(mp_i)
         mp0 = method_params_list[0]
 
-        note_lines = [mp_i['note'] for mp_i in method_params_list]
+        note_lines = instrumental_notes(method_params_list, files_for_ins)
         if len({mp_i['method'] for mp_i in method_params_list}) > 1:
             note_lines.insert(0, "Mixed-method simultaneous fit: CMS and SMS spectra are fitted together.")
         instrumental_note = '\n'.join(note_lines)

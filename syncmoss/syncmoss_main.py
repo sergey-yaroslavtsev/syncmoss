@@ -125,6 +125,7 @@ from syncmoss.instrumental_io import (
     reset_instrumental_defaults,
     overwrite_dat_instrumental,
     resolve_instrumental_for_file,
+    instrumental_notes,
     analyze_instrumental_methods,
     build_dat_metadata_lines,
     source_for,
@@ -187,6 +188,12 @@ def _instrumental_label(use_dat_metadata):
 # What sets the threads of numpy's linear algebra (BLAS) in a process: read
 # once, when the process loads it
 _BLAS_THREADS = ('OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS')
+
+
+# The shade a log colour is painted with, by mode (True = dark): plain "blue"
+# (info) is unreadable on the dark background, plain "cyan" (a long action
+# started) on the light one. Every other colour is painted as it is named.
+_LOG_SHADES = {True: {'blue': '#5aa9ff'}, False: {'cyan': 'darkcyan'}}
 
 
 def new_pool():
@@ -840,7 +847,7 @@ class ShowModelThread(QThread):
                                                fold_offset_of(self.main_window, section_file)))
                 method_params_list.append(mp_section)
 
-            note_lines = [mp_section['note'] for mp_section in method_params_list]
+            note_lines = instrumental_notes(method_params_list, section_files)
             if len({mp_section['method'] for mp_section in method_params_list}) > 1:
                 note_lines.insert(0, "Mixed-method model: CMS and SMS spectra are calculated together.")
             instrumental_note = '\n'.join(note_lines)
@@ -1339,7 +1346,9 @@ class PhysicsApp(QMainWindow):
         fit_options_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         fit_group = QGridLayout(fit_options_widget)
         self.MS_fit = QCheckBox("CMS")
+        self.MS_fit.setToolTip("Conventional Mössbauer Spectroscopy (radioactive source)")
         self.SMS_fit = QCheckBox("SMS")
+        self.SMS_fit.setToolTip("Synchrotron Mössbauer Source")
         self.SMS_fit.setChecked(True)
 
         # Connect MS and SMS to be mutually exclusive
@@ -1736,11 +1745,13 @@ class PhysicsApp(QMainWindow):
         Single replacement for the setPlainText/setStyleSheet pair repeated
         throughout the app. Color convention: green = success, red = error,
         orange = warning/canceled, blue = setting changed / info,
-        cyan = long-running action started. ``color=None`` keeps the current
+        cyan = long-running action started (blue and cyan in a shade readable
+        in the current mode: _LOG_SHADES). ``color=None`` keeps the current
         color (matches the historical bare setPlainText call sites).
         """
         self.log.setPlainText(message)
         if color:
+            color = _LOG_SHADES[bool(self._is_dark_mode)].get(color, color)
             self.log.setStyleSheet(f"color: {color};")
 
     def plot_default_spectrum(self):

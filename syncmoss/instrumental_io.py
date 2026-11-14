@@ -689,6 +689,19 @@ def resolve_instrumental_for_file(app, spectrum_file, use_dat_metadata=True, for
     }
 
 
+def instrumental_notes(method_params_list, files):
+    """The log lines on the instrumental functions of several spectra: the
+    'note' of resolve_instrumental_for_file for each of *files* (None: no
+    file), "<file name>: <description>", with a description that several
+    share told once: "300 spectra: SMS — global INSexp/INSint files"."""
+    groups = {}
+    for mp, file in zip(method_params_list, files):
+        name = os.path.basename(str(file)) if file else 'model'
+        groups.setdefault(mp['note'][len(name) + 2:], []).append(mp['note'])
+    return [notes[0] if len(notes) == 1 else f"{len(notes)} spectra: {description}"
+            for description, notes in groups.items()]
+
+
 def same_method_params(a, b):
     """True when two resolve_instrumental_for_file() results are numerically identical."""
     return (
