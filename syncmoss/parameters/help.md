@@ -232,6 +232,8 @@ when used). A sequence or one-model fit writes ONE `_param.txt` and ONE
   a flat cyan *Integration check (×4)* line means enough.
 - *Supp → Save settings as default*: the next starts keep the current settings
   (`config.json` in the parameters folder); *Restore default settings* deletes it.
+- The first start of each version compiles the calculation functions (about a
+  minute, a small window counts it); calculations wait until it is done.
 - *Change spectrum(a)*: sum, subtract model, spectrum from model, half points,
   without excluded points.
 - **Distribution / Spectrum** shows the `Distr`/`Recon` curves.

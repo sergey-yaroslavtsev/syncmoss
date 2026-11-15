@@ -34,14 +34,41 @@ jobs:
       - name: Build with PyInstaller
         run: python bundle/bundle.py
 
-      # The pytest suite already ran on Windows in _Tests.yml (before this job);
-      # here we only self-test the frozen executable via the bundled smoke driver.
-      - name: Run smoke test on frozen executable
-        run: bundle\Windows\SYNCmoss\SYNCmoss_console.exe --test
-
+      # Before the smoke test, so nothing it writes next to the executable (the
+      # compiled functions, numba_cache/) reaches the artifact.
       - name: Upload Windows executable
         uses: actions/upload-artifact@v5
         with:
           name: windows-executable-pyinstaller
           path: bundle/Windows/SYNCmoss/**
           retention-days: 5
+
+      # The pytest suite already ran on Windows in _Tests.yml (before this job);
+      # here we only self-test the frozen executable via the bundled smoke driver.
+      # --test is a first start: a plain fit before anything is compiled, the
+      # compiling, the GUI smoke flow (main.py).
+      #
+      # SYNCmoss.exe is a GUI-subsystem build, so PowerShell does NOT wait for
+      # it and leaves $LASTEXITCODE unset. Start-Process -Wait -PassThru waits
+      # and reports the real exit code; the redirected stdout/stderr are valid
+      # handles that the program prints into (syncmoss/console_io.py).
+      - name: Run smoke test on frozen executable
+        timeout-minutes: 30
+        run: |
+          $run = Start-Process -FilePath bundle\Windows\SYNCmoss\SYNCmoss.exe -ArgumentList '--test' `
+            -Wait -PassThru -RedirectStandardOutput first.out -RedirectStandardError first.err
+          Get-Content first.out, first.err -ErrorAction SilentlyContinue | Write-Host
+          Write-Host "exit code: $($run.ExitCode)"
+          exit $run.ExitCode
+
+      # A second start of the same executable: it must find everything compiled
+      # (numba_cache/ next to it) and fit at least twice as fast as the first
+      # start's fit before the compiling.
+      - name: Second start of the frozen executable
+        timeout-minutes: 10
+        run: |
+          $run = Start-Process -FilePath bundle\Windows\SYNCmoss\SYNCmoss.exe -ArgumentList '--test-again' `
+            -Wait -PassThru -RedirectStandardOutput second.out -RedirectStandardError second.err
+          Get-Content second.out, second.err -ErrorAction SilentlyContinue | Write-Host
+          Write-Host "exit code: $($run.ExitCode)"
+          exit $run.ExitCode

@@ -140,6 +140,8 @@ bundle/Windows/
 
 # The user's saved settings (Supp -> Save settings as default): never shipped
 syncmoss/parameters/config.json
+# numba's compiled functions (syncmoss/jit_cache.py): the machine's own
+syncmoss/numba_cache/
 
 # fitting results
 

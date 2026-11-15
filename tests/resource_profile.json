@@ -1,8 +1,8 @@
 {
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
-"measured": "2026-11-12 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"measured": "2026-11-15 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
-"typical_test_mb": 76,
+"typical_test_mb": 77,
 "accumulated_mb": 640,
 "tests": {
 "tests/syncmoss_test.py::test_gui_library_round_trip": [
@@ -616,6 +616,26 @@
 "tests/test_components_search.py::test_the_window_selects_and_sums": [
 2.5,
 72
+],
+"tests/test_console_io.py::test_a_windowed_build_with_redirected_output_gets_streams": [
+0.0,
+5
+],
+"tests/test_console_io.py::test_consume_flag_accepts_several_names": [
+0.0,
+5
+],
+"tests/test_console_io.py::test_consume_flag_is_case_insensitive_and_exact": [
+0.0,
+5
+],
+"tests/test_console_io.py::test_consume_flag_removes_every_occurrence": [
+1.13,
+5
+],
+"tests/test_console_io.py::test_enable_console_leaves_working_streams_alone": [
+0.0,
+5
 ],
 "tests/test_contact_author.py::test_accent_differs_between_the_two_modes": [
 0.0,
@@ -2938,72 +2958,136 @@
 74
 ],
 "tests/test_interrupt.py::test_a_latched_busy_flag_is_released": [
-2.99,
-34
+2.81,
+35
 ],
 "tests/test_interrupt.py::test_a_real_fit_is_interrupted_and_the_next_one_works": [
-4.28,
-62
+3.26,
+75
 ],
 "tests/test_interrupt.py::test_a_terminated_pool_does_not_leave_the_thread_stuck": [
-0.38,
-18
+0.37,
+17
 ],
 "tests/test_interrupt.py::test_calibration_thread_reports_the_interrupt_quietly": [
 0.0,
 0
 ],
+"tests/test_interrupt.py::test_compile_thread_reports_the_interrupt_quietly": [
+0.55,
+0
+],
 "tests/test_interrupt.py::test_fit_single_spectrum_does_not_swallow_the_interrupt": [
-2.14,
-60
+1.86,
+53
 ],
 "tests/test_interrupt.py::test_fitting_thread_reports_the_interrupt_quietly": [
-2.58,
-86
+1.94,
+81
 ],
 "tests/test_interrupt.py::test_gentle_interrupt_multi_click_and_further_work": [
-3.23,
-43
+2.86,
+61
 ],
 "tests/test_interrupt.py::test_helper_gives_the_same_results_as_starmap": [
 0.01,
-2
+3
 ],
 "tests/test_interrupt.py::test_helper_passes_worker_errors_through": [
 0.0,
-2
+3
 ],
 "tests/test_interrupt.py::test_helper_refuses_new_work_when_the_flag_is_set": [
 0.0,
-2
+3
 ],
 "tests/test_interrupt.py::test_instrumental_thread_reports_the_interrupt_quietly": [
-2.39,
-73
+1.82,
+89
 ],
 "tests/test_interrupt.py::test_interrupt_with_nothing_running_touches_nothing": [
-2.22,
-73
+1.82,
+83
 ],
 "tests/test_interrupt.py::test_sequential_fit_stops_at_the_interrupt": [
-2.04,
-61
+1.91,
+69
 ],
 "tests/test_interrupt.py::test_show_model_thread_reports_the_interrupt_quietly": [
-2.07,
-68
+1.89,
+60
 ],
 "tests/test_interrupt.py::test_the_button_during_a_real_fit_in_the_app": [
-5.49,
-52
+4.41,
+73
 ],
 "tests/test_interrupt.py::test_the_flag_releases_a_waiting_thread_at_once": [
-0.5,
+0.51,
 1
 ],
+"tests/test_interrupt.py::test_the_program_pool_runs_blas_in_one_thread": [
+0.14,
+6
+],
 "tests/test_interrupt.py::test_workers_still_busy_after_a_second_are_replaced": [
-4.26,
-33
+3.84,
+77
+],
+"tests/test_jit_cache.py::test_a_finished_compiling_is_marked_with_what_it_was_for": [
+0.01,
+10
+],
+"tests/test_jit_cache.py::test_a_start_compiles_unless_the_folder_is_complete_for_this_version": [
+2.86,
+113
+],
+"tests/test_jit_cache.py::test_closing_the_program_stops_the_compiling": [
+0.59,
+0
+],
+"tests/test_jit_cache.py::test_configure_points_numba_at_the_folder_before_numba_is_loaded[False]": [
+0.0,
+10
+],
+"tests/test_jit_cache.py::test_configure_points_numba_at_the_folder_before_numba_is_loaded[True]": [
+0.0,
+10
+],
+"tests/test_jit_cache.py::test_numba_takes_the_frozen_locator_by_the_name_configure_gives": [
+0.24,
+9
+],
+"tests/test_jit_cache.py::test_the_compiling_compiles_what_the_program_runs": [
+50.32,
+469
+],
+"tests/test_jit_cache.py::test_the_compiling_has_a_row_of_every_fittable_model": [
+0.0,
+9
+],
+"tests/test_jit_cache.py::test_the_compiling_runs_and_counts_its_steps": [
+0.86,
+1
+],
+"tests/test_jit_cache.py::test_the_fit_the_two_starts_time_succeeds": [
+3.32,
+86
+],
+"tests/test_jit_cache.py::test_the_folder_is_next_to_the_parameters[False]": [
+0.01,
+10
+],
+"tests/test_jit_cache.py::test_the_folder_is_next_to_the_parameters[True]": [
+0.0,
+10
+],
+"tests/test_jit_cache.py::test_the_frozen_locator_keeps_the_functions_in_the_folder_wherever_the_program_starts": [
+0.0,
+10
+],
+"tests/test_jit_cache.py::test_the_new_process_reports_its_steps_and_its_end": [
+1.09,
+0
 ],
 "tests/test_legacy.py::test_a_transform_anchor_points": [
 0.0,

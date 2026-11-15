@@ -23,6 +23,9 @@ hiddenimports += ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets']
 # GUI smoke driver lives in tests/syncmoss_test.py; bundling it lets the frozen
 # binary self-test via `SYNCmoss --test` (see syncmoss/main.py).
 hiddenimports += ['syncmoss_test']
+# numba imports it by the name main.py puts in NUMBA_CACHE_LOCATOR_CLASSES
+# (syncmoss/jit_cache.py); no module imports it.
+hiddenimports += ['syncmoss.frozen_cache_locator']
 
 # scipy is only needed for scipy.linalg.eig (the import-time "dummy" in
 # models.py); scipy_excludes below drops the big unused subpackages.
@@ -96,7 +99,10 @@ a.datas += license_datas(a)
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# ── GUI exe (no console window) ────────────────────────────────
+# ── The one exe: GUI subsystem (no console window on a double-click) ──
+# Started from a terminal it prints there, with --console into a console
+# window of its own (syncmoss/console_io.py); there is no separate console
+# exe any more.
 exe_gui = EXE(
     pyz,
     a.scripts,
@@ -111,24 +117,8 @@ exe_gui = EXE(
     icon=os.path.join(syncmoss_dir, 'icons', 'icon_r.ico'),
 )
 
-# ── Console/debug exe ──────────────────────────────────────────
-exe_console = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='SYNCmoss_console',
-    debug=True,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=True,
-    icon=os.path.join(syncmoss_dir, 'icons', 'icon_r.ico'),
-)
-
 coll = COLLECT(
     exe_gui,
-    exe_console,
     a.binaries,
     a.zipfiles,
     a.datas,

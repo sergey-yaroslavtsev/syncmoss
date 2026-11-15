@@ -103,7 +103,6 @@ def verify():
     print("=" * 60)
     required = [
         "SYNCmoss.exe",
-        "SYNCmoss_console.exe",
         "icons/icon_r.ico",
         "icons/CheckBox.png",
         "icons/CheckBox_L.png",

@@ -29,7 +29,9 @@ from PySide6.QtCore import QCoreApplication, QThread
 import syncmoss.models as m5
 import syncmoss.syncmoss_main as sm
 from syncmoss.models import FIT_CANCEL, FitInterrupted, _pool_starmap
+from syncmoss.compile_window import CompileThread
 
+from compile_stand_ins import sleep_long
 from conftest import SerialPool
 
 
@@ -176,6 +178,20 @@ def test_calibration_thread_reports_the_interrupt_quietly(monkeypatch, capsys):
 def test_show_model_thread_reports_the_interrupt_quietly(physics_app, monkeypatch, capsys):
     monkeypatch.setattr(sm, 'read_model', _interrupted)
     got = _run_thread(sm.ShowModelThread(physics_app, [], None), 'error')
+    assert got == [("Interrupted by the user",)]
+    assert 'Traceback' not in capsys.readouterr().out
+
+
+def test_compile_thread_reports_the_interrupt_quietly(capsys):
+    """Its work runs in a process of its own: the flag terminates it."""
+    thread = CompileThread(sleep_long)
+    got = []
+    thread.done.connect(lambda *a: got.append(a))
+    thread.start()
+    time.sleep(0.5)
+    FIT_CANCEL.set()
+    assert thread.wait(30000)
+    QCoreApplication.processEvents()
     assert got == [("Interrupted by the user",)]
     assert 'Traceback' not in capsys.readouterr().out
 

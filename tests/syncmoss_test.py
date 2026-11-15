@@ -38,6 +38,9 @@ The flow:
      and removes that one file again; the pytest wrappers work on a temp copy.
 
 Exit code of ``run_gui_smoke``: 0 on success, 1 on any failure.
+
+``timed_fit`` is the plain fit ``--test`` times before the calculation
+functions are compiled and ``--test-again`` (a second start) after (main.py).
 """
 import os
 import re
@@ -48,10 +51,11 @@ import time
 import multiprocessing as mp
 from multiprocessing.pool import ThreadPool
 
+import shiboken6
 from PySide6.QtWidgets import QApplication, QDialog, QListWidget, QMessageBox
 from PySide6.QtCore import Qt, QTimer
 
-from syncmoss import model_io
+from syncmoss import fitting_io, model_io
 from syncmoss.model_io import save_model_to_library
 from syncmoss.syncmoss_main import PhysicsApp, new_pool
 
@@ -112,6 +116,60 @@ _EXPECTED_MODEL_LIST = ['baseline', 'Sextet', 'Doublet', 'Nbaseline', 'Sextet']
 _LIBRARY_TITLE = "SYNCmoss self-test"
 # The plain model step 10 round-trips through the Library.
 _LIBRARY_MODEL_LIST = ['baseline', 'Sextet', 'Doublet']
+
+
+# The QApplication of a --test process, made once and kept: timed_fit and then
+# run_gui_smoke run in it, and a process has only one
+_APPLICATION = []
+
+
+def _application() -> QApplication:
+    if QApplication.instance() is None:
+        _APPLICATION.append(QApplication(sys.argv))
+    return QApplication.instance()
+
+
+def _worker_ready(_):
+    """A task of a new pool: its process has started (in a frozen app, it
+    imports the program first)."""
+    return os.getpid()
+
+
+def timed_fit(pool=None, tmp_dir=None) -> float:
+    """The seconds of one plain fit -- a Sextet to the SMS standard of the
+    parameters folder, as the first fit of a session -- with the program's own
+    pool, once every process of it has started (or with *pool*). The
+    parameters go to a temp copy (_redirect_params_to_tmp, into *tmp_dir* when
+    given). Raises when the fit does not succeed."""
+    own_pool = pool is None
+    if own_pool:
+        pool = new_pool()
+        pool.map(_worker_ready, range(4 * pool._processes), chunksize=1)
+    _application()
+    window = PhysicsApp(pool=pool)
+    try:
+        _redirect_params_to_tmp(window, tmp_dir)
+        spectrum = os.path.join(window.params_dir, _STANDARD_SPECTRA[0])
+        window.process_path.setPlainText(repr([spectrum]))
+        window.show_pressed()  # synchronous
+        window.params_table.select_model(1, "Sextet")
+        if not window.initialize_parameters():
+            raise RuntimeError(f"timed fit: the model was refused: {window.log.toPlainText()}")
+        started = time.perf_counter()
+        result = fitting_io.fit_single_spectrum(window, spectrum, pool)
+        seconds = time.perf_counter() - started
+        if not result.get('success'):
+            raise RuntimeError(f"timed fit: {result.get('message')}")
+        return seconds
+    finally:
+        # as the tests' windows go: what the canvas queued runs first
+        QApplication.processEvents()
+        window.close()
+        window.setParent(None)
+        shiboken6.delete(window)
+        if own_pool:
+            pool.close()
+            pool.join()
 
 
 def _parse_bg_color(stylesheet: str):
@@ -642,7 +700,7 @@ def run_gui_smoke() -> int:
 
     pool = new_pool()                    # the program's own (main.py)
 
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = _application()
     window = PhysicsApp(pool=pool)
     _redirect_params_to_tmp(window)
     window.show()

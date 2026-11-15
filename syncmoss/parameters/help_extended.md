@@ -935,6 +935,23 @@ values with the X they started from — ready for another fit.
   exclusion regions, off at every start. *Supp -> Restore default settings*
   deletes the file: the open window keeps its settings, the next start has the
   built-in ones.
+- The calculation functions of SYNCmoss are compiled (numba) for your computer
+  and kept in the `numba_cache` folder next to the parameters folder (on macOS in
+  `~/Library/Application Support/SYNCmoss`). The first start of each version
+  compiles them all, in about a minute, in the background: a small window counts
+  the models, the main window can be used meanwhile, its calculations wait until
+  it is done. The folder records a finished compiling with the version it was
+  for, so the next starts skip it. A start compiles again when that record is
+  missing or another version's: a new version, a compiling that was stopped
+  (**! INTERRUPT !**, or SYNCmoss closed meanwhile) or that failed -- then each
+  model is compiled at its first calculation instead.
+- Switches at the start (`SYNCmoss.exe --fresh`, `syncmoss --fresh`,
+  `python main.py --fresh`, ...): `--fresh` compiles the calculation functions
+  anew whatever the folder holds (after the calculation code was edited, for
+  instance); `--compile` does only that and quits, without the window. The
+  Windows `SYNCmoss.exe` prints into the terminal it was started from;
+  `--console` gives it a console window of its own (a shortcut with
+  `--console`: what it prints, a traceback for instance, stays readable there).
 - *Change spectrum(a)* holds five destructive-looking but useful operations:
   sum all listed spectra, subtract the current model from the spectrum, create
   a spectrum from the model, halve the number of points, and save the spectra

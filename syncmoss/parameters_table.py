@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import numpy as np
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QCheckBox, QMenu, QWidgetAction,
@@ -22,14 +21,12 @@ from syncmoss.Library_window import open_library_model_dialog
 from syncmoss.expressions_window import open_expressions_dialog
 from syncmoss.spectrum_reference_window import SPECTRUM_TOOL_COLOR, choose_reference
 from syncmoss.experimental_features import EXPERIMENTAL_COLOR, EXPERIMENTAL_FEATURES, warn_if_experimental
+from syncmoss.app_paths import app_dir
 
 # Absolute path to the icons directory.
 # Used to build absolute url() paths in Qt stylesheets so they work both
 # when running from source and when frozen by PyInstaller.
-if getattr(sys, 'frozen', False):
-    _BASE_DIR = os.path.dirname(sys.executable).replace('\\', '/')
-else:
-    _BASE_DIR = os.path.dirname(os.path.abspath(__file__)).replace('\\', '/')
+_BASE_DIR = app_dir().replace('\\', '/')
 _ICONS_DIR = f"{_BASE_DIR}/icons"
 _CB = f"{_ICONS_DIR}/CheckBox.png"
 _CB_ = f"{_ICONS_DIR}/CheckBox_.png"

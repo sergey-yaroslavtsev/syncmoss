@@ -7,10 +7,11 @@ name: _Tests (Linux / Windows / macOS)
 #                    quickly.
 #   * release.yml -- before the (expensive) PyInstaller builds. Tests the
 #                    INSTALLED WHEEL, with no marker filter, so nothing is
-#                    skipped in a release.
+#                    skipped in a release, and starts the installed program
+#                    twice (first start compiles, second finds it compiled).
 #
 # Both always run on all three OSes; the two lanes differ only in WHAT is
-# installed and WHICH tests are selected.
+# installed and WHICH tests are selected (plus the two starts of the wheel).
 on:
   workflow_call:
     inputs:
@@ -107,3 +108,29 @@ jobs:
           # which oversubscribes a small CI runner. xdist is installed above
           # only so that this flag parses.
           python -m pytest "$GITHUB_WORKSPACE/tests" -n 0 "${args[@]}"
+
+      # The installed program started twice, as a user starts it (wheel lane
+      # only, i.e. before a release): the first start (--test: a plain fit
+      # before anything is compiled, the compiling, the GUI smoke flow), then a
+      # second one, which must find everything compiled -- numba_cache/ in the
+      # installed package -- and fit at least twice as fast (--test-again).
+      # The smoke driver is not in the wheel: it comes from the checkout.
+      - name: First start of the installed program
+        if: inputs.install == 'wheel'
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: ${{ github.workspace }}/tests
+        run: |
+          cd "$(mktemp -d)"
+          syncmoss --test
+
+      - name: Second start of the installed program
+        if: inputs.install == 'wheel'
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: ${{ github.workspace }}/tests
+        run: |
+          cd "$(mktemp -d)"
+          syncmoss --test-again

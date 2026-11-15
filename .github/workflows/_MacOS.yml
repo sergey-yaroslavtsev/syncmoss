@@ -130,9 +130,18 @@ jobs:
 
       # Runs each architecture natively (the x86_64 slice is never exercised
       # later). After archiving, so nothing the test writes reaches the artifact.
+      # --test is a first start: a plain fit before anything is compiled, the
+      # compiling, the GUI smoke flow (main.py).
       - name: Smoke-test the frozen app
         run: |
           "${APP_PATH}/Contents/MacOS/SYNCmoss" --test
+
+      # A second start of the same app: it must find everything compiled (in
+      # ~/Library/Application Support/SYNCmoss/numba_cache) and fit at least
+      # twice as fast as the first start's fit before the compiling.
+      - name: Second start of the frozen app
+        run: |
+          "${APP_PATH}/Contents/MacOS/SYNCmoss" --test-again
 
   universal2:
     name: Merge, sign and notarize the universal2 app
@@ -382,6 +391,12 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/smoke"
           ditto dist/universal2/SYNCmoss.app "${RUNNER_TEMP}/smoke/SYNCmoss.app"
           "${RUNNER_TEMP}/smoke/SYNCmoss.app/Contents/MacOS/SYNCmoss" --test
+
+      # A second start of that copy: everything found compiled, the fit at
+      # least twice as fast as the first start's before the compiling.
+      - name: Second start of the signed universal2 app
+        run: |
+          "${RUNNER_TEMP}/smoke/SYNCmoss.app/Contents/MacOS/SYNCmoss" --test-again
 
       # The drag-and-drop installer window, built as crispy's
       # package/create-dmg.sh does: a writable image holding the app, a link to

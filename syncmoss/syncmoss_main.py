@@ -67,11 +67,15 @@ from PySide6.QtGui import (
     QImage, QFont, QIcon, QAction, QActionGroup, QDoubleValidator, QIntValidator,
     QPalette, QShortcut, QKeySequence
 )
-from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QStandardPaths, QCoreApplication, QTimer
+from PySide6.QtCore import Qt, Signal, QThread, QSize, QLocale, QTimer
 
 # ---------------------------------------------------------------------------
 # Local package
 # ---------------------------------------------------------------------------
+# (the two frozen-macOS helpers under the names this module has always had)
+from syncmoss.app_paths import (app_dir, is_frozen_macos as _is_frozen_macos,
+                                macos_app_data_dir as _macos_app_data_dir)
+import syncmoss.jit_cache as jit_cache
 from syncmoss.expression_eval import eval_expr
 import syncmoss.fitting_io as fitting_io
 from syncmoss.models import TI, FIT_CANCEL, FitInterrupted, fit_drive
@@ -295,22 +299,6 @@ check_tango = False
 #     return proxy.data
 # tango_uri = 'moesa:20000/id14/Can556/6a2'  # could be different
 # check_tango = True
-
-def _is_frozen_macos():
-    """True inside the frozen macOS ``.app``: its bundled folders are not
-    reliably writable (code-signed, or launched from a read-only mount)."""
-    return getattr(sys, 'frozen', False) and sys.platform == 'darwin'
-
-
-def _macos_app_data_dir():
-    """The per-user writable location of the frozen macOS app
-    (``QStandardPaths.AppDataLocation`` -> ``~/Library/Application Support/SYNCmoss``)."""
-    QCoreApplication.setApplicationName('SYNCmoss')  # deterministic AppData path
-    target = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
-    if not target:
-        target = os.path.expanduser('~/Library/Application Support/SYNCmoss')
-    return target
-
 
 def _seed_from_bundle(bundled, target):
     """Make ``target`` the writable copy of the bundled folder ``bundled``.
@@ -1145,11 +1133,7 @@ class PhysicsApp(QMainWindow):
         self._interrupting = False  # from an Interrupt click until the work stopped
 
         # Icon
-        if getattr(sys, 'frozen', False):
-            icon_dir = os.path.dirname(sys.executable)
-        else:
-            icon_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(icon_dir, "icons", "icon_r.ico")
+        icon_path = os.path.join(app_dir(), "icons", "icon_r.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else: 
@@ -1158,12 +1142,8 @@ class PhysicsApp(QMainWindow):
         # Initialize variables
         self.MulCoCMS = 0.28
         self.current_spectrum_background = None  
-        # When frozen by PyInstaller, __file__ is inside _internal/ but our
-        # resource files (icons/, parameters/, themes) are next to the .exe.
-        if getattr(sys, 'frozen', False):
-            self.dir_path = os.path.dirname(sys.executable)
-        else:
-            self.dir_path = os.path.dirname(os.path.abspath(__file__))
+        # icons/, parameters/, themes: next to a frozen app's executable
+        self.dir_path = app_dir()
         # Writable directory for parameter files, Calibration.dat and calibr.png.
         # On a frozen macOS app this redirects to ~/Library/Application Support;
         # everywhere else it is the bundled parameters/ folder next to the app.
@@ -1173,6 +1153,10 @@ class PhysicsApp(QMainWindow):
         self.library_dir = _resolve_library_dir(self.dir_path)
         # The predefined expressions ("Load expression"), written to by its Save.
         self.expressions_dir = _resolve_expressions_dir(self.dir_path)
+        # numba's compiled functions, compiled at a start that needs it
+        # (compile_window); main.py points numba at the same folder
+        # (jit_cache.configure)
+        self.numba_cache_dir = jit_cache.cache_dir()
         self.workfolder = None  # Start with no workfolder selected
         self.workfolder_check = 1
         self.check_points_match = False

@@ -25,6 +25,9 @@ hiddenimports += ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets']
 # GUI smoke driver lives in tests/syncmoss_test.py; bundling it lets the frozen
 # binary self-test via `SYNCmoss --test` (see syncmoss/main.py).
 hiddenimports += ['syncmoss_test']
+# numba imports it by the name main.py puts in NUMBA_CACHE_LOCATOR_CLASSES
+# (syncmoss/jit_cache.py); no module imports it.
+hiddenimports += ['syncmoss.frozen_cache_locator']
 
 # llvmlite carries native data/bitcode that must be collected.
 llvmlite_data = collect_data_files('llvmlite')
