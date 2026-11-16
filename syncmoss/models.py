@@ -27,11 +27,6 @@ SOFTWARE.
 """
 
 import numpy as np
-import builtins as bu
-def max(*args):
-    return bu.max(*args)
-def min(*args):
-    return bu.min(*args)
 # import dual_v3 as dn
 import syncmoss.minimi_lib as mi
 from syncmoss.expression_eval import eval_expr
@@ -1945,7 +1940,7 @@ def _ham_tensor_core(Q, Hhf, etto, phi, tet):
     bg = Hhf * ggr * mun * c / E0_J
     # the excited levels in units of a power of two near max(|Q|, |b|): exact, and it
     # keeps p^3 and Z^3, sixth powers of that scale, inside the float range
-    sc = np.abs(Q) if np.abs(Q) > np.abs(b) else np.abs(b)
+    sc = max(np.abs(b), np.abs(Q))
     sc = 2.0 ** np.floor(np.log2(sc)) if sc > 0.0 else 1.0
     Q = Q / sc
     b = b / sc
@@ -1972,11 +1967,7 @@ def _ham_tensor_core(Q, Hhf, etto, phi, tet):
         return It, Gc, S
     # Appendix A; the clips only absorb rounding at a double root
     Z = np.sqrt(p * p + 12 * r)
-    Y = (2 * p ** 3 + 27 * q * q - 72 * p * r) / (2 * Z ** 3)
-    if Y > 1.0:
-        Y = 1.0
-    if Y < -1.0:
-        Y = -1.0
+    Y = max(min((2 * p ** 3 + 27 * q * q - 72 * p * r) / (2 * Z ** 3), 1.0), -1.0)
     X = -p / 6 + Z / 6 * np.cos(np.arccos(Y) / 3)
     xi1 = np.sqrt(X)
     xi2 = q / (4 * xi1)
@@ -2011,7 +2002,7 @@ def _ham_tensor_core(Q, Hhf, etto, phi, tet):
     for i in range(4):
         for j in range(i):
             H[i, j] = np.conj(H[j, i])
-    Om = np.abs(lam[0]) if np.abs(lam[0]) > np.abs(lam[3]) else np.abs(lam[3])
+    Om = max(np.abs(lam[3]), np.abs(lam[0]))
     lb = np.empty(len(pairs))
     rho2 = np.empty(len(pairs))
     for n in range(len(pairs)):
@@ -2077,9 +2068,7 @@ def Ham_mosaic(Q, Hhf, etto, phi, tet, tetr, phir, alfak, Atex, Am, Ah, cms):
     n0 = np.ascontiguousarray(R0[2] if cms else R0[0])   # same axis in EFG coords
 
     # order parameters -> the four moments of the two ODF stages
-    c2 = (1.0 + 2.0 * Atex) / 3.0                # <cos^2 chi>
-    if c2 < 0.0:                                 # guard an out-of-range A
-        c2 = 0.0
+    c2 = max((1.0 + 2.0 * Atex) / 3.0, 0.0)      # <cos^2 chi>; 0 guards an out-of-range A
     c1 = Am * np.sqrt(c2)                        # <cos chi> = S1
     r1 = Ah                                      # <cos alpha>
     r2 = Ah * Ah                                 # <cos 2 alpha>
@@ -2271,11 +2260,7 @@ def _bin_positions(vk, dg, norm):
     inv = 1.0 / dg
     for j in range(len(vk)):
         x = (vk[j] - lo) * inv + 1.0
-        i0 = int(np.floor(x))
-        if i0 < 1:
-            i0 = 1
-        elif i0 > nbins - 3:
-            i0 = nbins - 3
+        i0 = min(max(int(np.floor(x)), 1), nbins - 3)   # nbins >= 4, so 1 <= nbins - 3
         frac = x - i0
         weights[i0 - 1] += (-frac ** 3 + 2 * frac ** 2 - frac) / 2
         weights[i0] += (3 * frac ** 3 - 5 * frac ** 2 + 2) / 2
@@ -2300,12 +2285,8 @@ def SDW_thick_terms(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num, WL, WG, Mul
     weight vector sums to 1.
     """
     v = SDW_thick_terms_direct(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num)
-    width = abs(WL)
-    if abs(WG) > width:
-        width = abs(WG)
     natural = NAT_WIDTH * MulCo          # natural Lorentzian width (WL default), MulCo-scaled
-    if width < natural:
-        width = natural
+    width = max(abs(WL), abs(WG), natural)
     dg = width / steps
     norm = float(len(v[0]))
     g1, w1 = _bin_positions(v[0], dg, norm)

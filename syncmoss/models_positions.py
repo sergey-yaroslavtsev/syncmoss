@@ -28,9 +28,6 @@ SOFTWARE.
 
 import numpy as np
 import scipy
-import builtins as bu
-def max(*args):
-    return bu.max(*args)
 # import dual_v3 as dn
 import syncmoss.minimi_lib as mi
 import syncmoss.sms_theory as smst
@@ -291,7 +288,7 @@ def Ham_positions(Q, Hhf, etto, phi, tet):
     bg = Hhf * ggr * mun * c / E0_J
     # the levels in units of a power of two near max(|Q|, |b|): exact, and it
     # keeps p^3 and Z^3, sixth powers of that scale, inside the float range
-    sc = np.abs(Q) if np.abs(Q) > np.abs(b) else np.abs(b)
+    sc = max(np.abs(b), np.abs(Q))
     sc = 2.0 ** np.floor(np.log2(sc)) if sc > 0.0 else 1.0
     Q = Q / sc
     b = b / sc
@@ -313,11 +310,7 @@ def Ham_positions(Q, Hhf, etto, phi, tet):
         return S
     # Appendix A; the clips only absorb rounding at a double root
     Z = np.sqrt(p * p + 12 * r)
-    Y = (2 * p ** 3 + 27 * q * q - 72 * p * r) / (2 * Z ** 3)
-    if Y > 1.0:
-        Y = 1.0
-    if Y < -1.0:
-        Y = -1.0
+    Y = max(min((2 * p ** 3 + 27 * q * q - 72 * p * r) / (2 * Z ** 3), 1.0), -1.0)
     X = -p / 6 + Z / 6 * np.cos(np.arccos(Y) / 3)
     xi1 = np.sqrt(X)
     xi2 = q / (4 * xi1)
