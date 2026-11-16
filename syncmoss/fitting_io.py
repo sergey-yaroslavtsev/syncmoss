@@ -803,6 +803,15 @@ def fit_model(app, inputs, spectrum_files, pool):
                 print(f'[Fitting] Derivatives by differences: {reason}')
                 jacobian = None
         print(f"[Fitting] Derivatives: {'exact' if jacobian is not None else 'differences'}")
+        # A step that fails with the Jacobian of an earlier point is tried again
+        # with the Jacobian of its own (minimi_hi's refresh_jacobian): the fit of
+        # one spectrum with exact derivatives, where a Jacobian costs 1-2 trial
+        # steps -- 1.25-1.7 times faster on synthetic spectra, about even on real
+        # ones. Not with differences (a Jacobian is an evaluation per free
+        # parameter), nor in a simultaneous fit: a Jacobian there costs 5-7
+        # trial steps -- about even over different starts, 1.2-1.5 times slower
+        # from a previous result (docs/minimization.md, section 12)
+        refresh_jacobian = jacobian is not None and not is_simultaneous
 
         # Perform minimization
         tau0 = 10 ** -3
@@ -833,7 +842,8 @@ def fit_model(app, inputs, spectrum_files, pool):
             batch_eval=batch_eval,
             weights='P',
             chi2_correction=chi2_correction(app),
-            jacobian=jacobian
+            jacobian=jacobian,
+            refresh_jacobian=refresh_jacobian
         )
         if hi2 > 1.25:
             print('hi2 is too high let me try to continue')
@@ -854,7 +864,8 @@ def fit_model(app, inputs, spectrum_files, pool):
                 batch_eval=batch_eval,
                 weights='P',
                 chi2_correction=chi2_correction(app),
-                jacobian=jacobian
+                jacobian=jacobian,
+                refresh_jacobian=refresh_jacobian
             )
             if np.array_equal(pfit, pO) == True:
                 if len(er) == 1:

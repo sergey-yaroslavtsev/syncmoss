@@ -124,12 +124,15 @@ def test_a_single_fit_hands_the_table_to_the_minimiser(physics_app, tmp_path, mo
     assert result['is_simultaneous'] is False
     assert len(result['FS']) == 1 and len(result['SPC_f']) == len(result['A'])
     assert np.array_equal(result['parameters'], expected['p0'])
-    # the model's exact derivatives go with it (an Expression and a link to it among them) ...
+    # the model's exact derivatives go with it (an Expression and a link to it among them),
+    # taken again where a step fails with them (refresh_jacobian) ...
     _assert_the_rows_are_the_models(call)
+    assert call['refresh_jacobian'] is True
     # ... unless a row of the model is not covered by them: the minimiser's own differences then
     monkeypatch.setattr(fitting_io.md, 'uncovered', lambda model: ['a row with no exact derivatives'])
     assert fitting_io.fit_single_spectrum(app, app.calibration_path, SerialPool())['success']
     assert calls[1]['jacobian'] is None
+    assert calls[1]['refresh_jacobian'] is False        # a Jacobian of differences: one evaluation per parameter
 
 
 # --- TI cuts the joined spectra at their lengths -----------------------------------
@@ -308,6 +311,7 @@ def test_an_nbaseline_fit_hands_every_section(physics_app, tmp_path, monkeypatch
     assert [len(s) for s in result['SPC_f_list']] == lengths
     assert result['spectrum_files'] == paths
     _assert_the_rows_are_the_models(call)               # both sections' derivatives
+    assert call['refresh_jacobian'] is False            # a simultaneous fit: a Jacobian costs many trial steps
 
 
 def test_a_fit_with_a_recon_hands_the_derivatives_in_its_weights_too(physics_app, tmp_path, monkeypatch):
@@ -331,6 +335,7 @@ def test_a_fit_with_a_recon_hands_the_derivatives_in_its_weights_too(physics_app
     assert len(call['p0']) == NB + SEXTET + 7 + 5 and call['n_reg'] == 4 + 3
     assert len(call['x']) == len(result['A']) + call['n_reg']
     _assert_the_rows_are_the_models(call)
+    assert call['refresh_jacobian'] is True             # one spectrum, its weights included
     weights = range(NB + SEXTET + 7, NB + SEXTET + 7 + 5)
     rows = call['jacobian'](call['p0'])[list(weights)]
     assert np.all(np.abs(rows[:, :-call['n_reg']]).max(axis=1) > 0)         # each moves the spectrum ...
@@ -377,5 +382,12 @@ def test_a_fit_with_exact_derivatives_ends_where_the_differences_end(physics_app
         assert np.allclose(shares[0], shares[1], atol=1e-4)
         assert np.allclose(exact['parameters'], differences['parameters'], rtol=1e-4, atol=1e-9)
         return
-    assert np.allclose(exact['parameters'], differences['parameters'], rtol=1e-5, atol=1e-9)
+    # The exact fit takes its Jacobian again where a step fails with an old one
+    # (refresh_jacobian), so it reaches the optimum by another path: the same
+    # to a small part of the errors (delta, at 0.0025, moves 1e-7 of its 2e-3)
+    errors = np.asarray(differences['errors'], dtype=float)
+    free = ~np.isnan(errors)
+    shift = np.abs(np.asarray(exact['parameters']) - np.asarray(differences['parameters']))
+    assert np.all(shift[free] < 1e-3 * errors[free])
+    assert np.array_equal(np.asarray(exact['parameters'])[~free], np.asarray(differences['parameters'])[~free])
     assert np.allclose(exact['errors'], differences['errors'], rtol=1e-3, equal_nan=True)

@@ -3,7 +3,9 @@ vectors are handed over as ONE list, which changes neither the evaluations nor
 the fit -- the result is bit-identical to the one-by-one path. And its
 ``jacobian`` (the caller's derivatives instead of differences): the same fit as
 the differences give, links followed by the chain rule, expressions in the
-caller's rows (total derivatives)."""
+caller's rows (total derivatives). And its ``refresh_jacobian``: a step that
+fails with the Jacobian of an earlier point is tried again with the one of its
+own point -- the same fit in fewer evaluations."""
 import numpy as np
 import pytest
 
@@ -106,6 +108,44 @@ def test_an_analytic_jacobian_with_an_expression_is_of_total_derivatives():
     scale = np.abs(diff).max(axis=1, keepdims=True)
     assert np.allclose(rows / scale, diff / scale, atol=1e-4)
     assert not np.allclose(short / scale, diff / scale, atol=1e-4)
+
+
+@pytest.mark.parametrize('weights', ['P', 'W'])
+def test_a_failed_step_takes_the_jacobian_of_its_own_point(weights):
+    """refresh_jacobian: the same optimum as without, in fewer model evaluations
+    (the steps that failed with an old Jacobian: 26 instead of 99 here), never
+    two Jacobians at one point; the same with differences, and with a
+    parameter pushed onto its bound (fixed there, then rechecked)."""
+    x = np.linspace(-5.0, 5.0, 200)
+    y = np.random.default_rng(3).poisson(_model(x, [1000.0, 50.0, 0.7, 0.3])).astype(float)
+    p0 = np.array([950.0, 40.0, 0.8, 0.2])
+    kw = dict(MI=40, MI2=10, nu0=2.618, tau0=1e-3, eps=1e-9, weights=weights)
+
+    def run(refresh, **extra):
+        evaluations, points = [0], []
+
+        def model(_x, p):
+            evaluations[0] += 1
+            return _model(_x, p)
+
+        def rows(p):
+            points.append(np.array(p, dtype=float))
+            return _derivatives(x, p)
+        fit = mi.minimi_hi(model, x, y, p0.copy(), jacobian=rows, refresh_jacobian=refresh, **kw, **extra)
+        return fit, evaluations[0], points
+
+    (old, n_old, _), (new, n_new, points) = run(False), run(True)
+    assert not np.allclose(old[0], p0)                                    # the fit moved
+    assert np.all(np.abs(new[0] - old[0]) < 1e-3 * old[1])               # the same optimum, within its errors
+    assert new[2] == pytest.approx(old[2], rel=1e-9)
+    assert n_new < n_old / 2
+    assert len(points) > 2 and not any(np.array_equal(a, b) for a, b in zip(points, points[1:]))
+    differences = mi.minimi_hi(_model, x, y, p0.copy(), refresh_jacobian=True, **kw)
+    assert np.all(np.abs(differences[0] - old[0]) < 1e-3 * old[1])
+    bounds = np.array([[-np.inf] * 4, [np.inf, 45.0, np.inf, np.inf]])  # the depth held below its 50
+    (held, _, _), (held_new, _, _) = run(False, bounds=bounds), run(True, bounds=bounds)
+    assert held[0][1] == held_new[0][1] == 45.0
+    assert np.allclose(held_new[0], held[0], rtol=1e-5)
 
 
 def test_a_batched_jacobian_gives_the_same_fit_bit_for_bit():

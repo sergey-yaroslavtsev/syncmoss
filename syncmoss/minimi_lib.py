@@ -30,7 +30,7 @@ SYNCmoss Levenberg-Marquardt least-squares minimiser.
 Public API:
     minimi_hi(model_func, x_exp, y_exp, p0, fix=, confu=, bounds=, Expr=, NExpr=,
               MI=, MI2=, nu0=, tau0=, eps=, fixCH=, n_reg=, batch_eval=, weights=,
-              chi2_correction=)
+              chi2_correction=, jacobian=, refresh_jacobian=)
         -> (params, errors, chi2_red, covariance, chi2_pearson)
 Damped Gauss-Newton (Levenberg-Marquardt) fit of ``model_func(x_exp, params)`` to
 ``y_exp``, with support for fixed parameters (``fix``), linear parameter coupling
@@ -357,7 +357,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
               bounds=np.array([[], []], dtype=float), Expr=[],
               NExpr=np.array([], dtype=int), MI=10, MI2=20, nu0=2.618,
               tau0=0.001, eps=10 ** -10, fixCH=0, n_reg=0, batch_eval=None, weights='U',
-              chi2_correction=True, jacobian=None):
+              chi2_correction=True, jacobian=None, refresh_jacobian=False):
     """Levenberg-Marquardt least-squares fit of ``model_func(x_exp, params)`` to ``y_exp``.
 
     Optimised twin of the previous ``minimi_lib_old.minimi_hi`` — identical signature
@@ -403,6 +403,21 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     rows must be TOTAL derivatives -- the row of a free parameter includes what
     an expression of it moves (the rows of the expressions' own slots, which
     are fixed, are not read), as models_dual.fit_jacobian gives them.
+
+    ``refresh_jacobian`` (default False) -- which Jacobian a trial step uses.
+    By default one Jacobian serves several points: it is taken at the start
+    of every other outer iteration, and the steps after an accepted one start
+    from the new point with it. True: a step that fails with a Jacobian taken
+    at an earlier point is tried again, with the same damping, with the
+    Jacobian of the point it starts from; only a step that fails with that
+    one makes the damping grow, and an outer iteration takes no second
+    Jacobian at the same point. It pays where the failed steps come from an
+    old Jacobian and a new one costs a few trial steps: fits of one spectrum
+    with exact derivatives, 1.25-1.7 times faster on synthetic spectra, about
+    even on real ones. In a simultaneous fit a Jacobian costs 5-7 trial
+    steps: about even over different starts, 1.2-1.5 times slower from a
+    previous result (ending at a slightly lower D) -- docs/minimization.md,
+    section 12.
 
     ``chi2_correction`` (default True) multiplies the covariance -- so the
     errors -- by Pearson's reduced chi-square, the last value returned, for
@@ -538,6 +553,8 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
     jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
                                      batch_eval=batch_eval, jacobian=jacobian)
     jac_params = _jacobian_parameters(len(params), fix, inactive)   # parameter of each row
+    # The Jacobian was taken at params, with the present fix (refresh_jacobian)
+    jacobian_current = True
     jac_T = jac.T
     hessian = np.matmul(jac, jac_T)           # Gauss-Newton Hessian J.J^T
 
@@ -575,8 +592,11 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
         if True:
             if strategy_count % 2 == 0:
                 # --- Strategy A: refresh Jacobian, damping = scale*diag(Hessian) --
-                jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
-                                                 batch_eval=batch_eval, jacobian=jacobian)
+                # (with refresh_jacobian, one taken at this point already serves)
+                if not (refresh_jacobian and jacobian_current):
+                    jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
+                                                     batch_eval=batch_eval, jacobian=jacobian)
+                    jacobian_current = True
                 jac_params = _jacobian_parameters(len(params), fix, inactive)
                 if len(jac) == 0:
                     print('no move is found, J=0')
@@ -708,12 +728,35 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             else:
                 gain_ratio = -1.0
 
+            if gain_ratio <= 0 and refresh_jacobian and not jacobian_current and stop_code == 0:
+                # ------ Step REJECTED, made with the Jacobian of an earlier point:
+                # take it at this one and try again with the same damping
+                jac, inactive = compute_jacobian(model_func, params, x_exp, fix, confu, model_cur, Expr, NExpr,
+                                                 batch_eval=batch_eval, jacobian=jacobian)
+                jacobian_current = True
+                if len(jac) == 0:
+                    print('no move is found, J=0')
+                    stop_code = 1
+                    break
+                jac_params = _jacobian_parameters(len(params), fix, inactive)
+                jac_T = jac.T
+                hessian = np.matmul(jac, jac_T)
+                grad = np.matmul(jac, chi)
+                if len(damping) != len(jac):
+                    # other parameters move the model here: their damping as this strategy sets it
+                    damping = (damping_scale * np.diagonal(hessian).astype(float) if mu_strategy == 2
+                               else np.full(len(jac), np.amax(hessian) * damping_scale))
+                bound_flags = np.array([int(0)] * len(p0))
+                bound_hit = 0.5
+                continue
+
             if gain_ratio <= 0:
                 # ------ Step REJECTED: increase damping and retry --------------
                 if ((stall_count == 2 and mu_strategy == 1) or (stall_count == 3 and mu_strategy == 1)) and bound_hit != 0.5 and stop_code == 2:
                     # A bound-hitting parameter is the only thing left to move and
                     # it cannot improve the fit -> fix it for good.
                     fix = np.append(fix, bound_hit)
+                    jacobian_current = False
                     stall_count = 0
                 damping = damping * damping_growth        # grow damping (-> steepest descent)
                 damping_growth = nu0 * damping_growth     # accelerate growth next retry
@@ -748,6 +791,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                             params[int(confu[0][matches[c_i]])] = params[int(confu[1][matches[c_i]])] * confu[2][matches[c_i]]
 
                 model_cur = model_trial                   # accepted model becomes the base
+                jacobian_current = False                  # the Jacobian is of the point before
 
                 if poisson:
                     # The weights follow the model: 1/m at the point just accepted
@@ -798,6 +842,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
                     # break out of the inner loop so the Jacobian is rebuilt.
                     fix = np.append(fix, bound_hit)
                     fix = np.sort(fix)
+                    jacobian_current = False              # its rows are not the free parameters' now
                     bound_flags = np.array([int(0)] * len(p0))
                     bound_hit = 0.5
                     inner_iteration = MI2
@@ -890,7 +935,7 @@ def minimi_hi(model_func, x_exp, y_exp, p0, fix=np.array([], dtype=int),
             params, errors, chi2_red, covariance, chi2_pearson = minimi_hi(
                 _raw_model, x_exp, y_raw, params, fix_orig, confu, bounds,
                 Expr, NExpr, np.maximum(int(MI / 2), 1), MI2, nu0, tau0, eps, 1, n_reg,
-                _raw_batch, weights, chi2_correction, _raw_jacobian)
+                _raw_batch, weights, chi2_correction, _raw_jacobian, refresh_jacobian)
             if np.all(params == params_bak):
                 errors, covariance = errors_bak, covariance_bak   # a pair: same rows
 
