@@ -127,8 +127,14 @@ def test_the_frozen_locator_keeps_the_functions_in_the_folder_wherever_the_progr
         locator = FrozenCacheLocator.from_function(kernel, relative)
         paths.add(locator.get_cache_path())
     assert paths == {str(folder / "syncmoss")}
-    executable = os.stat(sys.executable)
-    assert locator.get_source_stamp() == (executable.st_mtime, executable.st_size)
+    # dated by the executable, numba's rule for a frozen app (its stamp's form
+    # is numba's: (mtime, size) in 0.65, a hash of the file in 0.68)
+    stamp = locator.get_source_stamp()
+    assert locator.get_source_stamp() == stamp
+    new_build = tmp_path / "new_build.exe"
+    new_build.write_bytes(b"a new build")
+    monkeypatch.setattr(sys, "executable", str(new_build))
+    assert locator.get_source_stamp() != stamp
     assert FrozenCacheLocator.from_function(kernel, os.path.abspath(relative)) is None   # numba's own case
     monkeypatch.setattr(config, "CACHE_DIR", "")
     assert FrozenCacheLocator.from_function(kernel, relative) is None

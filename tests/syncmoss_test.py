@@ -430,10 +430,11 @@ class _TestRunner:
     def step_interrupt_fit(self) -> None:
         print("[TEST] Step: interrupt a fit ...")
         w = self.window
-        self._expect_kill = not isinstance(w.pool, ThreadPool)
         self._press_fit()
-        if self._expect_kill:
-            w.pool.starmap_async(time.sleep, [(3,)])
+        # A job still running a second after Interrupt: the pool is always
+        # killed and recreated. Without it the outcome would depend on whether
+        # the fit's own job ends within that second (a first compile does not).
+        w.pool.starmap_async(time.sleep, [(3,)])
         QTimer.singleShot(500, w.interrupt)
         QTimer.singleShot(600, w.interrupt)
         self._poll_count = 0
@@ -449,8 +450,7 @@ class _TestRunner:
             self._poll_count += 1
             QTimer.singleShot(_POLL_MS, self._poll_interrupt)
             return
-        expected = ("Interrupted (pool terminated and recreated)"
-                    if self._expect_kill else "Interrupted")
+        expected = "Interrupted (pool terminated and recreated)"
         if w.log.toPlainText() != expected or w.fitting_thread.isRunning():
             self.errors.append(f"interrupt a fit: expected '{expected}' and the "
                                f"fit thread ended, got '{w.log.toPlainText()}'")
@@ -724,14 +724,17 @@ def run_gui_smoke() -> int:
 main = run_gui_smoke
 
 
-def test_gui_open_and_fit(qapp, tmp_path):
+def test_gui_open_and_fit(qapp, tmp_path, monkeypatch):
     """pytest wrapper around the same smoke flow (head-less, ThreadPool).
 
     A ThreadPool replaces the multiprocessing pool so the test does not spawn
     subprocesses (fragile under pytest); the app only uses ``pool.starmap``, which
     ThreadPool provides with identical semantics, so the same fitting code runs.
+    The pool the Interrupt step recreates is a ThreadPool too.
     """
     from conftest import redirect_params_dir_to_tmp
+    from syncmoss import syncmoss_main
+    monkeypatch.setattr(syncmoss_main, "new_pool", lambda: ThreadPool(processes=2))
     pool = ThreadPool(processes=2)
     window = PhysicsApp(pool=pool)
     # Operate on a temp copy of the whole parameters folder so neither the fit
@@ -764,6 +767,9 @@ def test_gui_open_and_fit(qapp, tmp_path):
         window.close()
         pool.close()
         pool.join()
+        if window.pool is not pool:      # recreated by the Interrupt step
+            window.pool.close()
+            window.pool.join()
 
 
 def test_gui_library_round_trip(qapp, tmp_path):

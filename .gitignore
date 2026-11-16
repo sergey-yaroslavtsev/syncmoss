@@ -142,6 +142,7 @@ bundle/Windows/
 syncmoss/parameters/config.json
 # numba's compiled functions (syncmoss/jit_cache.py): the machine's own
 syncmoss/numba_cache/
+syncmoss/numba_cache_time/
 
 # fitting results
 
