@@ -17,7 +17,7 @@ from syncmoss.syncmoss_main import PhysicsApp, new_pool
 from syncmoss.supp_menu import apply_saved_settings
 from syncmoss.compile_functions import compile_functions
 from syncmoss.compile_window import compile_if_needed, current_stamp
-__VERSION__ = "0.8.0"
+__VERSION__ = "0.8.1"
 
 # What --test leaves in the cache folder for --test-again: the seconds of its
 # plain fit before anything was compiled
