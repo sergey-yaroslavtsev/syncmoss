@@ -20,7 +20,7 @@ from syncmoss import exclusion_regions
 from syncmoss.constants import (numco, number_of_baseline_parameters, mdl_color_names,
                                 contrast_text_color, model_colors)
 from syncmoss.Library_io import LIBRARY_METADATA_FIELDS, LIBRARY_METADATA_DEFAULTS, compute_versioned_title_if_needed
-from syncmoss.legacy import upgrade_mdl_row, normalize_legacy_model_name
+from syncmoss.legacy import ASM_P_NAME, ASM_P_SLOT, upgrade_mdl_row, normalize_legacy_model_name
 from syncmoss.expression_eval import eval_expr
 from syncmoss.spectrum_model import distr_texts, distr_t_texts, spectrum_texts, parse_spectrum_lines
 from syncmoss.thickness_distribution import thickness_points
@@ -474,7 +474,7 @@ def model_file_rows(main_window):
               for row_idx, _, _ in kept_rows]
 
     rows = []
-    for row_idx, row_widget, _ in kept_rows:
+    for row_idx, row_widget, model_name in kept_rows:
         row_data = []
         for param_idx in range(1, row_widget.layout().count()):
             param_widget = row_widget.layout().itemAt(param_idx).widget()
@@ -490,8 +490,8 @@ def model_file_rows(main_window):
                 lower = lower_input.text()
                 upper = upper_input.text()
 
-                # Name (not used in current implementation, empty)
-                name = ''
+                # Name: empty, but ASM's P(m) -- so that a file before it (m) is told apart
+                name = ASM_P_NAME if model_name == 'ASM' and param_idx - 1 == ASM_P_SLOT else ''
 
                 # Fix
                 top_layout = param_widget.layout().itemAt(0).layout()

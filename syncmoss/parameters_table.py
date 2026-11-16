@@ -1645,7 +1645,7 @@ class ParametersTable(QWidget):
             uppers = ['', '', '', '', '', '', '', '', '180', '360', '1', '1', '', '']
             fixes = [False, False, False, False, False, False, False, False, True, True, True, True, False, True]  # theta_k, phi_h, A, Am locked by default
         elif model == 'ASM':
-            names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'm', 'θk, °', 'φh, °', 'A', 'Num', 'I13', 'ω, °']
+            names = ['T', 'δ, mm/s', 'εm, mm/s', 'εl, mm/s', 'His, T', 'Han, T', 'L, mm/s', 'G, mm/s', 'P(m)', 'θk, °', 'φh, °', 'A', 'Num', 'I13', 'ω, °']
             values = ['1.0', '0.0', '0.0', '0.0', '30.0', '5.0', _NAT, '0.1', '0.1', theta_default, '0.0', '0', '25', '3.0', '90']
             lowers = ['0', '', '', '', '', '', _NAT, '0', '-1', '-180', '-360', '-0.5', '7', '0', '-360']
             uppers = ['', '', '', '', '', '', '', '', '1', '180', '360', '1', '', '', '360']

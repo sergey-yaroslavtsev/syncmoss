@@ -1,0 +1,7 @@
+#@Comment P(m) of the ASM from its anharmonicity m (a published value, say): a start, or a comparison.
+#@Comment $P=\mathrm{sign}(m)\,\frac{L}{L+\ln 16},\ L=-\ln(1-|m|)$
+#@Comment {m} - the anharmonicity m, |m| < 1.
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+sign({m})*log(1-abs({m}))/(log(1-abs({m}))-log(16))				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

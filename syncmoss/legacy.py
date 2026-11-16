@@ -36,7 +36,10 @@ The upgrade applies the SAME transform the presets/data files were converted wit
     the pre-merge scalar layout AND from the pre-omega polarized layout). It is
     appended set to ``omega_0(theta_k, phi_h)`` -- the angle that reproduces the
     old (plane-contains-h) geometry, up to the exact full-period symmetrization
-    that the new ASM applies (see :func:`_asm_omega0` and ``models.TImod``).
+    that the new ASM applies (see :func:`_asm_omega0` and ``models.TImod``);
+  * ``ASM``'s anharmonicity ``m`` became ``P(m)`` (2026-11, see
+    :func:`asm_p_of_m`): a row that does not carry ``ASM_P_NAME`` in the name
+    field of that slot holds ``m``, whose value and bounds are converted exactly.
 
 The asymmetry->texture map ``f`` is the cubic through the three points the old
 scalar defaults map onto in the new parametrisation:
@@ -174,6 +177,38 @@ def _append_trailing(model_name, info, groups):
     return groups
 
 
+ASM_P_SLOT = 8            # ASM's anharmonicity: P(m) since 2026-11, m before
+ASM_P_NAME = 'P(m)'       # written in the name field of that slot: a row without it holds m
+
+
+def asm_p_of_m(m):
+    """ASM's P(m) = sign(m) L / (L + ln 16), L = -ln(1 - |m|) -- 0 the harmonic
+    cycloid, +/-1 the collinear limits; back: m = sign(P) (1 - 16**(-|P|/(1 - |P|)))
+    (models.ASM_modulus)."""
+    a = min(abs(m), 1.0)
+    if a == 1.0:
+        return math.copysign(1.0, m)
+    L = -math.log1p(-a)
+    return math.copysign(L / (L + math.log(16.0)), m)
+
+
+def _asm_p_slot(row_data):
+    """An ASM row (flat fields) with its slot ASM_P_SLOT holding m -- no
+    ASM_P_NAME in its name field -- gets P(m) in the value and both bounds and
+    the name. A link or an expression text stays as it is."""
+    k = ASM_P_SLOT * 5
+    if len(row_data) < k + 5 or row_data[k + 3] == ASM_P_NAME or str(row_data[k]).strip() == '':
+        return row_data
+    fields = list(row_data)
+    for j in (k, k + 1, k + 2):
+        try:
+            fields[j] = repr(asm_p_of_m(float(fields[j])))
+        except (ValueError, TypeError):
+            pass
+    fields[k + 3] = ASM_P_NAME
+    return fields
+
+
 def normalize_legacy_model_name(name):
     """Map a pre-merge model name to its current name.
 
@@ -212,9 +247,18 @@ def upgrade_mdl_row(model_name, row_data):
     parameters that reproduce the old model exactly; see
     :data:`_HAMILTONIAN_UPGRADES`.
 
+    An ``ASM`` row whose anharmonicity slot is not marked ``ASM_P_NAME`` holds
+    ``m`` (any layout before 2026-11): it is converted to ``P(m)``.
+
     ``model_name`` must already be normalised (see
     :func:`normalize_legacy_model_name`).
     """
+    row_data = _upgrade_layout(model_name, row_data)
+    return _asm_p_slot(row_data) if model_name == 'ASM' else row_data
+
+
+def _upgrade_layout(model_name, row_data):
+    """upgrade_mdl_row's change of the layout: the slots a component gained."""
     info = _MERGED.get(model_name)
     if info is None and model_name != 'Hamiltonian':
         return row_data

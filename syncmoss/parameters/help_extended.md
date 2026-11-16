@@ -1086,7 +1086,22 @@ along, and $\alpha_k$ is a spare parameter that must stay fixed.
 Never release $\alpha_k$ in CMS: it is exactly redundant, so the fit
 will wander along it without changing $\chi^2$.
 
-### 13.5 ASM: the angle ω
+### 13.5 ASM: the anharmonicity P(m) and the angle ω
+
+The moment's angle along the period follows the Jacobi function
+$\mathrm{sn}(x\,|\,m)$; its parameter $m$ is fitted as
+$P(m) = \mathrm{sign}(m)\,L/(L + \ln 16)$, $L = -\ln(1 - |m|)$. $P = 0$ is the
+harmonic cycloid, $P = \pm 1$ the collinear limits: the moments along the easy
+axis for $P > 0$, across it for $P < 0$. Not $m$ itself: the spectrum follows
+$1/K(m)$, which near $|m| = 1$ moves like $1/\ln(1 - |m|)$ -- values that all
+show as 1.000 give different spectra, and a fit can neither reach nor leave
+$|m| = 1$. In $P$ the spectrum changes evenly up to $\pm 1$
+($1 - |P| \approx \ln 4 / K$ there), so a change of 0.001 stays small. Back,
+$m = \mathrm{sign}(P)\,(1 - 16^{-|P|/(1-|P|)})$. Both ways with *Load
+expression*: "ASM m from P(m)" ({P} = p[k], k the number of P(m): m and its
+error in the results) and "ASM P(m) from m" (a published m as P(m)).
+
+A model file saved before P(m) holds $m$; it is converted when opened.
 
 $\omega$ is the cycloid-plane angle about the easy axis. $(\theta_k, \varphi_h)$
 fix the easy (anharmonicity) axis $\mathbf{u}$, which always lies IN the plane
@@ -1102,8 +1117,14 @@ $\omega = \omega_0(\theta_k, \varphi_h) =
 \operatorname{atan2}(-\sin\varphi_h,\ \cos\theta_k\cos\varphi_h)$ reproduces the
 former plane-contains-$h$ geometry ($=90°$ in the degenerate $\mathbf{u}\parallel h$ case).
 
-Num, the number of sampling points over one modulation period, is rounded
-internally to $6k+1$.
+Num is the number of points over a quarter period: Num − 1 angles of the
+moment at equal steps, each weighted by the time the moment spends there, and
+the collinear point with the rest of the weight (all of it at $|P| = 1$).
+How many are needed depends on how far the lines sweep over the period
+compared with their width: 25 is ample for a weak modulation (Han ≈ 0.4 T),
+not for a strong one with narrow lines (Han ≈ 5 T, G = 0: an error of 2 % of
+the line depth). After a fit, show the model again with Num doubled: if the
+spectrum or χ² changes noticeably, fit again with the larger Num.
 
 ### 13.6 SCDW
 

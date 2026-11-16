@@ -1421,43 +1421,56 @@ def Blume_c(Sig1, Sig2, Q1, Q2, H1, H2, L, W, m0, m1, V, R):
 #     return(Res)
 
 
+AGM_STEPS = 8  # of the arithmetic-geometric mean: 7 reach the last digit even for the largest float below 1
+
+
 @njit(cache=True)
-def K_cei(M): # Selescu, R. (2021) for <0.98 and direct approximation above
+def AGM1(b): # arithmetic-geometric mean of 1 and b (A&S 17.6)
+    a = 1.0
+    for _ in range(AGM_STEPS):
+        a, b = (a + b) / 2, np.sqrt(a * b)
+    return a
+
+
+@njit(cache=True)
+def K_cei(M): # complete elliptic integral K(m) = pi / (2 AGM(1, sqrt(1 - m)))
     M = np.abs(M)
-    if M <= 0.9999978056985459:
-        m = np.sqrt(1-M)
-        K = np.pi*np.sqrt(2) / np.sqrt((1+m)*np.sqrt(m)) * (1 - 2**(1/4)/4 * (1+np.sqrt(m))/((1+m)*np.sqrt(m))**(1/4))
-    elif M < 1:
-        K = 1 / 2 * np.log((1 + M) / (1 - M))
+    if M < 1:
+        K = np.pi / (2 * AGM1(np.sqrt(1 - M)))
     else:
         K = 99999
     return K
 
 
 @njit(cache=True)
-def SN(x, m): #  doi.org/10.1063/1.527661
+def SN(x, m): # Jacobi sn(x|m), descending Landen transformation (A&S 16.4)
     m = np.abs(m)
-    if m <= 0.981:
-        mu = np.pi/4/(K_cei(m) + 10**-12 * (m==0))
-        t = 1/mu * np.tan(mu*x)
-        z = t**2
-
-        a1 = -1/6 * (1 + m + 2*mu**2)
-        a2 = 1/120 * (1+m)**2 + mu**2/6 * (1+m) + m/10 + mu**4/5
-
-        ### n = 3
-        p1 = (mu ** 4 + a1*mu**2 + a1**2 - a2)/(mu**2 + a1)
-        p2 = mu**4
-        q1 = (mu ** 4 - a2)/(mu**2+a1) # error in article
-        q2 = mu ** 2 * (mu**4-a2)/(mu**2+a1)
-        q3 = mu**6
-        sn = (1 + p1 * z + p2 * z**2) \
-             / (1 + q1 * z + q2 * z ** 2 + q3 * z ** 3) * t
-    elif m < 1:
-        sn = (np.exp(2 * x) - 1) / (np.exp(2 * x) + 1)  # np.tanh(x)
+    if m < 1:
+        a = np.zeros(AGM_STEPS + 1)
+        c = np.zeros(AGM_STEPS + 1)
+        a[0], b = 1.0, np.sqrt(1 - m)
+        for n in range(1, AGM_STEPS + 1):
+            a[n] = (a[n - 1] + b) / 2
+            c[n] = (a[n - 1] - b) / 2
+            b = np.sqrt(a[n - 1] * b)
+        phi = 2.0 ** AGM_STEPS * a[AGM_STEPS] * x
+        for n in range(AGM_STEPS, 0, -1):
+            phi = (phi + np.arcsin(c[n] / a[n] * np.sin(phi))) / 2
+        sn = np.sin(phi)
     else:
         sn = np.array([float(1)] * len(x))
     return sn
+
+
+@njit(cache=True)
+def ASM_modulus(P): # ASM's P(m) = L/(L + ln 16), L = -ln(1 - |m|): exactly 1 - |m| = 16**(-|P|/(1 - |P|))
+    a = np.abs(P)
+    kc2 = 16.0 ** (-a / (1 - a)) if a < 1 else 0.0       # k'^2 = 1 - |m|
+    if kc2 > 2.0 ** -52:
+        h = AGM1(np.sqrt(kc2))                              # pi/(2K)
+    else:                                                   # K = ln(4/k') = ln 4/(1 - |P|) to the last digit
+        h = np.pi / 2 * (1 - a) / np.log(4.0) if a <= 1 else 0.0
+    return kc2, h
 
 @njit(cache=True)
 def ASM(T, sigm, eps_m, eps_lat, His, Han, WL, WG, m, A, Num, I13, E):
@@ -2134,22 +2147,29 @@ def relax_MS_thick_c(S, x, I, Sig, eps, Hv, W, R, alfa):
 
 
 @njit(cache=True)
-def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m, Num):
-    """Per-modulation-point line positions for the anharmonic spin modulation.
+def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, P, Num):
+    """Per-modulation-point line positions and weights for the anharmonic spin modulation.
 
-    Same modulation physics as ``ASM`` but (a) returns ``co`` = cos^2(theta) of
-    the local moment (used to reconstruct the local moment direction) and (b)
-    samples the six line positions at the SAME Num points (no per-line
-    subsampling), so ``TImod`` can build a 2x2 cross-section matrix per point
-    from the local moment direction and average them over the modulation.
+    The points: the moment's amplitude phi (sn = sin phi, co = cos^2(theta) =
+    sin^2 phi) at the midpoints of Num - 1 equal steps of [0, pi/2], and the
+    collinear point co = 1 (co -> 1 - co for P < 0). The weights: the share of
+    the period the moment spends there, dx = dphi / sqrt(1 - m sin^2 phi) over
+    the quarter period K = pi/(2h), h / (Num - 1) / sqrt(cos^2 phi + k'^2 sin^2 phi)
+    each; the collinear point takes the rest -- the time near phi = pi/2 the
+    steps do not resolve when the period is long, all of it at |P| = 1. P(m),
+    k'^2 and h: ASM_modulus. The six line positions at every point, so
+    ``TImod`` builds a 2x2 cross-section matrix per point from the local moment.
     """
-    K = K_cei(m)
-    Num = int(Num / 6) * 6 + 1
-    X = np.linspace(0, K, Num)
-    if m >= 0:
-        co = SN(X, m) ** 2
-    else:
-        co = 1 - SN(X, m) ** 2
+    kc2, h = ASM_modulus(P)
+    n = int(Num) - 1 if Num >= 2 else 1
+    phi = (np.arange(n) + 0.5) * (np.pi / 2 / n)
+    co = np.ones(n + 1)
+    co[:n] = np.sin(phi) ** 2
+    w = np.empty(n + 1)
+    w[:n] = h / n / np.sqrt(np.cos(phi) ** 2 + kc2 * co[:n])
+    w[n] = 1 - np.sum(w[:n])
+    if P < 0:
+        co = 1 - co
 
     eps = eps_m + eps_lat * (3 * co - 1) / 2
     H = His + Han * (3 * co - 1) / 2
@@ -2165,7 +2185,7 @@ def ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m, Num):
     v3 = sigm - eps + a2 - mun * (gex + ggr) / 2 * H
     v4 = sigm - eps - a2 + mun * (gex + ggr) / 2 * H
 
-    return (co, v1, v2, v3, v4, v5, v6)
+    return (co, w, v1, v2, v3, v4, v5, v6)
 
 @njit(cache=True)
 def SDW_thick_terms_direct(d0, eps0, KeH, H0, hodd, phi_deg, KdH, dev, Num):
@@ -2886,6 +2906,9 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 # matrix is used. Old fits use omega = omega_0(theta_k, phi_h) =
                 # degrees(arctan2(-sin(phi_h), cos(theta_k) * cos(phi_h))), the
                 # transverse-to-u part of h (=90 in the degenerate u || h case).
+                # The anharmonicity is P(m) (ASM_modulus), in [-1, 1]: 0 the
+                # harmonic cycloid, +/-1 the two collinear limits; each point
+                # weighs the share of the period it stands for (ASM_thick_terms).
                 I = abs(p[V])
                 sigm = p[V + 1] * MulCo
                 eps_m = p[V + 2] * MulCo
@@ -2894,14 +2917,14 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 Han = p[V + 5] * MulCo
                 WL = abs(p[V + 6]) * MulCo
                 WG = abs(p[V + 7]) * MulCo
-                m_asm = p[V + 8]
+                P_asm = p[V + 8]                 # P(m)
                 th = p[V + 9]
                 ph = p[V + 10]
                 Atex = p[V + 11]                 # uniaxial (fiber) texture order parameter
                 Num = int(abs(p[V + 12]))
                 I13 = p[V + 13]
                 om = p[V + 14]                   # cycloid-plane angle about the easy axis, deg
-                co, v1, v2, v3, v4, v5, v6 = ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, m_asm, Num)
+                co, wco, v1, v2, v3, v4, v5, v6 = ASM_thick_terms(sigm, eps_m, eps_lat, His, Han, P_asm, Num)
                 Nn = len(co)
                 Aeff = 0.5
                 I1 = I * (4 * I13 / (I13 + 1)) * (1 - Aeff) / (8 - 4 * Aeff)
@@ -2936,7 +2959,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                                                 + _mhat_dm0(mxb, myb)), Atex)
                     add += (I1 * (Voigt_c(WL, WG, E - v1[j]) + Voigt_c(WL, WG, E - v6[j]))[:, None, None] * Md1[None, :, :]
                             + I2 * (Voigt_c(WL, WG, E - v2[j]) + Voigt_c(WL, WG, E - v5[j]))[:, None, None] * Mpi[None, :, :]
-                            + I3 * (Voigt_c(WL, WG, E - v3[j]) + Voigt_c(WL, WG, E - v4[j]))[:, None, None] * Md1[None, :, :]) / Nn
+                            + I3 * (Voigt_c(WL, WG, E - v3[j]) + Voigt_c(WL, WG, E - v4[j]))[:, None, None] * Md1[None, :, :]) * wco[j]
                 add = Kpref * add
                 Smat_t = add if Smat is None else Smat + add
                 CHt = CH

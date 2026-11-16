@@ -180,7 +180,7 @@ def test_the_compiling_runs_and_counts_its_steps():
 NOT_CALLED = {
     'syncmoss.models.' + name for name in (
         'sim_inv', 'sim_inv_3d', 'inv', 'D3A', 'MatMul', 'Lin_Mat3D_Mul', 'sol_t', 'Voigt_complex_easy',
-        '_relax_MS_groups', 'relax_MS', 'Blume', 'ASM', 'relax_MS_thick')
+        '_relax_MS_groups', 'relax_MS', 'Blume', 'ASM', 'K_cei', 'SN', 'relax_MS_thick')
 } | {
     'syncmoss.models_positions.' + name for name in (
         'sim_inv', 'sim_inv_3d', 'inv', 'D2A', 'D3A', 'insert1D', 'MatMul', 'Lin_Mat3D_Mul', 'sol_t', 'Voigt',

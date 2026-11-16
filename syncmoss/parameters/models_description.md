@@ -172,11 +172,11 @@ Parameters:
 - Han: anharmonic modulation field amplitude.
 - L: Lorentzian width.
 - G: Gaussian width.
-- m: elliptic/anharmonicity parameter.
+- P(m): anharmonicity, 0 = harmonic cycloid, $\pm 1$ = collinear (along / across the easy axis); $m = \mathrm{sign}(P)\,(1 - 16^{-|P|/(1-|P|)})$.
 - $\theta_k$: easy (anharmonicity) axis polar angle.
 - $\varphi_h$: easy (anharmonicity) axis azimuth.
 - A: uniaxial texture order parameter.
-- Num: sampling points per modulation period (accuracy↔speed); structural.
+- Num: sampling points per quarter period (accuracy↔speed); structural. After a fit, check it with Num doubled.
 - I13: intensity ratio of lines 1, 6 to lines 3, 4, as in Sextet.
 - $\omega$: angle of the cycloid plane about the easy axis.
 

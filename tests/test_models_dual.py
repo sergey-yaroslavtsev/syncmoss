@@ -54,7 +54,7 @@ REFERENCE_LINES = "1.5, -1.0, 0.0, 0.5, 0.3, 0.1, 2.0, 2.5, 0.05"
 RELAX_2S = [5.0, 0.1, -0.05, 33.0, 0.05, 0.05, -30.0, 0.12, 40.0, 60.0, 0.6, 0.5, 0.3, 1.2]
 #           T    delta eps    H     W     theta phi   A    R    alfa S
 RELAX_MS = [5.0, 0.1, -0.05, 33.0, 0.098, 40.0, 60.0, 0.6, 0.5, 1.0, 5.0]
-#      T    delta eps_m eps_l His  Han   WL     WG    m    theta phi   A    Num   I13  omega
+#      T    delta eps_m eps_l His  Han   WL     WG    P(m) theta phi   A    Num   I13  omega
 ASM = [5.0, 0.1, 0.02, 0.2, 30.0, 5.0, 0.098, 0.12, 0.3, 35.0, 50.0, 0.6, 25.0, 3.0, 20.0]
 #       T    delta eps   H0    WL   WG   theta phi   A    Am   KdH    KeH    Phi   h1   h3   h5 ... h15 ...   d2 ... d8   N/G I13
 SCDW = [5.0, 0.1, 0.05, 30.0, 0.3, 0.2, 35.0, 50.0, 0.7, 0.6, 0.003, 0.005, 25.0, 5.0, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -100,6 +100,9 @@ CASES = {
     'Relax_2S': _case(['Relax_2S'], [RELAX_2S]),
     'Relax_MS': _case(['Relax_MS'], [RELAX_MS], fixed=[10]),                       # the spin S: a count
     'ASM': _case(['ASM'], [ASM], fixed=[12]),                                      # its number of points
+    # where K turns from the AGM to its limit ln 4/(1 - |P|) (k'^2 = 2**-52): the differences straddle it
+    'ASM at the join of K': _case(['ASM'], [ASM[:8] + [13 / 14] + ASM[9:]], fixed=[12]),
+    'ASM across the easy axis': _case(['ASM'], [ASM[:8] + [-0.6] + ASM[9:]], fixed=[12]),
     'SCDW': _case(['SCDW'], [SCDW], fixed=[25]),                                   # its grid's steps per width
     'Hamiltonian': _case(['Hamiltonian'], [HAMILTONIAN]),
     'Hamiltonian powder': _case(['Hamiltonian'], [HAMILTONIAN[:12] + [0.0, 0.0, 0.0]]),
@@ -247,6 +250,25 @@ def test_widths_that_start_at_zero_have_their_column():
         one_sided = (-3 * at(0.0) + 4 * at(h) - at(2 * h)) / (2 * h)          # of second order, from 0 upwards
         assert np.max(np.abs(one_sided)) > 0
         assert np.max(np.abs(row - one_sided)) < ACCURACY * np.max(at(0.0)) / m5.NAT_WIDTH
+
+
+@pytest.mark.parametrize('P', [1.0, -1.0])
+def test_the_anharmonicity_of_an_asm_at_a_collinear_end_has_its_column(P):
+    # P(m) = +-1 (the bounds): the share of the period off the collinear line goes
+    # linearly to 0, so the slope from inside is finite -- a fit that lands there can leave
+    p = np.array(BASELINE + ASM[:8] + [P] + ASM[9:])
+    case = dict(CASES['ASM'], p=p)
+    k = V0 + 8
+    row = dn.jacobian(md.TI(dn.seed(p, [k]), _prepared(case, 'SMS'), SerialPool()), [k])[0]
+
+    def at(x):
+        q = p.copy()
+        q[k] = x
+        return _ti(case, 'SMS', q)
+    s = np.sign(P)
+    inside = s * (3 * at(P) - 4 * at(P - s * STEP) + at(P - 2 * s * STEP)) / (2 * STEP)     # of second order
+    assert np.max(np.abs(inside)) > 0.1 * np.ptp(at(P))
+    assert np.max(np.abs(row - inside)) < ACCURACY * np.max(at(P))
 
 
 def test_links_and_expressions_are_in_the_derivatives():

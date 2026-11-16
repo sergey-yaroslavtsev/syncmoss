@@ -70,7 +70,7 @@ To cover it:
    |dx|; sqrt at 0: 0 -- and it may not be the one-sided slope the fit needs:
    see _root_at_zero (MDGD) and hamiltonian_dual's first moment. A switch
    between two formulas at a threshold must join them, or the derivative is
-   right on each side and the fit still sees a step (ASM's SN at m = 0.981).
+   right on each side and the fit still sees a step.
 5. Tests: add the row to CASES of tests/test_models_dual.py (and to it under
    a Distr if it can be distributed): the value against models.TI to
    rounding, every column against central differences of models.TI, both
@@ -294,46 +294,39 @@ def _hamilton_pc(p, MulCo, text, cms):
                               (p[2], p[3], p[6], p[8], p[7], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0), MulCo, False, powder=True)
 
 
-# models.K_cei and models.SN, written with numpy so that they take Duals
-def _k_cei(M):
-    M = abs(M)
-    if M <= 0.9999978056985459:
-        m = np.sqrt(1 - M)
-        return np.pi * np.sqrt(2) / np.sqrt((1 + m) * np.sqrt(m)) * (
-            1 - 2 ** (1 / 4) / 4 * (1 + np.sqrt(m)) / ((1 + m) * np.sqrt(m)) ** (1 / 4))
-    if M < 1:
-        return 1 / 2 * np.log((1 + M) / (1 - M))
-    return 99999
+# models.AGM1 and models.ASM_modulus, written with numpy so that they take Duals
+def _agm1(b):
+    a = 1.0
+    for _ in range(m5.AGM_STEPS):
+        a, b = (a + b) / 2, np.sqrt(a * b)
+    return a
 
 
-def _sn(x, m):
-    m = abs(m)
-    if m <= 0.981:
-        mu = np.pi / 4 / (_k_cei(m) + 10 ** -12 * (m == 0))
-        t = 1 / mu * np.tan(mu * x)
-        z = t ** 2
-        a1 = -1 / 6 * (1 + m + 2 * mu ** 2)
-        a2 = 1 / 120 * (1 + m) ** 2 + mu ** 2 / 6 * (1 + m) + m / 10 + mu ** 4 / 5
-        p1 = (mu ** 4 + a1 * mu ** 2 + a1 ** 2 - a2) / (mu ** 2 + a1)
-        p2 = mu ** 4
-        q1 = (mu ** 4 - a2) / (mu ** 2 + a1)
-        q2 = mu ** 2 * (mu ** 4 - a2) / (mu ** 2 + a1)
-        q3 = mu ** 6
-        return (1 + p1 * z + p2 * z ** 2) / (1 + q1 * z + q2 * z ** 2 + q3 * z ** 3) * t
-    if m < 1:
-        return (np.exp(2 * x) - 1) / (np.exp(2 * x) + 1)
-    return 1 + 0 * x
+def _asm_modulus(P):
+    a = abs(P)
+    kc2 = 16.0 ** (-a / (1 - a)) if a < 1 else 0.0
+    if kc2 > 2.0 ** -52:
+        h = _agm1(np.sqrt(kc2))
+    else:
+        h = np.pi / 2 * (1 - a) / np.log(4.0) if a <= 1 else 0.0
+    return kc2, h
 
 
 def _asm(p, MulCo, text, cms):
     """TImod's 'ASM' and models.ASM_thick_terms: at every point of the
-    modulation six lines, with the matrices of the local moment."""
+    modulation six lines, with the matrices of the local moment. The points
+    are fixed; P(m) moves only their weights."""
     sigm, eps_m, eps_lat, His, Han = p[1] * MulCo, p[2] * MulCo, p[3] * MulCo, p[4] * MulCo, p[5] * MulCo
     WL, WG = abs(p[6]) * MulCo, abs(p[7]) * MulCo
-    m = p[8]
-    Num = int(int(abs(p[12])) / 6) * 6 + 1
-    X = np.linspace(0, _k_cei(m), Num)
-    co = _sn(X, m) ** 2 if m >= 0 else 1 - _sn(X, m) ** 2
+    kc2, h = _asm_modulus(p[8])
+    Num = int(abs(p[12]))
+    n = Num - 1 if Num >= 2 else 1
+    phi = (np.arange(n) + 0.5) * (np.pi / 2 / n)
+    co = np.append(np.sin(phi) ** 2, 1.0)
+    w = h / n / np.sqrt(np.cos(phi) ** 2 + kc2 * co[:n])
+    w = np.concatenate([w, (1 - w.sum()) * np.ones(1)])
+    if p[8] < 0:
+        co = 1 - co
     eps = eps_m + eps_lat * (3 * co - 1) / 2
     H = His + Han * (3 * co - 1) / 2
     a1 = eps_lat ** 2 * 3 / c * E0_J / (gex * mun * H + (H == 0)) * (co + 1 / 8 * (1 - co)) * (1 - co)
@@ -346,7 +339,7 @@ def _asm(p, MulCo, text, cms):
     v3 = sigm - eps + a2 - mun * (gex + ggr) / 2 * H
     v4 = sigm - eps - a2 + mun * (gex + ggr) / 2 * H
 
-    I1, I2, I3 = (I / Num for I in _sextet_intensities(abs(p[0]), p[13], MulCo))
+    I1, I2, I3 = (I * w for I in _sextet_intensities(abs(p[0]), p[13], MulCo))
     th, ph = p[9], p[10]
     ux, uy, uz = m5._axis_xyz(th, ph)                       # the easy axis u
     thr, phr, omr = th / 180.0 * np.pi, ph / 180.0 * np.pi, p[14] / 180.0 * np.pi

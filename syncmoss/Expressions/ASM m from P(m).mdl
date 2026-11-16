@@ -1,0 +1,7 @@
+#@Comment The anharmonicity m of the ASM - the parameter of the Jacobi function sn(x|m) of the moment's angle - from its fitted P(m).
+#@Comment $m=\mathrm{sign}(P)\,\left(1-16^{-|P|/(1-|P|)}\right)$
+#@Comment {P} - P(m) of the ASM row: p[k], k its number. P = 0 is m = 0 (harmonic cycloid), P = ±1 is m = ±1 (collinear).
+baseline	Expression
+red	red
+10000	1			False	0				True	0				True	0				True	0				True	=[1,1]				True	=[2,1]				True	=[3,1]				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False
+sign({P})*(1-16**(-abs({P})/(1-abs({P}))))				True					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False					False

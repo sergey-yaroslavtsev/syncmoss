@@ -87,6 +87,9 @@ SAMPLE_VALUES = {
     "Thickness PDF, pressed window (membrane)": {},
     "Thickness PDF, pressed window (clamped plate)": {'{rim}': '1'},
     "Thickness PDF, Gamma": {'{CV}': '0.4', '{mean}': '2'},
+    # ASM's anharmonicity both ways (checked against the model in test_asm_p)
+    "ASM m from P(m)": {'{P}': '0.5'},
+    "ASM P(m) from m": {'{m}': '0.9'},
 }
 
 # The thickness axis a Distr_T density is evaluated on (above the clamped

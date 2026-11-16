@@ -137,10 +137,46 @@ def test_upgrade_asm_pre_omega_polarized_appends_omega0():
     assert float(groups[-1][0]) == pytest.approx(legacy._asm_omega0(30.0, 40.0))
 
 
-def test_upgrade_asm_is_noop_for_new_layout():
-    # A 15-param ASM row is already current -> returned unchanged.
+def test_upgrade_asm_is_noop_for_a_row_with_p_of_m():
+    # A 15-param ASM row whose anharmonicity slot is marked P(m) is current -> unchanged.
     row = _row(range(15), pad_to=16)
+    row[legacy.ASM_P_SLOT * 5 + 3] = legacy.ASM_P_NAME
     assert legacy.upgrade_mdl_row('ASM', row) == row
+
+
+def _m_of_p(P):
+    """m back from P(m): the text the help gives for an Expression row."""
+    return np.sign(P) * (1 - 16 ** (-abs(P) / (1 - abs(P))))
+
+
+@pytest.mark.parametrize("n", [12, 14, 15])
+@pytest.mark.parametrize("m", [0.95, -0.3])
+def test_upgrade_asm_turns_m_into_p_of_m(n, m):
+    # Every ASM layout before 2026-11 holds m at the slot (no mark): value and bounds
+    # become P(m), exactly invertible; a link stays; the row is marked, converted once.
+    vals = list(range(n))
+    vals[legacy.ASM_P_SLOT] = m
+    row = _row(vals, pad_to=16)
+    k = legacy.ASM_P_SLOT * 5
+    row[k + 1], row[k + 2] = '-1', '0.999'
+    out = legacy.upgrade_mdl_row('ASM', row)
+    value, lower, upper, name = out[k:k + 4]
+    assert name == legacy.ASM_P_NAME and len(out) // 5 >= 15 == mod_len_def('ASM', include_special=False)
+    assert np.sign(float(value)) == np.sign(m) and abs(float(value)) < 1
+    assert _m_of_p(float(value)) == pytest.approx(m, abs=1e-15)
+    assert float(lower) == -1.0 and float(upper) == pytest.approx(legacy.asm_p_of_m(0.999), abs=0)
+    assert legacy.upgrade_mdl_row('ASM', out) == out
+    row[k] = '=[20,1]'
+    assert legacy.upgrade_mdl_row('ASM', row)[k] == '=[20,1]'
+
+
+def test_p_of_m_has_its_ends_and_is_odd():
+    assert legacy.asm_p_of_m(0.0) == 0.0
+    assert legacy.asm_p_of_m(1.0) == 1.0 and legacy.asm_p_of_m(-1.0) == -1.0 and legacy.asm_p_of_m(3.0) == 1.0
+    ms = np.linspace(0.0, 1 - 1e-12, 1001)
+    ps = np.array([legacy.asm_p_of_m(m) for m in ms])
+    assert np.all(np.diff(ps) > 0) and all(legacy.asm_p_of_m(-m) == -P for m, P in zip(ms, ps))
+    assert np.allclose(_m_of_p(ps), ms, rtol=0, atol=1e-15)
 
 
 def test_upgrade_mdl_row_is_noop_for_new_layout():
