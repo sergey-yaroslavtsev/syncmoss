@@ -175,13 +175,14 @@ def test_the_compiling_runs_and_counts_its_steps():
     assert steps == [(done, len(names), name) for done, name in enumerate(names)]
 
 
-# Cached kernels the program never calls, or only with models.COMPLEX_VOIGT_METHOD
-# = 'off' (a developer's switch)
+# Cached kernels the program never calls, or only with another
+# models.COMPLEX_VOIGT_METHOD than the shipped 'faddeeva' (a developer's switch:
+# the pseudo-Voigt's complex kernel and its one-pass value)
 NOT_CALLED = {
     'syncmoss.models.' + name for name in (
-        'sim_inv', 'sim_inv_3d', 'inv', 'D3A', 'MatMul', 'Lin_Mat3D_Mul', 'sol_t', 'Voigt_complex_easy',
+        'sim_inv', 'sim_inv_3d', 'inv', 'D3A', 'MatMul', 'Lin_Mat3D_Mul', 'sol_t', 'Voigt_complex', 'Voigt_complex_easy',
         '_relax_MS_groups', 'relax_MS', 'Blume', 'ASM', 'K_cei', 'SN', 'relax_MS_thick')
-} | {
+} | {'syncmoss.dual_kernels.voigt_value'} | {
     'syncmoss.models_positions.' + name for name in (
         'sim_inv', 'sim_inv_3d', 'inv', 'D2A', 'D3A', 'insert1D', 'MatMul', 'Lin_Mat3D_Mul', 'sol_t', 'Voigt',
         'relax_MS', 'Blume')
@@ -203,6 +204,7 @@ from numba.core.registry import CPUDispatcher
 import syncmoss.compile_functions as cf
 import syncmoss.dual_kernels as dk
 import syncmoss.dual_numbers as dn
+import syncmoss.faddeeva as fd
 import syncmoss.instrumental_io as iio
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
@@ -213,7 +215,7 @@ import test_models_dual as tmd
 
 def versions():
     return {f"{module.__name__}.{name}": {str(s) for s in kernel.signatures}
-            for module in (m5, mpos, dk, mi) for name, kernel in vars(module).items()
+            for module in (m5, mpos, dk, mi, fd) for name, kernel in vars(module).items()
             if isinstance(kernel, CPUDispatcher) and kernel.__module__ == module.__name__
             and not isinstance(kernel._cache, NullCache)}
 

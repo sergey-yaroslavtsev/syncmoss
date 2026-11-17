@@ -249,6 +249,17 @@ def parameters_folder_is_read_only():
             "that searches, calibrates or resets.")
 
 
+@pytest.fixture(autouse=True)
+def line_shape_switch_restored():
+    """models.COMPLEX_VOIGT_METHOD and DISPERSION_SIGN as shipped again after
+    every test: several tests pin a method (the golden values are the
+    pseudo-Voigt's) and none may hand it on to the tests after it."""
+    import syncmoss.models as m5
+    shipped = (m5.COMPLEX_VOIGT_METHOD, m5.DISPERSION_SIGN)
+    yield
+    m5.COMPLEX_VOIGT_METHOD, m5.DISPERSION_SIGN = shipped
+
+
 @pytest.fixture(scope="session", autouse=True)
 def channel_average_off():
     """The suite computes with the channel average OFF (Supp -> Average model

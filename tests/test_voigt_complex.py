@@ -58,13 +58,14 @@ DOUBLET_WIDTH, SEXTET_WIDTH, SEXTET_FIELD_BROADENING = 4, 9 + 5, 9 + 12
 
 
 def _spectrum(p, method='pseudo'):
+    shipped = m5.COMPLEX_VOIGT_METHOD
     m5.COMPLEX_VOIGT_METHOD = method
     m5.DISPERSION_SIGN = +1.0
     try:
         return np.asarray(m5.TImod(_E, np.array(p, float), np.array(_MIX["model"]), _E, 0.0, 1.0,
                                    np.array([]), [], [], Met=-1, Mett=0), dtype=float)
     finally:
-        m5.COMPLEX_VOIGT_METHOD = 'pseudo'
+        m5.COMPLEX_VOIGT_METHOD = shipped
 
 
 def _widths(doublet, sextet):

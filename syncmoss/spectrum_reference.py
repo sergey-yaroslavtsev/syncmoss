@@ -39,7 +39,7 @@ import syncmoss.dual_numbers as dn
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
 from syncmoss.constants import CMS_NNR_RATIO, NAT_WIDTH, number_of_baseline_parameters as NB
-from syncmoss.dual_kernels import _voigt_parts, voigt_value
+from syncmoss.dual_kernels import line_value, voigt_parts
 from syncmoss.fit_quality import MISFIT, STRUCTURE_FREE, counts_noise, fit_quality
 from syncmoss.models_dual import section_counts
 from syncmoss.spectrum_io import estimate_edge_background, ns_for_background
@@ -221,22 +221,23 @@ def fitted_points(x, y):
 def singlet_depth(E, mulco, T, delta, G):
     """The optical depth of a Singlet (T, δ, the natural width, G) at the node
     energies E: TImod's own expression, π (Γ0/2) MulCo |T| times the program's
-    Voigt (in one pass: dual_kernels.voigt_value), without TImod's bookkeeping
-    for every model -- a fit computes a line many times (the tests pin it to
-    TI)."""
+    line shape (models.Voigt_r, in one pass: dual_kernels.line_value), without
+    TImod's bookkeeping for every model -- a fit computes a line many times
+    (the tests pin it to TI)."""
     S = np.ravel(E - delta * mulco)
-    return np.pi * (NAT_WIDTH / 2 * mulco) * abs(T) * voigt_value(NAT_WIDTH * mulco, abs(G) * mulco, S).reshape(
-        np.shape(E))
+    return np.pi * (NAT_WIDTH / 2 * mulco) * abs(T) * line_value(NAT_WIDTH * mulco, abs(G) * mulco, S,
+                                                                  m5.exact_voigt()).reshape(np.shape(E))
 
 
 def singlet_parts(E, mulco, delta, G):
     """The optical depth of a Singlet of T = 1 (singlet_depth's) and its
     derivatives in δ and G: (3, *E.shape), from dual_kernels' twin of the
-    program's Voigt, which gives the value (the Voigt's to rounding) and the
-    derivatives in one compiled pass. At G = 0, where |G| has its kink, the
-    derivative from above: G is bounded at 0."""
+    program's line shape (voigt_parts), which gives the value (the line's to
+    rounding) and the derivatives in one compiled pass. At G = 0, where |G|
+    has its kink, the derivative from above: G is bounded at 0 (the exact
+    Voigt's is 0 there, the line being even in G)."""
     k = np.pi * (NAT_WIDTH / 2 * mulco)
-    A, _ = _voigt_parts(NAT_WIDTH * mulco, abs(G) * mulco, np.ravel(E - delta * mulco), False)
+    A, _ = voigt_parts(NAT_WIDTH * mulco, abs(G) * mulco, np.ravel(E - delta * mulco), False, m5.exact_voigt())
     A = A.reshape((4,) + np.shape(E))           # the Voigt and its derivatives in its widths gL, gG and in E
     A[0] *= k
     A[1] = A[3] * (-k * mulco)

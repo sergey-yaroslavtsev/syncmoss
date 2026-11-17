@@ -42,8 +42,9 @@ _FARADAY_MODELS = sorted(_MODELS)
 
 
 def _compute(model, params, mett=0):
-    # Pin the complex-Voigt method/sign to the shipping defaults so these tests
-    # are independent of any developer switch of models.COMPLEX_VOIGT_METHOD.
+    # Pin the complex-Voigt method/sign to the ones these tests were written
+    # with ('pseudo', shipped until 2026-11-17), so that they are independent
+    # of models.COMPLEX_VOIGT_METHOD (conftest restores it after each test).
     m5.COMPLEX_VOIGT_METHOD = 'pseudo'
     m5.DISPERSION_SIGN = +1.0
     return np.asarray(

@@ -55,7 +55,8 @@ import numpy as np
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
 from syncmoss.constants import NAT_WIDTH, number_of_baseline_parameters as NB
-from syncmoss.dual_kernels import _voigt_parts, voigt_value
+import syncmoss.faddeeva as faddeeva
+from syncmoss.dual_kernels import _faddeeva_parts, _voigt_parts, voigt_value
 from syncmoss.fit_quality import deviance_moments
 from syncmoss.instrumental_io import source_for
 from syncmoss.spectrum_io import estimate_edge_background, ns_for_background
@@ -119,9 +120,14 @@ def _check_interrupt():
 def _ready():
     """Whether numba has the search's compiled kernels in this process
     already: a line's depth and its depth with the derivatives (dual_kernels'
-    twins of the Voigt), the program's Voigt itself (line_fwhm), minimi_hi's
-    linear solve."""
-    return all(kernel.signatures for kernel in (voigt_value, _voigt_parts, m5.Voigt, mi.solution))
+    twins of the program's line shape, models.Voigt_r -- the exact Voigt's or
+    the pseudo-Voigt's, models.exact_voigt), the line shape itself
+    (line_fwhm), minimi_hi's linear solve."""
+    if m5.exact_voigt():
+        kernels = (faddeeva.voigt_line, _faddeeva_parts)
+    else:
+        kernels = (voigt_value, _voigt_parts, m5.Voigt)
+    return all(kernel.signatures for kernel in kernels + (mi.solution,))
 
 
 def _warm_up():
@@ -133,7 +139,7 @@ def _warm_up():
     E = np.linspace(-1.0, 1.0, 8)
     singlet_depth(E.reshape(2, 4), 1.0, 1.0, 0.0, 0.1)
     singlet_parts(E.reshape(2, 4), 1.0, 0.0, 0.1)
-    m5.Voigt(NAT_WIDTH, 0.1, E)
+    m5.Voigt_r(NAT_WIDTH, 0.1, E)
     mi.warmup()
     return True
 
@@ -1124,10 +1130,10 @@ def merge_duplicates(lines, beta, mask, cols):
 
 def line_fwhm(G):
     """The full width at half maximum (mm/s) of a line of the natural width
-    and the Gaussian G, measured on the program's Voigt."""
+    and the Gaussian G, measured on the program's line shape (models.Voigt_r)."""
     half = 4 * (NAT_WIDTH + G) + 0.5
     E = np.linspace(-half, half, 40001)
-    v = m5.Voigt(NAT_WIDTH, float(G), E)
+    v = m5.Voigt_r(NAT_WIDTH, float(G), E)
     above = E[v >= v.max() / 2]
     return float(above[-1] - above[0])
 

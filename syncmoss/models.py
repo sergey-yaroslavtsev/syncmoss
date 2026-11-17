@@ -978,14 +978,17 @@ def _smearing_rows(smearing, x, JN):
 # Smat becomes complex non-Hermitian; the amplitude operator expm(-Smat/2),
 # the field-ordered layer product and the Gram readout tr[rho T^H T] are all
 # already fully general (see _expm_neg / the readout in TImod) and need no
-# change. Scalar (thin) components keep the real Voigt().
+# change. Scalar (thin) components take the real part of the same line shape
+# (Voigt_r).
 #
 # DISPERSION_SIGN fixes the sign of D relative to the +/- 1j*n_z*J Faraday
 # assignment of the sigma+- matrices: every complex line shape here returns
 # Lambda = V + 1j*DISPERSION_SIGN*D, verified against a numerical Hilbert
-# transform to be the SAME convention in all three kernels (Voigt_c in both its
-# 'pseudo' and 'wofz' forms, Blume_c, _relax_MS_groups_c -- Im/H[Re] = +1.000 for
-# each at +1.0). One global value is meaningful for the whole model only since
+# transform to be the SAME convention in all three kernels (Voigt_c in its
+# 'faddeeva', 'wofz' and 'pseudo' forms, Blume_c, _relax_MS_groups_c -- Im/H[Re]
+# = +1.000 for each at +1.0; 'faddeeva' and 'wofz' are H[Re] to the transform's
+# own error, 1e-6, the pseudo-Voigt's D to 0.6-1.2 % of its peak once gG > 0,
+# 2026-11-17). One global value is meaningful for the whole model only since
 # the 2026-08-26 amplitude-convention fix: before it, the Hamiltonian family's
 # blocks were transposed relative to the sextet family's, so the two families
 # effectively ran with OPPOSITE pairings and no single value was right for both.
@@ -1014,34 +1017,55 @@ def _smearing_rows(smearing, x, JN):
 # `m5.DISPERSION_SIGN = +1.0` lines in the tests are a no-op safeguard for those
 # two components; they are only meaningful because this literal is +1.0.)
 #
-# COMPLEX_VOIGT_METHOD selects how Voigt_c() builds the complex Voigt of the
-# Voigt-shaped components. It is a DEVELOPER switch (edit here + restart to
-# compare); it is deliberately NOT exposed in the GUI -- the dispersion is
-# meant to be always on and invisible to the user. The relaxation components
-# ('Relax_MS' via relax_MS_thick_c, 'Relax_2S' via Blume_c) get their
-# dispersion straight from the resolvent, not from a Faddeeva evaluation, so
-# they do not depend on this choice -- except that 'off' disables dispersion
-# for them too (they fall back to the real relax_MS_thick / Blume).
+# COMPLEX_VOIGT_METHOD selects the line shape of the ABSORBER's Voigt-shaped
+# lines: Voigt_c() for the thick (matrix) components and Voigt_r(), the real
+# part of the same shape, for the thin (scalar) ones -- Singlet, Spectrum,
+# Hamilton_pc and the Hamiltonian's scalar powder path -- so that a component
+# taking the scalar path is its matrix path to rounding. The SOURCE line (the
+# CMS source, Met 2, the cosine smearing and the channel average: Voigt,
+# Voigt_disc, Voigt_box) is the pseudo-Voigt Voigt() whatever the switch: the
+# channel average needs its cumulative in closed form (_voigt_cdf), and the
+# source's G is calibrated with that shape. It is a DEVELOPER switch (edit here
+# + restart to compare); it is deliberately NOT exposed in the GUI -- the
+# dispersion is meant to be always on and invisible to the user. The
+# relaxation components ('Relax_MS' via relax_MS_thick_c, 'Relax_2S' via
+# Blume_c) get their dispersion straight from the resolvent, not from a
+# Faddeeva evaluation, so they do not depend on this choice -- except that
+# 'off' disables dispersion for them too (they fall back to the real
+# relax_MS_thick / Blume). The exact derivatives of a fit (models_dual) follow
+# 'faddeeva', 'wofz', 'pseudo' and 'off'.
 #
-#   'wofz'        exact complex Voigt from scipy.special.wofz (Faddeeva). Both
-#                 the absorption AND the dispersion are exact; the absorption
-#                 then differs from the pseudo-Voigt Voigt() by the
-#                 Ida-Ando-Toraya approximation error (~1e-3 of the peak).
-#   'pseudo'      4-term pseudo-Voigt (Voigt_complex). Its REAL part is
-#                 bit-identical to Voigt(), so switching dispersion on does
-#                 NOT move any absorption-only quantity; only the KK dispersion
-#                 is added (error vs exact D <~1% of the peak). numba-jitted.
-#                 -- default: closest to "invisible to the user".
+#   'faddeeva'    exact complex Voigt from the Faddeeva function by Weideman's
+#                 expansion (faddeeva.py): the absorption AND the dispersion
+#                 right to ~1e-15 of |w|, the rounding of the arithmetic;
+#                 compiled over chunks of points, the line shape takes half
+#                 the time of the pseudo-Voigt's. -- default.
+#   'wofz'        the same exact Voigt from scipy.special.wofz (right to 9e-15):
+#                 the independent reference 'faddeeva' is held to.
+#   'pseudo'      4-term pseudo-Voigt (Voigt_complex, Ida, Ando & Toraya). Its
+#                 REAL part is bit-identical to Voigt(); the absorption is off
+#                 the exact Voigt by up to ~1e-3 of the peak, the dispersion by
+#                 up to ~1 %. numba-jitted. The default until 2026-11-17.
 #   'pseudo_easy' 2-term pseudo-Voigt (Voigt_complex_easy). Cheapest/simplest;
 #                 absorption off by ~1%, dispersion off by up to ~7% in the
-#                 Gaussian-dominated regime. numba-jitted.
-#   'off'         real Voigt, no dispersion -- reproduces the former
-#                 absorption-only thick model exactly (for A/B comparison).
+#                 Gaussian-dominated regime; its thin lines keep Voigt().
+#                 numba-jitted.
+#   'off'         real pseudo-Voigt Voigt(), no dispersion -- reproduces the
+#                 former absorption-only thick model exactly (for A/B
+#                 comparison).
 # ===========================================================================
 DISPERSION_SIGN = +1.0
-COMPLEX_VOIGT_METHOD = 'pseudo'
+COMPLEX_VOIGT_METHOD = 'faddeeva'
 
 from scipy.special import wofz as _wofz
+import syncmoss.faddeeva as _faddeeva
+
+
+def exact_voigt():
+    """Whether COMPLEX_VOIGT_METHOD makes the absorber's lines the exact Voigt
+    ('faddeeva', 'wofz'): what the twins of the line shape with its derivatives
+    (dual_kernels, models_dual, spectrum_reference) follow."""
+    return COMPLEX_VOIGT_METHOD in ('faddeeva', 'wofz')
 
 
 def _voigt_c_wofz(gL, gG, S):
@@ -1049,12 +1073,25 @@ def _voigt_c_wofz(gL, gG, S):
     function w(z). Real part is the EXACT area-normalised Voigt that the
     pseudo-Voigt Voigt() approximates; imaginary part is exactly its
     Kramers--Kronig partner. Not numba-jitted (scipy.wofz is a vectorised C
-    call of negligible cost)."""
+    call). Without a Gaussian (gG <= 0) the Lorentzian, as faddeeva.voigt_line:
+    it used to take sigma + 1e-7 (and gamma + 1e-9) instead, a Voigt a little
+    wider than the one asked for."""
     S = np.asarray(S, dtype=np.float64)
-    gamma = 0.5 * gL + 1e-9
-    sigma = gG / 2.3548200450309493 + 1e-7          # FWHM -> standard deviation
-    z = (S + 1j * gamma) / (sigma * np.sqrt(2.0))
-    P = _wofz(z) / (sigma * np.sqrt(2.0 * np.pi))
+    gamma = 0.5 * gL
+    if gG <= 0:
+        P = (1.0 / np.pi) / (gamma - 1j * S)
+    else:
+        sigma = gG / 2.3548200450309493              # FWHM -> standard deviation
+        z = (S + 1j * gamma) / (sigma * np.sqrt(2.0))
+        P = _wofz(z) / (sigma * np.sqrt(2.0 * np.pi))
+    if DISPERSION_SIGN > 0:
+        return P
+    return np.conj(P)
+
+
+def _voigt_c_faddeeva(gL, gG, S):
+    """Exact complex Voigt Lambda = V + 1j*DISPERSION_SIGN*D, by faddeeva.py."""
+    P = _faddeeva.voigt_complex(gL, gG, S)
     if DISPERSION_SIGN > 0:
         return P
     return np.conj(P)
@@ -1124,6 +1161,8 @@ def Voigt_c(gL, gG, S):
     """Complex line shape used by every THICK (matrix) component, dispatched on
     COMPLEX_VOIGT_METHOD. Returns V + 1j*DISPERSION_SIGN*D (or the real V for
     'off'). Drop-in complex counterpart of Voigt(gL, gG, S)."""
+    if COMPLEX_VOIGT_METHOD == 'faddeeva':
+        return _voigt_c_faddeeva(gL, gG, S)
     if COMPLEX_VOIGT_METHOD == 'wofz':
         return _voigt_c_wofz(gL, gG, S)
     S = np.asarray(S, dtype=np.float64)
@@ -1132,6 +1171,19 @@ def Voigt_c(gL, gG, S):
     if COMPLEX_VOIGT_METHOD == 'pseudo_easy':
         return Voigt_complex_easy(gL, gG, S, 1.0, 1j * DISPERSION_SIGN)
     return Voigt(gL, gG, S) + 0j          # 'off': real Voigt, no dispersion
+
+
+def Voigt_r(gL, gG, S):
+    """Real line shape of the absorber's THIN (scalar) lines: the real part of
+    Voigt_c for COMPLEX_VOIGT_METHOD 'faddeeva' and 'wofz' (the exact Voigt),
+    the pseudo-Voigt Voigt() for the others -- Voigt_c's real part for
+    'pseudo' and 'off' (bit for bit), not for 'pseudo_easy'. The source line
+    takes Voigt() itself (see COMPLEX_VOIGT_METHOD)."""
+    if COMPLEX_VOIGT_METHOD == 'faddeeva':
+        return _faddeeva.voigt(gL, gG, S)
+    if COMPLEX_VOIGT_METHOD == 'wofz':
+        return _voigt_c_wofz(gL, gG, S).real
+    return Voigt(gL, gG, S)
 
 
 @njit(cache=True)
@@ -2542,7 +2594,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 WL = abs(p[V + 2]) * MulCo
                 WG = abs(p[V + 3]) * MulCo
                 V += 4
-                Voi = Voigt(WL, WG, S)
+                Voi = Voigt_r(WL, WG, S)
                 CHt = CH*np.exp((-1)*np.pi*(NAT_WIDTH/2*MulCo)*I*Voi)
             if model[i] == 'Spectrum':
                 # A measured reference: natural-width lines (T_q, δ_q, G_q), its
@@ -2558,7 +2610,7 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                     for Iq, dq, Gq in zip(Tq / np.sum(Tq), lines[:, 1], lines[:, 2]):
                         S = (-1) * (dq + p[V + 1]) * MulCo + E
                         WG = np.sqrt(Gq**2 + p[V + 2]**2) * MulCo
-                        Voi = Voi + Iq * Voigt(WL, WG, S)
+                        Voi = Voi + Iq * Voigt_r(WL, WG, S)
                 V += 4
                 CHt = CH*np.exp((-1)*np.pi*(NAT_WIDTH/2*MulCo)*I*Voi)
             if model[i] == 'Hamilton_pc':
@@ -2586,8 +2638,8 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                 S = S * MulCo
                 S += delt
                 CHt = CH * np.exp((-1) * np.pi * (NAT_WIDTH / 2 * MulCo)\
-                                  * (I[0]*Voigt(WL,WG,E-S[0])+I[1]*Voigt(WL,WG,E-S[1])+I[2]*Voigt(WL,WG,E-S[2])+I[3]*Voigt(WL,WG,E-S[3])\
-                                    +I[4]*Voigt(WL,WG,E-S[4])+I[5]*Voigt(WL,WG,E-S[5])+I[6]*Voigt(WL,WG,E-S[6])+I[7]*Voigt(WL,WG,E-S[7])))
+                                  * (I[0]*Voigt_r(WL,WG,E-S[0])+I[1]*Voigt_r(WL,WG,E-S[1])+I[2]*Voigt_r(WL,WG,E-S[2])+I[3]*Voigt_r(WL,WG,E-S[3])\
+                                    +I[4]*Voigt_r(WL,WG,E-S[4])+I[5]*Voigt_r(WL,WG,E-S[5])+I[6]*Voigt_r(WL,WG,E-S[6])+I[7]*Voigt_r(WL,WG,E-S[7])))
                 V += 9
             # --- Polarized model components ---------------------------------
             # Each adds a 2x2 cross-section matrix to Smat instead of a scalar
@@ -2853,10 +2905,11 @@ def TImod (x_exp, p, model, EE, x0, MulCo, INS, Distri, Cor, Met = 0, sms_pol=SM
                     # exponential and out of every layer product as exp(-s/2), and
                     # |exp(-s/2)|^2 = exp(-Re s), i.e. its dispersive part is a
                     # global phase that the Gram readout cancels -- which is also
-                    # why the real Voigt() is the right line shape here.
+                    # why the real part of the line shape is the right one here
+                    # (Voigt_r: Voigt_c's real part).
                     Voi = np.zeros(len(E))
                     for k in range(0, 8):
-                        Voi = Voi + Piso[k] * Voigt(WL, WG, E - S[k])
+                        Voi = Voi + Piso[k] * Voigt_r(WL, WG, E - S[k])
                     CHt = CH * np.exp((-1) * Kpref * I * Voi)
                 else:
                     add = np.zeros((len(E), 2, 2), dtype=complex)

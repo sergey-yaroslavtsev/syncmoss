@@ -80,6 +80,7 @@ To cover it:
 import numpy as np
 
 import syncmoss.dual_numbers as dn
+import syncmoss.faddeeva as faddeeva
 import syncmoss.minimi_lib as mi
 import syncmoss.models as m5
 from syncmoss.constants import (NAT_WIDTH, TESLA_PER_MMS, MMS_PER_T_PER_G, LINE_RATIO_25, LINE_RATIO_34,
@@ -652,10 +653,11 @@ def _packed(lines, patches, idx):
             *[np.ascontiguousarray(x, dtype=float) for x in t])
 
 
-def _node(E, W, absorber, sign, rho11, rho22):
+def _node(E, W, absorber, sign, line_shape, rho11, rho22):
     """A node of TI's grid: its weight W times the transmission of the
-    absorber at its energies E, and the derivatives. What a pool worker runs."""
-    r, dr = _transmission(E, *absorber, sign, rho11, rho22)
+    absorber at its energies E, and the derivatives. What a pool worker runs.
+    *line_shape*: (exact, coefficients, scale) of the Voigt lines, see TI."""
+    r, dr = _transmission(E, *absorber, sign, *line_shape, rho11, rho22)
     return W * r, W[:, None] * dr
 
 
@@ -750,9 +752,13 @@ def TI(p, prepared, pool, Distri=[0], Cor=[0], Recon=[0]):
     Duals: a Dual (the spectrum and its derivatives) when one of them is, else
     the plain array. *prepared*: prepare()'s, made with TI's other arguments.
     A Recon's weights may be a Dual too."""
-    if m5.COMPLEX_VOIGT_METHOD not in ('pseudo', 'off'):
+    if m5.COMPLEX_VOIGT_METHOD not in ('faddeeva', 'wofz', 'pseudo', 'off'):
         raise NotCovered(f"COMPLEX_VOIGT_METHOD = {m5.COMPLEX_VOIGT_METHOD!r}")
-    sign = float(m5.DISPERSION_SIGN) if m5.COMPLEX_VOIGT_METHOD == 'pseudo' else 0.0
+    sign = float(m5.DISPERSION_SIGN) if m5.COMPLEX_VOIGT_METHOD != 'off' else 0.0
+    # The Voigt lines: the exact Voigt ('faddeeva', and 'wofz', whose scipy
+    # values faddeeva.py's are to rounding) or the pseudo-Voigt; the expansion's
+    # coefficients go to the compiled kernel as arguments (faddeeva.py's notes)
+    line_shape = (m5.exact_voigt(), faddeeva.FADDEEVA_A, faddeeva.FADDEEVA_L)
     tasks, spans = [], []
     for s in prepared:
         deferred = []
@@ -762,7 +768,7 @@ def TI(p, prepared, pool, Distri=[0], Cor=[0], Recon=[0]):
         spans.append((len(tasks), idx, patches is False, deferred))
         if patches is not False:
             absorber = _packed(lines, patches, idx)
-            tasks += [(E, W, absorber, sign, *s['rho']) for E, W in zip(s['nodes'], s['weights'])]
+            tasks += [(E, W, absorber, sign, line_shape, *s['rho']) for E, W in zip(s['nodes'], s['weights'])]
     results = m5._pool_starmap(pool, _node, tasks)
 
     spectra = []

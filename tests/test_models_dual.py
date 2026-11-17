@@ -180,6 +180,19 @@ def test_the_spectrum_and_its_derivatives_are_those_of_models_ti(name, source):
         assert np.all(scale > 0), [k for k, s in zip(free, scale) if s == 0]       # every fitted parameter shows
 
 
+@pytest.mark.parametrize('method, name', [('pseudo', 'Singlet'), ('pseudo', 'Sextet'), ('pseudo', 'MDGD'),
+                                          ('pseudo', 'Hamiltonian powder'), ('pseudo', 'Distr and Corr'),
+                                          ('pseudo', 'Hamiltonian, no field'), ('wofz', 'Sextet'),
+                                          ('wofz', 'layers')])
+def test_the_other_line_shapes_have_their_derivatives_too(method, name, monkeypatch):
+    """The cases above take the shipped line shape, the exact Voigt
+    ('faddeeva'). The pseudo-Voigt (shipped until 2026-11-17) has its own twin,
+    and 'wofz' the exact one -- its scipy values are faddeeva.py's to
+    rounding: the same holds with either."""
+    monkeypatch.setattr(m5, 'COMPLEX_VOIGT_METHOD', method)
+    test_the_spectrum_and_its_derivatives_are_those_of_models_ti(name, 'SMS')
+
+
 def test_the_weights_of_a_recon_are_differentiated():
     case = CASES['Recon']
     prepared = _prepared(case, 'SMS')

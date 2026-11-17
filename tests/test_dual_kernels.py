@@ -1,7 +1,8 @@
 """dual_kernels: the twins of the njit line-shape kernels, held to the kernels
-of models.py -- the value to rounding, the derivatives against the kernel's
-own central differences -- and the models' matrix code (_expm_neg,
-_polarised_readout, the texture blend), which takes Duals as it is written.
+of models.py and faddeeva.py -- the value to rounding, the derivatives against
+the kernel's own central differences -- and the models' matrix code
+(_expm_neg, _polarised_readout, the texture blend), which takes Duals as it is
+written.
 
 numba kernels, no window, no pool.
 """
@@ -10,6 +11,7 @@ import pytest
 
 import syncmoss.dual_kernels as dk
 import syncmoss.dual_numbers as dn
+import syncmoss.faddeeva as fd
 import syncmoss.models as m5
 
 S = np.linspace(-12.0, 12.0, 481)
@@ -73,6 +75,79 @@ def test_no_gaussian_width_the_derivative_in_it_is_the_one_sided_one():
 def test_the_far_wings_of_a_narrow_line_are_finite():
     for part in dk._voigt_parts(1e-3, 5e-4, np.array([-1e3, -1.0, 0.0, 1.0, 1e3]), True):
         assert np.all(np.isfinite(part))
+
+
+# --- the exact Voigt (faddeeva.voigt_line, COMPLEX_VOIGT_METHOD 'faddeeva') ---------------
+def _exact(gL, gG, s):
+    return fd.voigt_complex(gL, gG, s)
+
+
+def _exact_parts(gL, gG, s, dispersion=True):
+    return dk._faddeeva_parts(gL, gG, s, fd.FADDEEVA_A, fd.FADDEEVA_L, dispersion)
+
+
+@pytest.mark.parametrize('gL, gG', WIDTHS + [(0.097, 0.0)])
+def test_the_exact_twin_has_the_value_of_the_kernel(gL, gG):
+    A, D = _exact_parts(gL, gG, S)
+    assert np.array_equal(A[0] + 1j * D[0], _exact(gL, gG, S))           # by the same steps
+    assert not np.any(_exact_parts(gL, gG, S, False)[1])                  # no dispersion asked for
+
+
+@pytest.mark.parametrize('gL, gG', WIDTHS)
+def test_the_exact_twin_has_the_derivatives_of_the_kernel(gL, gG):
+    A, D = _exact_parts(gL, gG, S)
+    h = STEP * (gL + gG)
+    assert h < gG
+    differences = [(_exact(gL + h, gG, S) - _exact(gL - h, gG, S)) / (2 * h),
+                   (_exact(gL, gG + h, S) - _exact(gL, gG - h, S)) / (2 * h),
+                   (_exact(gL, gG, S + h) - _exact(gL, gG, S - h)) / (2 * h)]
+    for row, reference in zip((1, 2, 3), differences):
+        scale = np.max(np.abs(reference))
+        assert scale > 0
+        assert np.max(np.abs(A[row] + 1j * D[row] - reference)) < ACCURACY * scale
+
+
+def test_the_exact_twin_without_a_gaussian():
+    """The Lorentzian, with its own derivatives in gL and S; the one in gG is
+    0 -- the Voigt is even in its Gaussian width -- and the width just above 0
+    leads there: the slope over [h, 2h] is of the order of h."""
+    gL = 0.097
+    A, D = _exact_parts(gL, 0.0, S)
+    assert not np.any(A[2]) and not np.any(D[2])
+    h = STEP * gL
+    for row, reference in ((1, (_exact(gL + h, 0.0, S) - _exact(gL - h, 0.0, S)) / (2 * h)),
+                           (3, (_exact(gL, 0.0, S + h) - _exact(gL, 0.0, S - h)) / (2 * h))):
+        assert np.max(np.abs(A[row] + 1j * D[row] - reference)) < ACCURACY * np.max(np.abs(reference))
+    slope = (_exact(gL, 2 * h, S) - _exact(gL, h, S)) / h
+    assert np.max(np.abs(slope)) < 1e3 * h * np.max(np.abs(_exact(gL, 0.0, S))) / gL ** 2
+
+
+def test_the_exact_twins_slopes_on_both_sides_of_its_switch():
+    """Below |z| = Z_ASYMPTOTIC w' comes from w by the identity, above it from
+    the asymptotic series: at the switch the two agree to rounding, and far
+    out the series is the identity taken in high precision."""
+    for angle in np.linspace(0.0, np.pi, 7):
+        z = dk.Z_ASYMPTOTIC * (1 + 1e-12) * np.exp(1j * angle)
+        w = fd.faddeeva(np.array([z]))[0]
+        wp, zwpw = dk._w_slopes(z, w)
+        identity = -2 * z * w + 2j / np.sqrt(np.pi)
+        assert abs(wp - identity) < 1e-12 * abs(identity)
+        assert abs(zwpw - (z * identity + w)) < 1e-10 * abs(z * identity + w)
+    gL, gG = 0.097, 0.05                          # |z| from 0 to ~1e4 over S
+    far = np.concatenate((-np.logspace(-2, 2.5, 60), np.logspace(-2, 2.5, 60)))
+    A, D = _exact_parts(gL, gG, far)
+    h = 1e-6 * np.maximum(np.abs(far), gL)
+    reference = (_exact(gL, gG, far + h) - _exact(gL, gG, far - h)) / (2 * h)
+    assert np.all(np.isfinite(A)) and np.all(np.isfinite(D))
+    assert np.max(np.abs(A[3] + 1j * D[3] - reference) / np.abs(reference)) < 1e-6
+
+
+def test_the_twin_follows_the_line_shape_switch():
+    gL, gG = 0.097, 0.15
+    assert np.array_equal(dk.voigt_parts(gL, gG, S, True, True)[0], _exact_parts(gL, gG, S)[0])
+    assert np.array_equal(dk.voigt_parts(gL, gG, S, True, False)[0], dk._voigt_parts(gL, gG, S, True)[0])
+    assert np.array_equal(dk.line_value(gL, gG, S, True), fd.voigt(gL, gG, S))
+    assert np.array_equal(dk.line_value(gL, gG, S, False), dk.voigt_value(gL, gG, S))
 
 
 def _differences(f, p, free):

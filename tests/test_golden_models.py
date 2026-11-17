@@ -33,10 +33,12 @@ def _compute(model, params):
     baseline) and E is taken verbatim, so the model parameters start at index 0.
     Mett=0 selects the single-line (SMS, Ham_mono) Hamiltonian path.
 
-    The complex-Voigt method and dispersion sign are pinned here to the shipping
-    defaults so the golden values are reproducible regardless of any developer
-    switch of ``models.COMPLEX_VOIGT_METHOD`` (e.g. while comparing 'wofz' vs
-    'pseudo'); the golden file was generated with exactly these settings.
+    The complex-Voigt method and dispersion sign are pinned here to the ones the
+    golden file was generated with -- 'pseudo', the shipped method until
+    2026-11-17 -- so the golden values hold whatever
+    ``models.COMPLEX_VOIGT_METHOD`` is (conftest restores it after the test).
+    The shipped method, 'faddeeva', is held to scipy's wofz on these same
+    cases in tests/test_faddeeva.py.
     """
     m5.COMPLEX_VOIGT_METHOD = 'pseudo'
     m5.DISPERSION_SIGN = +1.0

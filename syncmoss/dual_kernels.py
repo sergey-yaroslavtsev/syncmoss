@@ -8,6 +8,10 @@ here does that work in one compiled pass over plain arrays:
     returns the value and its derivatives in the kernel's OWN arguments, and
     dual_numbers.chain makes the Dual of them, whatever fit parameters the
     arguments depend on; voigt_value is the value alone, in one pass;
+  * _faddeeva_parts -- the exact Voigt of faddeeva.voigt_line (models.Voigt_c
+    and Voigt_r under COMPLEX_VOIGT_METHOD 'faddeeva' / 'wofz') with its
+    derivatives, as _voigt_parts has them; voigt_parts and line_value choose
+    between the two by models.exact_voigt();
   * expm_neg, readout -- models._expm_neg and the readout of
     models._polarised_readout: the value and its derivatives along the
     derivatives of the matrix handed in.
@@ -27,9 +31,12 @@ parameter i, written by hand -- with a code after SLOPE, its number of
 parameters in _COUNT, its branch in _transmission, and its test against
 central differences in tests/test_dual_kernels.py.
 """
+import math
+
 import numpy as np
 from numba import njit
 
+import syncmoss.faddeeva as faddeeva
 from syncmoss.constants import LINE_RATIO_25, LINE_RATIO_34
 from syncmoss.dual_numbers import Dual, chain, value
 
@@ -207,6 +214,150 @@ def voigt_value(gL, gG, S):
     return out
 
 
+# =============================================================================
+# The exact Voigt of faddeeva.voigt_line (COMPLEX_VOIGT_METHOD 'faddeeva')
+# =============================================================================
+# faddeeva.py's constants, written out here: a kernel keeps the values of the
+# globals it read from another file (see faddeeva.py) -- the coefficients come
+# in as arguments for that reason
+_F_S2L2 = math.sqrt(8.0 * math.log(2.0))
+_F_SQRT_2 = math.sqrt(2.0)
+_F_SQRT_PI = math.sqrt(math.pi)
+_F_SQRT_2PI = math.sqrt(2.0 * math.pi)
+_F_CHUNK = 64
+#: |z| from which the slopes of w are taken from its asymptotic series: below
+#: it w' = -2 z w + 2i/sqrt(pi) and z w' + w lose |z|^2 of w's digits to
+#: cancellation; above it the series' terms fall as |z|^-2 (12 terms: 2e-18 at
+#: |z| = 15). Against w' in high-precision arithmetic: 1e-13 below, 5e-16
+#: above (the time domain's derivatives, measured 2026-11-17).
+Z_ASYMPTOTIC = 15.0
+_ASYMPTOTIC_TERMS = 12
+
+
+@njit(cache=True)
+def _w_slopes(z, w):
+    """(w'(z), z w'(z) + w(z)) for w = w(z)."""
+    if abs(z) < Z_ASYMPTOTIC:
+        wp = -2.0 * z * w + 2j / _F_SQRT_PI
+        return wp, z * wp + w
+    # w ~ (i/sqrt(pi)) sum_n c_n z^-(2n+1), c_n = (2n-1)!!/2^n
+    u = 1.0 / (z * z)
+    c = 1.0
+    un = 1.0 + 0j
+    s1 = 0j               # sum (2n+1) c_n u^n
+    s2 = 0j               # sum 2n c_n u^n
+    for n in range(_ASYMPTOTIC_TERMS):
+        s1 += (2 * n + 1) * c * un
+        s2 += 2 * n * c * un
+        c *= (2 * n + 1) / 2.0
+        un *= u
+    pref = 1j / _F_SQRT_PI
+    return -pref * s1 * u, -pref * s2 / z
+
+
+@njit(cache=True)
+def _faddeeva_parts(gL, gG, S, A, L, dispersion):
+    """_voigt_parts of the exact Voigt of faddeeva.voigt_line, by its steps
+    (the value is voigt_line's bit for bit): the absorptive part V and the
+    dispersive D, each with its derivatives, rows (value, d/dgL, d/dgG, d/dS)
+    over the points of S; D left zero unless *dispersion*. A, L: the
+    expansion's coefficients and scale (faddeeva.FADDEEVA_A, FADDEEVA_L).
+
+    F = V + iD = w(z) / (sigma sqrt(2 pi)) with z = (S + i gL/2) / (sigma sqrt 2)
+    and sigma = gG / sqrt(8 ln 2) depends on S + i gL/2 alone, so
+        dF/dS = w'(z) / (sigma sqrt 2 sigma sqrt(2 pi)),   dF/dgL = (i/2) dF/dS,
+        dF/dsigma = -(w + z w') / (sigma^2 sqrt(2 pi)),     dF/dgG = dF/dsigma / sqrt(8 ln 2).
+    Without a Gaussian (gG <= 0) the Lorentzian (1/pi)/(gL/2 - iS); its
+    derivative in gG is 0, the Voigt being even in sigma."""
+    n = len(S)
+    Ar = np.zeros((4, n))
+    Dr = np.zeros((4, n))
+    gamma = 0.5 * gL
+    if gG <= 0.0:
+        for k in range(n):
+            den = np.pi * (gamma * gamma + S[k] * S[k])     # the value as voigt_line takes it
+            u = gamma - 1j * S[k]
+            F_S = 1j / (np.pi * u * u)
+            F_L = 0.5j * F_S
+            Ar[0, k] = gamma / den
+            Ar[1, k] = F_L.real
+            Ar[3, k] = F_S.real
+            if dispersion:
+                Dr[0, k] = S[k] / den
+                Dr[1, k] = F_L.imag
+                Dr[3, k] = F_S.imag
+        return Ar, Dr
+    # w at every point, as faddeeva.voigt_line takes it
+    na = A.shape[0]
+    sigma = gG / _F_S2L2
+    s2 = gG / _F_S2L2 * _F_SQRT_2
+    norm = 1.0 / (gG / _F_S2L2 * _F_SQRT_2PI)
+    zi = gamma / s2
+    a = L + zi
+    b = L - zi
+    wr = np.empty(n)
+    wi = np.empty(n)
+    ir = np.empty(_F_CHUNK)
+    ii = np.empty(_F_CHUNK)
+    Zr = np.empty(_F_CHUNK)
+    Zi = np.empty(_F_CHUNK)
+    pr = np.empty(_F_CHUNK)
+    pi_ = np.empty(_F_CHUNK)
+    for lo in range(0, n, _F_CHUNK):
+        m = min(n, lo + _F_CHUNK) - lo
+        for k in range(m):
+            zr = S[lo + k] / s2
+            q = 1.0 / (a * a + zr * zr)
+            ir[k] = a * q
+            ii[k] = zr * q
+            Zr[k] = b * ir[k] - zr * ii[k]
+            Zi[k] = b * ii[k] + zr * ir[k]
+            pr[k] = A[0]
+            pi_[k] = 0.0
+        for t in range(1, na):
+            c = A[t]
+            for k in range(m):
+                r = pr[k] * Zr[k] - pi_[k] * Zi[k] + c
+                pi_[k] = pr[k] * Zi[k] + pi_[k] * Zr[k]
+                pr[k] = r
+        for k in range(m):
+            i2r = ir[k] * ir[k] - ii[k] * ii[k]
+            i2i = 2.0 * ir[k] * ii[k]
+            wr[lo + k] = 2.0 * (pr[k] * i2r - pi_[k] * i2i) + ir[k] / _F_SQRT_PI
+            wi[lo + k] = 2.0 * (pr[k] * i2i + pi_[k] * i2r) + ii[k] / _F_SQRT_PI
+    # the line and its derivatives
+    for k in range(n):
+        w = wr[k] + 1j * wi[k]
+        wp, zwpw = _w_slopes(S[k] / s2 + 1j * zi, w)
+        F_S = wp * (norm / s2)
+        F_L = 0.5j * F_S
+        F_G = zwpw * (-norm / (sigma * _F_S2L2))
+        Ar[0, k] = wr[k] * norm
+        Ar[1, k] = F_L.real
+        Ar[2, k] = F_G.real
+        Ar[3, k] = F_S.real
+        if dispersion:
+            Dr[0, k] = wi[k] * norm
+            Dr[1, k] = F_L.imag
+            Dr[2, k] = F_G.imag
+            Dr[3, k] = F_S.imag
+    return Ar, Dr
+
+
+def voigt_parts(gL, gG, S, dispersion, exact):
+    """_voigt_parts (the pseudo-Voigt), or for *exact* (models.exact_voigt())
+    _faddeeva_parts (the exact Voigt), with the expansion's coefficients."""
+    if exact:
+        return _faddeeva_parts(gL, gG, S, faddeeva.FADDEEVA_A, faddeeva.FADDEEVA_L, dispersion)
+    return _voigt_parts(gL, gG, S, dispersion)
+
+
+def line_value(gL, gG, S, exact):
+    """voigt_value (the pseudo-Voigt) at the points S (1-D), or for *exact*
+    the exact Voigt's (faddeeva.voigt)."""
+    return faddeeva.voigt(gL, gG, S) if exact else voigt_value(gL, gG, S)
+
+
 def Voigt_complex(gL, gG, S, C1, C2):
     """models.Voigt_complex for widths gL, gG (numbers) and positions S (an
     array of any shape) that may be Duals; C1 and C2 are plain numbers. A Dual
@@ -319,9 +470,14 @@ _COUNT = np.array([3, 5, 6, 6, 6, 0])    # those a shape is differentiated in
 
 
 @njit(cache=True)
-def _shape_voigt(E, par, sign, dispersion):
-    """models.Voigt / Voigt_c at E - pos: par = (pos, gL, gG)."""
-    A, D = _voigt_parts(par[1], par[2], E - par[0], dispersion)
+def _shape_voigt(E, par, sign, dispersion, exact, fA, fL):
+    """models.Voigt_r / Voigt_c at E - pos: par = (pos, gL, gG). *exact*: the
+    exact Voigt (_faddeeva_parts, the expansion's coefficients fA and scale
+    fL), else the pseudo-Voigt (_voigt_parts)."""
+    if exact:
+        A, D = _faddeeva_parts(par[1], par[2], E - par[0], fA, fL, dispersion)
+    else:
+        A, D = _voigt_parts(par[1], par[2], E - par[0], dispersion)
     F = np.zeros((1 + PARAMETERS, len(E)), dtype=np.complex128)
     for e in range(len(E)):
         F[0, e] = A[0, e] + 1j * sign * D[0, e]
@@ -332,14 +488,14 @@ def _shape_voigt(E, par, sign, dispersion):
 
 
 @njit(cache=True)
-def _shape_slope(E, par, sign, dispersion):
+def _shape_slope(E, par, sign, dispersion, exact, fA, fL):
     """_shape_voigt's derivative in its position, as a shape: par = (pos, gL, gG).
     It is what the FIRST MOMENT of lines that stand at one position multiplies:
         sum_k I_k V(E - pos_k) = (sum_k I_k) V(E - pos) + (sum_k I_k (pos_k - pos)) dV/dpos + ...
     Such a moment is 0 where the lines coincide and only its derivatives count
     (hamiltonian_dual), so this shape has no derivatives of its own: a line of
     it must have the amplitude, or the matrix, 0."""
-    F = _shape_voigt(E, par, sign, dispersion)
+    F = _shape_voigt(E, par, sign, dispersion, exact, fA, fL)
     for e in range(len(E)):
         F[0, e] = F[1, e]
         F[1, e] = 0.0
@@ -534,7 +690,7 @@ def _seen(T, dT, rho11, rho22):
 
 @njit(cache=True)
 def _transmission(E, l_shape, l_par, l_amp, l_group, l_scaled, l_dpar, l_damp,
-                  g_M, g_dM, g_layer, g_scaled, t_s, t_w, t_ds, t_dw, sign, rho11, rho22):
+                  g_M, g_dM, g_layer, g_scaled, t_s, t_w, t_ds, t_dw, sign, exact, fA, fL, rho11, rho22):
     """The detected transmission r (n,) of an absorber at the energies E and
     dr (n, k), its derivatives in k parameters. The absorber is a list of lines,
     each a shape (l_shape, with its parameters l_par) times an amplitude l_amp:
@@ -553,7 +709,9 @@ def _transmission(E, l_shape, l_par, l_amp, l_group, l_scaled, l_dpar, l_damp,
 
     The "d" arguments are the derivatives in the k parameters, with one last
     axis; a line is differentiated only in the parameters in which one of its
-    own values is not zero.
+    own values is not zero. A Voigt line is the exact Voigt where *exact*
+    (_faddeeva_parts: fA, fL the expansion's coefficients and scale), else the
+    pseudo-Voigt (models.exact_voigt).
     """
     n, k, G = len(E), l_damp.shape[1], len(g_M)
     act = np.empty(k, dtype=np.int64)       # the parameters the line in hand depends on
@@ -565,11 +723,11 @@ def _transmission(E, l_shape, l_par, l_amp, l_group, l_scaled, l_dpar, l_damp,
         g = l_group[l]
         shape = l_shape[l]
         if shape == VOIGT:
-            F = _shape_voigt(E, l_par[l], sign, g >= 0 and sign != 0)
+            F = _shape_voigt(E, l_par[l], sign, g >= 0 and sign != 0, exact, fA, fL)
         elif shape == BLUME:
             F = _shape_blume(E, l_par[l], sign)
         elif shape == SLOPE:
-            F = _shape_slope(E, l_par[l], sign, g >= 0 and sign != 0)
+            F = _shape_slope(E, l_par[l], sign, g >= 0 and sign != 0, exact, fA, fL)
         else:
             F = _shape_relax(E, l_par[l], sign, shape - RELAX)
         count = _COUNT[shape]
