@@ -61,12 +61,12 @@ def test_distr_and_corr_take_the_bare_names_of_the_fit(physics_app):
     pt.select_model(3, "Corr")
 
     _set_expression_text(physics_app, 2, "heaviside(X, 1)")
-    _set_expression_text(physics_app, 3, "hypot(X, 1)")
+    _set_expression_text(physics_app, 3, "exp2(X)")
     problems = validate_user_expressions(physics_app)
     assert {p["kind"]: p["row"] for p in problems} == {"Distr": 2, "Corr": 3}
 
     _set_expression_text(physics_app, 2, "np.heaviside(X, 1)")
-    _set_expression_text(physics_app, 3, "np.hypot(X, 1)")
+    _set_expression_text(physics_app, 3, "np.exp2(X)")
     assert validate_user_expressions(physics_app) == []
 
 
