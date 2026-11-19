@@ -559,10 +559,15 @@ def fitted_model_rows(model_rows, parameters, recon_weights=(), keep_independent
 def _write_model_file(main_window, file_path, model_rows, comment=None, metadata=None, exclusion=()):
     """Write *model_rows* (see :func:`model_file_rows`) as the .mdl *file_path*;
     *exclusion*, a fit result's exclusion regions (:func:`_write_model_lines`).
+    Its folder is created when it does not exist yet (the save path of several
+    spectra is a new ``result`` folder).
 
     Returns True when the file was written, False when that failed.
     """
     try:
+        folder = os.path.dirname(file_path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             if isinstance(metadata, dict):
                 metadata_to_write = dict(LIBRARY_METADATA_DEFAULTS)

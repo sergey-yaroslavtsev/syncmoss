@@ -772,26 +772,27 @@ def process_half_spectrum(main_window, spectrum_path, save_path, auto_load=False
         return False
 
 
+def folder_of_save_path(save_path_text, workfolder):
+    """The folder files written for several spectra go to, as RAW to DAT
+    writes them: the save path itself when it is a folder, else its folder
+    (``<folder>/result/result`` -> ``<folder>/result``); *workfolder* for a
+    bare name."""
+    if os.path.isdir(save_path_text):
+        return save_path_text
+    return os.path.dirname(save_path_text) or workfolder
+
+
 def _directory_for_several_spectra(main_window):
-    """Where an operation on several spectra writes them: the save path's
-    folder (or the save path itself when it names a folder), created if need
-    be. None, after saying why, when there is none."""
+    """Where an operation on several spectra writes them
+    (folder_of_save_path), created if need be. None, after saying why, when
+    there is none."""
     save_path_text = main_window.save_path.text().strip()
 
     if not save_path_text:
         main_window.set_status("Please specify save path", "orange")
         return None
 
-    # Determine if save_path_text is a file path or directory path
-    if '.' in os.path.basename(save_path_text):
-        # Looks like a file path (has extension), use its directory
-        save_dir = os.path.dirname(save_path_text)
-    else:
-        # Looks like a directory path
-        save_dir = save_path_text
-
-    # Remove trailing slashes for consistency
-    save_dir = save_dir.rstrip('\\/')
+    save_dir = folder_of_save_path(save_path_text, main_window.workfolder)
 
     # Create directory if it doesn't exist
     if not os.path.exists(save_dir):

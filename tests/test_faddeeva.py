@@ -1,6 +1,6 @@
 """faddeeva.py and COMPLEX_VOIGT_METHOD = 'faddeeva', the shipped line shape:
 the Faddeeva function against scipy's and against w taken in high-precision
-decimal arithmetic, its compiled Voigt line, and the models with it against
+decimal arithmetic, the erf of the user texts made from it, its compiled Voigt line, and the models with it against
 the same models with 'wofz' (scipy) -- the line shape, every golden model, a
 thick single crystal whose forbidden lines only the dispersion brings out --
 and the scalar path of a component at its matrix path.
@@ -8,6 +8,7 @@ and the scalar path of a component at its matrix path.
 numba kernels, no window, no pool.
 """
 import json
+import math
 import os
 from decimal import Decimal, localcontext
 
@@ -17,6 +18,7 @@ from scipy.special import wofz
 
 import syncmoss.faddeeva as fd
 import syncmoss.models as m5
+from syncmoss.expression_eval import erf
 
 with open(os.path.join(os.path.dirname(__file__), "golden_models.json")) as _f:
     _GOLDEN = json.load(_f)
@@ -39,6 +41,16 @@ def test_the_faddeeva_function_is_scipys(imaginary):
     z = real + 1j * imaginary
     reference = wofz(z)
     assert np.max(np.abs(fd.faddeeva(z) - reference) / np.abs(reference)) < 1e-13
+
+
+def test_erf_of_the_texts_is_the_exact_one():
+    """expression_eval.erf, made from w on the imaginary axis, against the
+    standard library's: within about 1e-15 (the help's figure), through zero,
+    both signs and the tails."""
+    x = np.concatenate((np.linspace(-7, 7, 2801), np.geomspace(1e-12, 30, 400), -np.geomspace(1e-12, 30, 400)))
+    reference = np.array([math.erf(t) for t in x])
+    assert np.max(np.abs(erf(x) - reference)) < 2e-15
+    assert erf(0.0) == 0.0 and erf(40.0) == 1.0 and erf(-40.0) == -1.0
 
 
 def _w_decimal(x, y):

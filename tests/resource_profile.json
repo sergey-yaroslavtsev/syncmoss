@@ -1,8 +1,8 @@
 {
 "about": "Written by tests/profile_resources.py, read by tests/worker_plan.py. tests: nodeid -> [seconds, MB of resident memory held only while the test ran]. typical_test_mb: 90th percentile of that. worker_mb: resident memory of a worker running a typical test. accumulated_mb: what all the workers of a parallel run of the whole suite gather on top, together.",
-"measured": "2026-11-16 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
+"measured": "2026-11-19 on Windows AMD64, 16/22 cores, Python 3.13.2, 4 files side by side",
 "worker_mb": 370,
-"typical_test_mb": 75,
+"typical_test_mb": 74,
 "accumulated_mb": 640,
 "tests": {
 "tests/syncmoss_test.py::test_gui_library_round_trip": [
@@ -1493,6 +1493,170 @@
 0.0,
 0
 ],
+"tests/test_dual_numbers.py::test_a_dual_goes_to_a_pool_worker_and_back": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>0]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>1]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>2]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>3]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>4]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>5]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>6]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>7]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_dual_is_never_turned_silently_into_a_plain_number[<lambda>8]": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[arcsin(p[0] / 9) + arccos(p[1] / 9) + arcsinh(p[2] * X) + arccosh(1 + p[0]) + arctanh(p[1] / 9) + pi * e * p[2]]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[erf(p[0] * X) + p[2] * erf(p[1] - 1)]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[hypot(p[0], X) + arctan2(p[1], X + 3) + arctan2(X, p[0]) + deg2rad(30 * p[2]) + rad2deg(p[0] / 50)]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[log2(p[0]) + expm1(p[1] * X / 9) + log1p(p[2] * X**2) + cbrt(p[0] + X**2) + square(p[1] - X)]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[maximum(p[2] * X, 0.1) + minimum(p[0], X) + where(X > 0, p[1] * X, p[2])]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[mean(X * p[0]) + std(p[1] * X) + var(X) * p[2] + log(p[0]) * log10(p[1])]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[sin(p[0] * X) + cos(p[1]) + tan(p[2] / 9) + arctan(X * p[0]) + sinh(p[1]) + cosh(p[2] / 9) + tanh(X * p[1])]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_a_user_text_is_differentiated_as_expression_eval_evaluates_it[sqrt(p[1]) * exp(-X**2 / 2 / p[0]**2) + abs(p[2]) * power(X, 2)]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_abs_at_zero_has_the_derivative_of_the_forward_difference": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_assigning_into_a_dual_leaves_what_it_was_made_from_untouched": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_comparisons_are_those_of_the_values": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_erf_keeps_its_slope_at_zero": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_hypot_keeps_the_derivative_at_zero_zero": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_links_and_expressions_are_plain_arithmetic_on_the_seeded_list": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_only_the_parameters_a_value_depends_on_are_carried": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_sqrt_and_a_fractional_power_at_zero_give_zero_not_inf": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[a distribution axis]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[abs, max, min, hypot]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[arithmetic]": [
+0.67,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[complex]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[exp, log, sqrt]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[filling an array]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[hyperbolic]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[indexing and broadcasting]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[matrices]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[powers]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[sums]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[trigonometric]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_are_those_of_the_differences[where]": [
+0.0,
+2
+],
+"tests/test_dual_numbers.py::test_the_derivatives_must_have_the_shape_of_the_value": [
+0.0,
+0
+],
+"tests/test_dual_numbers.py::test_the_functions_without_a_derivative_return_plain_numbers": [
+0.0,
+2
+],
 "tests/test_error_reporter.py::test_a_caught_and_printed_traceback_is_captured": [
 0.0,
 11
@@ -1601,85 +1765,97 @@
 2.16,
 77
 ],
+"tests/test_exclusion_gui.py::test_a_save_dialog_made_from_the_save_path_opens_in_a_folder_that_exists": [
+2.52,
+29
+],
 "tests/test_exclusion_gui.py::test_a_spectrum_saved_without_its_ends_keeps_its_drive": [
-1.99,
-33
-],
-"tests/test_exclusion_gui.py::test_apply_exclusion_shows_the_bar_and_puts_the_regions_in_use": [
-2.22,
-92
-],
-"tests/test_exclusion_gui.py::test_bands_are_drawn_only_while_applied_and_never_widen_the_axis": [
-1.94,
+2.47,
 34
 ],
-"tests/test_exclusion_gui.py::test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves": [
-2.77,
-108
+"tests/test_exclusion_gui.py::test_apply_exclusion_shows_the_bar_and_puts_the_regions_in_use": [
+2.37,
+109
 ],
-"tests/test_exclusion_gui.py::test_changing_the_regions_on_a_show_model_image_keeps_the_model": [
-2.53,
-60
-],
-"tests/test_exclusion_gui.py::test_clean_is_refused_while_a_calculation_runs": [
-1.9,
-65
-],
-"tests/test_exclusion_gui.py::test_clean_removes_every_region_and_drops_the_fit_result": [
-2.58,
+"tests/test_exclusion_gui.py::test_bands_are_drawn_only_while_applied_and_never_widen_the_axis": [
+2.49,
 79
 ],
+"tests/test_exclusion_gui.py::test_changing_the_regions_drops_a_fit_result_but_keeps_its_curves": [
+3.22,
+82
+],
+"tests/test_exclusion_gui.py::test_changing_the_regions_on_a_show_model_image_keeps_the_model": [
+2.86,
+52
+],
+"tests/test_exclusion_gui.py::test_clean_is_refused_while_a_calculation_runs": [
+2.2,
+23
+],
+"tests/test_exclusion_gui.py::test_clean_removes_every_region_and_drops_the_fit_result": [
+2.79,
+54
+],
 "tests/test_exclusion_gui.py::test_clicks_in_pan_mode_or_off_a_spectrum_are_ignored_and_esc_cancels": [
-2.12,
-39
+2.6,
+50
 ],
 "tests/test_exclusion_gui.py::test_enter_in_the_box_applies_the_regions_and_not_show_model": [
-1.83,
-53
+1.96,
+51
 ],
 "tests/test_exclusion_gui.py::test_every_selected_spectrum_is_saved_without_its_excluded_points": [
-1.9,
-28
-],
-"tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[CMS]": [
-1.83,
+2.51,
 0
 ],
+"tests/test_exclusion_gui.py::test_load_model_offers_the_regions_of_a_result_model": [
+8.07,
+54
+],
+"tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[CMS]": [
+2.55,
+4
+],
 "tests/test_exclusion_gui.py::test_raw_counts_are_saved_with_the_instrumental_function_in_use[SMS]": [
-1.84,
+2.39,
 0
 ],
 "tests/test_exclusion_gui.py::test_save_and_load_and_load_replaces": [
-1.78,
-24
+2.33,
+2
 ],
 "tests/test_exclusion_gui.py::test_save_result_writes_the_regions_only_when_applied": [
-3.74,
-93
+3.67,
+118
 ],
 "tests/test_exclusion_gui.py::test_saving_without_excluded_points_needs_applied_regions": [
-1.8,
-0
+2.44,
+1
 ],
 "tests/test_exclusion_gui.py::test_the_bar_takes_only_its_own_two_lines": [
-2.13,
-94
+2.32,
+110
 ],
-"tests/test_exclusion_gui.py::test_the_regions_do_not_change_while_a_calculation_runs": [
-1.85,
+"tests/test_exclusion_gui.py::test_the_folder_of_the_save_path_is_raw_to_dat_s": [
+0.01,
 0
 ],
+"tests/test_exclusion_gui.py::test_the_regions_do_not_change_while_a_calculation_runs": [
+2.54,
+3
+],
 "tests/test_exclusion_gui.py::test_the_text_is_cleaned_and_bad_text_is_refused": [
-1.79,
-52
+2.0,
+84
 ],
 "tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[fit]": [
-2.69,
-41
+2.94,
+44
 ],
 "tests/test_exclusion_gui.py::test_two_clicks_in_either_order_add_a_region_between_points[spectrum]": [
-1.95,
-54
+2.44,
+48
 ],
 "tests/test_exclusion_regions.py::test_a_bad_file_is_refused": [
 0.0,
@@ -2108,6 +2284,258 @@
 "tests/test_expressions.py::test_the_window_reads_the_folder_next_to_the_library": [
 3.23,
 94
+],
+"tests/test_faddeeva.py::test_a_thin_line_is_the_real_part_of_a_thick_one[faddeeva]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_a_thin_line_is_the_real_part_of_a_thick_one[off]": [
+0.0,
+6
+],
+"tests/test_faddeeva.py::test_a_thin_line_is_the_real_part_of_a_thick_one[pseudo]": [
+0.02,
+6
+],
+"tests/test_faddeeva.py::test_a_thin_line_is_the_real_part_of_a_thick_one[wofz]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_erf_of_the_texts_is_the_exact_one": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[ASM]": [
+0.03,
+6
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Doublet]": [
+0.0,
+6
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Hamilton_mc]": [
+0.03,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Hamilton_pc]": [
+0.0,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Hamiltonian_crystal]": [
+0.0,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Hamiltonian_layered]": [
+0.0,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Hamiltonian_mosaic]": [
+0.0,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Hamiltonian_powder]": [
+0.0,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[MDGD]": [
+0.0,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Relax_2S]": [
+0.01,
+5
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Relax_MS]": [
+0.04,
+4
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[SCDW]": [
+0.02,
+1
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Sextet]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[Singlet]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[layered]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_every_golden_model_is_its_scipy_spectrum[mix_doublet_sextet]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_dispersion_brings_out_the_forbidden_lines": [
+0.01,
+1
+],
+"tests/test_faddeeva.py::test_the_expansion_is_right_to_the_rounding": [
+0.02,
+19
+],
+"tests/test_faddeeva.py::test_the_faddeeva_function_is_scipys[0.001]": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_the_faddeeva_function_is_scipys[0.04]": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_the_faddeeva_function_is_scipys[0.3]": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_the_faddeeva_function_is_scipys[1.0]": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_the_faddeeva_function_is_scipys[1e-10]": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_the_faddeeva_function_is_scipys[30.0]": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_the_faddeeva_function_is_scipys[300.0]": [
+0.0,
+2
+],
+"tests/test_faddeeva.py::test_the_hamiltonians_scalar_path_meets_its_matrix_path": [
+0.01,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.0-0.3-1]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.0-0.3-300]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.0-0.3-63]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.0-0.3-64]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.0-0.3-65]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.02-3.0-1]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.02-3.0-300]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.02-3.0-63]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.02-3.0-64]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.02-3.0-65]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.0-1]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.0-300]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.0-63]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.0-64]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.0-65]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.15-1]": [
+0.23,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.15-300]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.15-63]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.15-64]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.097-0.15-65]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.3-1e-09-1]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.3-1e-09-300]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.3-1e-09-63]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.3-1e-09-64]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_over_chunks_of_any_length[0.3-1e-09-65]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_line_shape_shipped_is_the_faddeeva_one": [
+0.52,
+2
+],
+"tests/test_faddeeva.py::test_the_line_takes_points_of_any_shape": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_models_line_shape_is_scipys[0.02-0.6]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_models_line_shape_is_scipys[0.097-0.0]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_models_line_shape_is_scipys[0.097-0.15]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_models_line_shape_is_scipys[0.097-2.0]": [
+0.0,
+1
+],
+"tests/test_faddeeva.py::test_the_models_line_shape_is_scipys[0.3-0.02]": [
+0.0,
+1
 ],
 "tests/test_find_bar.py::test_a_new_search_starts_at_the_text_cursor": [
 0.0,
@@ -5398,48 +5826,48 @@
 100
 ],
 "tests/test_save_result_model.py::test_a_dotted_save_path_keeps_its_full_name": [
-2.7,
-138
+2.71,
+342
 ],
 "tests/test_save_result_model.py::test_a_picture_that_cannot_be_written_costs_neither_the_row_nor_the_rest": [
-2.34,
-64
+2.54,
+38
 ],
 "tests/test_save_result_model.py::test_a_result_without_a_fitted_model_saves_the_results_only": [
-2.33,
-91
+2.89,
+237
 ],
 "tests/test_save_result_model.py::test_a_sequence_continues_its_page_of_pictures": [
-3.04,
-110
+3.33,
+347
 ],
 "tests/test_save_result_model.py::test_a_sequence_extends_its_param_file_with_a_line_per_spectrum": [
-2.98,
-67
+3.87,
+353
 ],
 "tests/test_save_result_model.py::test_a_sequence_saves_every_spectrum_s_fitted_model": [
-2.7,
-74
+2.84,
+269
 ],
 "tests/test_save_result_model.py::test_declining_the_model_overwrite_keeps_the_result_files": [
-2.64,
-93
+2.89,
+321
 ],
 "tests/test_save_result_model.py::test_editing_the_table_after_the_fit_does_not_reach_the_saved_model": [
-4.29,
-87
+4.01,
+327
 ],
 "tests/test_save_result_model.py::test_fitted_values_are_written_to_full_precision": [
 0.0,
-10
+6
 ],
 "tests/test_save_result_model.py::test_free_numbers_take_the_fitted_values_everything_else_stays": [
 0.0,
-10
+6
 ],
 "tests/test_save_result_model.py::test_model_path_falls_back_to_the_workfolder": [
 0.0,
-10
+6
 ],
 "tests/test_save_result_model.py::test_model_path_keeps_a_dot_in_a_directory_name": [
 0.0,
@@ -5447,7 +5875,7 @@
 ],
 "tests/test_save_result_model.py::test_model_path_keeps_the_dot_of_a_sample_name": [
 0.0,
-10
+6
 ],
 "tests/test_save_result_model.py::test_model_path_replaces_the_extension_of_the_save_path": [
 0.0,
@@ -5455,7 +5883,7 @@
 ],
 "tests/test_save_result_model.py::test_no_snapshot_means_no_fitted_model": [
 0.0,
-10
+6
 ],
 "tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[Fe_4.2K-Fe_4.2K]": [
 0.0,
@@ -5470,36 +5898,40 @@
 6
 ],
 "tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[run1.TXT-run1]": [
-0.0,
+0.01,
 6
 ],
 "tests/test_save_result_model.py::test_only_a_known_extension_is_stripped[sample.001-sample.001]": [
 0.0,
 6
 ],
+"tests/test_save_result_model.py::test_save_model_creates_the_folder_of_the_save_path": [
+2.17,
+52
+],
 "tests/test_save_result_model.py::test_save_result_as_keeps_a_dotted_name[Fe_4.2K.txt]": [
-2.73,
-112
+2.78,
+306
 ],
 "tests/test_save_result_model.py::test_save_result_as_keeps_a_dotted_name[Fe_4.2K]": [
-2.55,
-79
+2.88,
+291
 ],
 "tests/test_save_result_model.py::test_the_result_model_never_overwrites_a_hand_saved_model": [
-2.37,
-79
+2.86,
+260
 ],
 "tests/test_save_result_model.py::test_the_result_model_shares_the_base_of_the_result_files": [
 0.0,
-10
+6
 ],
 "tests/test_save_result_model.py::test_the_saved_model_is_the_fitted_one": [
-3.98,
-132
+4.28,
+328
 ],
 "tests/test_save_result_model.py::test_the_spectrum_extension_is_not_part_of_the_result_names": [
-2.65,
-107
+2.89,
+327
 ],
 "tests/test_sdw_grid.py::test_grid_balanced_wave_faraday_cancellation": [
 0.02,

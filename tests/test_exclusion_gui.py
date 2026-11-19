@@ -388,6 +388,37 @@ def test_save_and_load_and_load_replaces(physics_app, tmp_path, monkeypatch):
     assert app.exclusion_regions_in_use() == ((5.0, 6.0),)
 
 
+def test_a_save_dialog_made_from_the_save_path_opens_in_a_folder_that_exists(physics_app, tmp_path, monkeypatch):
+    """The save path's folder; when it does not exist (yet), the first
+    spectrum's; then the workfolder; else the bare name, whatever the dialog
+    makes of it."""
+    app = physics_app
+    spectra, work = tmp_path / "spectra", tmp_path / "work"
+    spectra.mkdir()
+    work.mkdir()
+    monkeypatch.setattr(app, 'workfolder', str(work))
+    app.path_list = [str(spectra / "Fe.dat")]
+    missing = tmp_path / "result" / "run_exclusion.txt"
+
+    assert app._save_dialog_start(str(work / "run_exclusion.txt")) == str(work / "run_exclusion.txt")
+    assert app._save_dialog_start(str(missing)) == str(spectra / "run_exclusion.txt")
+    app.path_list = [str(tmp_path / "gone" / "Fe.dat")]
+    assert app._save_dialog_start(str(missing)) == str(work / "run_exclusion.txt")
+    monkeypatch.setattr(app, 'workfolder', '')
+    assert app._save_dialog_start(str(missing)) == "run_exclusion.txt"
+
+    # the exclusion bar's Save asks it, with the save path's name
+    monkeypatch.setattr(app, 'workfolder', str(work))
+    app.path_list = [str(spectra / "Fe.dat")]
+    _apply(app, REGIONS)
+    app.save_path.setText(str(tmp_path / "result" / "run"))
+    asked = []
+    monkeypatch.setattr("syncmoss.exclusion_bar.QFileDialog.getSaveFileName",
+                        lambda parent, title, start, *args: asked.append(start) or ('', ''))
+    app.exclusion_bar.save()
+    assert asked == [str(spectra / ("run" + er.FILE_SUFFIX))]
+
+
 def test_the_regions_do_not_change_while_a_calculation_runs(physics_app):
     app = physics_app
     _apply(app, REGIONS)
@@ -406,10 +437,13 @@ def test_the_regions_do_not_change_while_a_calculation_runs(physics_app):
 
 
 def test_every_selected_spectrum_is_saved_without_its_excluded_points(physics_app, tmp_path, monkeypatch):
+    """Into the folder of the save path, as RAW to DAT writes: the save path
+    of several spectra, <folder>/result/result, names a folder that does not
+    exist yet, and the files go into that folder, made for them."""
     app = physics_app
     paths = _spectra(app, tmp_path, 2, metadata=["#@GCMS 0.1"])
     regions = _apply(app, REGIONS)
-    app.save_path.setText(str(tmp_path / "cut"))
+    app.save_path.setText(str(tmp_path / "cut" / "result"))
     monkeypatch.setattr(spectrum_io.QMessageBox, "question",
                         lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
 
@@ -427,6 +461,18 @@ def test_every_selected_spectrum_is_saved_without_its_excluded_points(physics_ap
         assert np.array_equal(A_saved[0], A[0]) and np.array_equal(B_saved[0][keep], B[0][keep])
         assert np.isnan(B_saved[0][~keep]).all() and (~keep).any()
         assert np.array_equal(er.fitted(A_saved[0], B_saved[0], ()), keep)
+    assert not (tmp_path / "cut" / "result").exists()
+
+
+def test_the_folder_of_the_save_path_is_raw_to_dat_s(tmp_path):
+    """The save path itself when it is a folder; else its folder (a trailing
+    separator names that folder, as in RAW to DAT); the workfolder for a bare name."""
+    work, out = str(tmp_path), str(tmp_path / "out")
+    os.mkdir(out)
+    assert spectrum_io.folder_of_save_path(out, work) == out
+    assert spectrum_io.folder_of_save_path(os.path.join(out, "result", "result"), work) == os.path.join(out, "result")
+    assert spectrum_io.folder_of_save_path(os.path.join(out, "new") + os.sep, work) == os.path.join(out, "new")
+    assert spectrum_io.folder_of_save_path("run1", work) == work
 
 
 def test_a_spectrum_saved_without_its_ends_keeps_its_drive(physics_app, tmp_path, monkeypatch):

@@ -216,7 +216,8 @@ class ExclusionBar(QWidget):
         base = self.main_window._result_base_path()
         default = (base + er.FILE_SUFFIX if base
                    else os.path.join(self.main_window.workfolder or "", "regions" + er.FILE_SUFFIX))
-        path, _ = QFileDialog.getSaveFileName(self, "Save exclusion regions", default, _FILE_FILTER)
+        path, _ = QFileDialog.getSaveFileName(self, "Save exclusion regions",
+                                              self.main_window._save_dialog_start(default), _FILE_FILTER)
         if not path:
             self.main_window.set_status("Saving canceled", "orange")
             return

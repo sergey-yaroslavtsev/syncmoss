@@ -76,11 +76,16 @@ again after editing the model.
 These rows take **text**, not numbers:
 
 - `Expression`: any formula in `p[i]`, e.g. `p[9]*0.5`, `sqrt(p[3]**2+p[5]**2)`,
-  `33.0-p[12]`. The bare names `pi`, `e`, `exp`, `log`, `log10`, `sqrt`, `abs`,
-  `power`, `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `sinh`, `cosh`,
-  `tanh`, `arcsinh`, `arccosh`, `arctanh`, `floor`, `ceil`, `round`, `sign`,
-  `mean`, `std`, `var` are available, here and in `Distr`/`Corr`; any other NumPy
-  function is written `np.<name>`, e.g. `np.heaviside(X, 1)`. The result
+  `33.0-p[12]`. The bare names `pi`, `e`, `exp`, `log`, `log10`, `log2`,
+  `expm1`, `log1p`, `sqrt`, `cbrt`, `square`, `hypot`, `abs`, `power`, `sin`,
+  `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `arctan2`, `sinh`, `cosh`, `tanh`,
+  `arcsinh`, `arccosh`, `arctanh`, `deg2rad`, `rad2deg`, `floor`, `ceil`,
+  `round`, `sign`, `maximum`, `minimum`, `where`, `mean`, `std`, `var` and
+  `erf` are available, here and in `Distr`/`Corr`. `erf` is not NumPy's (NumPy
+  has none): it is computed from the Faddeeva function of the line shapes and
+  is within about 1e-15 of the exact value. Any other NumPy function is written
+  `np.<name>`, e.g. `np.heaviside(X, 1)` (a fit may then be slower: without
+  exact derivatives it takes differences). The result
   becomes a parameter of its own — click its label to read the number, then
   point real parameters at it with `=[X,Y]`. That is how a
   parameter is made to follow an arbitrary formula rather than a plain multiple.

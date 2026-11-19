@@ -129,6 +129,10 @@ def test_links_and_expressions_are_plain_arithmetic_on_the_seeded_list():
     "mean(X * p[0]) + std(p[1] * X) + var(X) * p[2] + log(p[0]) * log10(p[1])",
     "sin(p[0] * X) + cos(p[1]) + tan(p[2] / 9) + arctan(X * p[0]) + sinh(p[1]) + cosh(p[2] / 9) + tanh(X * p[1])",
     "arcsin(p[0] / 9) + arccos(p[1] / 9) + arcsinh(p[2] * X) + arccosh(1 + p[0]) + arctanh(p[1] / 9) + pi * e * p[2]",
+    "hypot(p[0], X) + arctan2(p[1], X + 3) + arctan2(X, p[0]) + deg2rad(30 * p[2]) + rad2deg(p[0] / 50)",
+    "log2(p[0]) + expm1(p[1] * X / 9) + log1p(p[2] * X**2) + cbrt(p[0] + X**2) + square(p[1] - X)",
+    "maximum(p[2] * X, 0.1) + minimum(p[0], X) + where(X > 0, p[1] * X, p[2])",
+    "erf(p[0] * X) + p[2] * erf(p[1] - 1)",
 ])
 def test_a_user_text_is_differentiated_as_expression_eval_evaluates_it(text):
     # eval_expr itself, unchanged: its numpy functions take the Duals
@@ -171,9 +175,18 @@ def test_sqrt_and_a_fractional_power_at_zero_give_zero_not_inf():
     with warnings.catch_warnings():
         warnings.simplefilter('error')              # no divide-by-zero warning either
         for y in (np.sqrt(q[0] ** 2 + q[1] ** 2), (q[0] ** 2 + q[1] ** 2) ** (1 / 2), np.sqrt(q[0]), q[0] ** 0.3,
-                  np.std(q[0] * np.ones(3))):
+                  np.std(q[0] * np.ones(3)), np.cbrt(q[0]), np.arctan2(q[0], q[1])):
             assert dn.value(y) == 0
             np.testing.assert_array_equal(dn.jacobian(y, [0, 1]), [0.0, 0.0])
+
+
+def test_erf_keeps_its_slope_at_zero():
+    # erf is odd, made with sign(x): a parameter that starts at 0 must not
+    # lose its column to sign's plain 0
+    q = dn.seed([0.0], [0])
+    y = eval_expr("erf(p[0])", q)
+    assert dn.value(y) == 0
+    np.testing.assert_allclose(dn.jacobian(y, [0]), [2 / np.sqrt(np.pi)], rtol=1e-15)
 
 
 def test_hypot_keeps_the_derivative_at_zero_zero():
@@ -198,7 +211,7 @@ def test_hypot_keeps_the_derivative_at_zero_zero():
     lambda y: np.zeros(len(X)).__setitem__(slice(None), y),     # stored in a plain array
     lambda y: np.add(np.zeros(len(X)), y, out=np.zeros(len(X))),
     lambda y: np.cumsum(y),                                     # a numpy function that is not in the tables
-    lambda y: np.arctan2(y, 1.0),
+    lambda y: np.fmod(y, 1.0),
     lambda y: np.interp(0.5, X, y),
 ])
 def test_a_dual_is_never_turned_silently_into_a_plain_number(lose):

@@ -3861,7 +3861,7 @@ class PhysicsApp(QMainWindow):
         start = (base + '_inputs.txt' if base
                  else os.path.join(self.workfolder, 'inputs.txt'))
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save parameters of the spectra", start,
+            self, "Save parameters of the spectra", self._save_dialog_start(start),
             "Text files (*.txt);;All files (*.*)")
         if not path:
             self.set_status("Saving parameters of the spectra was canceled", "orange")
@@ -4800,6 +4800,10 @@ class PhysicsApp(QMainWindow):
         is replaced."""
         path = self._sequence_file('_result_table_PNG.html')
         try:
+            # A sequence starts before its first spectrum's files make the folder
+            folder = os.path.dirname(path)
+            if folder and not os.path.exists(folder):
+                os.makedirs(folder)
             page = ''
             if append and os.path.exists(path):
                 with open(path, encoding='utf-8') as f:
@@ -5103,6 +5107,18 @@ class PhysicsApp(QMainWindow):
         """The base every result file is named from: the save path without the
         spectrum's extension (``Fe_4.2K.dat`` -> ``Fe_4.2K_param.txt``, ...)."""
         return strip_known_extension(self.save_path.text().strip())
+
+    def _save_dialog_start(self, path):
+        """Where a save dialog pre-filled with *path* (made from the save path)
+        opens: *path* when its folder exists -- else its file name in the
+        folder of the first spectrum, else in the workfolder, else the bare
+        name (the dialog then opens where it likes)."""
+        name = os.path.basename(path)
+        spectrum_folder = os.path.dirname(self.path_list[0]) if self.path_list else ''
+        for folder in (os.path.dirname(path), spectrum_folder, self.workfolder):
+            if folder and os.path.isdir(folder):
+                return os.path.join(folder, name)
+        return name
 
     def _refuse_saving_search_result(self):
         """True -- after saying why -- when the results table shows the model of

@@ -229,6 +229,18 @@ def test_the_result_model_never_overwrites_a_hand_saved_model(physics_app, tmp_p
 
 
 @pytest.mark.gui
+def test_save_model_creates_the_folder_of_the_save_path(physics_app, tmp_path):
+    """Several spectra make the save path <folder>/result/result before the
+    result folder exists; "Save model" failed there (no such directory)."""
+    app = physics_app
+    base = os.path.join(str(tmp_path), 'result', 'result')
+    app.save_path.setText(base)
+
+    assert model_io.save_model(app)
+    assert os.path.isfile(base + '.mdl')
+
+
+@pytest.mark.gui
 def test_declining_the_model_overwrite_keeps_the_result_files(physics_app, tmp_path, monkeypatch):
     app = physics_app
     _fit(app)
@@ -332,11 +344,11 @@ def test_a_sequence_extends_its_param_file_with_a_line_per_spectrum(physics_app,
 def test_a_sequence_continues_its_page_of_pictures(physics_app, tmp_path):
     """<save base>_result_table_PNG.html grows run by run, each run under its own
     heading, the page closed once, at its end. A one-model fit saved as new
-    replaces it."""
+    replaces it. The folder need not exist yet: the page is started before
+    any spectrum's files are written (it was lost in a new result folder)."""
     app = physics_app
     _fit(app)
     out = tmp_path / 'out'
-    out.mkdir()
     app.save_path.setText(str(out / 'run'))
     for name in ('005.dat', '009.dat'):                # two runs of one spectrum
         app._sequence_rows_written = 0

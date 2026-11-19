@@ -31,9 +31,10 @@ Where a derivative does not exist:
   * abs at 0: along each parameter the one-sided derivative |d|, what its
     forward difference gives -- the column of a parameter that starts at 0 is
     not zero, so it can leave 0;
-  * sqrt and a fractional power at 0: 0, not inf. So sqrt(a**2 + b**2) has no
-    derivative left at a = b = 0; np.hypot(a, b) is the form that keeps it
-    (one-sided along each parameter, as abs);
+  * sqrt, cbrt and a fractional power at 0: 0, not inf. So sqrt(a**2 + b**2)
+    has no derivative left at a = b = 0; np.hypot(a, b) is the form that keeps
+    it (one-sided along each parameter, as abs);
+  * arctan2 at (0, 0): 0;
   * floor, ceil, round, sign: plain numbers (their derivative is 0).
 The values may be complex; the parameters are real.
 
@@ -395,6 +396,18 @@ def _sqrt_derivative(v, f):
         return np.where(f == 0, 0, 0.5 / f)
 
 
+def _cbrt_derivative(v, f):
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return np.where(f == 0, 0, 1 / (3 * f * f))
+
+
+def _arctan2(a, b):
+    va, vb = value(a), value(b)
+    r2 = va * va + vb * vb
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return chain(np.arctan2(va, vb), (np.where(r2 == 0, 0, vb / r2), np.where(r2 == 0, 0, -va / r2)), (a, b))
+
+
 # =============================================================================
 # The array functions
 # =============================================================================
@@ -429,16 +442,22 @@ def _linspace(start, stop, num=50):
 _UFUNCS = {
     np.add: _add, np.subtract: _subtract, np.multiply: _multiply, np.true_divide: _divide,
     np.power: _power, np.float_power: _power, np.matmul: _matmul, np.hypot: _hypot,
-    np.maximum: _maximum, np.minimum: _minimum,
+    np.maximum: _maximum, np.minimum: _minimum, np.arctan2: _arctan2,
     np.negative: lambda a: -a,
     np.positive: lambda a: a,
     np.absolute: _abs,
     np.conjugate: lambda a: a.conj(),
     np.square: lambda a: _multiply(a, a),
     np.sqrt: _function(np.sqrt, _sqrt_derivative),
+    np.cbrt: _function(np.cbrt, _cbrt_derivative),
     np.exp: _function(np.exp, lambda v, f: f),
+    np.expm1: _function(np.expm1, lambda v, f: np.exp(v)),
     np.log: _function(np.log, lambda v, f: 1 / v),
+    np.log1p: _function(np.log1p, lambda v, f: 1 / (1 + v)),
+    np.log2: _function(np.log2, lambda v, f: 1 / (v * np.log(2))),
     np.log10: _function(np.log10, lambda v, f: 1 / (v * np.log(10))),
+    np.deg2rad: _function(np.deg2rad, lambda v, f: np.pi / 180),
+    np.rad2deg: _function(np.rad2deg, lambda v, f: 180 / np.pi),
     np.sin: _function(np.sin, lambda v, f: np.cos(v)),
     np.cos: _function(np.cos, lambda v, f: -np.sin(v)),
     np.tan: _function(np.tan, lambda v, f: 1 + f * f),
